@@ -2,7 +2,7 @@
 
 原神・崩壊：スターレイルの海外版HoYoLAB APIを利用するための入口です。認証、ログインボーナス、ゲームアカウントの特定、ゲームレコードを目的別に分けています。
 
-HoYoLABには、この用途の一般公開された安定版API仕様書がありません。以下は、`genshin.py` の現行実装と疎通確認用の [`src/bin/login.rs`](../src/bin/login.rs)（機能実装: [`src/hoyolab.rs`](../src/hoyolab.rs)） を基にした調査メモです。Cookie名・エンドポイント・必要ヘッダーは変更される可能性があります。
+HoYoLABには、この用途の一般公開された安定版API仕様書がありません。以下は、`genshin.py` の現行実装と疎通確認用の [`examples/hoyolab_check.rs`](../examples/hoyolab_check.rs)（機能実装: [`src/hoyolab/client.rs`](../src/hoyolab/client.rs)） を基にした調査メモです。Cookie名・エンドポイント・必要ヘッダーは変更される可能性があります。
 
 ## 目的別の案内
 
@@ -58,6 +58,6 @@ HoYoLABには、この用途の一般公開された安定版API仕様書があ�
 - 現行commitの [routes.py](https://github.com/seriaati/genshin.py/blob/ab289440508ef81a9672a198a53b9a31f9365c4a/genshin/client/routes.py)、[daily.py](https://github.com/seriaati/genshin.py/blob/ab289440508ef81a9672a198a53b9a31f9365c4a/genshin/client/components/daily.py)、[base.py](https://github.com/seriaati/genshin.py/blob/ab289440508ef81a9672a198a53b9a31f9365c4a/genshin/client/components/base.py)、[DS生成](https://github.com/seriaati/genshin.py/blob/ab289440508ef81a9672a198a53b9a31f9365c4a/genshin/utility/ds.py)、[salt定義](https://github.com/seriaati/genshin.py/blob/ab289440508ef81a9672a198a53b9a31f9365c4a/genshin/constants.py)および[Chronicle実装](https://github.com/seriaati/genshin.py/tree/ab289440508ef81a9672a198a53b9a31f9365c4a/genshin/client/components/chronicle)を確認した。
 - 認証エラーはそのURLでの応答を確認しただけで、パスの有効性、各ヘッダーの必須性、DS検証の有無、有効Cookieでの成功や実データ形式を保証しない。`/home`の成功もCookie不要であることの一般的保証ではない。成功した状態APIやゲームレコードのJSONは取得していない。
 - 既存の詳細JSON例は参照実装由来の参考形であり、今回全フィールドを実レスポンスで再検証してはいない。`/home`の件数・フィールドは当月の観測値である。
-- 秘密情報・`test/.env`は未読。POST、`/sign`、公開設定変更、Cookie再発行は一切実行していない。有効Cookieテストは今回の対象外。
+- 秘密情報・`.env`は未読。POST、`/sign`、公開設定変更、Cookie再発行は一切実行していない。有効Cookieテストは今回の対象外。
 
 Cookieはパスワードと同じ秘密情報です。実値をソースコード、Git、ログ、Issue、チャットに残さないでください。

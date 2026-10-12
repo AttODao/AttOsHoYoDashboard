@@ -1,13 +1,54 @@
 # AttOsGameAPI
 
-RustからHoYoLABの非公式APIを調査するための最小構成です。Cookie認証と原神・崩壊：スターレイルの読み取りAPIを確認する疎通プログラムと、ゲームAPIが未実装のHTTPサーバー雛形を含みます。
+原神・崩壊：スターレイルのHoYoLAB APIを呼ぶ型付きRustクライアントです。Cookie認証の疎通確認プログラムと、ゲームAPIが未実装のHTTPサーバー雛形も含みます。
+
+## 型付きAPIクライアント
+
+```rust,no_run
+use attosgameapi::{
+    game::{Genshin, Starrail},
+    hoyolab::{HoyolabClient, RecordAccount},
+};
+
+# async fn example() -> Result<(), String> {
+let cookie = std::env::var("HOYOLAB_COOKIE").map_err(|_| "Cookieが未設定です")?;
+let client = HoyolabClient::new(&cookie)?;
+let account = RecordAccount {
+    uid: "123456789".into(),
+    server: "os_asia".into(),
+};
+let index = client.index(Genshin, &account).await?;
+let note = client.daily_note(Genshin, &account).await?;
+let info = client.daily_info(Starrail).await?;
+let home = client.daily_home(Starrail).await?;
+# Ok(())
+# }
+```
+
+`index`と`daily_note`には、対象ゲームのUIDとserverが必要です。serverはアカウント一覧から取得した値を渡してください。`daily_info`、`daily_home`、`daily_sign`はCookieのアカウントを対象とします。戻り値は検証済みエンベロープの内側の型付き`data`です。
+
+`daily_sign(Genshin)`／`daily_sign(Starrail)`だけは実際に報酬を受け取るPOSTです。自動再試行はしません。成功retcodeでも追加認証が必要な場合があるため、戻り値の`requires_verification()`と認証情報を確認してください。`None`は受取成功を意味せず、受取の確定には`daily_info`の`is_sign`を再確認します。テストはローカルのモックAPIだけを使用し、本番の受け取り操作は行いません。
+
+`GameKind`は`Genshin(Genshin)`／`Starrail(Starrail)`を持ち、JSONでは`"genshin"`／`"starrail"`として読み書きします。実行時にゲームを選ぶ場合は、このenumを`match`して型付きメソッドを呼びます。新しいゲームはstruct、`Game`実装、対応モデル、`GameKind`への追加で対応できます。HTTPサーバー側のゲームendpointは未実装のままです。
+
+## 責務別の配置
+
+- `src/hoyolab/mod.rs`: HoYoLABクライアントの公開窓口。
+- `src/hoyolab/client.rs`: Cookie認証、DS署名、HTTP通信、エンベロープ検証。
+- `src/hoyolab/game.rs`: ゲームのマーカー型、`Game` trait、エンドポイント定数。
+- `src/hoyolab/models/`: 共通・ゲーム別の型付きレスポンスモデル。
+- `src/lib.rs`: ライブラリの入口。既存の`game`・`models`はルートからも再exportします。
+- `src/main.rs`・サーバー側モジュール: HTTPサーバー雛形（ゲームハンドラーは未実装）。
+- `examples/hoyolab_check.rs`: 読み取り専用の実API疎通確認。
+- `tests/fixtures/hoyolab/*.json`: モック検証用の合成fixture（認証済み実データではありません）。
+- ルートの`.env`・`.env.example`: ローカル認証設定と秘密情報を含まない設定例。
 
 ## ビルド・テスト
 
 Rustのstableツールチェーン（edition 2024対応）を使用します。
 
 ```console
-cargo build --locked --bins
+cargo build --locked --bins --examples
 cargo test --locked --all-targets
 ```
 
@@ -72,39 +113,40 @@ HoYoLAB APIは公式の公開APIではなく、エンドポイント、署名用
 4. 次のようにローカル設定を作る。
 
 ```console
-cp test/.env.example test/.env
+cp .env.example .env
 ```
 
-`test/.env`を編集します。
+`.env`を編集します。
 
 ```dotenv
 HOYOLAB_COOKIE="ltuid_v2=123456789; ltoken_v2=v2_xxxxxxxxxxxxxxxxx"
 ```
 
-`test/.env`はルートの`.gitignore`で除外しています。実値を`test/.env.example`やソースコードに書かないでください。
+`.env`はルートの`.gitignore`で除外しています。実値を`.env.example`やソースコードに書かないでください。
 
 ## 疎通確認
 
 ```console
-cargo run --bin login
+cargo run --example hoyolab_check
 ```
 
-完全なゲームレコードJSONも確認する場合:
+型付きデータのJSONも確認する場合（個人情報を含む非公開用出力）:
 
 ```console
-cargo run --bin login -- --raw
+cargo run --example hoyolab_check -- --raw
 ```
 
-設定ファイルを変える場合は`cargo run --bin login -- --env <path>`を使用します。既存の環境変数を設定ファイルより優先し、`HOYOLAB_LTUID_V2`と`HOYOLAB_LTOKEN_V2`による指定も使用できます。リダイレクトは追跡せず、各リクエスト20秒・全体90秒・レスポンス4MiBに制限します。`--raw`の出力にはUIDや戦績などの個人情報が含まれるため、公開しないでください。
+設定ファイルを変える場合は`cargo run --example hoyolab_check -- --env <path>`を使用します。既存の環境変数を設定ファイルより優先し、`HOYOLAB_LTUID_V2`と`HOYOLAB_LTOKEN_V2`による指定も使用できます。リダイレクトは追跡せず、各リクエスト20秒・全体90秒・レスポンス4MiBに制限します。`--raw`の出力にはUIDや戦績などの個人情報が含まれるため、公開しないでください。
 
-プログラムは次を順にGETします。
+プログラムは`client.accounts()`で連携済みアカウント一覧を取得し、両ゲームの`daily_info`・`daily_home`・`index`・`daily_note`を型付きモデルで検証します。通常出力にはCookie値・UID・ニックネームを表示しません。対象のGETは次の通りです。
 
 | 対象 | 原神 | 崩壊：スターレイル |
 | --- | --- | --- |
 | ログインボーナス状態 | `/event/sol/info` | `/event/luna/hkrpg/os/info` |
+| 月間報酬一覧 | `/event/sol/home` | `/event/luna/hkrpg/os/home` |
 | 基本ゲームレコード | `/event/game_record/genshin/api/index` | `/game_record/hkrpg/api/index` |
 | リアルタイム状態 | `/event/game_record/genshin/api/dailyNote` | `/game_record/hkrpg/api/note` |
 
-これは読み取り専用テストです。ログインボーナスを実際に受け取る`POST .../sign`は呼びません。リアルタイム状態が`retcode=10102`になる場合は、HoYoLABの戦績画面でリアルタイムノートの公開設定を有効にしてから再実行してください。
+これは読み取り専用の確認です。ログインボーナスを実際に受け取る`POST .../sign`や公開設定の変更は行いません。リアルタイム状態が`retcode=10102`になる場合は、HoYoLABの戦績画面でリアルタイムノートの公開設定を確認してください。
 
 調査元は[genshin.py](https://github.com/seriaati/genshin.py)の`routes.py`、`daily.py`、原神／スターレイルのBattle Chronicle実装です。
