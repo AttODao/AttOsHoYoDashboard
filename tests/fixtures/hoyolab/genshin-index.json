@@ -1,0 +1,34 @@
+{
+  "role": {
+    "AvatarUrl": "",
+    "nickname": "test",
+    "region": "os_asia",
+    "level": 1,
+    "game_head_icon": ""
+  },
+  "avatars": [],
+  "stats": {
+    "active_day_number": 1,
+    "achievement_number": 0,
+    "anemoculus_number": 0,
+    "geoculus_number": 0,
+    "avatar_number": 0,
+    "way_point_number": 0,
+    "domain_number": 0,
+    "spiral_abyss": "",
+    "precious_chest_number": 0,
+    "luxurious_chest_number": 0,
+    "exquisite_chest_number": 0,
+    "common_chest_number": 0,
+    "electroculus_number": 0,
+    "magic_chest_number": 0,
+    "dendroculus_number": 0,
+    "hydroculus_number": 0,
+    "field_ext_map": {"future_stat": {"link": "link", "backup_link": "backup"}}
+  },
+  "city_explorations": [],
+  "world_explorations": [],
+  "homes": [],
+  "query_tool_link": "",
+  "query_tool_image": ""
+}

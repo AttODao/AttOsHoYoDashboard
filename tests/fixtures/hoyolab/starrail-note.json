@@ -1,0 +1,16 @@
+{
+  "current_stamina": 0,
+  "max_stamina": 300,
+  "stamina_recover_time": 123,
+  "accepted_epedition_num": 0,
+  "total_expedition_num": 4,
+  "expeditions": [{"avatars": ["icon"], "status": "Ongoing", "remaining_time": 456, "name": "test", "item_url": "item"}],
+  "current_train_score": 0,
+  "max_train_score": 500,
+  "current_rogue_score": 0,
+  "max_rogue_score": 14000,
+  "weekly_cocoon_cnt": 0,
+  "weekly_cocoon_limit": 3,
+  "current_reserve_stamina": 0,
+  "is_reserve_stamina_full": false
+}
