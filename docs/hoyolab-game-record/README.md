@@ -13,12 +13,14 @@
 
 HoYoLABにはこのAPIの公式かつ網羅的な公開仕様がありません。また、ベースURLに対してHTTP `GET`を送っても利用可能なパスの一覧は返りません。
 
-そのため、この文書の「利用可能なエンドポイント」は、2026-07-27時点で `seriaati/genshin.py` の現行master（commit `cf675f341f7b4f9a0311f64a1438307b919ebeed`）が、この2つのベースURLへ実際にリクエストするパスを抽出したものです。参照実装に未対応のエンドポイントが存在しないことは保証しません。
+そのため、この文書の「利用可能なエンドポイント」は、2026-10-12時点で `seriaati/genshin.py` の現行master（commit `ab289440508ef81a9672a198a53b9a31f9365c4a`）が、この2つのベースURLへ実際にリクエストするパスを抽出したものです。参照実装に未対応のエンドポイントが存在しないことは保証しません。
 
 | ゲーム | GET | POST | 合計 |
 | --- | ---: | ---: | ---: |
-| 原神 | 10 | 3 | 13 |
+| 原神 | 10 | 4 | 14 |
 | 崩壊：スターレイル | 10 | 0 | 10 |
+
+旧commitとの差分・無効Cookie GET結果と検証限界は [調査の入口](../hoyolab-api.md) に記載しています。原神の `GET /gcg/matchList` が追加されました。旧件数表はGET/POSTの集計誤りも修正しています。POSTは呼び出していません。
 
 レスポンス例は、API外包を除いた `data` 部分の構造です。`...` は省略したフィールドまたは配列要素を表します。フィールドはゲーム更新で追加・削除される可能性があります。
 
@@ -31,8 +33,8 @@ HoYoLABにはこのAPIの公式かつ網羅的な公開仕様がありません�
 
 ## 参照元
 
-- [共通のゲームレコード要求処理](https://github.com/seriaati/genshin.py/blob/cf675f341f7b4f9a0311f64a1438307b919ebeed/genshin/client/components/chronicle/base.py)
-- [原神のChronicle実装](https://github.com/seriaati/genshin.py/blob/cf675f341f7b4f9a0311f64a1438307b919ebeed/genshin/client/components/chronicle/genshin.py)
-- [スターレイルのChronicle実装](https://github.com/seriaati/genshin.py/blob/cf675f341f7b4f9a0311f64a1438307b919ebeed/genshin/client/components/chronicle/starrail.py)
-- [ベースURL定義](https://github.com/seriaati/genshin.py/blob/cf675f341f7b4f9a0311f64a1438307b919ebeed/genshin/client/routes.py)
+- [共通のゲームレコード要求処理](https://github.com/seriaati/genshin.py/blob/ab289440508ef81a9672a198a53b9a31f9365c4a/genshin/client/components/chronicle/base.py)
+- [原神のChronicle実装](https://github.com/seriaati/genshin.py/blob/ab289440508ef81a9672a198a53b9a31f9365c4a/genshin/client/components/chronicle/genshin.py)
+- [スターレイルのChronicle実装](https://github.com/seriaati/genshin.py/blob/ab289440508ef81a9672a198a53b9a31f9365c4a/genshin/client/components/chronicle/starrail.py)
+- [ベースURL定義](https://github.com/seriaati/genshin.py/blob/ab289440508ef81a9672a198a53b9a31f9365c4a/genshin/client/routes.py)
 

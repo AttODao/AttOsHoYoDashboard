@@ -2,7 +2,7 @@
 
 [HoYoLAB API 調査の入口](../hoyolab-api.md)へ戻る。
 
-[`test/login.go`](../../test/login.go) は、Cookieの有効性、連携済みゲームアカウント、ログインボーナス状態、ゲームレコードを読み取り専用で確認するプログラムである。
+[`src/bin/login.rs`](../../src/bin/login.rs)（機能実装: [`src/hoyolab.rs`](../../src/hoyolab.rs)） は、Cookieの有効性、連携済みゲームアカウント、ログインボーナス状態、ゲームレコードを読み取り専用で確認するプログラムである。
 
 ## 準備
 
@@ -21,14 +21,16 @@ HOYOLAB_COOKIE="ltuid_v2=<HoYoLAB UID>; ltoken_v2=<認証トークン>"
 ## 実行
 
 ```console
-go run ./test/login.go
+cargo run --bin login
 ```
 
 完全なゲームレコードJSONも表示する場合は次を使う。
 
 ```console
-go run ./test/login.go -raw
+cargo run --bin login -- --raw
 ```
+
+設定ファイルを指定する場合は `cargo run --bin login -- --env <path>` を使う。旧CLI互換の `-raw` / `-env <path>` も利用できる（例: `cargo run --bin login -- -raw`）。raw出力にはゲームアカウント情報が含まれるため、取り扱いには注意する。
 
 ## 呼び出すAPI
 

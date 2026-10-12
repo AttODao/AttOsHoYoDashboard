@@ -21,9 +21,9 @@ HOYOLAB_COOKIE="ltuid_v2=<HoYoLAB UID>; ltoken_v2=<認証トークン>"
 
 ### 互換Cookieと任意Cookie
 
-[`test/login.go`](../../test/login.go) は、旧形式の `ltuid` / `ltoken` も認識する。`account_id_v2`（または旧形式の `account_id`）は、対応する`ltuid`がない場合の検証用フォールバックであり、コードが生成・追加するものではない。
+[`src/hoyolab.rs`](../../src/hoyolab.rs) は、旧形式の `ltuid` / `ltoken` も認識する。`account_id_v2`（または旧形式の `account_id`）は、対応する`ltuid`がない場合の検証用フォールバックであり、コードが生成・追加するものではない。
 
-`HOYOLAB_COOKIE` に含まれる `cookie_token_v2`、`account_mid_v2`、`ltmid_v2`、`stoken` などは文字列全体の一部として送られるが、このプロジェクトの対象APIで必須とはしていない。Cookieの型は参照実装の [cookie.py](https://github.com/seriaati/genshin.py/blob/cf675f341f7b4f9a0311f64a1438307b919ebeed/genshin/models/auth/cookie.py) も参照すること。
+`HOYOLAB_COOKIE` に含まれる `cookie_token_v2`、`account_mid_v2`、`ltmid_v2`、`stoken` などは文字列全体の一部として送られるが、このプロジェクトの対象APIで必須とはしていない。Cookieの型は参照実装の [cookie.py](https://github.com/seriaati/genshin.py/blob/ab289440508ef81a9672a198a53b9a31f9365c4a/genshin/models/auth/cookie.py) も参照すること。
 
 ## すべての対象リクエストに送るヘッダー
 
@@ -32,7 +32,7 @@ HOYOLAB_COOKIE="ltuid_v2=<HoYoLAB UID>; ltoken_v2=<認証トークン>"
 | `Cookie` | `HOYOLAB_COOKIE` の値全体 | 値を加工せず送る |
 | `User-Agent` | `HOYOLAB_USER_AGENT`、未設定時はテストの既定値 | ブラウザ相当の値 |
 
-Cookieヘッダーの設定箇所は [`test/login.go:295`](../../test/login.go#L295) である。
+Cookieヘッダーの設定箇所は [`src/hoyolab.rs`](../../src/hoyolab.rs) である。
 
 ## DSと`x-rpc-*`ヘッダー
 
@@ -58,7 +58,7 @@ Cookieヘッダーの設定箇所は [`test/login.go:295`](../../test/login.go#L
 salt=6s25p5ox5y14umn1p61aqyyvbvvl3lrt&t=<Unix秒>&r=<ランダム英字6文字>
 ```
 
-これはパスワードのハッシュではなく、APIが求めるリクエスト識別値である。実装の根拠は [genshin.py の `ds.py`](https://github.com/seriaati/genshin.py/blob/cf675f341f7b4f9a0311f64a1438307b919ebeed/genshin/utility/ds.py)。HTTPヘッダー名は大文字・小文字を区別しないため、`DS`と`ds`は同じヘッダーとして扱われる。
+これはパスワードのハッシュではなく、APIが求めるリクエスト識別値である。実装の根拠は [genshin.py の `ds.py`](https://github.com/seriaati/genshin.py/blob/ab289440508ef81a9672a198a53b9a31f9365c4a/genshin/utility/ds.py)。HTTPヘッダー名は大文字・小文字を区別しないため、`DS`と`ds`は同じヘッダーとして扱われる。
 
 > ログインボーナスの海外版エンドポイントはこのDSセットを使用しない。必要ヘッダーは[ログインボーナス](daily-checkin.md)を参照。
 

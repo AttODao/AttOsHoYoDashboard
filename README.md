@@ -1,6 +1,17 @@
 # AttOsGameAPI
 
-GoからHoYoLABの非公式APIを調査するための最小構成です。現時点ではAPIサーバー本体ではなく、Cookie認証と原神・崩壊：スターレイルの読み取りAPIを確認する疎通プログラムだけを含みます。
+RustからHoYoLABの非公式APIを調査するための最小構成です。Cookie認証と原神・崩壊：スターレイルの読み取りAPIを確認する疎通プログラムと、ゲームAPIが未実装のHTTPサーバー雛形を含みます。
+
+## ビルド・テスト
+
+Rustのstableツールチェーン（edition 2024対応）を使用します。
+
+```console
+cargo build --locked --bins
+cargo test --locked --all-targets
+```
+
+サーバー雛形は`cargo run`で起動します（ポート8080、`/docs`と`/openapi.json`）。旧Go実装と同じくゲーム操作用のハンドラーはありません。APIドキュメントUIは外部CDNを使用します。
 
 詳細なリクエスト仕様は [docs/hoyolab-api.md](docs/hoyolab-api.md) を参照してください。
 
@@ -21,7 +32,7 @@ HoYoLAB APIは公式の公開APIではなく、エンドポイント、署名用
 
 ## 調査したリクエスト仕様
 
-2026-07-26時点の`genshin.py` master (`cf675f3`) と実エンドポイントへの無効Cookieリクエストを基にしています。
+2026-10-12（環境の日時）に`genshin.py` master (`ab289440508ef81a9672a198a53b9a31f9365c4a`) と実エンドポイントへの無効Cookie GETを使って再確認しました。以前の`cf675f3`と比べ、以下の移植対象のURL・Cookie利用・DS署名・ヘッダー値に変更はありません。原神には`GET /gcg/matchList`が追加されていますが、既存の疎通プログラムの範囲には含めません。有効Cookieでの成功や全レスポンスフィールドの不変性は未確認です。詳しい結果と根拠は[再確認記録](docs/hoyolab-api.md#以前の仕様との差分と現行値)を参照してください。
 
 アカウント一覧:
 
@@ -75,14 +86,16 @@ HOYOLAB_COOKIE="ltuid_v2=123456789; ltoken_v2=v2_xxxxxxxxxxxxxxxxx"
 ## 疎通確認
 
 ```console
-go run ./test/login.go
+cargo run --bin login
 ```
 
 完全なゲームレコードJSONも確認する場合:
 
 ```console
-go run ./test/login.go -raw
+cargo run --bin login -- --raw
 ```
+
+設定ファイルを変える場合は`cargo run --bin login -- --env <path>`を使用します。既存の環境変数を設定ファイルより優先し、`HOYOLAB_LTUID_V2`と`HOYOLAB_LTOKEN_V2`による指定も使用できます。リダイレクトは追跡せず、各リクエスト20秒・全体90秒・レスポンス4MiBに制限します。`--raw`の出力にはUIDや戦績などの個人情報が含まれるため、公開しないでください。
 
 プログラムは次を順にGETします。
 

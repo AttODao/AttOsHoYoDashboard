@@ -14,7 +14,7 @@
 | **実際に受け取る** | **`POST https://sg-hk4e-api.hoyolab.com/event/sol/sign?act_id=e202102251931481&lang=ja-jp`** | **`POST https://sg-public-api.hoyolab.com/event/luna/hkrpg/os/sign?act_id=e202303301540311&lang=ja-jp`** |
 | 月間報酬一覧 | `GET https://sg-hk4e-api.hoyolab.com/event/sol/home?act_id=e202102251931481&lang=ja-jp` | `GET https://sg-public-api.hoyolab.com/event/luna/hkrpg/os/home?act_id=e202303301540311&lang=ja-jp` |
 
-`POST /sign`は受け取りを発生させる。自動化するサービスでは、同じアカウントについて同時に複数回実行しないこと。現在の [`test/login.go`](../../test/login.go) は`GET /info`のみで、`POST /sign`は呼ばない。
+`POST /sign`は受け取りを発生させる。自動化するサービスでは、同じアカウントについて同時に複数回実行しないこと。現在の [`src/bin/login.rs`](../../src/bin/login.rs) は`GET /info`のみで、`POST /sign`は呼ばない。
 
 ## リクエスト仕様
 
@@ -62,4 +62,4 @@
 
 ## 調査根拠
 
-`genshin.py` は海外版の報酬ベースURLを [routes.py](https://github.com/seriaati/genshin.py/blob/cf675f341f7b4f9a0311f64a1438307b919ebeed/genshin/client/routes.py#L217-L232) で定義し、[daily.py](https://github.com/seriaati/genshin.py/blob/cf675f341f7b4f9a0311f64a1438307b919ebeed/genshin/client/components/daily.py#L37-L177) で`POST /sign`を実行している。HoYoLAB側の仕様変更や追加認証には追随が必要である。
+`genshin.py` は海外版の報酬ベースURLを [routes.py](https://github.com/seriaati/genshin.py/blob/ab289440508ef81a9672a198a53b9a31f9365c4a/genshin/client/routes.py) で定義し、[daily.py](https://github.com/seriaati/genshin.py/blob/ab289440508ef81a9672a198a53b9a31f9365c4a/genshin/client/components/daily.py) で`POST /sign`を実行している。HoYoLAB側の仕様変更や追加認証には追随が必要である。

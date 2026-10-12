@@ -20,11 +20,18 @@ https://sg-public-api.hoyolab.com/event/game_record/genshin/api
 | `/dailyNote` | GET | なし | 樹脂、派遣、デイリーなどのリアルタイム情報 |
 | `/activities` | GET | なし | イベント記録 |
 | `/gcg/basicInfo` | GET | なし | 七聖召喚の概要 |
+| `/gcg/matchList` | GET | なし | 七聖召喚の対戦履歴（現行upstreamで追加） |
 | `/gcg/cardList` | GET | `need_avatar`、`need_action`、`offset`、`limit`、`need_stats` | 七聖召喚カード一覧 |
 | `/act_calendar` | POST | なし | イベント・祈願カレンダー |
 | `/char_master` | GET | なし | 空想の軌跡対象キャラクター |
 | `/hard_challenge` | GET | `need_detail` | Stygian Onslaught記録 |
 | `/character/top` | POST | `avatar_ids`、`uid_key`、`server_key` | 表示用上位キャラクターの更新（書き込み） |
+
+### 追加: `GET /gcg/matchList`
+
+共通クエリ `role_id` / `server` を送ります。現行commitの [get_genshin_tcg_matches](https://github.com/seriaati/genshin.py/blob/ab289440508ef81a9672a198a53b9a31f9365c4a/genshin/client/components/chronicle/genshin.py) と [TCGMatchesモデル](https://github.com/seriaati/genshin.py/blob/ab289440508ef81a9672a198a53b9a31f9365c4a/genshin/models/genshin/chronicle/tcg.py) では、`data.recent_matches` / `data.favourite_matches` が対戦リストです。各対戦には `game_id`、`match_type`、`match_time`、`is_win`、`self` / `opposite` があり、両プレイヤーは `name` / `linups`（upstreamの綴り）を持ちます。
+
+これはソース由来の形式です。今回の無効Cookie GETは `retcode=10001` / `data=null` のみで、成功レスポンスや日時の生形式は未検証です。
 
 ## プロフィールとキャラクター
 
