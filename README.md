@@ -1,6 +1,8 @@
 # AttOsGameAPI
 
-原神・崩壊：スターレイルのHoYoLAB APIを呼ぶ型付きRustクライアントです。Cookie認証の疎通確認プログラムと、ゲームAPIが未実装のHTTPサーバー雛形も含みます。
+原神・崩壊：スターレイルのHoYoLAB APIを呼ぶ型付きRustクライアントと、実装中のDashboardバックエンドです。現在のバックエンドはSeaORM＋PostgreSQL、パスワード／パスキー認証・セッション・管理者のユーザー管理に対応しています。GUI・HoYoLAB連携・自動受け取りのWeb機能は未実装です。
+
+Dashboardの機能仕様・実装設計案・実装計画は[ドキュメント一覧](docs/README.md)を参照してください。
 
 ## 型付きAPIクライアント
 
@@ -29,6 +31,8 @@ let home = client.daily_home(Starrail).await?;
 
 `daily_sign(Genshin)`／`daily_sign(Starrail)`だけは実際に報酬を受け取るPOSTです。自動再試行はしません。成功retcodeでも追加認証が必要な場合があるため、戻り値の`requires_verification()`と認証情報を確認してください。`None`は受取成功を意味せず、受取の確定には`daily_info`の`is_sign`を再確認します。テストはローカルのモックAPIだけを使用し、本番の受け取り操作は行いません。
 
+クライアントのエラーは`hoyolab::Error`です。通信・HTTP・retcode・レスポンス形式を型で区別でき、文字列診断には`to_string()`を使います。上流の`message`は秘密情報を含み得るため保持・表示しません。`Result<T, String>`境界の`?`変換は提供しますが、String固有の操作は明示的な変換が必要です。
+
 `GameKind`は`Genshin(Genshin)`／`Starrail(Starrail)`を持ち、JSONでは`"genshin"`／`"starrail"`として読み書きします。実行時にゲームを選ぶ場合は、このenumを`match`して型付きメソッドを呼びます。新しいゲームはstruct、`Game`実装、対応モデル、`GameKind`への追加で対応できます。HTTPサーバー側のゲームendpointは未実装のままです。
 
 ## 責務別の配置
@@ -38,27 +42,122 @@ let home = client.daily_home(Starrail).await?;
 - `src/hoyolab/game.rs`: ゲームのマーカー型、`Game` trait、エンドポイント定数。
 - `src/hoyolab/models/`: 共通・ゲーム別の型付きレスポンスモデル。
 - `src/lib.rs`: ライブラリの入口。既存の`game`・`models`はルートからも再exportします。
-- `src/main.rs`・サーバー側モジュール: HTTPサーバー雛形（ゲームハンドラーは未実装）。
-- `examples/hoyolab_check.rs`: 読み取り専用の実API疎通確認。
+- `src/main.rs`: 環境設定の読み込みと実行入口。
+- `src/dashboard/`: 非GUIの業務・HTTP・永続化を次の責務で分離します。
+- `src/bin/hoyolab_check.rs`: 読み取り専用の実API疎通確認CLI。
 - `tests/fixtures/hoyolab/*.json`: モック検証用の合成fixture（認証済み実データではありません）。
 - ルートの`.env`・`.env.example`: ローカル認証設定と秘密情報を含まない設定例。
 
+### Dashboardのモジュール地図
+
+```text
+src/dashboard/
+├── mod.rs                      # モジュール宣言・実行入口
+├── cli.rs                      # コマンド配線・標準入力
+├── config.rs / error.rs        # 設定検証・秘匿された業務エラー
+├── auth/
+│   ├── accounts.rs             # 作成・復旧・無効化・利用可否・監査
+│   ├── password.rs             # Argon2idと有界CPU処理
+│   ├── sessions.rs             # 発行・固定期限・認証・失効
+│   └── passkeys/
+│       ├── mod.rs              # WebAuthn構築・CPU枠・鍵一覧／削除
+│       ├── registration.rs     # 元セッション拘束の登録
+│       ├── authentication.rs   # 現在の資格情報照合・原子的ログイン
+│       ├── challenge.rs        # 五分・一回使用・有界pending状態
+│       └── credential.rs       # 保存JSONの読出し・codec・fingerprint
+├── http/
+│   ├── mod.rs                  # ルート合成・HTTPサーバーの生存期間
+│   ├── auth.rs / users.rs / passkeys.rs  # 機能別DTO・HTTPハンドラー
+│   ├── middleware.rs           # 共通Origin境界・セッション抽出
+│   ├── session.rs              # Cookie・ログイン応答
+│   └── response.rs             # 安全なHTTPエラー変換
+└── db/
+    ├── mod.rs                  # 接続・migration実行
+    ├── entities/               # user・session・audit・passkeyの保存モデル
+    └── migrations/             # 順序レジストリ・初期account・passkeyスキーマ
+```
+
+HTTPは輸送と入力型、`auth/`は認証・ユーザーライフサイクル、`db/`は保存モデルとスキーマを担当します。認可や復旧ルールをハンドラーに複製せず、DBトランザクション・userロックは業務側で一か所に維持します。今後のHoYoLAB連携業務は独立した機能ディレクトリへ追加し、既存`src/hoyolab/`は上流プロトコルのみを扱います。構造変更・認証・永続化の増分ごとにhighレビューする方針は`AGENTS.md`に記載しています。
+
 ## ビルド・テスト
 
-Rustのstableツールチェーン（edition 2024対応）を使用します。
+Rustのstableツールチェーン（edition 2024対応）を使用します。WebAuthnのビルドには`pkg-config`とOpenSSLの開発ヘッダー／ライブラリが必要です。PostgreSQLは実行時に別途用意します。
 
 ```console
-cargo build --locked --bins --examples
+cargo build --locked --bins
 cargo test --locked --all-targets
 ```
 
-サーバー雛形は`cargo run`で起動します（ポート8080、`/docs`と`/openapi.json`）。旧Go実装と同じくゲーム操作用のハンドラーはありません。APIドキュメントUIは外部CDNを使用します。
+Dashboardテストは`initdb`・`pg_ctl`を使い、テストごとに専用PostgreSQLクラスタを作成・破棄します。**非rootユーザー**で実行してください。実環境の`DATABASE_URL`やCookieを使用せず、ツール不足時は明示的に失敗します。ツールをPATHに置けない場合：
+
+```console
+ATTOS_TEST_PG_BIN=/path/to/postgresql/bin cargo test --locked --all-targets
+```
+
+テストは設定・CLI・DB制約・アカウント・パスワード・セッション・パスキー・HTTP・HoYoLABプロトコルごとに配置しています。例：`cargo test --locked --bin attosgameapi dashboard::auth::sessions`。`test_support/`の共有範囲は隔離DBと合成WebAuthn鍵だけです。合成UIDやソフトウェア鍵は実APIの本人UID拘束・実認証器の確認の代わりではありません。
+
+バックエンドの起動手順は次節を参照してください。従来の空の`/docs`・`/openapi.json`は削除しました。ゲーム操作APIとOpenAPI契約は後続の実装対象です。
 
 詳細なリクエスト仕様は [docs/hoyolab-api.md](docs/hoyolab-api.md) を参照してください。
 
 ゲームレコードAPIのエンドポイント一覧とレスポンス構造は [docs/hoyolab-game-record/README.md](docs/hoyolab-game-record/README.md) を参照してください。
 
-## 認証に必要な情報
+## Dashboardバックエンド（基盤・認証）
+
+新たに確定したCookie仕様は「1ユーザー1HoYoLAB連携、アカウント登録時（仮登録では初回ログイン時）にCookie設定、解除はDashboardユーザー削除時のみ、同一UIDのCookie更新は可能」です。**Cookie初期設定の利用制限・本人UID検証・ユーザー削除は未実装**です。以下のAPIは現在実装済みの認証基盤を示し、新仕様全体の完了とは扱いません。
+
+PostgreSQLの専用DBを用意し、`.env.example`から作った`.env`に`DATABASE_URL`を設定します。環境変数が`.env`より優先されます。設定ファイルはGUIを使わず編集できます。
+
+| 設定 | 初期値・用途 |
+|---|---|
+| `DATABASE_URL` | 必須。`postgres://...`または`postgresql://...` |
+| `BIND_ADDR` | `127.0.0.1:8080` |
+| `PUBLIC_ORIGIN` | `http://localhost:8080`。公開時はHTTPSのDNS名。WebAuthnのためIPリテラルではなくDNS名または`localhost`を使う |
+| `RP_ID` | `PUBLIC_ORIGIN`のホスト名。必要な場合だけ指定し、WebAuthnがOriginとの関係を検証 |
+| `SESSION_TTL_DAYS` | `7`。ログイン時に固定期限を保存し、アクセスでは延長しない |
+| `TIMEZONE_OFFSET` | `+09:00`。固定UTCオフセット。スケジューラー自体は未実装 |
+
+```console
+cargo run -- migrate
+```
+
+初期管理者はユーザーテーブルが空のときだけ作成できます。仮パスワードは標準入力から渡し、コマンド引数や履歴に秘密値を残さないでください。Bashでの入力例：
+
+```bash
+read -r -s -p 'Temporary password: ' temporary_password
+printf '\n'
+printf '%s' "$temporary_password" | cargo run -- bootstrap-admin admin
+unset temporary_password
+cargo run -- serve
+```
+
+ユーザー名は1〜64文字のASCII英数字・`.`・`_`・`-`（大文字小文字を区別）、パスワードは12〜256 UTF-8バイトです。初期管理者にも仮パスワード変更が必要です。管理者が自分自身を無効化する操作は、管理不能を避けるため拒否します。
+
+現在のAPI（GUIは未実装）：
+
+| Method | Path | 用途 |
+|---|---|---|
+| GET | `/health` | DB疎通確認 |
+| POST | `/api/v1/auth/login` | `username`・`password`でログイン |
+| POST | `/api/v1/auth/logout` | 当該セッションの失効 |
+| GET | `/api/v1/me` | 本人情報とPW変更必須状態 |
+| PUT | `/api/v1/me/password` | `current_password`・`new_password`。他のセッションも失効し、元の期限を維持して秘密値を更新 |
+| POST | `/api/v1/auth/passkey/options` | `username`でパスキーログイン開始 |
+| POST | `/api/v1/auth/passkey/verify` | `challenge_id`・`response`でログイン完了 |
+| GET | `/api/v1/me/passkeys` | 本人の鍵のID・ラベル・作成日時 |
+| POST | `/api/v1/me/passkeys/options` | `label`で登録開始 |
+| POST | `/api/v1/me/passkeys/verify` | `challenge_id`・`response`で登録完了 |
+| DELETE | `/api/v1/me/passkeys/{id}` | 本人の鍵を削除 |
+| GET | `/api/v1/server-settings` | 共通オフセットとセッション保持期間 |
+| GET, POST | `/api/v1/admin/users` | 一覧／`username`・`temporary_password`で一般ユーザー作成 |
+| PATCH | `/api/v1/admin/users/{id}` | `active`で無効化・再有効化 |
+| PUT | `/api/v1/admin/users/{id}/temporary-password` | `temporary_password`で認証復旧 |
+
+状態変更リクエストには`PUBLIC_ORIGIN`と完全一致する`Origin`ヘッダーが必要です。JSON入力を使用し、ログイン後はセッションCookieを送信します。HTTPS時は`__Host-` Cookie・Secure・HttpOnly・SameSite=Strictを使い、秘密値を応答JSON・SQLログ・エラー診断へ返しません。ログイン入口（パスワード／パスキー開始・完了）はアプリ全体で毎分20リクエストに制限しています。暗号処理の実行枠が満杯なら待機列を増やさず503を返します。
+
+仮PW変更前は本人情報・PW変更・ログアウト以外の通常機能を利用できません。復旧操作は操作者・対象・日時をDBへ記録します。復旧時の全パスキー削除は全セッション失効と同じトランザクションで実行します。パスキーchallengeは5分・一回使用・単一プロセスのメモリ保持（最大128件）で、再起動時はceremonyを最初から行います。鍵はユーザーごとに最大20件、ラベルは1〜100 UTF-8バイト。レスポンスの`options`とブラウザーのWebAuthn結果を往復させるGUIは未実装です。再有効化時の自動受け取りOFFは、受け取りモジュール追加時に同じ業務処理へ組み込みます。
+
+## HoYoLAB認証に必要な情報
 
 海外版HoYoLABでは、今回確認するログインボーナスとゲームレコードのGET APIに次のCookieを使用します。
 
@@ -127,16 +226,16 @@ HOYOLAB_COOKIE="ltuid_v2=123456789; ltoken_v2=v2_xxxxxxxxxxxxxxxxx"
 ## 疎通確認
 
 ```console
-cargo run --example hoyolab_check
+cargo run --bin hoyolab_check
 ```
 
 型付きデータのJSONも確認する場合（個人情報を含む非公開用出力）:
 
 ```console
-cargo run --example hoyolab_check -- --raw
+cargo run --bin hoyolab_check -- --raw
 ```
 
-設定ファイルを変える場合は`cargo run --example hoyolab_check -- --env <path>`を使用します。既存の環境変数を設定ファイルより優先し、`HOYOLAB_LTUID_V2`と`HOYOLAB_LTOKEN_V2`による指定も使用できます。リダイレクトは追跡せず、各リクエスト20秒・全体90秒・レスポンス4MiBに制限します。`--raw`の出力にはUIDや戦績などの個人情報が含まれるため、公開しないでください。
+設定ファイルを変える場合は`cargo run --bin hoyolab_check -- --env <path>`を使用します。既存の環境変数を設定ファイルより優先し、`HOYOLAB_LTUID_V2`と`HOYOLAB_LTOKEN_V2`による指定も使用できます。リダイレクトは追跡せず、各リクエスト20秒・全体90秒・レスポンス4MiBに制限します。`--raw`の出力にはUIDや戦績などの個人情報が含まれるため、公開しないでください。
 
 プログラムは`client.accounts()`で連携済みアカウント一覧を取得し、両ゲームの`daily_info`・`daily_home`・`index`・`daily_note`を型付きモデルで検証します。通常出力にはCookie値・UID・ニックネームを表示しません。対象のGETは次の通りです。
 
