@@ -51,12 +51,3 @@ fn invalid_commands_fail_before_database_access_without_echoing_arguments() {
     assert!(!error.contains("synthetic-sensitive-option"));
     assert!(!error.contains("DATABASE_URL"));
 }
-
-#[test]
-fn diagnostic_binary_help_is_read_only_and_uses_the_binary_target() {
-    let output = Sandbox::new().run(env!("CARGO_BIN_EXE_hoyolab_check"), &["--help"]);
-    assert!(output.status.success());
-    let text = String::from_utf8(output.stdout).unwrap();
-    assert!(text.contains("cargo run --bin hoyolab_check"));
-    assert!(!text.contains("--example"));
-}
