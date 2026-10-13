@@ -1,4 +1,7 @@
 //! Session issuance, authentication, expiry, and revocation.
+#[cfg(test)]
+#[path = "sessions_tests.rs"]
+mod tests;
 use super::password;
 use crate::dashboard::{
     db::entities::{session, user},
