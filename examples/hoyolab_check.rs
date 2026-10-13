@@ -28,7 +28,7 @@ async fn main() {
     }
     match tokio::time::timeout(std::time::Duration::from_secs(90), run(&env_path, raw)).await {
         Ok(Ok(())) => {}
-        Ok(Err(error)) => fail(&error),
+        Ok(Err(error)) => fail(&error.to_string()),
         Err(_) => fail("全体の制限時間90秒を超えました"),
     }
 }
@@ -176,7 +176,7 @@ mod tests {
         assert_eq!(config["ATTOS_CONFIG_TEST"], "quoted value");
         std::fs::write(&path, "HOYOLAB_COOKIE=\"secret-unclosed\n").unwrap();
         let error = load_config(path.to_str().unwrap()).unwrap_err();
-        assert!(!error.contains("secret-unclosed"));
+        assert!(!error.to_string().contains("secret-unclosed"));
         std::fs::remove_file(path).unwrap();
     }
 }

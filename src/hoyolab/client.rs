@@ -6,6 +6,7 @@ use reqwest::{
 use serde::Deserialize;
 
 use super::{
+    error::{Error, Result},
     game::Game as GameSpec,
     models::{ApiResponse, account::Account},
 };
@@ -15,7 +16,6 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-pub type Result<T> = std::result::Result<T, String>;
 const LANG: &str = "ja-jp";
 const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36";
 const DS_SALT: &str = "6s25p5ox5y14umn1p61aqyyvbvvl3lrt";
@@ -137,7 +137,7 @@ fn build_client(cookie: &str, ua: &str) -> Result<Client> {
         .timeout(Duration::from_secs(20))
         .redirect(reqwest::redirect::Policy::none())
         .build()
-        .map_err(|_| "HTTPクライアントの作成に失敗しました".into())
+        .map_err(|_| Error::ClientConfiguration)
 }
 
 async fn request(
@@ -180,21 +180,14 @@ fn prepare_request(
 }
 
 async fn send(request: reqwest::RequestBuilder) -> Result<Box<RawValue>> {
-    let mut response = request
-        .send()
-        .await
-        .map_err(|_| "HTTPリクエストに失敗しました")?;
+    let mut response = request.send().await.map_err(|_| Error::Network)?;
     if !response.status().is_success() {
-        return Err(format!("HTTP {}", response.status()));
+        return Err(Error::Http(response.status().as_u16()));
     }
     let mut body = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|_| "レスポンス読み取りに失敗しました")?
-    {
+    while let Some(chunk) = response.chunk().await.map_err(|_| Error::ResponseRead)? {
         if chunk.len() > MAX_RESPONSE - body.len() {
-            return Err(format!("レスポンスが上限{MAX_RESPONSE} bytesを超えました"));
+            return Err(Error::ResponseTooLarge(MAX_RESPONSE));
         }
         body.extend_from_slice(&chunk);
     }
@@ -203,29 +196,21 @@ async fn send(request: reqwest::RequestBuilder) -> Result<Box<RawValue>> {
 
 fn decode_response(body: &[u8]) -> Result<Box<RawValue>> {
     let envelope: ApiResponse<Box<RawValue>> =
-        serde_json::from_slice(body).map_err(|_| "JSONレスポンスの形式が不正です")?;
+        serde_json::from_slice(body).map_err(|_| Error::InvalidEnvelope)?;
     if envelope.retcode != 0 {
-        let hint = match envelope.retcode {
-            -100 | 10001 | -1071 => "（Cookieが無効または期限切れです）",
-            10101 => "（ゲームレコードの1日あたり参照上限の可能性があります）",
-            10102 => "（HoYoLABで戦績またはリアルタイム状態の公開を有効にしてください）",
-            _ => "",
-        };
-        return Err(format!(
-            "HoYoLAB retcode={} message={:?}{hint}",
-            envelope.retcode, envelope.message
-        ));
+        // Upstream messages may echo private values; retain only the numeric code.
+        return Err(Error::Upstream {
+            code: envelope.retcode,
+        });
     }
-    envelope
-        .data
-        .ok_or_else(|| "HoYoLAB APIがdataを返しませんでした".into())
+    envelope.data.ok_or(Error::MissingData)
 }
 
 fn parse<T: serde::de::DeserializeOwned>(data: &RawValue) -> Result<T> {
     serde_json::from_str(data.get()).map_err(|error| {
         // Report missing schema fields, never unexpected values from private payloads.
         let detail = error.to_string();
-        if detail.starts_with("missing field `") {
+        let safe_detail = if detail.starts_with("missing field `") {
             format!("レスポンスdataの形式が不正です: {detail}")
         } else {
             format!(
@@ -233,7 +218,8 @@ fn parse<T: serde::de::DeserializeOwned>(data: &RawValue) -> Result<T> {
                 error.line(),
                 error.column()
             )
-        }
+        };
+        Error::InvalidData(safe_detail)
     })
 }
 
@@ -241,7 +227,7 @@ fn dynamic_secret() -> Result<String> {
     const LETTERS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|_| "システム時刻が不正です")?
+        .map_err(|_| Error::Clock)?
         .as_secs();
     let mut rng = rand::rng();
     let nonce: String = (0..6)
@@ -299,6 +285,9 @@ fn validate_cookie(raw: &str) -> Result<bool> {
 mod endpoint_tests;
 
 #[cfg(test)]
+mod protocol_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -344,6 +333,7 @@ mod tests {
         assert!(
             decode_response(br#"{"retcode":10102,"message":"private","data":null}"#)
                 .unwrap_err()
+                .to_string()
                 .contains("公開")
         );
     }
@@ -420,12 +410,14 @@ mod tests {
             request(&client, &format!("{base}/redirect"), &[], None)
                 .await
                 .unwrap_err()
+                .to_string()
                 .contains("307")
         );
         assert!(
             request(&client, &format!("{base}/large"), &[], None)
                 .await
                 .unwrap_err()
+                .to_string()
                 .contains("上限")
         );
         server.abort();

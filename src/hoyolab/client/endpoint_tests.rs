@@ -155,7 +155,7 @@ async fn typed_endpoints() {
         };
         let error = client.index(Local(Genshin), &account).await.unwrap_err();
         if uid == "2" {
-            assert!(error.contains("10102") && error.contains("公開"));
+            assert!(error.to_string().contains("10102") && error.to_string().contains("公開"));
         }
     }
     server.abort();
