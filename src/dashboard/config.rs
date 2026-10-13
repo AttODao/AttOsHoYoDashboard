@@ -16,8 +16,20 @@ pub(super) struct Config {
 
 impl Config {
     pub fn load() -> Result<Self> {
+        Self::load_from(|name| env::var(name))
+    }
+
+    // The same parser is tested without mutating the process-wide environment.
+    fn load_from(
+        mut read: impl FnMut(&str) -> std::result::Result<String, env::VarError>,
+    ) -> Result<Self> {
         let database_url =
-            env::var("DATABASE_URL").map_err(|_| Error::Invalid("DATABASE_URL is required"))?;
+            read("DATABASE_URL").map_err(|_| Error::Invalid("DATABASE_URL is required"))?;
+        let mut value = |name: &str, default: &str| match read(name) {
+            Ok(value) => Ok(value),
+            Err(env::VarError::NotPresent) => Ok(default.to_owned()),
+            Err(_) => Err(Error::Invalid("configuration must be UTF-8")),
+        };
         let database = Url::parse(&database_url)
             .map_err(|_| Error::Invalid("DATABASE_URL must be a PostgreSQL URL"))?;
         if !matches!(database.scheme(), "postgres" | "postgresql") {
@@ -69,10 +81,6 @@ impl Config {
     }
 }
 
-fn value(name: &str, default: &str) -> Result<String> {
-    match env::var(name) {
-        Ok(value) => Ok(value),
-        Err(env::VarError::NotPresent) => Ok(default.to_owned()),
-        Err(_) => Err(Error::Invalid("configuration must be UTF-8")),
-    }
-}
+#[cfg(test)]
+#[path = "config_tests.rs"]
+mod tests;

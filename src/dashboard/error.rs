@@ -36,3 +36,15 @@ impl std::fmt::Debug for Error {
 }
 
 pub(super) type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn database_display_and_debug_never_echo_driver_content() {
+        let error = Error::Database(DbErr::Custom("synthetic-password-hash-and-url".into()));
+        assert_eq!(error.to_string(), "database operation failed");
+        assert_eq!(format!("{error:?}"), "database operation failed");
+    }
+}

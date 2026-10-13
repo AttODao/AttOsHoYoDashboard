@@ -52,8 +52,12 @@ pub(crate) async fn run() -> Result<()> {
 }
 
 fn read_password() -> Result<String> {
+    read_password_from(std::io::stdin())
+}
+
+fn read_password_from(input: impl Read) -> Result<String> {
     let mut password = String::new();
-    std::io::stdin()
+    input
         .take(259)
         .read_to_string(&mut password)
         .map_err(|_| Error::Invalid("could not read password from standard input"))?;
@@ -68,3 +72,7 @@ fn read_password() -> Result<String> {
     }
     Ok(password)
 }
+
+#[cfg(test)]
+#[path = "cli_tests.rs"]
+mod tests;
