@@ -1,0 +1,123 @@
+//! Transport tests use the production router and isolated synthetic PostgreSQL accounts.
+mod auth;
+mod middleware;
+mod passkey_roundtrip;
+mod passkeys;
+mod response;
+mod session;
+mod users;
+
+use super::{App, HttpState, auth::LoginBudget, router, session::cookie_name};
+use crate::dashboard::{
+    auth::{accounts::Accounts, passkeys::Passkeys, sessions::Sessions},
+    config::Config,
+};
+use axum::{
+    body::{Body, to_bytes},
+    http::{Request, StatusCode, header},
+    response::Response,
+};
+use chrono::{Duration, FixedOffset, Utc};
+use sea_orm::DatabaseConnection;
+use serde_json::{Value, json};
+use std::{
+    sync::{Arc, Mutex},
+    time::Instant,
+};
+use tower::ServiceExt;
+use uuid::Uuid;
+
+const ORIGIN: &str = "https://dashboard.example.test";
+
+fn config(secure_cookie: bool) -> Config {
+    Config {
+        database_url: "postgres://unused@localhost/unused".to_owned(),
+        listen: "127.0.0.1:0".parse().unwrap(),
+        origin: ORIGIN.to_owned(),
+        rp_id: "dashboard.example.test".to_owned(),
+        secure_cookie,
+        session_ttl: Duration::days(7),
+        timezone: FixedOffset::east_opt(9 * 3600).unwrap(),
+    }
+}
+
+fn app(accounts: Accounts) -> App {
+    let config = config(true);
+    Arc::new(HttpState {
+        passkeys: Passkeys::new(&config.rp_id, &config.origin).unwrap(),
+        accounts,
+        config,
+        login_budget: Mutex::new(LoginBudget {
+            started: Instant::now(),
+            attempts: 0,
+        }),
+    })
+}
+
+async fn disconnected_app() -> App {
+    app(
+        Accounts::new(DatabaseConnection::default(), Duration::days(7))
+            .await
+            .unwrap(),
+    )
+}
+
+fn request(method: &str, path: &str, cookie: Option<&str>, body: Option<Value>) -> Request<Body> {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(path)
+        .header(header::ORIGIN, ORIGIN);
+    if let Some(cookie) = cookie {
+        builder = builder.header(header::COOKIE, cookie);
+    }
+    let body = match body {
+        Some(body) => {
+            builder = builder.header(header::CONTENT_TYPE, "application/json");
+            Body::from(body.to_string())
+        }
+        None => Body::empty(),
+    };
+    builder.body(body).unwrap()
+}
+
+async fn call(app: &App, request: Request<Body>) -> Response {
+    let response = router(app.clone()).oneshot(request).await.unwrap();
+    assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+    assert_eq!(response.headers()["x-content-type-options"], "nosniff");
+    response
+}
+
+async fn body(response: Response) -> Value {
+    let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+    serde_json::from_slice(&bytes).unwrap()
+}
+
+async fn error(response: Response, status: StatusCode, code: &str) {
+    assert_eq!(response.status(), status);
+    assert_eq!(body(response).await["error"], code);
+}
+
+async fn cookie(app: &App, user_id: Uuid) -> String {
+    let issued = Sessions::issue_until(&app.accounts.db, user_id, Utc::now() + Duration::hours(1))
+        .await
+        .unwrap();
+    format!("{}={}", cookie_name(&app.config), issued.token)
+}
+
+fn response_cookie(response: &Response) -> String {
+    response.headers()[header::SET_COOKIE]
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned()
+}
+
+fn assertion_response() -> Value {
+    // Structurally valid transport input, deliberately not a cryptographic proof.
+    json!({
+        "id": "AQ", "rawId": "AQ", "type": "public-key", "extensions": {},
+        "response": {"authenticatorData": "AQ", "clientDataJSON": "AQ", "signature": "AQ", "userHandle": null}
+    })
+}

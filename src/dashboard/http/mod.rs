@@ -6,6 +6,9 @@ mod response;
 mod session;
 mod users;
 
+#[cfg(test)]
+mod tests;
+
 use super::{
     auth::{
         accounts::{self, Accounts},
@@ -48,20 +51,7 @@ pub(super) async fn serve(db: DatabaseConnection, config: Config) -> Result<()> 
             attempts: 0,
         }),
     });
-    let protected = Router::new()
-        .route("/api/v1/server-settings", get(server_settings))
-        .merge(auth::protected_routes())
-        .merge(users::protected_routes())
-        .merge(passkeys::protected_routes())
-        .route_layer(from_fn_with_state(app.clone(), middleware::authenticate));
-    let router = Router::new()
-        .route("/health", get(health))
-        .merge(auth::public_routes())
-        .merge(passkeys::public_routes())
-        .merge(protected)
-        .layer(DefaultBodyLimit::max(16 * 1024))
-        .layer(from_fn_with_state(app.clone(), middleware::boundary))
-        .with_state(app.clone());
+    let router = router(app.clone());
     let listener = tokio::net::TcpListener::bind(app.config.listen)
         .await
         .map_err(|_| Error::Internal)?;
@@ -71,6 +61,23 @@ pub(super) async fn serve(db: DatabaseConnection, config: Config) -> Result<()> 
         .await
         .map_err(|_| Error::Internal)?;
     Ok(())
+}
+
+fn router(app: App) -> Router {
+    let protected = Router::new()
+        .route("/api/v1/server-settings", get(server_settings))
+        .merge(auth::protected_routes())
+        .merge(users::protected_routes())
+        .merge(passkeys::protected_routes())
+        .route_layer(from_fn_with_state(app.clone(), middleware::authenticate));
+    Router::new()
+        .route("/health", get(health))
+        .merge(auth::public_routes())
+        .merge(passkeys::public_routes())
+        .merge(protected)
+        .layer(DefaultBodyLimit::max(16 * 1024))
+        .layer(from_fn_with_state(app.clone(), middleware::boundary))
+        .with_state(app)
 }
 
 async fn health(State(app): State<App>) -> Result<Json<serde_json::Value>> {
