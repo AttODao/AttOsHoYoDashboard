@@ -1,5 +1,6 @@
 //! HTTP composition and server lifetime; domain rules live outside this directory.
 mod auth;
+mod hoyolab;
 mod middleware;
 mod passkeys;
 mod response;
@@ -17,6 +18,7 @@ use super::{
     },
     config::Config,
     error::{Error, Result},
+    hoyolab::store::CookieStore,
 };
 use axum::{
     Json, Router,
@@ -35,16 +37,22 @@ type App = Arc<HttpState>;
 struct HttpState {
     accounts: Accounts,
     passkeys: Passkeys,
+    cookies: Option<CookieStore>,
     config: Config,
     login_budget: Mutex<auth::LoginBudget>,
 }
 
 pub(super) async fn serve(db: DatabaseConnection, config: Config) -> Result<()> {
+    let cookies = config
+        .cookie_key
+        .as_ref()
+        .map(|key| CookieStore::new(db.clone(), Arc::clone(key)));
     let accounts = Accounts::new(db, config.session_ttl).await?;
     let passkeys = Passkeys::new(&config.rp_id, &config.origin)?;
     let app = Arc::new(HttpState {
         accounts,
         passkeys,
+        cookies,
         config,
         login_budget: Mutex::new(auth::LoginBudget {
             started: Instant::now(),
@@ -68,6 +76,7 @@ fn router(app: App) -> Router {
         .route("/api/v1/server-settings", get(server_settings))
         .merge(auth::protected_routes())
         .merge(users::protected_routes())
+        .merge(hoyolab::protected_routes())
         .merge(passkeys::protected_routes())
         .route_layer(from_fn_with_state(app.clone(), middleware::authenticate));
     Router::new()

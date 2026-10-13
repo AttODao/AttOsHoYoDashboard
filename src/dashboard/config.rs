@@ -1,7 +1,8 @@
 use super::error::{Error, Result};
+use super::hoyolab::credentials::CookieKey;
 use chrono::{Duration, FixedOffset, Utc};
 use reqwest::Url;
-use std::{env, net::SocketAddr};
+use std::{env, net::SocketAddr, sync::Arc};
 
 // Deliberately not Debug: DATABASE_URL may contain credentials.
 pub(super) struct Config {
@@ -12,6 +13,7 @@ pub(super) struct Config {
     pub secure_cookie: bool,
     pub session_ttl: Duration,
     pub timezone: FixedOffset,
+    pub cookie_key: Option<Arc<CookieKey>>,
 }
 
 impl Config {
@@ -69,6 +71,11 @@ impl Config {
         let timezone = value("TIMEZONE_OFFSET", "+09:00")?
             .parse()
             .map_err(|_| Error::Invalid("TIMEZONE_OFFSET must be a fixed UTC offset"))?;
+        let cookie_key = match read("HOYOLAB_COOKIE_KEY") {
+            Ok(value) => Some(Arc::new(CookieKey::from_hex(&value)?)),
+            Err(env::VarError::NotPresent) => None,
+            Err(_) => return Err(Error::Invalid("HOYOLAB_COOKIE_KEY must be UTF-8")),
+        };
         Ok(Self {
             database_url,
             listen,
@@ -77,6 +84,7 @@ impl Config {
             secure_cookie: url.scheme() == "https",
             session_ttl,
             timezone,
+            cookie_key,
         })
     }
 }

@@ -18,6 +18,8 @@ pub(crate) enum Error {
     RateLimited,
     #[error("authentication service busy; try again later")]
     Busy,
+    #[error("{0}")]
+    Unavailable(&'static str),
     #[error("database operation failed")]
     Database(#[from] DbErr),
     #[error("password operation failed")]

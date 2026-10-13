@@ -18,6 +18,7 @@ impl IntoResponse for Error {
             Self::Conflict => (StatusCode::CONFLICT, "conflict"),
             Self::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
             Self::Busy => (StatusCode::SERVICE_UNAVAILABLE, "busy"),
+            Self::Unavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, "unavailable"),
             _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error"),
         };
         if status.is_server_error() {

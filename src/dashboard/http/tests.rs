@@ -1,5 +1,6 @@
 //! Transport tests use the production router and isolated synthetic PostgreSQL accounts.
 mod auth;
+mod hoyolab;
 mod middleware;
 mod passkey_roundtrip;
 mod passkeys;
@@ -7,7 +8,7 @@ mod response;
 mod session;
 mod users;
 
-use super::{App, HttpState, auth::LoginBudget, router, session::cookie_name};
+use super::{App, CookieStore, HttpState, auth::LoginBudget, router, session::cookie_name};
 use crate::dashboard::{
     auth::{accounts::Accounts, passkeys::Passkeys, sessions::Sessions},
     config::Config,
@@ -38,12 +39,20 @@ fn config(secure_cookie: bool) -> Config {
         secure_cookie,
         session_ttl: Duration::days(7),
         timezone: FixedOffset::east_opt(9 * 3600).unwrap(),
+        cookie_key: Some(Arc::new(
+            crate::dashboard::hoyolab::credentials::CookieKey::from_hex(&"11".repeat(32)).unwrap(),
+        )),
     }
 }
 
 fn app(accounts: Accounts) -> App {
     let config = config(true);
+    let cookies = config
+        .cookie_key
+        .as_ref()
+        .map(|key| CookieStore::new(accounts.db.clone(), Arc::clone(key)));
     Arc::new(HttpState {
+        cookies,
         passkeys: Passkeys::new(&config.rp_id, &config.origin).unwrap(),
         accounts,
         config,

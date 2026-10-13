@@ -55,6 +55,12 @@ async fn every_domain_error_has_an_exact_status_code_and_safe_message() {
             "authentication service busy; try again later",
         ),
         (
+            Error::Unavailable("Cookie storage is not configured"),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "unavailable",
+            "Cookie storage is not configured",
+        ),
+        (
             Error::Database(DbErr::Custom("synthetic-driver-secret".to_owned())),
             StatusCode::INTERNAL_SERVER_ERROR,
             "internal_error",

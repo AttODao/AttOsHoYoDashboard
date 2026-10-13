@@ -80,6 +80,38 @@ fn invalid_database_address_lifetime_and_timezone_fail_closed() {
 }
 
 #[test]
+fn cookie_storage_key_is_optional_but_invalid_present_values_fail_without_echoing() {
+    assert!(load(&[]).unwrap().cookie_key.is_none());
+    assert!(
+        load(&[("HOYOLAB_COOKIE_KEY", &"11".repeat(32))])
+            .unwrap()
+            .cookie_key
+            .is_some()
+    );
+    for raw in [
+        "synthetic-secret-key",
+        "",
+        &"ff".repeat(31),
+        &"z".repeat(64),
+    ] {
+        let error = load(&[("HOYOLAB_COOKIE_KEY", raw)]).err().unwrap();
+        assert!(matches!(error, Error::Invalid(_)));
+        assert!(!error.to_string().contains("synthetic-secret-key"));
+    }
+    let result = Config::load_from(|name| match name {
+        "DATABASE_URL" => Ok("postgres://fixture@localhost/test".into()),
+        "HOYOLAB_COOKIE_KEY" => Err(env::VarError::NotUnicode(std::ffi::OsString::from(
+            "synthetic-private-key",
+        ))),
+        _ => Err(env::VarError::NotPresent),
+    });
+    assert!(matches!(
+        result,
+        Err(Error::Invalid("HOYOLAB_COOKIE_KEY must be UTF-8"))
+    ));
+}
+
+#[test]
 fn non_unicode_configuration_is_not_silently_defaulted() {
     use std::ffi::OsString;
     let result = Config::load_from(|key| match key {

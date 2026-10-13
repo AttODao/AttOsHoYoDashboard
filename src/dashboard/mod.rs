@@ -4,6 +4,7 @@ mod cli;
 mod config;
 mod db;
 mod error;
+mod hoyolab;
 mod http;
 
 #[cfg(test)]

@@ -1,4 +1,5 @@
 //! Ordered migration registry; names and schema live in their individual migrations.
+mod hoyolab_accounts;
 mod initial_accounts;
 mod passkeys;
 
@@ -12,6 +13,7 @@ impl MigratorTrait for Migrator {
         vec![
             Box::new(initial_accounts::InitialAccounts),
             Box::new(passkeys::Passkeys),
+            Box::new(hoyolab_accounts::HoyolabAccounts),
         ]
     }
 }
