@@ -44,7 +44,7 @@ let home = client.daily_home(Starrail).await?;
 - `src/lib.rs`: ライブラリの入口。既存の`game`・`models`はルートからも再exportします。
 - `src/main.rs`: 環境設定の読み込みと実行入口。
 - `src/dashboard/`: 非GUIの業務・HTTP・永続化を次の責務で分離します。
-- `src/bin/hoyolab_check.rs`: 読み取り専用の実API疎通確認CLI。
+- `src/hoyolab/client/{endpoint_tests,protocol_tests,validation_tests,live_tests}.rs`: 現行エンドポイントのモック・プロトコル・入力検証と明示実行の実APIテスト。
 - `tests/fixtures/hoyolab/*.json`: モック検証用の合成fixture（認証済み実データではありません）。
 - ルートの`.env`・`.env.example`: ローカル認証設定と秘密情報を含まない設定例。
 
@@ -94,7 +94,7 @@ Dashboardテストは`initdb`・`pg_ctl`を使い、テストごとに専用Post
 ATTOS_TEST_PG_BIN=/path/to/postgresql/bin cargo test --locked --all-targets
 ```
 
-テストは設定・CLI・DB制約・アカウント・パスワード・セッション・パスキー・HTTP・HoYoLABプロトコルごとに配置しています。例：`cargo test --locked --bin attosgameapi dashboard::auth::sessions`。`test_support/`の共有範囲は隔離DBと合成WebAuthn鍵だけです。合成UIDやソフトウェア鍵は実APIの本人UID拘束・実認証器の確認の代わりではありません。
+テストは設定・CLI・DB制約・アカウント・パスワード・セッション・パスキー・HTTP・HoYoLABプロトコルごとに所有モジュールへ配置しています。例：`cargo test --locked --bin attosgameapi dashboard::auth::sessions`。APIテストは現在実装済みのエンドポイントだけを対象とし、HoYoLABモックは実際のHTTPSホスト名・パスをループバックへ解決します。実APIテスト1件は外部通信の明示承認を要するため通常実行では`ignored`です。DBテストのツール不足や実APIテストの明示実行時の設定不足は失敗させます。合成UID・ソフトウェア鍵・モックは実APIの本人UID拘束・実認証器の確認の代わりではありません。
 
 バックエンドの起動手順は次節を参照してください。従来の空の`/docs`・`/openapi.json`は削除しました。ゲーム操作APIとOpenAPI契約は後続の実装対象です。
 
@@ -223,21 +223,21 @@ HOYOLAB_COOKIE="ltuid_v2=123456789; ltoken_v2=v2_xxxxxxxxxxxxxxxxx"
 
 `.env`はルートの`.gitignore`で除外しています。実値を`.env.example`やソースコードに書かないでください。
 
-## 疎通確認
+## 現行エンドポイントのテスト
+
+通常のモック検証（外部通信・実Cookieなし）：
 
 ```console
-cargo run --bin hoyolab_check
+cargo test --locked --lib hoyolab::client
 ```
 
-型付きデータのJSONも確認する場合（個人情報を含む非公開用出力）:
+読み取り専用の実API確認は`src/hoyolab/client/live_tests.rs`へ集約しています。**実通信を承認した場合のみ**、`HOYOLAB_COOKIE`を実行プロセスの環境変数へ設定して次を実行してください。`.env`は読みません。Cookieをコマンド履歴へ残さないよう注意してください。
 
 ```console
-cargo run --bin hoyolab_check -- --raw
+cargo test --locked --lib hoyolab::client::live_tests::current_read_only_endpoints -- --ignored --exact
 ```
 
-設定ファイルを変える場合は`cargo run --bin hoyolab_check -- --env <path>`を使用します。既存の環境変数を設定ファイルより優先し、`HOYOLAB_LTUID_V2`と`HOYOLAB_LTOKEN_V2`による指定も使用できます。リダイレクトは追跡せず、各リクエスト20秒・全体90秒・レスポンス4MiBに制限します。`--raw`の出力にはUIDや戦績などの個人情報が含まれるため、公開しないでください。
-
-プログラムは`client.accounts()`で連携済みアカウント一覧を取得し、両ゲームの`daily_info`・`daily_home`・`index`・`daily_note`を型付きモデルで検証します。通常出力にはCookie値・UID・ニックネームを表示しません。対象のGETは次の通りです。
+リダイレクトは追跡せず、各リクエスト20秒・全体90秒・レスポンス4MiBに制限します。Cookie値・UID・ニックネーム・生レスポンスは出力せず、JSONのraw出力機能もありません。`client.accounts()`で連携済みアカウント一覧を取得し、両ゲームの`daily_info`・`daily_home`・`index`・`daily_note`を型付きモデルで検証します。設定不足・対象ゲーム未連携・APIエラーは失敗とし、黙ってスキップしません。対象のGETは次の通りです。
 
 | 対象 | 原神 | 崩壊：スターレイル |
 | --- | --- | --- |

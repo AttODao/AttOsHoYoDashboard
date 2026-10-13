@@ -41,8 +41,8 @@
 - 不可逆確認後にユーザー本体・Cookie・本人UID・ゲームUID・settings・cache・run／attempt履歴・PW・セッション・パスキー・challenge等を削除し、UID一意制約を解放する。削除後は新規ユーザーとして登録し、旧データ復元なし、表示／自動受け取り全OFF。削除actor／本人・管理者の権限／最後の管理者保護・登録時画面と親リソース／metadata・API契約は未確定のまま残す。
 - 現在の利用可能な実HoYoLABアカウントは1個のみ。テストはローカル合成UID A/B・mock上流・ソフトウェアP256・隔離した専用一時PostgreSQLを使い、production DB／実Cookieは使わない。合成複数UIDは実APIのtoken-to-UID bindingを証明しない。
 - 各責務（設定、永続化、アカウントライフサイクル、PW、セッション、パスキー、HTTP境界、上流プロトコル）のmodule近傍にテストを新規追加する方針を今回明示承認。既存認証の回帰と新仕様の受入テストを分け、1:1制約・同一UID更新／異UID拒否・未完了ゲート・復旧でのUID維持・削除競合／完全削除／新規全OFFを検証対象にする。未確定の権限は決定後にテスト契約へ反映する。
-- 責務別テスト89件（library 7＋Dashboard 78＋診断bin 1＋CLI実行入口3）が成功。設定はプロセス環境を書き換えず同じparserへ入力し、DB制約／migration／アカウント／セッション／合成P256 ceremony／HTTPの本番ルート合成を確認する。Cookie backend・初期設定／通常利用ゲート・ユーザー削除は依然未実装で、これらや1.1／1.2の過去結果を新ライフサイクル・実上流token bindingの完了証拠にしない。
-- 診断CLIを`examples/hoyolab_check.rs`から`src/bin/hoyolab_check.rs`へ移動し、実行指定を`--bin`へ変更した。通常の`cargo run`は既存Dashboardコマンドのまま。1.1節の`--bins --examples`とexample 1件は当時の検証記録として保持する。作業単位commit・要求されたpushの方針は`AGENTS.md`へ記載した。
+- 最新の責務別テスト86件（library 6＋Dashboard 78＋CLI実行入口2）が成功。実HoYoLAB GETテスト1件は明示承認を要するため通常はignoredで、今回は未実行。設定はプロセス環境を書き換えず同じparserへ入力し、DB制約／migration／アカウント／セッション／合成P256 ceremony／HTTPの本番ルート合成を確認する。fmt・clippy（警告拒否）・全targetテスト・bin buildが成功し、独立highレビューでblocking指摘なし。Cookie backend・初期設定／通常利用ゲート・ユーザー削除は依然未実装で、これらの結果を新ライフサイクル・実上流token bindingの完了証拠にしない。
+- 確認用CLIは一度`examples/`から`src/bin/`へ移した後、追加指示により廃止して`src/hoyolab/client/live_tests.rs`へ集約した。テストは所有moduleへ置き、API関連は現在実装済みのエンドポイントだけを対象とする。架空の`/record`・`/daily`・`/redirect`・`/large`モックを撤去し、現行のHTTPSホスト／パス／query／method／ヘッダーをループバックTLSモックで検証する。受け取りPOSTはローカルだけ、実API確認はGETだけとし、本人確認候補の未実装APIを先回りしてテストしない。以前の89件（診断bin・CLI help・架空path検証を含む）と1.1節の`--bins --examples`は過去の記録として区別する。作業単位commit・要求されたpushの方針は`AGENTS.md`へ記載した。
 
 ## 2. 実装前に実証すること
 

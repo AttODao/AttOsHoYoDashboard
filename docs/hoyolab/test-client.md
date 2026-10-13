@@ -1,42 +1,32 @@
-# 疎通テスト
+# 現行エンドポイントのテスト
 
 [HoYoLAB API 調査の入口](../hoyolab-api.md)へ戻る。
 
-[`src/bin/hoyolab_check.rs`](../../src/bin/hoyolab_check.rs)（機能実装: [`src/hoyolab/client.rs`](../../src/hoyolab/client.rs)） は、Cookieの有効性、連携済みゲームアカウント、ログインボーナス状態、ゲームレコードを読み取り専用で確認するプログラムである。
+テストはDashboardと同じく所有するモジュールへ置く。機能実装は[`src/hoyolab/client.rs`](../../src/hoyolab/client.rs)、エンドポイント定義は[`src/hoyolab/game.rs`](../../src/hoyolab/game.rs)。独立した確認用CLIは設けない。未実装のAPIや架空の`/record`・`/daily`等はテスト対象にしない。
 
-## 準備
+## モック検証（通常実行）
 
-```console
-cp .env.example .env
-```
-
-`.env`にログイン済みブラウザのCookieヘッダーを設定する。
-
-```dotenv
-HOYOLAB_COOKIE="ltuid_v2=<HoYoLAB UID>; ltoken_v2=<認証トークン>"
-```
-
-必要なCookieと扱い方は[認証と共通リクエスト](authentication.md)を参照。`.env`はGit管理しない。
-
-## 実行
+[`endpoint_tests.rs`](../../src/hoyolab/client/endpoint_tests.rs)は実際の`Genshin`・`Starrail`と`accounts()`を呼び、現行のHTTPSホスト名・パス・method・query・ヘッダー・型付きモデル変換を確認する。名前解決をループバックのTLSモックへ固定し、Cookieと応答は合成値だけを使う。受け取りPOSTもローカルモックにしか送らない。
 
 ```console
-cargo run --bin hoyolab_check
+cargo test --locked --lib hoyolab::client
 ```
 
-型付きデータのJSONも表示する場合は次を使う（個人情報を含む非公開用出力）。
+`protocol_tests.rs`はエンベロープのretcode／data要件・上流エラー秘匿・現行リクエストの組み立て、`validation_tests.rs`はCookie・DS入力を検証する。これらは実APIのtoken-to-UID拘束や現在の生レスポンス形式を証明しない。
+
+## 実APIの読み取り確認（明示実行のみ）
+
+[`live_tests.rs`](../../src/hoyolab/client/live_tests.rs)の1件は、外部通信・実Cookieを要するため`#[ignore]`。通常の`cargo test`では実行しない。**別途実通信を承認した場合だけ**、Cookieを`HOYOLAB_COOKIE`環境変数として渡して実行する。`.env`の自動読み込みや環境変数の変更はしない。Cookieをコマンド履歴や公開ログへ記録しないこと。
 
 ```console
-cargo run --bin hoyolab_check -- --raw
+cargo test --locked --lib hoyolab::client::live_tests::current_read_only_endpoints -- --ignored --exact
 ```
 
-設定ファイルを指定する場合は `cargo run --bin hoyolab_check -- --env <path>` を使う。既存の環境変数は設定ファイルより優先され、`HOYOLAB_LTUID_V2` / `HOYOLAB_LTOKEN_V2`による指定も利用できる。通常出力にはCookie値・UID・ニックネームを表示しない。`--raw`は型付きデータを出力し、UIDや戦績などの個人情報を含むため公開しないこと。
+必要なら`HOYOLAB_USER_AGENT`も環境変数として指定できる。設定不足・対象ゲーム未連携・APIエラーは失敗とし、スキップで成功扱いしない。各リクエスト20秒・全体90秒・レスポンス4MiBの上限、リダイレクト非追跡を維持し、Cookie・UID・ニックネーム・生データは出力しない。
 
-リダイレクトは追跡せず、各リクエスト20秒・全体90秒・レスポンス4MiBに制限する。
+## 対象
 
-## 呼び出すAPI
-
-`client.accounts()`で連携済みゲームアカウント一覧を取得し、両ゲームの`daily_info`・`daily_home`・`index`・`daily_note`を型付きモデルで検証する。
+`GET /binding/api/getUserGameRolesByCookie`で連携済みゲームアカウント一覧を取得する。両ゲームの読み取りは次の通り。
 
 | 対象 | 原神 | 崩壊：スターレイル |
 | --- | --- | --- |
@@ -45,6 +35,6 @@ cargo run --bin hoyolab_check -- --raw
 | 基本ゲームレコード | `GET /event/game_record/genshin/api/index` | `GET /game_record/hkrpg/api/index` |
 | リアルタイム状態 | `GET /event/game_record/genshin/api/dailyNote` | `GET /game_record/hkrpg/api/note` |
 
-ログインボーナスを実際に受け取る`POST /sign`は呼ばず、公開設定の変更も行わない。URLと実装上の注意点は[ログインボーナス](daily-checkin.md)に記載している。
+実APIテストは`POST /sign`も公開設定変更も行わない。モックの`POST /sign`は送信形式・追加認証応答の変換だけを検証する。URL・認証の注意点は[認証](authentication.md)・[ログインボーナス](daily-checkin.md)を参照。
 
-リアルタイム状態が`retcode=10102`になる場合は、HoYoLABの戦績画面で該当するリアルタイムノートの公開設定を確認すること。
+実HoYoLABアカウントは現在1個のみ。読み取り成功もモックの複数UIDも本人UIDの拘束証明にはならない。候補の本人確認APIは既存クライアントに未実装なので、このテストに先回りして追加しない。
