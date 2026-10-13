@@ -1,18 +1,26 @@
-use axum::{Json, Router, response::Html, routing::get};
-use serde_json::json;
+mod dashboard;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // No game API handlers existed in the Go server; keep only its documentation routes.
-    let app = Router::new()
-        .route("/openapi.json", get(|| async {
-            Json(json!({"openapi": "3.1.0", "info": {"title": "User API", "version": "1.0.0"}, "paths": {}}))
-        }))
-        .route("/docs", get(|| async {
-            Html(r#"<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>User API</title></head><body><script id="api-reference" data-url="/openapi.json"></script><script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script></body></html>"#)
-        }));
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
-    println!("Listening on http://localhost:8080 (docs: /docs)");
-    axum::serve(listener, app).await?;
-    Ok(())
+fn main() {
+    // Load environment configuration before Tokio starts worker threads.
+    match dotenvy::dotenv() {
+        Ok(_) => {}
+        Err(dotenvy::Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => fail("could not load .env"),
+    }
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .init();
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap_or_else(|_| fail("could not start async runtime"));
+    if let Err(error) = runtime.block_on(dashboard::run()) {
+        // Display intentionally omits DB driver details and secret-bearing values.
+        fail(&error.to_string());
+    }
+}
+
+fn fail(message: &str) -> ! {
+    eprintln!("{message}");
+    std::process::exit(1);
 }
