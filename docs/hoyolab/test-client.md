@@ -2,7 +2,7 @@
 
 [HoYoLAB API 調査の入口](../hoyolab-api.md)へ戻る。
 
-テストはDashboardと同じく所有するモジュールへ置く。機能実装は[`src/hoyolab/client.rs`](../../src/hoyolab/client.rs)、エンドポイント定義は[`src/hoyolab/game.rs`](../../src/hoyolab/game.rs)。独立した確認用CLIは設けない。未実装のAPIや架空の`/record`・`/daily`等はテスト対象にしない。
+テストはDashboardと同じく所有するモジュールへ置く。機能実装は[`src/hoyolab/client/mod.rs`](../../src/hoyolab/client/mod.rs)、エンドポイント定義は[`src/hoyolab/game.rs`](../../src/hoyolab/game.rs)。独立した確認用CLIは設けない。未実装のAPIや架空の`/record`・`/daily`等はテスト対象にしない。
 
 ## モック検証（通常実行）
 

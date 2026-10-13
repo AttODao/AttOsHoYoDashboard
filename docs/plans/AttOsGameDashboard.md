@@ -11,7 +11,7 @@
 | フェーズ | 作業対象 | 受入観点 | 状態 |
 |---|---|---|---|
 | 1. 基盤・認証 | SeaORM＋PostgreSQL、`sea-orm-migration`、初期管理者CLI、直接作成、必須PW・任意パスキー、固定期限セッション、復旧・無効化 | 招待／自由登録なし、仮PW変更前の通常利用禁止、PW削除なし、7日固定期限、全セッション失効、復旧時パスキー削除・監査、所有権・CSRF | バックエンド実装済み。実端末WebAuthn・GUIは未確認 |
-| 2. 初期設定・HoYoLAB連携・ユーザー削除 | 初回登録／仮登録後の初回ログインでCookie設定、検証・暗号化、UID検出・同期、同一UID更新・ユーザー削除の順序化 | PW変更＋本人UID検証完了前は通常利用不可、1ユーザー1連携・owner unique＋全ユーザーUID unique、異UID置換／追加連携／個別解除なし、新UID非表示・未検出取得なし・選択保持、全ユーザーデータ削除・一意制約解放、削除後は新規ユーザー／旧データ復元なし／全OFF、平文返却なし | 未実装。actor／最後の管理者保護・初期設定／削除API契約は未確定 |
+| 2. 初期設定・HoYoLAB連携・ユーザー削除 | 初回登録／仮登録後の初回ログインでCookie設定、検証・暗号化、UID検出・同期、同一UID更新・ユーザー削除の順序化 | PW変更＋本人UID検証完了前は通常利用不可、1ユーザー1連携・owner unique＋全ユーザーUID unique、異UID置換／追加連携／個別解除なし、新UID非表示・未検出取得なし・選択保持、全ユーザーデータ削除・一意制約解放、削除後は新規ユーザー／旧データ復元なし／全OFF、平文返却なし | Cookie正規化・未検証暗号化保存まで着手。本人UID検証・通常利用ゲート・削除は未実装。actor／最後の管理者保護・完了／削除API契約は未確定 |
 | 3. 受け取り・状態取得 | ゲーム別設定、スケジューラー、GET→POST→GET、5日履歴、再試行、キャッシュ最新1件、型付き業務結果 | 初期OFF・06:00・共通UTC+09:00、手動独立、ON／更新直後は次回待機、catchup現在分のみ、追加最大3回、不明POST再送なし、停止範囲と確認記録の維持 | 未実装 |
 | 4. Dashboard | Dioxus、スマホ・デスクトップWeb、主要ゲーム状態、古さ・エラー・予測表示 | 初期表示範囲だけ、推定不能値を増やさない、UID表示と受け取り独立、通知Dashboardのみ | 未実装・今回の実装着手からGUIを除外 |
 | 5. 契約・配布・運用 | WebセッションAPIのOpenAPI、単一稼働・更新停止、OCI・NixOS向け運用案 | 外部API／PAT／Scope／別認証なし、所有権、停止後の安全な復旧、保持・削除・運用設定 | 未実装（契約・運用確認は各フェーズでも行う） |
@@ -41,8 +41,20 @@
 - 不可逆確認後にユーザー本体・Cookie・本人UID・ゲームUID・settings・cache・run／attempt履歴・PW・セッション・パスキー・challenge等を削除し、UID一意制約を解放する。削除後は新規ユーザーとして登録し、旧データ復元なし、表示／自動受け取り全OFF。削除actor／本人・管理者の権限／最後の管理者保護・登録時画面と親リソース／metadata・API契約は未確定のまま残す。
 - 現在の利用可能な実HoYoLABアカウントは1個のみ。テストはローカル合成UID A/B・mock上流・ソフトウェアP256・隔離した専用一時PostgreSQLを使い、production DB／実Cookieは使わない。合成複数UIDは実APIのtoken-to-UID bindingを証明しない。
 - 各責務（設定、永続化、アカウントライフサイクル、PW、セッション、パスキー、HTTP境界、上流プロトコル）のmodule近傍にテストを新規追加する方針を今回明示承認。既存認証の回帰と新仕様の受入テストを分け、1:1制約・同一UID更新／異UID拒否・未完了ゲート・復旧でのUID維持・削除競合／完全削除／新規全OFFを検証対象にする。未確定の権限は決定後にテスト契約へ反映する。
-- 最新の責務別テスト86件（library 6＋Dashboard 78＋CLI実行入口2）が成功。実HoYoLAB GETテスト1件は明示承認を要するため通常はignoredで、今回は未実行。設定はプロセス環境を書き換えず同じparserへ入力し、DB制約／migration／アカウント／セッション／合成P256 ceremony／HTTPの本番ルート合成を確認する。fmt・clippy（警告拒否）・全targetテスト・bin buildが成功し、独立highレビューでblocking指摘なし。Cookie backend・初期設定／通常利用ゲート・ユーザー削除は依然未実装で、これらの結果を新ライフサイクル・実上流token bindingの完了証拠にしない。
+- 現行endpoint整理時点の責務別テスト86件（library 6＋Dashboard 78＋CLI実行入口2）が成功。実HoYoLAB GETテスト1件は明示承認を要するため通常はignoredで、今回は未実行。設定はプロセス環境を書き換えず同じparserへ入力し、DB制約／migration／アカウント／セッション／合成P256 ceremony／HTTPの本番ルート合成を確認する。fmt・clippy（警告拒否）・全targetテスト・bin buildが成功し、独立highレビューでblocking指摘なし。Cookie backend・初期設定／通常利用ゲート・ユーザー削除は依然未実装で、これらの結果を新ライフサイクル・実上流token bindingの完了証拠にしない。
 - 確認用CLIは一度`examples/`から`src/bin/`へ移した後、追加指示により廃止して`src/hoyolab/client/live_tests.rs`へ集約した。テストは所有moduleへ置き、API関連は現在実装済みのエンドポイントだけを対象とする。架空の`/record`・`/daily`・`/redirect`・`/large`モックを撤去し、現行のHTTPSホスト／パス／query／method／ヘッダーをループバックTLSモックで検証する。受け取りPOSTはローカルだけ、実API確認はGETだけとし、本人確認候補の未実装APIを先回りしてテストしない。以前の89件（診断bin・CLI help・架空path検証を含む）と1.1節の`--bins --examples`は過去の記録として区別する。作業単位commit・要求されたpushの方針は`AGENTS.md`へ記載した。
+
+### 1.4. Cookie受付の第一増分
+
+- `src/hoyolab/client.rs`を`client/mod.rs`へ移し、実装と近傍テストを同じ責務ディレクトリへまとめた。既存の上流API・Cookie送信仕様は変更していない。
+- `src/dashboard/hoyolab/credentials.rs`は単一legacy／v2 ltoken familyへ正規化し、重複・UID/MID競合・不正字句を拒否する。未選択トークン・不要Cookieは保存／送信bundleから除外する。UID欄は自己申告であり、本人証明ではない。
+- 保存はAES-256-GCM。`HOYOLAB_COOKIE_KEY`（32-byte／64-hex）をDBと別に保持し、用途・format・owner UUID・検証済みUID/nullへAADで束縛する。改竄・違う鍵・owner/UID取り違え・復号後不正Cookieは内部エラーとして拒否する。鍵交換・再暗号化の運用は未実装。
+- 第三migrationで`hoyolab_accounts`を追加した。owner一意・nullableな検証済みUID一意・FK cascade・state/UID対応・暗号文長・正のcredential_versionをDBで制約する。Cookie内のUIDは別途平文保存しない。
+- `GET /api/v1/me/hoyolab`は状態のみ、`PUT /api/v1/me/hoyolab/cookie`はPW変更済み本人の未検証Cookieを受付け202／`pending_verification`／`setup_complete:false`を返す。双方userロック下で再認証し、保存・世代更新・秘密を含まない監査は一つのtransactionへまとめる。鍵未設定は503、不正key設定は起動前の設定読込で失敗する。
+- 未検証のpending行は連携確定ではない。Cookieの自己申告UIDを検証済み欄へ書き込むコード・APIはなく、既存の検証済みUIDを持つ行の更新は本人検証を配線するまで503。pendingの入力訂正は許すが、Cookie完了ゲート・同一UIDの検証付き更新・UID同期・ユーザー削除はまだ完成していない。既存認証基盤の条件は維持し、この増分を全仕様の完了とは扱わない。
+- 独立highレビューの二点（保存済み平文の不正を400でなく内部エラーへ分類、証明後UIDとCookie平文UIDの整合）を修正し、追跡レビューで残る指摘なし。合成Cookie・隔離PostgreSQL・新しく実装した現在のGET/PUTルートだけをテストし、実アカウント・上流API・受け取りPOSTは使っていない。
+
+- 最終確認は107件成功（library 6＋Dashboard 99＋CLI 2）、実API GET 1件は明示承認待ちで未実行。fmt・警告拒否clippy・locked全targetテスト・bin buildが成功した。専用PostgreSQLクラスタは確認後に破棄し、実環境DBやCookieは使用していない。
 
 ## 2. 実装前に実証すること
 
@@ -62,7 +74,7 @@
 
 根拠資料：
 
-- [既存クライアント](../../src/hoyolab/client.rs)・[型付きエラー](../../src/hoyolab/error.rs)：通信・HTTP・retcode・形式を分類し、上流messageを保持しない。POST内部再試行なし。失効／追加認証／不明送信などの業務分類は未実装。
+- [既存クライアント](../../src/hoyolab/client/mod.rs)・[型付きエラー](../../src/hoyolab/error.rs)：通信・HTTP・retcode・形式を分類し、上流messageを保持しない。POST内部再試行なし。失効／追加認証／不明送信などの業務分類は未実装。
 - [genshin.py参照実装](https://github.com/seriaati/genshin.py/blob/b635085ad32b1d366b97dcb276b719d1083a9ff4/genshin/client/components/hoyolab.py#L155-L175)：海外版`get_hoyolab_user(None)`は`/community/painter/wapi/user/full`をUID指定なしで呼び、`data.user_info.uid`を扱う。自己取得の意図は確認したが、海外版のtoken／Cookie UID不一致への耐性は未実証。Cookie内のUIDや第三者プロフィール取得だけを所有権の証明にしない。
 - [受け取り型](../../src/hoyolab/models/daily.rs)・[日次受け取り資料](../hoyolab/daily-checkin.md)：追加認証、GET確認の必要性。リセット境界は未確認。
 - [ゲームレコード共通](../hoyolab-game-record/common.md)：retcode解釈は変更され得る。欠落値だけで原因を確定しない。

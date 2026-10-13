@@ -1,6 +1,6 @@
 # AttOsGameDashboard 実装設計案
 
-[機能仕様](../spec/AttOsGameDashboard.md)を実現する技術構成・概念モデル・処理方式を記す。合意済みの実装方針と未確定の契約を区別する。基盤・認証のバックエンドは実装済み。**Cookie初期設定・通常利用ゲート・Dashboardユーザー削除・HoYoLAB連携・受け取り・GUIは未実装**であり、以下の全体モデルは完成したスキーマ・APIではない。現コードとの対応と検証範囲は[作業計画](../plans/AttOsGameDashboard.md)で管理する。
+[機能仕様](../spec/AttOsGameDashboard.md)を実現する技術構成・概念モデル・処理方式を記す。合意済みの実装方針と未確定の契約を区別する。基盤・認証のバックエンドは実装済み。Cookie正規化・未検証の暗号化保存を実装したが、**本人UID検証・初期設定完了／通常利用ゲート・Dashboardユーザー削除・HoYoLAB連携の実通信・受け取り・GUIは未実装**であり、以下の全体モデルは完成したスキーマ・APIではない。現コードとの対応と検証範囲は[作業計画](../plans/AttOsGameDashboard.md)で管理する。
 
 ## 1. 技術構成
 
@@ -23,7 +23,7 @@ flowchart TB
 - 実装済み認証は`src/dashboard/auth/`へ集約。Accountsはライフサイクルと利用可否、Sessionsは期限・発行・失効、PasswordはArgon2idを担当する。`auth/passkeys/`は登録・認証・challenge状態・資格情報codecで分割し、既存のuserロック／transaction境界を維持する。
 - `src/dashboard/http/`は機能別DTO・ハンドラー、共通Origin境界、Cookie、HTTPエラー変換を分担する。`db/entities/`は保存モデル、`db/migrations/`は順序レジストリと個別スキーマ。`cli.rs`はコマンド配線のみを担当し、認可・ライフサイクル規則は業務側で共用する。詳細な[モジュール地図](../../README.md#dashboardのモジュール地図)と`AGENTS.md`の方針に従い、責務分割時にも公開範囲を広げない。
 - 外部クライアント・Bearer PAT・Scopeの経路は作らない。将来のスマホアプリに備えるのは分離だけとし、専用API・別認証を先回り実装しない。
-- 既存の型付きHoYoLABクライアントを再利用する。業務エラー分類・確認フローはその上に実装する。
+- 上流実装は`src/hoyolab/client/mod.rs`へ置き、同じ`client/`にテストを配置する。Cookie保存業務は`src/dashboard/hoyolab/{credentials,store}.rs`へ分離し、`http/hoyolab.rs`はDTOと輸送だけを担当する。既存の型付きHoYoLABクライアントを再利用し、業務エラー分類・確認フローはその上に実装する。
 - APIとスケジューラーは単一プロセス・単一稼働。更新時の停止を許容する。Redis・外部／分散ジョブキューは不要。
 - HTTPSリバースプロキシ経由で公開する。公開URL、WebAuthn RP ID、DB接続、Cookie暗号鍵、セッション期間をサーバー設定に持つ。
 - スケジュールのタイムゾーンはサーバー共通の固定UTCオフセット（初期UTC+09:00）。ユーザー別タイムゾーンやDST規則は持たない。
@@ -32,7 +32,7 @@ flowchart TB
 
 ### 2.1. エンティティと関係
 
-原則IDはUUID。以下は全体の概念設計であり、HoYoLAB関連の全カラム・型・マイグレーションは未確定。実装済み認証の主な属性は現entityに合わせ、セッションだけは秘密値の`token_hash`を主キーにする。
+原則IDはUUID。以下は全体の概念設計であり、認証と未検証Cookie保存のスキーマだけが実装済み。本人検証・ゲームUID・受け取り関連の詳細は未確定。実装済み認証の主な属性は現entityに合わせ、セッションだけは秘密値の`token_hash`を主キーにする。
 
 | エンティティ | 関係 | 主な属性案 |
 |---|---|---|
@@ -47,12 +47,12 @@ flowchart TB
 | `sessions` | ログインごとに複数発行 | 主キー`token_hash`, `user_id`, 固定`expires_at` |
 | `account_audit` | 復旧などのライフサイクル操作 | `id`, 操作者, 対象ユーザー, `action`, `created_at`（秘密値・ゲームデータを含めない） |
 
-`api_tokens`、招待、PW再設定リンクのエンティティは作らない。HoYoLAB秘密情報は`users`に混ぜず、別の保存モデルを維持する（必要ならJSON bundleの暗号化を含む）。Cookie暗号文はバイナリで保存する。期間キーはローカル日付による厳密な冪等性キーではなく、元APIの状態・実証結果に基づく識別方式を別途決める。
+`api_tokens`、招待、PW再設定リンクのエンティティは作らない。HoYoLAB秘密情報は`users`に混ぜず、別の保存モデルを維持する。現在は単一credential familyへ正規化したCookieをAES-256-GCMで暗号化し、version byte／12-byte nonce／ciphertext／16-byte tagをバイナリ保存する。AADは用途・version・owner UUID・検証済みUID（未検証はnull）を含む。`HOYOLAB_COOKIE_KEY`は32-byteの秘密鍵でDBと別に保持し、既存行を再暗号化せずに交換しない。期間キーはローカル日付による厳密な冪等性キーではなく、元APIの状態・実証結果に基づく識別方式を別途決める。
 
 ### 2.2. 制約・保持・削除
 
 - `users.username`は一意。通常・仮パスワードともArgon2idハッシュを必須とし、ユーザーを残す単独PW削除を許可しない。
-- `hoyolab_accounts.owner_user_id`は一意で1ユーザー最大1行、`hoyolab_accounts.hoyolab_uid`も全ユーザーで一意。仮登録・初期設定未完了は0行で通常利用不可。Cookie更新時に検証した本人UIDとの一致を要求し、別UIDへの上書き・追加連携を禁止する。
+- `hoyolab_accounts.owner_user_id`は一意で1ユーザー最大1行、`hoyolab_accounts.hoyolab_uid`も全ユーザーで一意。Cookie受付前は0行、受付後・本人検証前はUID=nullのpending行であり、連携確定とは扱わない。新仕様の通常利用には初期設定完了が必要。Cookie更新時に検証した本人UIDとの一致を要求し、別UIDへの上書き・追加連携を禁止する。
 - `reward_settings`は`(hoyolab_account_id, game_kind)`で一意。
 - `game_accounts`は`(hoyolab_account_id, game_kind, game_uid, region)`で一意。`visible`と`detected`を分離し、未検出中も表示選択を保持する。
 - `game_status_cache.game_account_id`は一意。保存するスナップショットは最新1件のみ。

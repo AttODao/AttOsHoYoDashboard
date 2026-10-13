@@ -38,7 +38,7 @@ let home = client.daily_home(Starrail).await?;
 ## 責務別の配置
 
 - `src/hoyolab/mod.rs`: HoYoLABクライアントの公開窓口。
-- `src/hoyolab/client.rs`: Cookie認証、DS署名、HTTP通信、エンベロープ検証。
+- `src/hoyolab/client/mod.rs`: Cookie認証、DS署名、HTTP通信、エンベロープ検証。
 - `src/hoyolab/game.rs`: ゲームのマーカー型、`Game` trait、エンドポイント定数。
 - `src/hoyolab/models/`: 共通・ゲーム別の型付きレスポンスモデル。
 - `src/lib.rs`: ライブラリの入口。既存の`game`・`models`はルートからも再exportします。
@@ -65,6 +65,9 @@ src/dashboard/
 │       ├── authentication.rs   # 現在の資格情報照合・原子的ログイン
 │       ├── challenge.rs        # 五分・一回使用・有界pending状態
 │       └── credential.rs       # 保存JSONの読出し・codec・fingerprint
+├── hoyolab/
+│   ├── credentials.rs          # Cookie正規化・所有者に束縛したAES-GCM
+│   └── store.rs                # 再認証・userロック・未検証Cookie保存
 ├── http/
 │   ├── mod.rs                  # ルート合成・HTTPサーバーの生存期間
 │   ├── auth.rs / users.rs / passkeys.rs  # 機能別DTO・HTTPハンドラー
@@ -73,11 +76,11 @@ src/dashboard/
 │   └── response.rs             # 安全なHTTPエラー変換
 └── db/
     ├── mod.rs                  # 接続・migration実行
-    ├── entities/               # user・session・audit・passkeyの保存モデル
+    ├── entities/               # user・session・audit・passkey・hoyolab_accountの保存モデル
     └── migrations/             # 順序レジストリ・初期account・passkeyスキーマ
 ```
 
-HTTPは輸送と入力型、`auth/`は認証・ユーザーライフサイクル、`db/`は保存モデルとスキーマを担当します。認可や復旧ルールをハンドラーに複製せず、DBトランザクション・userロックは業務側で一か所に維持します。今後のHoYoLAB連携業務は独立した機能ディレクトリへ追加し、既存`src/hoyolab/`は上流プロトコルのみを扱います。構造変更・認証・永続化の増分ごとにhighレビューする方針は`AGENTS.md`に記載しています。
+HTTPは輸送と入力型、`auth/`は認証・ユーザーライフサイクル、`db/`は保存モデルとスキーマを担当します。認可や復旧ルールをハンドラーに複製せず、DBトランザクション・userロックは業務側で一か所に維持します。HoYoLAB連携業務は`src/dashboard/hoyolab/`へ分離し、既存`src/hoyolab/`は上流プロトコルのみを扱います。構造変更・認証・永続化の増分ごとにhighレビューする方針は`AGENTS.md`に記載しています。
 
 ## ビルド・テスト
 
@@ -102,9 +105,9 @@ ATTOS_TEST_PG_BIN=/path/to/postgresql/bin cargo test --locked --all-targets
 
 ゲームレコードAPIのエンドポイント一覧とレスポンス構造は [docs/hoyolab-game-record/README.md](docs/hoyolab-game-record/README.md) を参照してください。
 
-## Dashboardバックエンド（基盤・認証）
+## Dashboardバックエンド（基盤・認証・Cookie受付）
 
-新たに確定したCookie仕様は「1ユーザー1HoYoLAB連携、アカウント登録時（仮登録では初回ログイン時）にCookie設定、解除はDashboardユーザー削除時のみ、同一UIDのCookie更新は可能」です。**Cookie初期設定の利用制限・本人UID検証・ユーザー削除は未実装**です。以下のAPIは現在実装済みの認証基盤を示し、新仕様全体の完了とは扱いません。
+新たに確定したCookie仕様は「1ユーザー1HoYoLAB連携、アカウント登録時（仮登録では初回ログイン時）にCookie設定、解除はDashboardユーザー削除時のみ、同一UIDのCookie更新は可能」です。Cookie入力の正規化・暗号化した未検証保存まで実装しました。**本人UID検証・Cookie初期設定完了後の通常利用ゲート・ユーザー削除は未実装**です。未検証保存を連携成功と扱いません。
 
 PostgreSQLの専用DBを用意し、`.env.example`から作った`.env`に`DATABASE_URL`を設定します。環境変数が`.env`より優先されます。設定ファイルはGUIを使わず編集できます。
 
@@ -116,6 +119,7 @@ PostgreSQLの専用DBを用意し、`.env.example`から作った`.env`に`DATAB
 | `RP_ID` | `PUBLIC_ORIGIN`のホスト名。必要な場合だけ指定し、WebAuthnがOriginとの関係を検証 |
 | `SESSION_TTL_DAYS` | `7`。ログイン時に固定期限を保存し、アクセスでは延長しない |
 | `TIMEZONE_OFFSET` | `+09:00`。固定UTCオフセット。スケジューラー自体は未実装 |
+| `HOYOLAB_COOKIE_KEY` | Cookie保存には必須。32バイトの秘密鍵を64桁hexで設定。未指定ならCookie APIは503、不正値なら設定読込失敗。DBと別に管理し、再暗号化なしに変更しない |
 
 ```console
 cargo run -- migrate
@@ -141,6 +145,8 @@ cargo run -- serve
 | POST | `/api/v1/auth/login` | `username`・`password`でログイン |
 | POST | `/api/v1/auth/logout` | 当該セッションの失効 |
 | GET | `/api/v1/me` | 本人情報とPW変更必須状態 |
+| GET | `/api/v1/me/hoyolab` | Cookie設定状態のみ。Cookie・UID・暗号文は返さない |
+| PUT | `/api/v1/me/hoyolab/cookie` | `cookie`を正規化・暗号化して未検証保存。PW変更後のみ。202／`pending_verification`／`setup_complete:false` |
 | PUT | `/api/v1/me/password` | `current_password`・`new_password`。他のセッションも失効し、元の期限を維持して秘密値を更新 |
 | POST | `/api/v1/auth/passkey/options` | `username`でパスキーログイン開始 |
 | POST | `/api/v1/auth/passkey/verify` | `challenge_id`・`response`でログイン完了 |
@@ -153,9 +159,15 @@ cargo run -- serve
 | PATCH | `/api/v1/admin/users/{id}` | `active`で無効化・再有効化 |
 | PUT | `/api/v1/admin/users/{id}/temporary-password` | `temporary_password`で認証復旧 |
 
-状態変更リクエストには`PUBLIC_ORIGIN`と完全一致する`Origin`ヘッダーが必要です。JSON入力を使用し、ログイン後はセッションCookieを送信します。HTTPS時は`__Host-` Cookie・Secure・HttpOnly・SameSite=Strictを使い、秘密値を応答JSON・SQLログ・エラー診断へ返しません。ログイン入口（パスワード／パスキー開始・完了）はアプリ全体で毎分20リクエストに制限しています。暗号処理の実行枠が満杯なら待機列を増やさず503を返します。
+状態変更リクエストには`PUBLIC_ORIGIN`と完全一致する`Origin`ヘッダーが必要です。JSON入力を使用し、ログイン後はセッションCookieを送信します。HTTPS時は`__Host-` Cookie・Secure・HttpOnly・SameSite=Strictを使い、秘密値を応答JSON・SQLログ・エラー診断へ返しません。ログイン入口（パスワード／パスキー開始・完了）はアプリ全体で毎分20リクエストに制限しています。PW／パスキーのCPU処理枠が満杯なら待機列を増やさず503を返します。
 
-仮PW変更前は本人情報・PW変更・ログアウト以外の通常機能を利用できません。復旧操作は操作者・対象・日時をDBへ記録します。復旧時の全パスキー削除は全セッション失効と同じトランザクションで実行します。パスキーchallengeは5分・一回使用・単一プロセスのメモリ保持（最大128件）で、再起動時はceremonyを最初から行います。鍵はユーザーごとに最大20件、ラベルは1〜100 UTF-8バイト。レスポンスの`options`とブラウザーのWebAuthn結果を往復させるGUIは未実装です。再有効化時の自動受け取りOFFは、受け取りモジュール追加時に同じ業務処理へ組み込みます。
+仮PW変更前は本人情報・Cookie設定状態・PW変更・ログアウトを利用でき、Cookie送信などの通常機能は拒否します。復旧操作は操作者・対象・日時をDBへ記録します。復旧時の全パスキー削除は全セッション失効と同じトランザクションで実行します。パスキーchallengeは5分・一回使用・単一プロセスのメモリ保持（最大128件）で、再起動時はceremonyを最初から行います。鍵はユーザーごとに最大20件、ラベルは1〜100 UTF-8バイト。レスポンスの`options`とブラウザーのWebAuthn結果を往復させるGUIは未実装です。再有効化時の自動受け取りOFFは、受け取りモジュール追加時に同じ業務処理へ組み込みます。
+
+### Cookie保存の現状
+
+`HOYOLAB_COOKIE_KEY`には暗号学的乱数で生成した32バイト鍵を設定し、秘密の設定管理へ保存してください。鍵・CookieをGitや公開ログへ書き込まないでください。暗号文はAES-256-GCMで所有ユーザー・検証済みUID（未検証ではnull）へ束縛し、鍵違い・改竄・行の取り違えは復号失敗になります。
+
+Cookie内のUIDは**自己申告**です。受け付けたCookieは`hoyolab_uid=null`・`pending_verification`のまま保存し、本人確認APIやroles通信はまだ実行しません。保存済みの検証済みUIDがある行は、本人検証が配線されるまで更新を503で拒否し、別UIDにも同一UIDにも黙って書き換えません。ユーザーごとの行は一意、検証済みUIDも全ユーザーで一意です。既存の認証基盤の利用条件は維持しており、Cookie完了ゲートを含む新仕様全体は未完了です。
 
 ## HoYoLAB認証に必要な情報
 
