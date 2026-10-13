@@ -6,6 +6,10 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
+#[cfg(test)]
+#[path = "password_tests.rs"]
+mod tests;
+
 // Password work is bounded independently of Tokio's blocking pool.
 pub(in crate::dashboard) struct Passwords {
     workers: Arc<Semaphore>,
