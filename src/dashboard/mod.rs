@@ -6,4 +6,7 @@ mod db;
 mod error;
 mod http;
 
+#[cfg(test)]
+mod test_support;
+
 pub(super) use cli::run;

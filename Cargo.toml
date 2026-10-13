@@ -23,3 +23,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 webauthn-rs = { version = "0.5", default-features = false }
+
+[dev-dependencies]
+openssl = "0.10"
+tower = { version = "0.5", features = ["util"] }

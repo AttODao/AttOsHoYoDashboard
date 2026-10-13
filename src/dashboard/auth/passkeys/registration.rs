@@ -1,4 +1,7 @@
 //! Session-bound passkey registration and its user-locked persistence transaction.
+#[cfg(test)]
+#[path = "registration_tests.rs"]
+mod tests;
 use super::{
     MAX_PASSKEYS, PasskeyView, Passkeys, RegistrationChallenge,
     challenge::{CHALLENGE_TTL, Ceremony, Pending},

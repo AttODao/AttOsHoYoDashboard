@@ -3,6 +3,11 @@ mod authentication;
 mod challenge;
 mod credential;
 mod registration;
+#[cfg(test)]
+mod test_support;
+#[cfg(test)]
+#[path = "management_tests.rs"]
+mod tests;
 
 use super::{
     accounts::{self, Accounts},

@@ -1,4 +1,7 @@
 //! Username-first passkey login with current credential checks and atomic session issuance.
+#[cfg(test)]
+#[path = "authentication_tests.rs"]
+mod tests;
 use super::{
     AuthenticationChallenge, Passkeys,
     challenge::{CHALLENGE_TTL, Ceremony, Pending},

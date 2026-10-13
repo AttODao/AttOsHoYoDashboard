@@ -24,3 +24,6 @@ pub(super) async fn migrate(db: &DatabaseConnection) -> Result<()> {
     migrations::Migrator::up(db, None).await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

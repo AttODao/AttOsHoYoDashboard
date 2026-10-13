@@ -1,4 +1,7 @@
 //! Bounded, process-local, single-use pending ceremonies; restart cancels all challenges.
+#[cfg(test)]
+#[path = "challenge_tests.rs"]
+mod tests;
 use super::{Passkeys, credential::OfferedCredential};
 use crate::dashboard::error::{Error, Result};
 use std::time::{Duration, Instant};

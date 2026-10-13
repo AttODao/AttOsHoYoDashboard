@@ -1,4 +1,7 @@
 //! Bounded persisted credential loading, decoding, and snapshot fingerprints.
+#[cfg(test)]
+#[path = "credential_tests.rs"]
+mod tests;
 use super::MAX_PASSKEYS;
 use crate::dashboard::{
     db::entities::passkey,
