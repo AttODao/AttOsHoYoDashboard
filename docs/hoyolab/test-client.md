@@ -2,7 +2,7 @@
 
 [HoYoLAB API 調査の入口](../hoyolab-api.md)へ戻る。
 
-[`examples/hoyolab_check.rs`](../../examples/hoyolab_check.rs)（機能実装: [`src/hoyolab/client.rs`](../../src/hoyolab/client.rs)） は、Cookieの有効性、連携済みゲームアカウント、ログインボーナス状態、ゲームレコードを読み取り専用で確認するプログラムである。
+[`src/bin/hoyolab_check.rs`](../../src/bin/hoyolab_check.rs)（機能実装: [`src/hoyolab/client.rs`](../../src/hoyolab/client.rs)） は、Cookieの有効性、連携済みゲームアカウント、ログインボーナス状態、ゲームレコードを読み取り専用で確認するプログラムである。
 
 ## 準備
 
@@ -21,16 +21,16 @@ HOYOLAB_COOKIE="ltuid_v2=<HoYoLAB UID>; ltoken_v2=<認証トークン>"
 ## 実行
 
 ```console
-cargo run --example hoyolab_check
+cargo run --bin hoyolab_check
 ```
 
 型付きデータのJSONも表示する場合は次を使う（個人情報を含む非公開用出力）。
 
 ```console
-cargo run --example hoyolab_check -- --raw
+cargo run --bin hoyolab_check -- --raw
 ```
 
-設定ファイルを指定する場合は `cargo run --example hoyolab_check -- --env <path>` を使う。既存の環境変数は設定ファイルより優先され、`HOYOLAB_LTUID_V2` / `HOYOLAB_LTOKEN_V2`による指定も利用できる。通常出力にはCookie値・UID・ニックネームを表示しない。`--raw`は型付きデータを出力し、UIDや戦績などの個人情報を含むため公開しないこと。
+設定ファイルを指定する場合は `cargo run --bin hoyolab_check -- --env <path>` を使う。既存の環境変数は設定ファイルより優先され、`HOYOLAB_LTUID_V2` / `HOYOLAB_LTOKEN_V2`による指定も利用できる。通常出力にはCookie値・UID・ニックネームを表示しない。`--raw`は型付きデータを出力し、UIDや戦績などの個人情報を含むため公開しないこと。
 
 リダイレクトは追跡せず、各リクエスト20秒・全体90秒・レスポンス4MiBに制限する。
 

@@ -80,5 +80,5 @@ GET <base>/<path>?role_id=<ゲームUID>&server=<ゲームサーバー>&<endpoin
 
 ゲームレコードには、公開設定が必要なものがあります。`dailyNote` と `note` はリアルタイム情報であり、`10102`になることがあります。
 
-`genshin.py`には、本人のリアルタイムノートが非公開の場合に設定変更APIを呼ぶ補助機能がありますが、[`examples/hoyolab_check.rs`](../../examples/hoyolab_check.rs)はそのような設定変更をしません。APIサーバーへ組み込む際も、公開設定の変更は利用者の明示的な同意を得て行ってください。
+`genshin.py`には、本人のリアルタイムノートが非公開の場合に設定変更APIを呼ぶ補助機能がありますが、[`src/bin/hoyolab_check.rs`](../../src/bin/hoyolab_check.rs)はそのような設定変更をしません。APIサーバーへ組み込む際も、公開設定の変更は利用者の明示的な同意を得て行ってください。
 

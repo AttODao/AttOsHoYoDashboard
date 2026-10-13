@@ -20,7 +20,7 @@ async fn main() {
                 None => fail("--env にはファイルパスが必要です"),
             },
             "--help" | "-h" => {
-                println!("cargo run --example hoyolab_check -- [--env .env] [--raw]");
+                println!("cargo run --bin hoyolab_check -- [--env .env] [--raw]");
                 return;
             }
             _ => fail("不明な引数です。--help を参照してください"),

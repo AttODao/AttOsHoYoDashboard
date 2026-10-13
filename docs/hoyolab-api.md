@@ -2,7 +2,7 @@
 
 原神・崩壊：スターレイルの海外版HoYoLAB APIを利用するための入口です。認証、ログインボーナス、ゲームアカウントの特定、ゲームレコードを目的別に分けています。
 
-HoYoLABには、この用途の一般公開された安定版API仕様書がありません。以下は、`genshin.py` の現行実装と疎通確認用の [`examples/hoyolab_check.rs`](../examples/hoyolab_check.rs)（機能実装: [`src/hoyolab/client.rs`](../src/hoyolab/client.rs)） を基にした調査メモです。Cookie名・エンドポイント・必要ヘッダーは変更される可能性があります。
+HoYoLABには、この用途の一般公開された安定版API仕様書がありません。以下は、`genshin.py` の現行実装と疎通確認用の [`src/bin/hoyolab_check.rs`](../src/bin/hoyolab_check.rs)（機能実装: [`src/hoyolab/client.rs`](../src/hoyolab/client.rs)） を基にした調査メモです。Cookie名・エンドポイント・必要ヘッダーは変更される可能性があります。
 
 ## 目的別の案内
 
