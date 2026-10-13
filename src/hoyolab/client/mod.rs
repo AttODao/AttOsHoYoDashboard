@@ -288,7 +288,7 @@ mod endpoint_tests;
 mod protocol_tests;
 
 #[cfg(test)]
-#[path = "client/validation_tests.rs"]
+#[path = "validation_tests.rs"]
 mod tests;
 
 #[cfg(test)]
