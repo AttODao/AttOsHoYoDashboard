@@ -1,4 +1,7 @@
 //! User lifecycle, authorization policy, and audit records.
+#[cfg(test)]
+#[path = "accounts_tests.rs"]
+mod tests;
 use super::{
     password::Passwords,
     sessions::{Identity, IssuedSession, Sessions},
