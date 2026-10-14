@@ -1,4 +1,6 @@
 //! User lifecycle, authorization policy, and audit records.
+#[path = "deletion.rs"]
+mod deletion;
 #[cfg(test)]
 #[path = "accounts_tests.rs"]
 mod tests;
@@ -7,7 +9,7 @@ use super::{
     sessions::{Identity, IssuedSession, Sessions},
 };
 use crate::dashboard::{
-    db::entities::{audit, session, user},
+    db::entities::{audit, deletion_request, hoyolab_account, reward_setting, session, user},
     error::{Error, Result},
 };
 use chrono::Utc;
@@ -197,13 +199,39 @@ impl Accounts {
             ));
         }
         let tx = self.db.begin().await?;
+        tx.execute_unprepared("SELECT pg_advisory_xact_lock(198642015)")
+            .await?;
         authorize_admin(&tx, actor, Some(target)).await?;
         let user = lock_user(&tx, target).await?;
+        if deletion_request::Entity::find_by_id(target)
+            .one(&tx)
+            .await?
+            .is_some()
+        {
+            return Err(Error::Invalid("user deletion is already in progress"));
+        }
         let mut update = user.into_active_model();
         update.active = Set(active);
         update.update(&tx).await?;
         Sessions::revoke_all(&tx, target).await?;
-        // Re-enabling must also turn reward settings OFF once that module exists.
+        if active {
+            use sea_orm::sea_query::Expr;
+            if let Some(link) = hoyolab_account::Entity::find()
+                .filter(hoyolab_account::Column::OwnerUserId.eq(target))
+                .one(&tx)
+                .await?
+            {
+                reward_setting::Entity::update_many()
+                    .col_expr(reward_setting::Column::Enabled, Expr::value(false))
+                    .col_expr(
+                        reward_setting::Column::NextRunAt,
+                        Expr::value(Option::<chrono::DateTime<Utc>>::None),
+                    )
+                    .filter(reward_setting::Column::HoyolabAccountId.eq(link.id))
+                    .exec(&tx)
+                    .await?;
+            }
+        }
         record(
             &tx,
             Some(actor.user.id),
@@ -287,6 +315,9 @@ async fn authorize_admin(
         lock_user(tx, id).await?;
     }
     let fresh = Sessions::authenticate(tx, &actor.token_hash).await?;
+    if fresh.user.id != actor.user.id {
+        return Err(Error::Unauthorized);
+    }
     require_admin(&fresh.user)
 }
 

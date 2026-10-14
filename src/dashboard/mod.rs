@@ -4,8 +4,10 @@ mod cli;
 mod config;
 mod db;
 mod error;
+mod games;
 mod hoyolab;
 mod http;
+mod rewards;
 
 #[cfg(test)]
 mod test_support;

@@ -406,17 +406,17 @@ async fn admin_mutations_reauthenticate_instead_of_trusting_snapshot_or_other_ow
         accounts
             .create_user(&mixed, "mixed-owner".to_owned(), TEMP_PASSWORD.to_owned())
             .await,
-        Err(Error::Forbidden)
+        Err(Error::Unauthorized)
     ));
     assert!(matches!(
         accounts
             .reset_password(&mixed, target.id, TEMP_PASSWORD.to_owned())
             .await,
-        Err(Error::Forbidden)
+        Err(Error::Unauthorized)
     ));
     assert!(matches!(
         accounts.set_active(&mixed, target.id, false).await,
-        Err(Error::Forbidden)
+        Err(Error::Unauthorized)
     ));
     // A previously ready administrator snapshot cannot bypass current readiness.
     user::ActiveModel {

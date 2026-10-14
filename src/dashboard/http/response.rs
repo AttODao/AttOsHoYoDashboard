@@ -14,6 +14,8 @@ impl IntoResponse for Error {
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             Self::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
             Self::PasswordChangeRequired => (StatusCode::FORBIDDEN, "password_change_required"),
+            Self::InitialSetupRequired => (StatusCode::FORBIDDEN, "initial_setup_required"),
+            Self::Upstream(_) => (StatusCode::BAD_GATEWAY, "upstream_error"),
             Self::NotFound => (StatusCode::NOT_FOUND, "not_found"),
             Self::Conflict => (StatusCode::CONFLICT, "conflict"),
             Self::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),

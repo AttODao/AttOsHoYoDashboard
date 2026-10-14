@@ -10,6 +10,10 @@ pub(crate) enum Error {
     Forbidden,
     #[error("password change required")]
     PasswordChangeRequired,
+    #[error("initial password and Cookie setup required")]
+    InitialSetupRequired,
+    #[error("HoYoLAB request failed")]
+    Upstream(#[from] attosgameapi::hoyolab::Error),
     #[error("resource not found")]
     NotFound,
     #[error("username already exists")]
