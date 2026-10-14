@@ -71,7 +71,9 @@ node dashboard-ui/tests/browser.mjs
 node -e "const fs=require('fs'); const api=JSON.parse(fs.readFileSync('docs/dashboard-api.json','utf8')); console.log(Object.keys(api.paths).length, Object.values(api.paths).reduce((n,p)=>n+Object.keys(p).length,0))"
 ```
 
-最終ローカル検証: workspace 180 tests passed / 1 ignored（未承認のlive GETのみ）。native/WASM Clippy `-D warnings`、backend build、DX 0.7.10 release buildは成功。public出力は `target/dx/attos-dashboard-ui/release/web/public` を確認済み。Chromiumで実WASM bundleとexternal module loader用CSP（`wasm-unsafe-eval`のみ、inline/一般evalなし）を検証した。ローカル合成API fixtureで初期設定、管理・本人削除へのアクセス、Cookie入力消去、virtual WebAuthn、UID filtering、同時認証の拒否・HttpOnly Cookieと表示owner一致、logout失敗の警告/reload/retry、mobile docsを確認。Playwright/Chromiumは別途必要で、不足時はfailする。実認証器やbackend認可、上流token bindingの証明ではない。highレビューの3指摘（認証single-flight、派遣durationのstring/integer両対応、logout失敗の正確な表示）を修正済み。JSON/OpenAPI/Markdown/Mermaidの確認も行う。旧native Node UI checksを新UIの検証に流用しない。
+最終ローカル検証: workspace 181 tests passed / 1 ignored（未承認のlive GETのみ）。native/WASM Clippy `-D warnings`、backend build、DX 0.7.10 release buildは成功。public出力は `target/dx/attos-dashboard-ui/release/web/public` を確認済み。Chromiumで実WASM bundleとexternal module loader用CSP（`wasm-unsafe-eval`のみ、inline/一般evalなし）を検証した。ローカル合成API fixtureで初期設定、管理・本人削除へのアクセス、Cookie入力消去、virtual WebAuthn登録/assertion、未使用のmutation成功bodyをdecodeしないack処理、public docsのOpenAPI GETが1回・認証API呼び出しなし、UID filtering、同時認証の拒否・HttpOnly Cookieと表示owner一致、logout失敗の警告/reload/retry、mobile docsを確認。Playwright/Chromiumは別途必要で、不足時はfailする。実認証器やbackend認可、上流token bindingの証明ではない。highレビューの3指摘（認証single-flight、派遣durationのstring/integer両対応、logout失敗の正確な表示）を修正済み。JSON/OpenAPI/Markdown/Mermaidの確認も行う。旧native Node UI checksを新UIの検証に流用しない。
+
+既存ライブラリ簡素化を実施済み: SeaORM cache/role upsert（事前SELECT削除）、derive_moreのstatic allowlist Debug、Rand/web-sys typed API、action終了処理とdocs取得ownerの集約。cache nullable overwrite/retention、role ID/visibility・消失/再出現、全11 entityのcompact/pretty redactionを回帰検証した。独立highレビューで具体的な残存regressionは見つからなかった。API/UI構成の評価と見送った置換は[設計 §1.1–1.2](../design/AttOsGameDashboard.md#11-dioxusとapiui境界)に記録する。
 
 ## 6. 合意済み方針
 

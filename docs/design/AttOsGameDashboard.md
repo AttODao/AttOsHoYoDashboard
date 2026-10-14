@@ -34,6 +34,22 @@ flowchart TB
 
 APIとschedulerは同じDB/業務処理を使う。単一process/instance前提で、Redisや分散queueはない。更新時down timeは許容する。
 
+### 1.1. DioxusとAPI/UI境界
+
+現構成はDioxus Webのclient-side rendering + Axum REST APIであり、別origin・別deployの「完全分離」ではない。同じprocessがcompiled UIとAPIを同じoriginで配信する。Dioxusの[Resource公式API例](https://docs.rs/dioxus/0.7.10/dioxus/prelude/struct.Resource.html)も通常のHTTP取得を扱っており、この構成はDioxusに反しない。ただし「同一RustのUI専用backendで常に最良」とはしない。
+
+[Dioxus 0.7 Fullstackのserver functions](https://dioxuslabs.com/learn/0.7/essentials/fullstack/server_functions/)はAxum互換endpointと型付きclient呼び出しを生成する。新規のUI専用Rustアプリなら、手書きURL/JSON transportとDTOの二重管理を減らす有力な選択である。業務serviceやAxumを捨てる必要はない。一方、認証・Origin/Cookie・fresh authorization・mutation single-flight・owner切替・safe error・POST不確実性の処理は自動的には代替されない。
+
+現時点ではSSR/SEO要件はなく、既存REST/OpenAPIと安全境界を維持してWeb構成を継続する。server functionsへの全面移行や新しい共有contract crateは今回導入しない。共有型を検討する場合も、backend entityをWASMへ持ち込まず、HTTP DTOのserde flatten/default/nullability・日時表現とUIのcurated型の差を確認する。全response modelが同じ宣言の単純重複ではない。
+
+### 1.2. 既存ライブラリによる簡素化
+
+- SeaORMの明示的`ON CONFLICT`でgame/reward cacheとrole保存の事前SELECT・insert/update分岐を削除。cacheはnullableを含む6列を更新し、roleは検出flag/時刻のみ更新する。既存ID・visibility、失敗時payload保持、transaction/owner lockは維持する。
+- 既存lock内の`derive_more 2.1.1`をrootの直接依存として`debug` featureのみ宣言し、11 entityの手書きDebugをstatic container formatへ置換。表示fieldのallowlist方式であり、新fieldを自動公開するdefault Debug/secret denylistではない。compact/pretty両形式を検証する。pretty表示はflatとなる。生成ActiveModelは引き続きログ禁止。
+- Randの`Alphabetic.sample_string`でDS用6文字ASCII nonceを生成。web-sysのtyped credential gettersを利用し、独自reflectionを削除。action終了処理は既存の同期admission/root taskへ集約し、docs取得はDocsPageが単独所有する。
+- Cookie保存・admin user作成はclientが成功2xxをackとして扱い、未使用の成功JSONをdecodeしない。後続の型付きmetadata/user list取得を正本とする。backend/OpenAPIのJSON応答契約は変更しない。成功bodyの検証・消費・size capを行うという主張はしない。
+- Cookie parserをCookieJarへ、native WebAuthn bridgeを`webauthn-rs-proto 0.5.5`のWASM変換へ置換しない。前者は重複Cookieの証拠・空白等の現policyを保持できず、後者はextension console logging、null userHandle、transports消失に相違がある。認証/session/cron/repositoryの新frameworkも追加しない。
+
 ## 2. HTTP境界
 
 - Protected routeはsession cookieをDB上のhashへ照合する。HTTPS時のcookie名は `__Host-attos_session`、localhost非secure時は `attos_session`。

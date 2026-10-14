@@ -129,6 +129,8 @@ ATTOS_TEST_PG_BIN=/path/to/postgresql/bin cargo test --locked --all-targets
 
 DashboardはDioxus 0.7.10 Web/WASM RSX UIとWebセッションAPIを同じRustプロセスで提供します。UIはworkspace crate `dashboard-ui` / package `attos-dashboard-ui` で作成し、公式Dioxus Components由来のButton/Card/Card parts（DioxusLabs/components `9a758255ea26e2b20c8cecf4c1c946feb9e71da7`, MIT）をsource templateとして同梱します。SSR/fullstack server、native app、CDN、PAT/Scope、外部クライアント向け認証はありません。
 
+このWeb/REST構成はDioxusで有効な選択ですが、同一RustのUI専用backendではFullstack server functionsも型・transport重複を減らす選択です。現構成の理由、移行時にも必要な安全境界、既存ライブラリによる簡素化は [設計 §1.1–1.2](docs/design/AttOsGameDashboard.md#11-dioxusとapiui境界) を参照してください。
+
 公開route:
 
 | Method | Path | 用途 |
