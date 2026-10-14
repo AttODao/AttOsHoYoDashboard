@@ -4,9 +4,11 @@
 
 | 文書 | 読む目的 |
 |---|---|
-| [仕様書](spec/AttOsGameDashboard.md) | 何ができるか、誰が使えるか、どのように振る舞うかを知る |
-| [実装設計案](design/AttOsGameDashboard.md) | 技術構成、データモデル、処理方式、API候補を検討する |
-| [実装計画・検証課題](plans/AttOsGameDashboard.md) | 実装順序、実証が必要なこと、未確定事項、原資料を確認する |
+| [仕様書](spec/AttOsGameDashboard.md) | 利用者から見える機能、権限、制約、現在の本番制限を知る |
+| [実装設計案](design/AttOsGameDashboard.md) | 現在の責務分割、Dioxus Web/RSX UI、データ・API・ジョブ設計、proof gateを確認する |
+| [実装計画・検証課題](plans/AttOsGameDashboard.md) | 実装済み範囲、残る上流実証、検証ギャップを確認する |
+| [Dashboard OpenAPI 3.1](dashboard-api.json) | WebセッションAPIの手書き契約を機械可読で確認する |
+| [Dashboard運用手順](dashboard-operations.md) | migration、bootstrap、TLS/Origin、秘密鍵、バックアップ、shutdownを確認する |
 
 ## HoYoLABクライアント
 
@@ -20,9 +22,9 @@
 ## Dashboard文書の更新ルール
 
 - 仕様書には利用者から見える機能・権限・制約・挙動を置く。実装方法、推奨値、作業手順、調査記録、文書の編集指示は分離する。
-- 確定した要件と設計案・未確定事項を混同しない。図にないルールを勝手に補完せず、仕様本文や既存実装と照合する。
+- 確定した要件と設計案・未確定事項を混同しない。特にHoYoLAB owner bindingとreward POST contractは、実装済みpolicyと本番rollout可否を分けて書く。
+- API契約は `dashboard-api.json` を正本とし、実装済みのDashboard routeだけを載せる。Dioxusのhash付き `/assets/{...}` は内部build出力であり、安定API pathとして追加しない。架空の `/record`、`/daily`、`/redirect`、`/large` routeを追加しない。
+- UI要件はDioxus + RSX + Dioxus Componentsで固定する。native HTML/JS fallbackや別frontend方式を新規方針として書かない。
 - 仕様を変更するときは、関連する図・表・文章も更新する。
-- 文書はMarkdownとしてGitで管理する。文書内のMermaidソースを図の正本とし、PNG/SVGは派生成果物とする。
-- 図は1図1目的とし、構文を検証する。可能ならレンダリング後の見切れ・矢印・可読性も確認する。
-- Pi Mermaid Studioなどで別の`.mmd`を正本にする場合は、Markdownから参照する方式に切り替え、同じ図を二重に手動管理しない。
-- Mermaidは責務・処理・関係を説明する。詳細なAPI契約やDB定義は、型・OpenAPI・マイグレーションで管理する。
+- MermaidはMarkdown内のソースを正本にし、変更時は構文を検証する。
+- 秘密値、Cookie、パスワード、セッショントークン、実アカウントの未加工応答を文書例に書かない。

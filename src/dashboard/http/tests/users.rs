@@ -63,9 +63,12 @@ async fn user_routes_enforce_auth_admin_and_temporary_password_exceptions() {
     .await;
     assert_eq!(login.status(), StatusCode::OK);
     let temporary = response_cookie(&login);
+    let mut expected = created.clone();
+    expected["onboarding"] = json!({"password_change_required":true,"cookie_setup_complete":false,"cookie_status":"not_configured","verification_available":false});
+    expected["capabilities"] = json!({"reward_posting_available":false});
     assert_eq!(
         body(call(&app, request("GET", "/api/v1/me", Some(&temporary), None)).await).await,
-        created
+        expected
     );
     for (method, path, input) in &admin_routes {
         error(

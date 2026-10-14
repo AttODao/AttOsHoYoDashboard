@@ -22,6 +22,10 @@ fn defaults_and_explicit_settings_share_the_production_parser() {
         "127.0.0.1:8080".parse::<SocketAddr>().unwrap()
     );
     assert_eq!(config.origin, "http://localhost:8080");
+    assert_eq!(
+        config.ui_dir,
+        PathBuf::from("target/dx/attos-dashboard-ui/release/web/public")
+    );
     assert_eq!(config.rp_id, "localhost");
     assert!(!config.secure_cookie);
     assert_eq!(config.session_ttl, Duration::days(7));
@@ -32,12 +36,27 @@ fn defaults_and_explicit_settings_share_the_production_parser() {
         ("BIND_ADDR", "[::1]:9010"),
         ("SESSION_TTL_DAYS", "2"),
         ("TIMEZONE_OFFSET", "-04:30"),
+        ("DASHBOARD_UI_DIR", "/srv/attos/public"),
     ])
     .unwrap();
     assert_eq!(config.rp_id, "example.test");
+    assert_eq!(config.ui_dir, PathBuf::from("/srv/attos/public"));
     assert!(config.secure_cookie);
     assert_eq!(config.session_ttl, Duration::days(2));
     assert_eq!(config.timezone.local_minus_utc(), -16200);
+}
+
+#[test]
+fn invalid_ui_directory_is_rejected_without_echoing_path() {
+    for directory in ["", " ", "synthetic-private-path\0suffix"] {
+        let error = load(&[("DASHBOARD_UI_DIR", directory)])
+            .err()
+            .expect("invalid UI path");
+        assert_eq!(
+            error.to_string(),
+            "DASHBOARD_UI_DIR must be a nonempty directory path"
+        );
+    }
 }
 
 #[test]

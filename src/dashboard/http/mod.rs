@@ -1,10 +1,14 @@
 //! HTTP composition and server lifetime; domain rules live outside this directory.
 mod auth;
+mod games;
 mod hoyolab;
 mod middleware;
 mod passkeys;
 mod response;
+mod rewards;
+mod runtime;
 mod session;
+mod ui;
 mod users;
 
 #[cfg(test)]
@@ -37,37 +41,60 @@ type App = Arc<HttpState>;
 struct HttpState {
     accounts: Accounts,
     passkeys: Passkeys,
-    cookies: Option<CookieStore>,
+    cookies: Option<Arc<CookieStore>>,
+    operations: super::hoyolab::operations::Operations,
     config: Config,
     login_budget: Mutex<auth::LoginBudget>,
 }
 
 pub(super) async fn serve(db: DatabaseConnection, config: Config) -> Result<()> {
-    let cookies = config
-        .cookie_key
-        .as_ref()
-        .map(|key| CookieStore::new(db.clone(), Arc::clone(key)));
+    let operations = super::hoyolab::operations::Operations::default();
+    let cookies = config.cookie_key.as_ref().map(|key| {
+        let mut store = CookieStore::new(db.clone(), Arc::clone(key));
+        store.operations = operations.clone();
+        store.timezone = config.timezone;
+        Arc::new(store)
+    });
     let accounts = Accounts::new(db, config.session_ttl).await?;
     let passkeys = Passkeys::new(&config.rp_id, &config.origin)?;
     let app = Arc::new(HttpState {
         accounts,
         passkeys,
         cookies,
+        operations,
         config,
         login_budget: Mutex::new(auth::LoginBudget {
             started: Instant::now(),
             attempts: 0,
         }),
     });
+    if !tokio::fs::metadata(app.config.ui_dir.join("index.html"))
+        .await
+        .is_ok_and(|metadata| metadata.is_file())
+    {
+        return Err(Error::Unavailable(
+            "build the Dioxus UI before starting the server",
+        ));
+    }
     let router = router(app.clone());
     let listener = tokio::net::TcpListener::bind(app.config.listen)
         .await
         .map_err(|_| Error::Internal)?;
-    tracing::info!(address = %app.config.listen, timezone = %app.config.timezone, "dashboard API listening");
+    tracing::info!(address = %app.config.listen, timezone = %app.config.timezone, "dashboard listening");
+    let (stop, stopped) = tokio::sync::watch::channel(false);
+    let worker = tokio::spawn(runtime::run(app.clone(), stopped));
+    let stopping = app.cookies.clone();
     axum::serve(listener, router)
-        .with_graceful_shutdown(shutdown())
+        .with_graceful_shutdown(async move {
+            shutdown().await;
+            if let Some(store) = stopping {
+                store.stop_new_operations();
+            }
+            let _ = stop.send(true);
+        })
         .await
         .map_err(|_| Error::Internal)?;
+    worker.await.map_err(|_| Error::Internal)?;
     Ok(())
 }
 
@@ -77,10 +104,13 @@ fn router(app: App) -> Router {
         .merge(auth::protected_routes())
         .merge(users::protected_routes())
         .merge(hoyolab::protected_routes())
+        .merge(games::protected_routes())
+        .merge(rewards::protected_routes())
         .merge(passkeys::protected_routes())
         .route_layer(from_fn_with_state(app.clone(), middleware::authenticate));
     Router::new()
         .route("/health", get(health))
+        .merge(ui::routes(&app))
         .merge(auth::public_routes())
         .merge(passkeys::public_routes())
         .merge(protected)

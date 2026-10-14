@@ -1,10 +1,15 @@
 //! User view DTO and account-management routes; lifecycle rules remain in Accounts.
 use super::App;
-use crate::dashboard::{auth::sessions::Identity, db::entities::user, error::Result};
+use crate::dashboard::{
+    auth::sessions::Identity,
+    db::entities::user,
+    error::{Error, Result},
+};
 use axum::{
     Json, Router,
     extract::{Extension, Path, State},
-    http::StatusCode,
+    http::{StatusCode, header},
+    response::{IntoResponse, Response},
     routing::{get, patch, put},
 };
 use serde::{Deserialize, Serialize};
@@ -13,9 +18,12 @@ use uuid::Uuid;
 
 pub(super) fn protected_routes() -> Router<App> {
     Router::new()
-        .route("/api/v1/me", get(me))
+        .route("/api/v1/me", get(me).delete(delete_me))
         .route("/api/v1/admin/users", get(list_users).post(create_user))
-        .route("/api/v1/admin/users/{id}", patch(set_active))
+        .route(
+            "/api/v1/admin/users/{id}",
+            patch(set_active).delete(delete_user),
+        )
         .route(
             "/api/v1/admin/users/{id}/temporary-password",
             put(reset_password),
@@ -42,8 +50,78 @@ impl From<user::Model> for UserView {
     }
 }
 
-async fn me(Extension(actor): Extension<Arc<Identity>>) -> Json<UserView> {
-    Json(UserView::from(actor.user.clone()))
+#[derive(Serialize)]
+struct MeView {
+    #[serde(flatten)]
+    user: UserView,
+    onboarding: serde_json::Value,
+    capabilities: serde_json::Value,
+}
+async fn me(
+    State(app): State<App>,
+    Extension(actor): Extension<Arc<Identity>>,
+) -> Result<Json<MeView>> {
+    let row = match &app.cookies {
+        Some(store) => store.status(&actor).await?,
+        None => None,
+    };
+    let available = app
+        .cookies
+        .as_ref()
+        .is_some_and(|store| store.verification_available());
+    let complete = available
+        && row
+            .as_ref()
+            .is_some_and(|row| row.auth_status == "verified" && row.hoyolab_uid.is_some());
+    Ok(Json(MeView {
+        user: UserView::from(actor.user.clone()),
+        onboarding: serde_json::json!({"password_change_required":actor.user.must_change_password,"cookie_setup_complete":complete,"cookie_status":row.as_ref().map(|row|row.auth_status.as_str()).unwrap_or(if app.cookies.is_some(){"not_configured"}else{"storage_unavailable"}),"verification_available":available}),
+        capabilities: serde_json::json!({"reward_posting_available":app.cookies.as_ref().is_some_and(|store|store.reward_available())}),
+    }))
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DeletionInput {
+    current_password: String,
+    confirmation: String,
+}
+async fn delete_me(
+    State(app): State<App>,
+    Extension(actor): Extension<Arc<Identity>>,
+    Json(input): Json<DeletionInput>,
+) -> Result<Response> {
+    app.accounts
+        .request_deletion(
+            &actor,
+            actor.user.id,
+            input.current_password,
+            input.confirmation,
+        )
+        .await?;
+    let mut response = (
+        StatusCode::ACCEPTED,
+        Json(serde_json::json!({"state":"deleting"})),
+    )
+        .into_response();
+    response.headers_mut().insert(
+        header::SET_COOKIE,
+        super::session::set_cookie(&app.config, "", 0)?,
+    );
+    Ok(response)
+}
+async fn delete_user(
+    State(app): State<App>,
+    Extension(actor): Extension<Arc<Identity>>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<DeletionInput>,
+) -> Result<StatusCode> {
+    if !actor.user.is_admin {
+        return Err(Error::Forbidden);
+    }
+    app.accounts
+        .request_deletion(&actor, id, input.current_password, input.confirmation)
+        .await?;
+    Ok(StatusCode::ACCEPTED)
 }
 async fn list_users(
     State(app): State<App>,

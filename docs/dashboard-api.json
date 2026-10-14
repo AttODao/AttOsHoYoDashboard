@@ -1,0 +1,3524 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AttOs Game Dashboard Web Session API",
+    "version": "0.1.0",
+    "summary": "Manual contract for the Dioxus Dashboard UI and cookie-authenticated web session API.",
+    "description": "This contract documents the implemented Dashboard routes. It is a web-session API only: no PAT, OAuth scope, bearer token, or external-client API is provided. The Dioxus build may serve hashed files under /assets as browser-internal static assets, but those generated filenames are not stable API operations.\n\nProduction HoYoLAB owner binding and reward posting remain hard-gated off until the upstream contracts are separately proven; affected operations return 503/unavailable instead of using synthetic bypasses."
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "servers": [
+    {
+      "url": "/",
+      "description": "Same-origin Dashboard deployment."
+    }
+  ],
+  "tags": [
+    {
+      "name": "public",
+      "description": "Unauthenticated health, UI, and docs."
+    },
+    {
+      "name": "auth",
+      "description": "Password and passkey login/logout."
+    },
+    {
+      "name": "me",
+      "description": "Current user, password, deletion, and passkeys."
+    },
+    {
+      "name": "admin",
+      "description": "Administrator user management."
+    },
+    {
+      "name": "hoyolab",
+      "description": "HoYoLAB cookie status, submission, verification, and sync."
+    },
+    {
+      "name": "games",
+      "description": "Owned game account visibility and status cache."
+    },
+    {
+      "name": "rewards",
+      "description": "Reward settings, manual runs, and history."
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "public"
+        ],
+        "operationId": "getHealth",
+        "summary": "Check database connectivity.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "ok"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": []
+      }
+    },
+    "/": {
+      "get": {
+        "tags": [
+          "public"
+        ],
+        "operationId": "getDashboardUi",
+        "summary": "Serve compiled Dioxus dashboard shell.",
+        "responses": {
+          "200": {
+            "description": "Compiled Dioxus HTML dashboard shell.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": []
+      }
+    },
+    "/docs": {
+      "get": {
+        "tags": [
+          "public"
+        ],
+        "operationId": "getOpenApiViewer",
+        "summary": "Serve read-only Dioxus OpenAPI viewer.",
+        "responses": {
+          "200": {
+            "description": "Compiled Dioxus HTML API documentation viewer; no try-it mutations.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": []
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "tags": [
+          "public"
+        ],
+        "operationId": "getOpenApiDocument",
+        "summary": "Serve this OpenAPI document.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "login",
+        "summary": "Sign in with username and password.",
+        "responses": {
+          "200": {
+            "description": "Signed in; Set-Cookie carries the session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "logout",
+        "summary": "Revoke the current session.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/passkey/options": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "startPasskeyLogin",
+        "summary": "Start username-first passkey login.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthenticationChallenge"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UsernameInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/passkey/verify": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "finishPasskeyLogin",
+        "summary": "Finish passkey login and issue a session.",
+        "responses": {
+          "200": {
+            "description": "Signed in; Set-Cookie carries the session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyAuthenticationFinishInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ]
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "operationId": "getMe",
+        "summary": "Return current user, onboarding, and capability state.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "operationId": "deleteMe",
+        "summary": "Request deletion of the current user.",
+        "responses": {
+          "202": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "state"
+                  ],
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "deleting"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeletionInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ]
+      }
+    },
+    "/api/v1/me/password": {
+      "put": {
+        "tags": [
+          "me"
+        ],
+        "operationId": "changePassword",
+        "summary": "Change current user's password and rotate the session secret without extending expiry.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChangeInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ]
+      }
+    },
+    "/api/v1/me/passkeys": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "operationId": "listPasskeys",
+        "summary": "List current user's passkeys.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PasskeyView"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/me/passkeys/options": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "operationId": "startPasskeyRegistration",
+        "summary": "Start passkey registration for the current session.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationChallenge"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ]
+      }
+    },
+    "/api/v1/me/passkeys/verify": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "operationId": "finishPasskeyRegistration",
+        "summary": "Finish passkey registration.",
+        "responses": {
+          "201": {
+            "description": "Passkey registered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyRegistrationFinishInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ]
+      }
+    },
+    "/api/v1/me/passkeys/{id}": {
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "operationId": "deletePasskey",
+        "summary": "Delete one current-user passkey.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/server-settings": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "operationId": "getServerSettings",
+        "summary": "Return server fixed timezone offset and session TTL.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "listUsers",
+        "summary": "List dashboard users.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserView"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "createUser",
+        "summary": "Create a non-admin dashboard user with a temporary password.",
+        "responses": {
+          "201": {
+            "description": "User created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreationInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/users/{id}": {
+      "patch": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "setUserActive",
+        "summary": "Disable or re-enable a dashboard user.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivationInput"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "deleteUser",
+        "summary": "Request deletion of another dashboard user.",
+        "responses": {
+          "202": {
+            "description": "Deletion accepted."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeletionInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{id}/temporary-password": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "resetTemporaryPassword",
+        "summary": "Set a recovery temporary password and revoke target sessions/passkeys.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemporaryPasswordInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/hoyolab": {
+      "get": {
+        "tags": [
+          "hoyolab"
+        ],
+        "operationId": "getHoyolabStatus",
+        "summary": "Return current user's HoYoLAB cookie/link status without credentials.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoyolabStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/me/hoyolab/cookie": {
+      "put": {
+        "tags": [
+          "hoyolab"
+        ],
+        "operationId": "submitHoyolabCookie",
+        "summary": "Store a HoYoLAB Cookie for pending or same-UID verification.",
+        "responses": {
+          "200": {
+            "description": "Cookie accepted and setup complete (test/proven binding only).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CookieSubmitResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Cookie accepted but verification remains pending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CookieSubmitResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CookieInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ]
+      }
+    },
+    "/api/v1/me/hoyolab/verify": {
+      "post": {
+        "tags": [
+          "hoyolab"
+        ],
+        "operationId": "verifyHoyolabCookie",
+        "summary": "Attempt proof-gated owner verification for the stored Cookie.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyObject"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ]
+      }
+    },
+    "/api/v1/me/hoyolab/sync": {
+      "post": {
+        "tags": [
+          "hoyolab"
+        ],
+        "operationId": "syncHoyolabRoles",
+        "summary": "Sync game UIDs for the verified link.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyObject"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ]
+      }
+    },
+    "/api/v1/game-accounts": {
+      "get": {
+        "tags": [
+          "games"
+        ],
+        "operationId": "listGameAccounts",
+        "summary": "List owned game UIDs including hidden or undetected rows.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GameAccount"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/game-accounts/{id}": {
+      "patch": {
+        "tags": [
+          "games"
+        ],
+        "operationId": "setGameAccountVisibility",
+        "summary": "Set visibility for one owned game UID.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisibilityInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/game-accounts/{id}/status": {
+      "get": {
+        "tags": [
+          "games"
+        ],
+        "operationId": "getGameAccountStatus",
+        "summary": "Return curated latest status/cache for one owned visible detected UID.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/reward-settings": {
+      "get": {
+        "tags": [
+          "rewards"
+        ],
+        "operationId": "listRewardSettings",
+        "summary": "List per-game reward settings and current daily status.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RewardSetting"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/reward-settings/{id}": {
+      "patch": {
+        "tags": [
+          "rewards"
+        ],
+        "operationId": "updateRewardSetting",
+        "summary": "Update automatic reward enabled flag and local run time.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RewardSettingInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reward-settings/{id}/run": {
+      "post": {
+        "tags": [
+          "rewards"
+        ],
+        "operationId": "enqueueRewardRun",
+        "summary": "Queue a manual reward run.",
+        "responses": {
+          "202": {
+            "description": "Run accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RewardRunQueued"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyObject"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reward-runs": {
+      "get": {
+        "tags": [
+          "rewards"
+        ],
+        "operationId": "listRewardRuns",
+        "summary": "List owned reward runs from the retained history window.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RewardRun"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 100
+            },
+            "description": "Server caps at 100."
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "attosSessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-attos_session",
+        "description": "HttpOnly SameSite=Strict session cookie. HTTPS deployments use __Host-attos_session with Secure; localhost HTTP uses attos_session."
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "400 error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CommonError"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "401 error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CommonError"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "403 error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CommonError"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "404 error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CommonError"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "409 error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CommonError"
+            }
+          }
+        }
+      },
+      "PayloadTooLarge": {
+        "description": "413 error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CommonError"
+            }
+          }
+        }
+      },
+      "UnsupportedMediaType": {
+        "description": "415 error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CommonError"
+            }
+          }
+        }
+      },
+      "UnprocessableContent": {
+        "description": "422 error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CommonError"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "429 error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CommonError"
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "500 error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CommonError"
+            }
+          }
+        }
+      },
+      "BadGateway": {
+        "description": "502 error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CommonError"
+            }
+          }
+        }
+      },
+      "Unavailable": {
+        "description": "503 error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CommonError"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "CommonError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error",
+          "message"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "invalid_input",
+              "unauthorized",
+              "forbidden",
+              "password_change_required",
+              "initial_setup_required",
+              "upstream_error",
+              "not_found",
+              "conflict",
+              "rate_limited",
+              "busy",
+              "unavailable",
+              "internal_error"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Sanitized static or numeric diagnostic; never includes secrets or raw upstream messages."
+          }
+        }
+      },
+      "EmptyObject": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "Uuid": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "DateTime": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "UserView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "username",
+          "is_admin",
+          "active",
+          "must_change_password"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "username": {
+            "type": "string"
+          },
+          "is_admin": {
+            "type": "boolean"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "must_change_password": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Onboarding": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "password_change_required",
+          "cookie_setup_complete",
+          "cookie_status",
+          "verification_available"
+        ],
+        "properties": {
+          "password_change_required": {
+            "type": "boolean"
+          },
+          "cookie_setup_complete": {
+            "type": "boolean"
+          },
+          "cookie_status": {
+            "type": "string",
+            "enum": [
+              "not_configured",
+              "pending_verification",
+              "verified",
+              "cookie_invalid",
+              "storage_unavailable"
+            ]
+          },
+          "verification_available": {
+            "type": "boolean",
+            "description": "False in production until upstream owner binding is separately approved."
+          }
+        }
+      },
+      "Capabilities": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "reward_posting_available"
+        ],
+        "properties": {
+          "reward_posting_available": {
+            "type": "boolean",
+            "description": "False in production until reward POST contract is separately approved."
+          }
+        }
+      },
+      "MeView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "username",
+          "is_admin",
+          "active",
+          "must_change_password",
+          "onboarding",
+          "capabilities"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "username": {
+            "type": "string"
+          },
+          "is_admin": {
+            "type": "boolean"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "must_change_password": {
+            "type": "boolean"
+          },
+          "onboarding": {
+            "$ref": "#/components/schemas/Onboarding"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/Capabilities"
+          }
+        }
+      },
+      "ServerSettings": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "timezone_offset",
+          "session_ttl_days"
+        ],
+        "properties": {
+          "timezone_offset": {
+            "type": "string",
+            "examples": [
+              "+09:00"
+            ]
+          },
+          "session_ttl_days": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "LoginInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string",
+            "format": "password"
+          }
+        }
+      },
+      "PasswordChangeInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "format": "password"
+          },
+          "new_password": {
+            "type": "string",
+            "format": "password"
+          }
+        }
+      },
+      "DeletionInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "current_password",
+          "confirmation"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "format": "password"
+          },
+          "confirmation": {
+            "type": "string",
+            "description": "Exact target username typed by the actor."
+          }
+        }
+      },
+      "UserCreationInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "username",
+          "temporary_password"
+        ],
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "temporary_password": {
+            "type": "string",
+            "format": "password"
+          }
+        }
+      },
+      "TemporaryPasswordInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "temporary_password"
+        ],
+        "properties": {
+          "temporary_password": {
+            "type": "string",
+            "format": "password"
+          }
+        }
+      },
+      "ActivationInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "active"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean"
+          }
+        }
+      },
+      "LabelInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "label"
+        ],
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        }
+      },
+      "UsernameInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "username"
+        ],
+        "properties": {
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "WebAuthnOptions": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Opaque WebAuthn options object returned by webauthn-rs. The browser-facing UI converts base64url fields before calling navigator.credentials."
+      },
+      "WebAuthnCredentialResponse": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Browser PublicKeyCredential JSON wrapper as produced by the Dioxus web-sys/js-sys WebAuthn bridge; fields are intentionally not hand-expanded."
+      },
+      "RegistrationChallenge": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "challenge_id",
+          "options"
+        ],
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "options": {
+            "$ref": "#/components/schemas/WebAuthnOptions"
+          }
+        }
+      },
+      "AuthenticationChallenge": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "challenge_id",
+          "options"
+        ],
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "options": {
+            "$ref": "#/components/schemas/WebAuthnOptions"
+          }
+        }
+      },
+      "PasskeyRegistrationFinishInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "challenge_id",
+          "response"
+        ],
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "response": {
+            "$ref": "#/components/schemas/WebAuthnCredentialResponse"
+          }
+        }
+      },
+      "PasskeyAuthenticationFinishInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "challenge_id",
+          "response"
+        ],
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "response": {
+            "$ref": "#/components/schemas/WebAuthnCredentialResponse"
+          }
+        }
+      },
+      "PasskeyView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "label",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "label": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "HoyolabStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "setup_complete",
+          "updated_at",
+          "id",
+          "hoyolab_uid",
+          "verification_available"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_configured",
+              "pending_verification",
+              "verified",
+              "cookie_invalid"
+            ]
+          },
+          "setup_complete": {
+            "type": "boolean"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "hoyolab_uid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verification_available": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CookieInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cookie"
+        ],
+        "properties": {
+          "cookie": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192,
+            "description": "Raw HoYoLAB Cookie header; never returned."
+          }
+        }
+      },
+      "CookieSubmitResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "setup_complete"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "setup_complete": {
+            "type": "boolean"
+          }
+        }
+      },
+      "GameKind": {
+        "type": "string",
+        "enum": [
+          "genshin",
+          "starrail"
+        ]
+      },
+      "GameAccount": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "hoyolab_account_id",
+          "game_kind",
+          "game_uid",
+          "region",
+          "visible",
+          "detected",
+          "last_detected_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "hoyolab_account_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "game_kind": {
+            "$ref": "#/components/schemas/GameKind"
+          },
+          "game_uid": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "visible": {
+            "type": "boolean"
+          },
+          "detected": {
+            "type": "boolean"
+          },
+          "last_detected_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "VisibilityInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "visible"
+        ],
+        "properties": {
+          "visible": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DailySummaryFields": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "current_resin": {
+            "type": "integer"
+          },
+          "max_resin": {
+            "type": "integer"
+          },
+          "resin_full_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "current_home_coin": {
+            "type": "integer"
+          },
+          "max_home_coin": {
+            "type": "integer"
+          },
+          "home_coin_full_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_task_num": {
+            "type": "integer"
+          },
+          "total_task_num": {
+            "type": "integer"
+          },
+          "is_extra_task_reward_received": {
+            "type": "boolean"
+          },
+          "current_stamina": {
+            "type": "integer"
+          },
+          "max_stamina": {
+            "type": "integer"
+          },
+          "current_reserve_stamina": {
+            "type": "integer"
+          },
+          "stamina_full_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "current_train_score": {
+            "type": "integer"
+          },
+          "max_train_score": {
+            "type": "integer"
+          },
+          "expeditions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "remained_time": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
+                },
+                "remaining_time": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "GameStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "game_kind",
+          "game_uid",
+          "region",
+          "visible",
+          "detected",
+          "data",
+          "fetched_at",
+          "error_code",
+          "error_at",
+          "stale"
+        ],
+        "properties": {
+          "game_kind": {
+            "$ref": "#/components/schemas/GameKind"
+          },
+          "game_uid": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "visible": {
+            "type": "boolean"
+          },
+          "detected": {
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DailySummaryFields"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "stale": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RewardLastRun": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "state",
+          "ended_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string"
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "RewardSetting": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "game_kind",
+          "enabled",
+          "local_time",
+          "auth_status",
+          "next_run_at",
+          "last_run",
+          "is_sign",
+          "last_checked_at",
+          "error_code",
+          "error_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "game_kind": {
+            "$ref": "#/components/schemas/GameKind"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "local_time": {
+            "type": "string",
+            "pattern": "^[0-9]{2}:[0-9]{2}$"
+          },
+          "auth_status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "action_required",
+              "cookie_invalid",
+              "pending_verification"
+            ]
+          },
+          "next_run_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RewardLastRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_sign": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "last_checked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "RewardSettingInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "enabled",
+          "local_time"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "local_time": {
+            "type": "string",
+            "pattern": "^[0-9]{2}:[0-9]{2}$"
+          }
+        }
+      },
+      "RewardRunQueued": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "state"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string"
+          }
+        }
+      },
+      "RewardAttempt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "number",
+          "outcome",
+          "error_code",
+          "started_at",
+          "finished_at"
+        ],
+        "properties": {
+          "number": {
+            "type": "integer"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "RewardRun": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "setting_id",
+          "game_kind",
+          "trigger",
+          "state",
+          "created_at",
+          "ended_at",
+          "attempt_count",
+          "attempts"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "setting_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "game_kind": {
+            "$ref": "#/components/schemas/GameKind"
+          },
+          "trigger": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "scheduled",
+              "catchup"
+            ]
+          },
+          "state": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "attempt_count": {
+            "type": "integer"
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RewardAttempt"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+[application]
+name = "attos-dashboard-ui"
+default_platform = "web"
+
+[web.app]
+title = "AttOs Game Dashboard"
+
+[web.watcher]
+reload_html = true

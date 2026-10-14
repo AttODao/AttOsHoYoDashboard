@@ -2,7 +2,7 @@ use super::error::{Error, Result};
 use super::hoyolab::credentials::CookieKey;
 use chrono::{Duration, FixedOffset, Utc};
 use reqwest::Url;
-use std::{env, net::SocketAddr, sync::Arc};
+use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
 
 // Deliberately not Debug: DATABASE_URL may contain credentials.
 pub(super) struct Config {
@@ -14,6 +14,7 @@ pub(super) struct Config {
     pub session_ttl: Duration,
     pub timezone: FixedOffset,
     pub cookie_key: Option<Arc<CookieKey>>,
+    pub ui_dir: PathBuf,
 }
 
 impl Config {
@@ -71,6 +72,16 @@ impl Config {
         let timezone = value("TIMEZONE_OFFSET", "+09:00")?
             .parse()
             .map_err(|_| Error::Invalid("TIMEZONE_OFFSET must be a fixed UTC offset"))?;
+        let ui_dir = value(
+            "DASHBOARD_UI_DIR",
+            "target/dx/attos-dashboard-ui/release/web/public",
+        )?;
+        if ui_dir.trim().is_empty() || ui_dir.contains('\0') {
+            return Err(Error::Invalid(
+                "DASHBOARD_UI_DIR must be a nonempty directory path",
+            ));
+        }
+        let ui_dir = PathBuf::from(ui_dir);
         let cookie_key = match read("HOYOLAB_COOKIE_KEY") {
             Ok(value) => Some(Arc::new(CookieKey::from_hex(&value)?)),
             Err(env::VarError::NotPresent) => None,
@@ -85,6 +96,7 @@ impl Config {
             session_ttl,
             timezone,
             cookie_key,
+            ui_dir,
         })
     }
 }

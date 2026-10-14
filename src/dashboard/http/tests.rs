@@ -1,10 +1,13 @@
 //! Transport tests use the production router and isolated synthetic PostgreSQL accounts.
 mod auth;
+mod dashboard;
 mod hoyolab;
 mod middleware;
+mod openapi;
 mod passkey_roundtrip;
 mod passkeys;
 mod response;
+mod runtime;
 mod session;
 mod users;
 
@@ -39,6 +42,7 @@ fn config(secure_cookie: bool) -> Config {
         secure_cookie,
         session_ttl: Duration::days(7),
         timezone: FixedOffset::east_opt(9 * 3600).unwrap(),
+        ui_dir: "target/dx/attos-dashboard-ui/release/web/public".into(),
         cookie_key: Some(Arc::new(
             crate::dashboard::hoyolab::credentials::CookieKey::from_hex(&"11".repeat(32)).unwrap(),
         )),
@@ -47,12 +51,15 @@ fn config(secure_cookie: bool) -> Config {
 
 fn app(accounts: Accounts) -> App {
     let config = config(true);
-    let cookies = config
-        .cookie_key
-        .as_ref()
-        .map(|key| CookieStore::new(accounts.db.clone(), Arc::clone(key)));
+    let operations = crate::dashboard::hoyolab::operations::Operations::default();
+    let cookies = config.cookie_key.as_ref().map(|key| {
+        let mut store = CookieStore::new(accounts.db.clone(), Arc::clone(key));
+        store.operations = operations.clone();
+        Arc::new(store)
+    });
     Arc::new(HttpState {
         cookies,
+        operations,
         passkeys: Passkeys::new(&config.rp_id, &config.origin).unwrap(),
         accounts,
         config,

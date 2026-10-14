@@ -1,3 +1,8 @@
+[workspace]
+members = ["dashboard-ui"]
+default-members = ["."]
+resolver = "3"
+
 [package]
 name = "attosgameapi"
 version = "0.1.0"
@@ -20,6 +25,7 @@ sea-orm-migration = { version = "2.0", default-features = false, features = ["sq
 sha2 = "0.10"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time", "sync", "signal"] }
+tower-http = { version = "0.6", features = ["fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
 uuid = { version = "1", features = ["v4", "serde"] }
