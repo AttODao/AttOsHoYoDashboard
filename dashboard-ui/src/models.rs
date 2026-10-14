@@ -47,12 +47,6 @@ pub struct CookieStatus {
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct CookieSubmission {
-    pub status: String,
-    pub setup_complete: bool,
-}
-
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct GameAccount {
     pub id: Uuid,
     pub hoyolab_account_id: Uuid,

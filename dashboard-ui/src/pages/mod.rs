@@ -63,7 +63,7 @@ pub(crate) fn LoginPage(mut state: Signal<AppState>) -> Element {
                                 match crate::api::send("POST", "/auth/login", Some(json!({"username": user, "password": pass}))).await {
                                     Ok(()) if app::generation_matches(state, generation) => app::bootstrap(state).await,
                                     Ok(()) => {}
-                                    Err(error) => { app::handle_api_error_for(state, generation, error); app::finish_action(state, generation); }
+                                    Err(error) => { app::handle_api_error_for(state, generation, error); }
                                 }
                             });
                         }, "Sign in" }
@@ -87,7 +87,7 @@ pub(crate) fn LoginPage(mut state: Signal<AppState>) -> Element {
                                 match crate::webauthn::login(&user).await {
                                     Ok(()) if app::generation_matches(state, generation) => app::bootstrap(state).await,
                                     Ok(()) => {}
-                                    Err(error) => { app::handle_api_error_for(state, generation, error); app::finish_action(state, generation); }
+                                    Err(error) => { app::handle_api_error_for(state, generation, error); }
                                 }
                             });
                         }, "Use passkey" }
@@ -431,10 +431,10 @@ fn CookieCard(mut state: Signal<AppState>) -> Element {
                     let secret = std::mem::take(&mut *cookie.write());
                     let state = state;
                     app::spawn_action(state, move |generation| async move {
-                                match crate::api::json::<CookieSubmission>("PUT", "/me/hoyolab/cookie", Some(json!({"cookie": secret}))).await {
-                            Ok(_) if app::generation_matches(state, generation) => { app::set_status(state, "Cookie stored for server verification.", "success"); app::bootstrap(state).await; }
-                            Ok(_) => {}
-                            Err(error) => { app::handle_api_error_for(state, generation, error); app::finish_action(state, generation); }
+                                match crate::api::send("PUT", "/me/hoyolab/cookie", Some(json!({"cookie": secret}))).await {
+                            Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "Cookie stored for server verification.", "success"); app::bootstrap(state).await; }
+                            Ok(()) => {}
+                            Err(error) => { app::handle_api_error_for(state, generation, error); }
                         }
                     });
                 }, "Save Cookie" }
@@ -442,14 +442,14 @@ fn CookieCard(mut state: Signal<AppState>) -> Element {
                                 match crate::api::send("POST", "/me/hoyolab/verify", Some(json!({}))).await {
                         Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "Verification requested.", "success"); app::bootstrap(state).await; }
                         Ok(()) => {}
-                        Err(error) => { app::handle_api_error_for(state, generation, error); app::finish_action(state, generation); }
+                        Err(error) => { app::handle_api_error_for(state, generation, error); }
                     }
                 }); }, "Verify binding" }
                 Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| { let state = state; app::spawn_action(state, move |generation| async move {
                                 match crate::api::send("POST", "/me/hoyolab/sync", Some(json!({}))).await {
                         Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "Sync requested.", "success"); app::bootstrap(state).await; }
                         Ok(()) => {}
-                        Err(error) => { app::handle_api_error_for(state, generation, error); app::finish_action(state, generation); }
+                        Err(error) => { app::handle_api_error_for(state, generation, error); }
                     }
                 }); }, "Sync metadata" }
             }
@@ -502,9 +502,9 @@ fn AccountTable(mut state: Signal<AppState>, controls: bool) -> Element {
                                             let state = state;
                                             app::spawn_action(state, move |generation| async move {
                                 match crate::api::send("PATCH", &format!("/game-accounts/{id}"), Some(json!({"visible": visible}))).await {
-                                                    Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "Visibility updated.", "success"); app::load_accounts(state).await; app::finish_action(state, generation); }
+                                                    Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "Visibility updated.", "success"); app::load_accounts(state).await; }
                                                     Ok(()) => {}
-                                                    Err(error) => { app::handle_api_error_for(state, generation, error); app::finish_action(state, generation); }
+                                                    Err(error) => { app::handle_api_error_for(state, generation, error); }
                                                 }
                                             });
                                         } }
@@ -566,9 +566,9 @@ fn RewardSettingCard(mut state: Signal<AppState>, setting: RewardSetting) -> Ele
                     let state = state;
                     app::spawn_action(state, move |generation| async move {
                                 match crate::api::send("PATCH", &format!("/reward-settings/{id}"), Some(body)).await {
-                            Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "Reward setting saved.", "success"); app::load_rewards(state).await; app::finish_action(state, generation); }
+                            Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "Reward setting saved.", "success"); app::load_rewards(state).await; }
                             Ok(()) => {}
-                            Err(error) => { app::handle_api_error_for(state, generation, error); app::finish_action(state, generation); }
+                            Err(error) => { app::handle_api_error_for(state, generation, error); }
                         }
                     });
                 }, "Save" }
@@ -577,9 +577,9 @@ fn RewardSettingCard(mut state: Signal<AppState>, setting: RewardSetting) -> Ele
                     let state = state;
                     app::spawn_action(state, move |generation| async move {
                                 match crate::api::send("POST", &format!("/reward-settings/{id}/run"), Some(json!({}))).await {
-                            Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "Manual reward run queued.", "success"); app::load_rewards(state).await; app::finish_action(state, generation); }
+                            Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "Manual reward run queued.", "success"); app::load_rewards(state).await; }
                             Ok(()) => {}
-                            Err(error) => { app::handle_api_error_for(state, generation, error); app::finish_action(state, generation); }
+                            Err(error) => { app::handle_api_error_for(state, generation, error); }
                         }
                     });
                 }, "Run now" }
@@ -663,7 +663,7 @@ fn PasswordCard(mut state: Signal<AppState>, title: &'static str) -> Element {
                                 match crate::api::send("PUT", "/me/password", Some(json!({"current_password": current_password, "new_password": next}))).await {
                         Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "Password changed.", "success"); app::bootstrap(state).await; }
                         Ok(()) => {}
-                        Err(error) => { app::handle_api_error_for(state, generation, error); app::finish_action(state, generation); }
+                        Err(error) => { app::handle_api_error_for(state, generation, error); }
                     }
                 });
             }, "Change password" } }
@@ -687,9 +687,9 @@ fn PasskeyCard(mut state: Signal<AppState>) -> Element {
                         for passkey in state.read().passkeys.clone() {
                             li { span { "{passkey.label} — created {passkey.created_at}" } Button { variant: ButtonVariant::Destructive, r#type: "button", onclick: move |_| { let id = passkey.id; let state = state; app::spawn_action(state, move |generation| async move {
                                 match crate::api::send("DELETE", &format!("/me/passkeys/{id}"), None).await {
-                                    Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "Passkey deleted.", "success"); app::load_passkeys(state).await; app::finish_action(state, generation); }
+                                    Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "Passkey deleted.", "success"); app::load_passkeys(state).await; }
                                     Ok(()) => {}
-                                    Err(error) => { app::handle_api_error_for(state, generation, error); app::finish_action(state, generation); }
+                                    Err(error) => { app::handle_api_error_for(state, generation, error); }
                                 }
                             }); }, "Delete" } }
                         }
@@ -701,9 +701,9 @@ fn PasskeyCard(mut state: Signal<AppState>) -> Element {
                 let state = state;
                 app::spawn_action(state, move |generation| async move {
                                 match crate::webauthn::register(&label_value).await {
-                        Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "Passkey registered.", "success"); app::load_passkeys(state).await; app::finish_action(state, generation); }
+                        Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "Passkey registered.", "success"); app::load_passkeys(state).await; }
                         Ok(()) => {}
-                        Err(error) => { app::handle_api_error_for(state, generation, error); app::finish_action(state, generation); }
+                        Err(error) => { app::handle_api_error_for(state, generation, error); }
                     }
                 });
             }, "Register passkey" } }
@@ -733,10 +733,10 @@ fn AdminCard(mut state: Signal<AppState>, compact: bool) -> Element {
                         let temp = std::mem::take(&mut *temp_password.write());
                         let state = state;
                         app::spawn_action(state, move |generation| async move {
-                                match crate::api::json::<UserView>("POST", "/admin/users", Some(json!({"username": user, "temporary_password": temp}))).await {
-                                Ok(_) if app::generation_matches(state, generation) => { app::set_status(state, "User created.", "success"); app::load_admin_users(state).await; app::finish_action(state, generation); }
-                                Ok(_) => {}
-                                Err(error) => { app::handle_api_error_for(state, generation, error); app::finish_action(state, generation); }
+                                match crate::api::send("POST", "/admin/users", Some(json!({"username": user, "temporary_password": temp}))).await {
+                                Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "User created.", "success"); app::load_admin_users(state).await; }
+                                Ok(()) => {}
+                                Err(error) => { app::handle_api_error_for(state, generation, error); }
                             }
                         });
                     }, "Create user" }
@@ -770,18 +770,18 @@ fn AdminUserRow(mut state: Signal<AppState>, user: UserView) -> Element {
             td { if user.is_admin { "Yes" } else { "No" } }
             td { Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| { let id = user.id; let active = !user.active; let state = state; app::spawn_action(state, move |generation| async move {
                                 match crate::api::send("PATCH", &format!("/admin/users/{id}"), Some(json!({"active": active}))).await {
-                    Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "User updated.", "success"); if app::refresh_me(state).await { app::load_admin_users(state).await; } app::finish_action(state, generation); }
+                    Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "User updated.", "success"); if app::refresh_me(state).await { app::load_admin_users(state).await; } }
                     Ok(()) => {}
-                    Err(error) => { app::handle_api_error_for(state, generation, error); app::finish_action(state, generation); }
+                    Err(error) => { app::handle_api_error_for(state, generation, error); }
                 }
             }); }, if user.active { "Disable" } else { "Re-enable" } } }
             td { class: "cell-form",
                 input { r#type: "password", autocomplete: "new-password", "aria-label": "Temporary password for {user.username}", value: "{temp}", oninput: move |event| temp.set(event.value()) }
                 Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| { let secret = std::mem::take(&mut *temp.write()); let id = user.id; let state = state; app::spawn_action(state, move |generation| async move {
                                 match crate::api::send("PUT", &format!("/admin/users/{id}/temporary-password"), Some(json!({"temporary_password": secret}))).await {
-                        Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "Recovery password set.", "success"); if app::refresh_me(state).await { app::load_admin_users(state).await; } app::finish_action(state, generation); }
+                        Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "Recovery password set.", "success"); if app::refresh_me(state).await { app::load_admin_users(state).await; } }
                         Ok(()) => {}
-                        Err(error) => { app::handle_api_error_for(state, generation, error); app::finish_action(state, generation); }
+                        Err(error) => { app::handle_api_error_for(state, generation, error); }
                     }
                 }); }, "Set recovery password" }
             }
@@ -790,9 +790,9 @@ fn AdminUserRow(mut state: Signal<AppState>, user: UserView) -> Element {
                 input { autocomplete: "off", "aria-label": "Type username to delete {user.username}", value: "{confirmation}", oninput: move |event| confirmation.set(event.value()) }
                 Button { variant: ButtonVariant::Destructive, r#type: "button", onclick: move |_| { let pass = std::mem::take(&mut *current.write()); let confirm = std::mem::take(&mut *confirmation.write()); let id = user.id; let state = state; app::spawn_action(state, move |generation| async move {
                                 match crate::api::send("DELETE", &format!("/admin/users/{id}"), Some(json!({"current_password": pass, "confirmation": confirm}))).await {
-                        Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "User deletion accepted.", "success"); if app::refresh_me(state).await { app::load_admin_users(state).await; } app::finish_action(state, generation); }
+                        Ok(()) if app::generation_matches(state, generation) => { app::set_status(state, "User deletion accepted.", "success"); if app::refresh_me(state).await { app::load_admin_users(state).await; } }
                         Ok(()) => {}
-                        Err(error) => { app::handle_api_error_for(state, generation, error); app::finish_action(state, generation); }
+                        Err(error) => { app::handle_api_error_for(state, generation, error); }
                     }
                 }); }, "Delete user" }
             }
@@ -831,7 +831,7 @@ fn DeleteAccountCard(mut state: Signal<AppState>) -> Element {
                                 match crate::api::send("DELETE", "/me", Some(json!({"current_password": pass, "confirmation": confirm}))).await {
                     Ok(()) if app::generation_matches(state, generation) => app::signed_out(state, "Account deletion accepted."),
                     Ok(()) => {}
-                    Err(error) => { app::handle_api_error_for(state, generation, error); app::finish_action(state, generation); }
+                    Err(error) => { app::handle_api_error_for(state, generation, error); }
                 }
             }); }, "Delete my account" } }
         }
@@ -900,15 +900,11 @@ fn OpenApiSummary(doc: Value) -> Element {
             div { class: "table-wrap",
                 table {
                     thead { tr { th { "Path" } th { "Methods" } } }
-                    tbody { for (path, methods) in paths { tr { td { code { "{path}" } } td { "{methods_text(&methods)}" } } } }
+                    tbody { for (path, methods) in paths { tr { td { code { "{path}" } } td { {methods.join(", ")} } } } }
                 }
             }
         }
     }
-}
-
-fn methods_text(methods: &[String]) -> String {
-    methods.join(", ")
 }
 
 #[component]

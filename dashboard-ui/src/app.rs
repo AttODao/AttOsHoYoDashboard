@@ -239,7 +239,7 @@ pub(crate) fn spawn_action<F: Future<Output = ()> + 'static>(
     });
 }
 
-pub(crate) fn finish_action(mut state: Signal<AppState>, generation: u64) {
+fn finish_action(mut state: Signal<AppState>, generation: u64) {
     if generation_matches(state, generation) {
         state.write().busy = false;
     }
@@ -252,7 +252,6 @@ pub(crate) fn generation_matches(state: Signal<AppState>, generation: u64) -> bo
 pub(crate) async fn bootstrap(mut state: Signal<AppState>) {
     if state.read().page == Page::Docs {
         state.write().phase = Phase::SignedOut;
-        load_docs(state).await;
         return;
     }
     let generation = {
@@ -296,7 +295,6 @@ async fn load_bootstrap_data(state: Signal<AppState>, generation: u64) {
         return;
     }
     if state.read().page == Page::Docs {
-        load_docs(state).await;
         return;
     }
     let password_ok = state.read().password_ok();
@@ -337,7 +335,7 @@ pub(crate) async fn load_page_data(state: Signal<AppState>, page: Page) {
         Page::Security => load_passkeys(state).await,
         Page::Admin => load_admin_users(state).await,
         Page::Delete => {}
-        Page::Docs => load_docs(state).await,
+        Page::Docs => {}
     }
 }
 

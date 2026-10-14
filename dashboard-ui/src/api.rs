@@ -94,6 +94,7 @@ pub async fn send(method: &str, path: &str, body: Option<Value>) -> Result<()> {
     request_unit(method, path, body).await
 }
 
+#[cfg(target_arch = "wasm32")]
 pub async fn json<T: DeserializeOwned>(method: &str, path: &str, body: Option<Value>) -> Result<T> {
     request_json(method, path, body).await
 }

@@ -232,9 +232,9 @@ fn attestation_json(credential: &web_sys::PublicKeyCredential) -> api::Result<Va
         );
     }
     Ok(json!({
-        "id": string_prop(credential.as_ref(), "id")?,
+        "id": credential.id(),
         "rawId": buffer_b64(credential.raw_id()),
-        "type": string_prop(credential.as_ref(), "type")?,
+        "type": credential.type_(),
         "response": response_json,
         "clientExtensionResults": client_extension_results(credential)?,
     }))
@@ -254,9 +254,9 @@ fn assertion_json(credential: &web_sys::PublicKeyCredential) -> api::Result<Valu
         .map(Value::String)
         .unwrap_or(Value::Null);
     Ok(json!({
-        "id": string_prop(credential.as_ref(), "id")?,
+        "id": credential.id(),
         "rawId": buffer_b64(credential.raw_id()),
-        "type": string_prop(credential.as_ref(), "type")?,
+        "type": credential.type_(),
         "response": {
             "clientDataJSON": buffer_b64(response.client_data_json()),
             "authenticatorData": buffer_b64(response.authenticator_data()),
@@ -271,14 +271,6 @@ fn assertion_json(credential: &web_sys::PublicKeyCredential) -> api::Result<Valu
 fn buffer_b64(buffer: js_sys::ArrayBuffer) -> String {
     let array = js_sys::Uint8Array::new(&buffer);
     b64(&array.to_vec())
-}
-
-#[cfg(target_arch = "wasm32")]
-fn string_prop(object: &wasm_bindgen::JsValue, name: &str) -> api::Result<String> {
-    js_sys::Reflect::get(object, &wasm_bindgen::JsValue::from_str(name))
-        .ok()
-        .and_then(|value| value.as_string())
-        .ok_or_else(|| api::ApiError::browser("The browser returned an invalid passkey response."))
 }
 
 #[cfg(target_arch = "wasm32")]
