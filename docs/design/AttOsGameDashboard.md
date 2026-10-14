@@ -80,7 +80,7 @@ CookieはAES-256-GCMで保存し、AADに用途/version/owner/verified UID有無
 
 ## 4. HoYoLAB連携と利用条件
 
-ユーザーは実アクセス・手動および定期の報酬受け取りを趣味用途の通常機能として承認した。`HOYOLAB_COOKIE_KEY`による暗号化設定と既存の連携検証成功を条件に利用できる。開発専用制限や追加の設定switchは設けず、自動受け取りは初期OFFのままユーザーが既存UIから有効にする。
+ユーザーは実アクセス・手動および定期の報酬受け取りを趣味用途の通常機能として承認した。`HOYOLAB_COOKIE_KEY`による暗号化設定と既存の連携検証成功を条件に利用できる。自動受け取りは初期OFFのままユーザーが既存UIから有効にする。
 
 確認処理は、v2 ltoken credential、fresh account identity、fresh community identity、Cookie claimed UID一致、既存UID一致、roles validation、credential version再確認、same-UID update preservationを要求する。Cookie UIDだけを本人確認の証拠にはしない。認証・認可・アカウント利用可否とverified link要件も維持する。
 

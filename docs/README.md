@@ -4,7 +4,7 @@
 
 | 文書 | 読む目的 |
 |---|---|
-| [仕様書](spec/AttOsGameDashboard.md) | 利用者から見える機能、権限、制約、現在の本番制限を知る |
+| [仕様書](spec/AttOsGameDashboard.md) | 利用者から見える機能、権限、利用条件を知る |
 | [実装設計案](design/AttOsGameDashboard.md) | 現在の責務分割、Dioxus Web/RSX UI、データ・API・ジョブ設計、連携検証と送信安全性を確認する |
 | [実装計画・検証課題](plans/AttOsGameDashboard.md) | 実装済み範囲、残る上流実証、検証ギャップを確認する |
 | [Dashboard OpenAPI 3.1](dashboard-api.json) | WebセッションAPIの手書き契約を機械可読で確認する |
@@ -22,7 +22,7 @@
 ## Dashboard文書の更新ルール
 
 - 仕様書には利用者から見える機能・権限・制約・挙動を置く。実装方法、推奨値、作業手順、調査記録、文書の編集指示は分離する。
-- 確定した要件と設計案・未確定事項を混同しない。特にHoYoLAB owner bindingとreward POST contractは、実装済みpolicyと本番rollout可否を分けて書く。
+- 確定した要件と設計案・未確定事項を混同しない。特にHoYoLAB owner bindingとreward POST contractは、通常利用の条件と実上流での実証状況を分けて書く。
 - API契約は `dashboard-api.json` を正本とし、実装済みのDashboard routeだけを載せる。Dioxusのhash付き `/assets/{...}` は内部build出力であり、安定API pathとして追加しない。架空の `/record`、`/daily`、`/redirect`、`/large` routeを追加しない。
 - UI要件はDioxus + RSX + Dioxus Componentsで固定する。native HTML/JS fallbackや別frontend方式を新規方針として書かない。
 - 仕様を変更するときは、関連する図・表・文章も更新する。

@@ -52,7 +52,7 @@ The default `DASHBOARD_UI_DIR` is `target/dx/attos-dashboard-ui/release/web/publ
 
 ## HoYoLAB availability and evidence limits
 
-- Normal integration and manual/scheduled rewards retain fresh account/community identity, Cookie-claim and roles consistency checks, same-UID update checks, verified-link requirements, authentication, authorization, and account lifecycle checks. Cookie UID alone is not ownership proof. No additional rollout switch or development-only mode is required.
+- Normal integration and manual/scheduled rewards retain fresh account/community identity, Cookie-claim and roles consistency checks, same-UID update checks, verified-link requirements, authentication, authorization, and account lifecycle checks. Cookie UID alone is not ownership proof.
 - Owner serialization, transaction/row locks, durable may-have-sent recording **before** POST, and daily GET `is_sign` confirmation remain required. An uncertain POST is never resent; use GET-only confirmation and otherwise retain unknown status. Do not clear guards to force another POST.
 - User-approved availability is not scientific proof of live token-to-UID binding, roles principal consistency, or the full reward contract. Only one real account is available; synthetic multiple identities cannot establish live binding.
 - The user reported the current read-only GET suite passed (1 passed, 0 failed, 0 ignored; 3.72s). It checks accounts and both games' daily_info/daily_home/index/daily_note access, not account_identity/community_identity or reward POSTs. No live POST result has been reported. Additional evidence collection must stay within its approved scope; do not log Cookie values, credentials, payloads, or raw upstream errors.

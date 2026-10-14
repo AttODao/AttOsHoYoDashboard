@@ -20,7 +20,7 @@
 
 ## 2. 通常利用の承認と実証の限界
 
-ユーザーは実アクセス・手動および定期の報酬受け取りと趣味用途での利用を明示承認した。旧hardcoded-false rollout gateを撤去し、`HOYOLAB_COOKIE_KEY`による暗号化設定と既存の連携検証成功で通常利用できる。新たな設定switchや開発専用制限は追加しない。identity/roles・Cookie claim整合性、verified link、認証・認可、owner lock、POST前のdurable may-have-sent記録、GET確認、不確定POST再送禁止は維持する。
+ユーザーは実アクセス・手動および定期の報酬受け取りと趣味用途での利用を明示承認した。`HOYOLAB_COOKIE_KEY`による暗号化設定と既存の連携検証成功で通常利用できる。identity/roles・Cookie claim整合性、verified link、認証・認可、owner lock、POST前のdurable may-have-sent記録、GET確認、不確定POST再送禁止は維持する。
 
 これは上流契約の実証とは異なる。
 
@@ -77,7 +77,7 @@ node -e "const fs=require('fs'); const api=JSON.parse(fs.readFileSync('docs/dash
 
 ### 5.1. 責務別モジュール分割の検証記録
 
-以下は通常利用への変更前に行った分割の履歴である。事前調査の行数と実装開始時の対象は一致していた。処理本体を移動し、参照・imports・必要最小限のvisibilityを調整した。この分割時点ではAPI仕様・DBスキーマ・migration・本番proof/reward gateは変更していない。旧パス互換re-exportや新しい状態管理抽象化は導入していない。
+以下は通常利用への変更前に行った分割の履歴である。事前調査の行数と実装開始時の対象は一致していた。処理本体を移動し、参照・imports・必要最小限のvisibilityを調整した。この分割時点ではAPI仕様・DBスキーマ・migrationは変更していない。旧パス互換re-exportや新しい状態管理抽象化は導入していない。
 
 | 対象 | 分割前 → 分割後（行） | 抽出先 |
 |---|---|---|
@@ -100,9 +100,9 @@ UI・credentials・rewards・authテスト整理を独立したread-only highレ
 
 ### 5.2. 通常の連携・報酬機能の有効化
 
-ユーザー承認に基づき、旧rollout gateとその到達不能な条件分岐を削除した。capabilities/verification_availableはCookie暗号化が設定されている場合にtrueとなるが、Cookie保存はpendingのままで、identity照合・verified linkなしではゲーム/報酬APIを拒否する。既存UIDと矛盾するCookie置換claimはupstream通信前に拒否し、claim一致だけでは検証を完了しない。
+verification_availableとreward_posting_availableはCookie暗号化が設定されている場合にtrueとなるが、Cookie保存はpendingのままで、identity照合・verified linkなしではゲーム/報酬APIを拒否する。既存UIDと矛盾するCookie置換claimはupstream通信前に拒否し、claim一致だけでは検証を完了しない。
 
-fmt、workspace check/test/Clippy（184成功・live GET 1 ignored）、backend build、UI WASM check、Dioxus release buildとChromium browser fixtureは成功。browser fixtureもavailable=trueへ更新し、Verify bindingによる画面遷移・自動受け取り設定の保存・手動runのenqueueを現在のAPI pathだけで検証した。独立read-only highレビューで新たな認可/並行性/送信安全性の問題は見つからず、指摘された旧gate文言とbrowser fixtureの不足も修正した。この変更の自動検証では実Cookie・実報酬POSTを使っていない。
+fmt、workspace check/test/Clippy（184成功・live GET 1 ignored）、backend build、UI WASM check、Dioxus release buildとChromium browser fixtureは成功。browser fixtureもavailable=trueへ更新し、Verify bindingによる画面遷移・自動受け取り設定の保存・手動runのenqueueを現在のAPI pathだけで検証した。独立read-only highレビューで新たな認可/並行性/送信安全性の問題は見つからず、指摘されたbrowser fixtureの不足も修正した。この変更の自動検証では実Cookie・実報酬POSTを使っていない。
 
 ## 6. 合意済み方針
 

@@ -4,7 +4,7 @@
     "title": "AttOs Game Dashboard Web Session API",
     "version": "0.1.0",
     "summary": "Manual contract for the Dioxus Dashboard UI and cookie-authenticated web session API.",
-    "description": "This contract documents the implemented Dashboard routes. It is a web-session API only: no PAT, OAuth scope, bearer token, or external-client API is provided. The Dioxus build may serve hashed files under /assets as browser-internal static assets, but those generated filenames are not stable API operations.\n\nProduction HoYoLAB owner binding and reward posting remain hard-gated off until the upstream contracts are separately proven; affected operations return 503/unavailable instead of using synthetic bypasses."
+    "description": "This contract documents the implemented Dashboard routes. It is a web-session API only: no PAT, OAuth scope, bearer token, or external-client API is provided. The Dioxus build may serve hashed files under /assets as browser-internal static assets, but those generated filenames are not stable API operations.\n\nHoYoLAB integration and manual/scheduled rewards are normal features when Cookie storage encryption is configured and password/verified-Cookie setup is complete. Automatic rewards default OFF and require user opt-in. Availability does not establish live upstream token-to-UID binding or the reward period/POST reflection contract."
   },
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "servers": [
@@ -1677,7 +1677,7 @@
         "summary": "Store a HoYoLAB Cookie for pending or same-UID verification.",
         "responses": {
           "200": {
-            "description": "Cookie accepted and setup complete (test/proven binding only).",
+            "description": "Cookie accepted; setup is complete with a verified UID.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1768,7 +1768,7 @@
           "hoyolab"
         ],
         "operationId": "verifyHoyolabCookie",
-        "summary": "Attempt proof-gated owner verification for the stored Cookie.",
+        "summary": "Verify owner identity and synchronize roles for the stored Cookie.",
         "responses": {
           "204": {
             "description": "No content."
@@ -2696,7 +2696,7 @@
           },
           "verification_available": {
             "type": "boolean",
-            "description": "False in production until upstream owner binding is separately approved."
+            "description": "True when Cookie storage encryption is configured. Saving a Cookie alone does not complete verification; identity and roles checks are still required."
           }
         }
       },
@@ -2709,7 +2709,7 @@
         "properties": {
           "reward_posting_available": {
             "type": "boolean",
-            "description": "False in production until reward POST contract is separately approved."
+            "description": "True when Cookie storage encryption is configured. Reward access still requires completed password setup, a verified link, and authorization; automatic rewards default OFF."
           }
         }
       },
