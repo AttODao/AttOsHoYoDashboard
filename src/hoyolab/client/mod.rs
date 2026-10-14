@@ -1,3 +1,5 @@
+mod identity;
+
 use rand::Rng;
 use reqwest::{
     Client,
@@ -282,7 +284,13 @@ fn validate_cookie(raw: &str) -> Result<bool> {
 }
 
 #[cfg(test)]
+mod test_support;
+
+#[cfg(test)]
 mod endpoint_tests;
+
+#[cfg(test)]
+mod identity_tests;
 
 #[cfg(test)]
 mod protocol_tests;

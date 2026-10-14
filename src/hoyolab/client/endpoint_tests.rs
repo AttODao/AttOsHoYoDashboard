@@ -1,11 +1,8 @@
 // Fixtures are synthetic old-schema payloads, not captured live API responses.
-#[path = "test_support.rs"]
-mod test_support;
-
+use super::test_support::{ExpectedRequest, TlsMockServer};
 use super::*;
 use crate::game::{Game as GameSpec, GameKind, Genshin, Starrail};
 use serde_json::{Value, json};
-use test_support::{ExpectedRequest, TlsMockServer};
 
 const COOKIE_VALUE: &str = "ltuid_v2=123; ltoken_v2=fake";
 const RECORD_UID: &str = "1";

@@ -24,8 +24,9 @@ use std::{
     time::Duration,
 };
 
-const HOSTS: [&str; 4] = [
+const HOSTS: [&str; 5] = [
     "api-os-takumi.mihoyo.com",
+    "api-account-os.hoyolab.com",
     "sg-public-api.hoyolab.com",
     "sg-hk4e-api.hoyolab.com",
     "bbs-api-os.hoyolab.com",
