@@ -1,0 +1,314 @@
+use super::actions::spawn_root;
+use super::data::load_page_data;
+use crate::models::{
+    CookieStatus, GameAccount, GameStatus, MeView, PasskeyView, RewardRun, RewardSetting,
+    ServerSettings, UserView,
+};
+use dioxus::prelude::*;
+use uuid::Uuid;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Page {
+    Dashboard,
+    Link,
+    Uids,
+    Rewards,
+    Security,
+    Admin,
+    Delete,
+    Docs,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Phase {
+    Loading,
+    SignedOut,
+    SignedIn,
+}
+
+#[derive(Clone, PartialEq)]
+pub(super) struct StatusLine {
+    pub(super) text: String,
+    pub(super) kind: &'static str,
+}
+
+#[derive(Clone, PartialEq)]
+pub(super) struct AccountStatusEntry {
+    pub(super) id: Uuid,
+    pub(super) status: GameStatus,
+}
+
+#[derive(Clone, PartialEq)]
+pub(super) struct AppState {
+    pub(super) phase: Phase,
+    pub(super) generation: u64,
+    pub(super) page: Page,
+    pub(super) me: Option<MeView>,
+    pub(super) status: Option<StatusLine>,
+    pub(super) busy: bool,
+    pub(super) logout_unconfirmed: bool,
+    pub(super) hoyolab: Option<CookieStatus>,
+    pub(super) hoyolab_error: Option<String>,
+    pub(super) accounts: Vec<GameAccount>,
+    pub(super) accounts_error: Option<String>,
+    pub(super) selected_account: Option<Uuid>,
+    pub(super) account_statuses: Vec<AccountStatusEntry>,
+    pub(super) rewards: Vec<RewardSetting>,
+    pub(super) rewards_error: Option<String>,
+    pub(super) reward_runs: Vec<RewardRun>,
+    pub(super) reward_runs_error: Option<String>,
+    pub(super) passkeys: Vec<PasskeyView>,
+    pub(super) passkeys_error: Option<String>,
+    pub(super) server: Option<ServerSettings>,
+    pub(super) admin_users: Vec<UserView>,
+    pub(super) admin_error: Option<String>,
+    pub(super) openapi: Option<serde_json::Value>,
+    pub(super) openapi_error: Option<String>,
+}
+
+impl AppState {
+    pub(super) fn new(page: Page) -> Self {
+        Self {
+            phase: Phase::Loading,
+            generation: 0,
+            page,
+            me: None,
+            status: None,
+            busy: false,
+            logout_unconfirmed: false,
+            hoyolab: None,
+            hoyolab_error: None,
+            accounts: Vec::new(),
+            accounts_error: None,
+            selected_account: None,
+            account_statuses: Vec::new(),
+            rewards: Vec::new(),
+            rewards_error: None,
+            reward_runs: Vec::new(),
+            reward_runs_error: None,
+            passkeys: Vec::new(),
+            passkeys_error: None,
+            server: None,
+            admin_users: Vec::new(),
+            admin_error: None,
+            openapi: None,
+            openapi_error: None,
+        }
+    }
+
+    pub(super) fn ready(&self) -> bool {
+        self.me.as_ref().is_some_and(|me| {
+            !me.onboarding.password_change_required && me.onboarding.cookie_setup_complete
+        })
+    }
+
+    pub(super) fn password_ok(&self) -> bool {
+        self.me
+            .as_ref()
+            .is_some_and(|me| !me.onboarding.password_change_required)
+    }
+
+    pub(super) fn visible_accounts(&self) -> Vec<GameAccount> {
+        visible_detected_accounts(&self.accounts)
+    }
+
+    pub(super) fn clear_owner_data(&mut self) {
+        self.hoyolab = None;
+        self.hoyolab_error = None;
+        self.accounts.clear();
+        self.accounts_error = None;
+        self.selected_account = None;
+        self.account_statuses.clear();
+        self.rewards.clear();
+        self.rewards_error = None;
+        self.reward_runs.clear();
+        self.reward_runs_error = None;
+        self.passkeys.clear();
+        self.passkeys_error = None;
+        self.server = None;
+        self.admin_users.clear();
+        self.admin_error = None;
+    }
+}
+
+pub(super) fn set_page(mut state: Signal<AppState>, page: Page) {
+    if state.read().busy {
+        return;
+    }
+    state.write().page = page;
+    let state_for_task = state;
+    spawn_root(async move {
+        load_page_data(state_for_task, page).await;
+    });
+}
+
+pub(super) fn set_status(mut state: Signal<AppState>, text: impl Into<String>, kind: &'static str) {
+    state.write().status = Some(StatusLine {
+        text: text.into(),
+        kind,
+    });
+}
+
+pub(super) fn generation_matches(state: Signal<AppState>, generation: u64) -> bool {
+    state.read().generation == generation
+}
+
+pub(super) fn upsert_status(mut state: Signal<AppState>, id: Uuid, status: GameStatus) {
+    let mut write = state.write();
+    if let Some(existing) = write
+        .account_statuses
+        .iter_mut()
+        .find(|entry| entry.id == id)
+    {
+        existing.status = status;
+    } else {
+        write
+            .account_statuses
+            .push(AccountStatusEntry { id, status });
+    }
+}
+
+pub(super) fn signed_in_generation(state: Signal<AppState>) -> Option<u64> {
+    let read = state.read();
+    (read.phase == Phase::SignedIn).then_some(read.generation)
+}
+
+pub(super) fn ready_generation(state: Signal<AppState>) -> Option<u64> {
+    let read = state.read();
+    (read.phase == Phase::SignedIn && read.ready()).then_some(read.generation)
+}
+
+pub(super) fn password_generation(state: Signal<AppState>) -> Option<u64> {
+    let read = state.read();
+    (read.phase == Phase::SignedIn && read.password_ok()).then_some(read.generation)
+}
+
+pub(super) fn current_generation(state: Signal<AppState>, generation: u64) -> bool {
+    let read = state.read();
+    read.generation == generation && read.phase == Phase::SignedIn
+}
+
+pub(super) fn current_ready_generation(state: Signal<AppState>, generation: u64) -> bool {
+    let read = state.read();
+    read.generation == generation && read.phase == Phase::SignedIn && read.ready()
+}
+
+pub(super) fn current_ready_page(state: Signal<AppState>, page: Page) -> bool {
+    let read = state.read();
+    read.phase == Phase::SignedIn && read.ready() && read.page == page
+}
+
+pub(super) fn current_ready_page_generation(
+    state: Signal<AppState>,
+    generation: u64,
+    page: Page,
+) -> bool {
+    let read = state.read();
+    read.generation == generation
+        && read.phase == Phase::SignedIn
+        && read.ready()
+        && read.page == page
+}
+
+pub(super) fn select_account(current: Option<Uuid>, accounts: &[GameAccount]) -> Option<Uuid> {
+    let visible = visible_detected_accounts(accounts);
+    if current.is_some_and(|id| visible.iter().any(|account| account.id == id)) {
+        current
+    } else {
+        visible.first().map(|account| account.id)
+    }
+}
+
+pub(super) fn visible_detected_accounts(accounts: &[GameAccount]) -> Vec<GameAccount> {
+    accounts
+        .iter()
+        .filter(|account| account.visible && account.detected && !account.game_uid.is_empty())
+        .cloned()
+        .collect()
+}
+
+pub(super) fn initial_page() -> Page {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if web_sys::window()
+            .and_then(|window| window.location().pathname().ok())
+            .as_deref()
+            == Some("/docs")
+        {
+            return Page::Docs;
+        }
+    }
+    Page::Dashboard
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{Capabilities, Onboarding};
+
+    fn uuid(n: u128) -> Uuid {
+        Uuid::from_u128(n)
+    }
+
+    fn me(password_change_required: bool, cookie_setup_complete: bool) -> MeView {
+        MeView {
+            id: uuid(5),
+            username: "admin".to_owned(),
+            is_admin: true,
+            active: true,
+            must_change_password: password_change_required,
+            onboarding: Onboarding {
+                password_change_required,
+                cookie_setup_complete,
+                cookie_status: "pending".to_owned(),
+                verification_available: false,
+            },
+            capabilities: Capabilities {
+                reward_posting_available: false,
+            },
+        }
+    }
+
+    fn account(id: Uuid, visible: bool, detected: bool, uid: &str) -> GameAccount {
+        GameAccount {
+            id,
+            hoyolab_account_id: uuid(100),
+            game_kind: "genshin".to_owned(),
+            game_uid: uid.to_owned(),
+            region: "os_usa".to_owned(),
+            visible,
+            detected,
+            last_detected_at: "2026-01-01T00:00:00Z".to_owned(),
+        }
+    }
+
+    #[test]
+    fn visible_home_accounts_exclude_hidden_missing_and_undetected() {
+        let keep = uuid(1);
+        let rows = vec![
+            account(keep, true, true, "600000000"),
+            account(uuid(2), false, true, "700000000"),
+            account(uuid(3), true, false, "800000000"),
+            account(uuid(4), true, true, ""),
+        ];
+        assert_eq!(visible_detected_accounts(&rows)[0].id, keep);
+        assert_eq!(select_account(None, &rows), Some(keep));
+    }
+
+    #[test]
+    fn readiness_requires_password_and_cookie_gates() {
+        let mut state = AppState::new(Page::Dashboard);
+        state.me = Some(me(false, false));
+        assert!(!state.ready());
+        state.me.as_mut().unwrap().onboarding.cookie_setup_complete = true;
+        assert!(state.ready());
+    }
+
+    #[test]
+    fn password_ok_does_not_require_cookie_setup() {
+        let mut state = AppState::new(Page::Dashboard);
+        state.me = Some(me(false, false));
+        assert!(state.password_ok());
+        assert!(!state.ready());
+    }
+}
