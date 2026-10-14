@@ -25,10 +25,14 @@ pub(super) fn CookieCard(mut state: Signal<AppState>) -> Element {
     let mut cookie = use_signal(String::new);
     let hoyolab = state.read().hoyolab.clone();
     let onboarding = state.read().me.as_ref().map(|me| me.onboarding.clone());
+    let password_ok = state.read().password_ok();
     rsx! {
         Card {
             CardHeader { CardTitle { "HoYoLAB Cookie" } CardDescription { "One Dashboard user links to one HoYoLAB account. Save a replacement Cookie for the same account and ask the server to verify/sync when available." } }
             CardContent { class: "form-stack",
+                if !password_ok {
+                    p { class: "warning", "Change your temporary password before saving or verifying a HoYoLAB Cookie." }
+                }
                 dl { class: "metric-list",
                     Metric { label: "Status", value: onboarding.as_ref().map(|o| humanize(&o.cookie_status)).unwrap_or_else(|| hoyolab.as_ref().map(|h| humanize(&h.status)).unwrap_or_else(|| "Not loaded".to_owned())) }
                     Metric { label: "HoYoLAB UID", value: hoyolab.as_ref().and_then(|h| h.hoyolab_uid.clone()).unwrap_or_else(|| "Only shown after backend verification".to_owned()) }
@@ -36,11 +40,11 @@ pub(super) fn CookieCard(mut state: Signal<AppState>) -> Element {
                     Metric { label: "Updated", value: hoyolab.as_ref().map(|h| display_date(&h.updated_at)).unwrap_or_else(|| "Not reported".to_owned()) }
                 }
                 Field { id: "hoyolab-cookie", label: "Paste one HoYoLAB Cookie",
-                    textarea { id: "hoyolab-cookie", autocomplete: "off", value: "{cookie}", oninput: move |event| cookie.set(event.value()) }
+                    textarea { id: "hoyolab-cookie", autocomplete: "off", disabled: !password_ok, value: "{cookie}", oninput: move |event| cookie.set(event.value()) }
                 }
             }
             CardFooter { class: "button-row",
-                Button { r#type: "button", onclick: move |_| {
+                Button { r#type: "button", disabled: !password_ok, onclick: move |_| {
                     let secret = std::mem::take(&mut *cookie.write());
                     let state = state;
                     spawn_action(state, move |generation| async move {
@@ -51,14 +55,14 @@ pub(super) fn CookieCard(mut state: Signal<AppState>) -> Element {
                         }
                     });
                 }, "Save Cookie" }
-                Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| { let state = state; spawn_action(state, move |generation| async move {
+                Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: !password_ok, onclick: move |_| { let state = state; spawn_action(state, move |generation| async move {
                                 match crate::api::send("POST", "/me/hoyolab/verify", Some(json!({}))).await {
                         Ok(()) if generation_matches(state, generation) => { set_status(state, "Verification requested.", "success"); bootstrap(state).await; }
                         Ok(()) => {}
                         Err(error) => { handle_api_error_for(state, generation, error); }
                     }
                 }); }, "Verify binding" }
-                Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| { let state = state; spawn_action(state, move |generation| async move {
+                Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: !password_ok, onclick: move |_| { let state = state; spawn_action(state, move |generation| async move {
                                 match crate::api::send("POST", "/me/hoyolab/sync", Some(json!({}))).await {
                         Ok(()) if generation_matches(state, generation) => { set_status(state, "Sync requested.", "success"); bootstrap(state).await; }
                         Ok(()) => {}
