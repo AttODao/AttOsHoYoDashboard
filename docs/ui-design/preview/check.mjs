@@ -1,0 +1,117 @@
+// Local design prototype checks, not production HTTP/authentication tests.
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import http from 'node:http';
+import {createRequire} from 'node:module';
+import {fileURLToPath} from 'node:url';
+const require=createRequire(import.meta.url);
+const {chromium}=require(process.env.ATTOS_TEST_PLAYWRIGHT_MODULE||'playwright');
+const root=path.dirname(fileURLToPath(import.meta.url));
+const out=process.env.ATTOS_DESIGN_CAPTURE_DIR||'/tmp/agd-r2';fs.mkdirSync(out,{recursive:true});
+const source=fs.readFileSync(path.join(root,'preview.js'),'utf8');
+assert.doesNotMatch(source,/\b(fetch|XMLHttpRequest|localStorage|sessionStorage|PublicKeyCredential)\s*[.(]/,'no API/storage/authenticator operations');
+const server=http.createServer((req,res)=>{
+ const name=new URL(req.url,'http://localhost').pathname;
+ const file={'/':'index.html','/index.html':'index.html','/style.css':'style.css','/preview.js':'preview.js'}[name];
+ if(!file){res.writeHead(404);res.end();return;}
+ res.setHeader('Content-Type',file.endsWith('.css')?'text/css':file.endsWith('.js')?'text/javascript':'text/html; charset=utf-8');
+ res.end(fs.readFileSync(path.join(root,file)));
+});
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+const origin='http://127.0.0.1:'+server.address().port;
+let browser;
+const errors=[],unsafeRequests=[];
+try{
+ browser=await chromium.launch({headless:true});
+ const context=await browser.newContext({reducedMotion:'reduce'});
+ await context.route('**/*',route=>{const r=route.request(),url=new URL(r.url());if((url.origin!==origin&&!['fonts.googleapis.com','fonts.gstatic.com'].includes(url.hostname))||['fetch','xhr'].includes(r.resourceType())){unsafeRequests.push(url.hostname+url.pathname);return route.abort();}return route.continue();});
+ const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
+ await page.setViewportSize({width:1440,height:1000});
+ await page.goto(origin+'/#login');
+ assert.equal(await page.locator('#username').count(),1,'shared username');
+ assert.equal(await page.locator('.auth-panel').count(),1,'one login card');
+ await page.getByRole('radio',{name:'パスキー',exact:true}).check();
+ assert.equal(await page.locator('#username').count(),1);
+ assert.equal(await page.locator('#password-field').isVisible(),false);
+ await page.getByRole('button',{name:'パスキーでログイン'}).click();
+ assert.match(await page.title(),/ダッシュボード/);
+ assert.equal(await page.locator('.topbar .menu').count(),1,'one menu, no sidebar');
+ assert.equal(await page.locator('main input[type=time]').count(),0,'schedule belongs in settings');
+ assert.equal(await page.getByRole('switch').count(),2);
+ await page.getByRole('switch',{name:'原神の自動受け取り',exact:true}).check();
+ assert.equal(await page.locator('[data-switch-label=genshin]').textContent(),'ON');
+ await page.getByRole('button',{name:'崩壊：スターレイル',exact:true}).click();
+ assert.equal(await page.getByRole('switch',{name:'原神の自動受け取り',exact:true}).isChecked(),true,'account×game, not selected UID');
+ await page.getByLabel('メニューを開く').click();
+ assert.equal(await page.getByRole('button',{name:'管理者設定',exact:true}).count(),0);
+ await page.getByRole('button',{name:'設定',exact:true}).click();
+ assert.equal(await page.locator('input[type=time]').count(),2);
+ await page.getByLabel('原神の自動受け取り時刻',{exact:true}).fill('09:30');
+ await page.locator('[data-action=save-genshin]').click();
+ await page.getByRole('button',{name:'ダッシュボードへ',exact:true}).click();
+ assert.match(await page.locator('.bonus-row').first().textContent(),/09:30/);
+ await page.goto(origin+'/?fixture=provisional#setup');
+ assert.equal(await page.locator('.menu').count(),0);
+ assert.equal(await page.locator('.topbar button').count(),1);
+ assert.equal(await page.getByRole('button',{name:'Cookieを保存',exact:true}).isDisabled(),true);
+ await page.evaluate(()=>location.hash='settings');
+ await page.waitForFunction(()=>location.hash==='#setup');
+ assert.match(await page.locator('h1').textContent(),/初期設定/);
+ await page.getByRole('button',{name:'パスワードを変更',exact:true}).click();
+ await page.getByRole('button',{name:'Cookieを保存',exact:true}).click();
+ assert.match(await page.locator('main').textContent(),/本人確認は未完了/);
+ assert.equal(await page.locator('.menu').count(),0);
+ await page.getByRole('button',{name:'本人確認を実行',exact:true}).click();
+ assert.match(await page.title(),/ダッシュボード/);
+ assert.match(await page.locator('main').textContent(),/表示するUIDがありません/,'new UID is hidden after setup');
+ await page.getByLabel('メニューを開く').click();await page.getByRole('button',{name:'ログアウト',exact:true}).click();
+ await page.getByRole('button',{name:'ログイン',exact:true}).click();assert.match(await page.title(),/ダッシュボード/,'completed setup is not required again in this fixture session');
+ await page.getByRole('button',{name:'設定でUIDを選ぶ'}).click();
+ await page.locator('[data-visible=genshin]').check();
+ await page.getByRole('button',{name:'ダッシュボードへ',exact:true}).click();
+ assert.match(await page.locator('main').textContent(),/天然樹脂/);
+ await page.goto(origin+'/#admin');
+ assert.match(await page.locator('h1').textContent(),/管理者のみ/,'ordinary fixture cannot see admin');
+ await page.goto(origin+'/?fixture=admin#admin');
+ assert.match(await page.locator('#admin-logs').textContent(),/管理者用ログ一覧はありません/);
+ assert.equal(await page.getByRole('button',{name:'ログを読み込む'}).isDisabled(),true);
+ await page.locator('[data-action=admin-reset-1]').click();
+ assert.match(await page.getByRole('dialog').textContent(),/demo_inactive.*パスワード再発行/);
+ assert.equal(await page.getByRole('dialog').locator('input').count(),1,'reset API accepts only temporary_password');
+ assert.equal(await page.getByLabel('復旧用パスワード',{exact:true}).getAttribute('autocomplete'),'new-password');
+ await page.getByRole('button',{name:'キャンセル',exact:true}).click();
+ await page.locator('[data-action=admin-delete-1]').click();
+ assert.match(await page.getByRole('dialog').textContent(),/demo_inactive/);
+ await page.getByRole('button',{name:'削除受付の表示例を見る'}).click();
+ assert.match(await page.locator('main').textContent(),/管理者自身のセッションは継続/);
+ await page.goto(origin+'/?state=unknown#settings');
+ assert.equal(await page.locator('[data-action=run-genshin]').isDisabled(),true);
+ assert.match(await page.locator('main').textContent(),/再送しません/);
+ await page.goto(origin+'/?state=queued#settings');
+ assert.match(await page.locator('main').textContent(),/受け取り完了ではありません/);
+ await page.goto(origin+'/?state=logout-error#dashboard');
+ await page.getByLabel('メニューを開く').click();await page.getByRole('button',{name:'ログアウト',exact:true}).click();
+ assert.match(await page.title(),/ダッシュボード/,'failed logout is not assumed successful');
+ const captures=[['dashboard','/#dashboard'],['login','/#login'],['setup','/?fixture=provisional#setup'],['settings','/#settings'],['admin','/?fixture=admin#admin'],['unknown','/?state=unknown#settings'],['queued','/?state=queued#settings']];
+ for(const width of [1440,390])for(const [name,url]of captures){
+  await page.setViewportSize({width,height:1000});await page.goto(origin+url);await page.evaluate(()=>document.fonts.ready);
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),name+' horizontal overflow at '+width);
+  assert.ok(await page.locator('.draft-note').evaluate(n=>parseFloat(getComputedStyle(n).fontSize)>=12),'review notice is at least 12px');
+  const small=await page.locator('button,summary,select,.switch,.check').evaluateAll(nodes=>nodes.filter(n=>n.getClientRects().length&&!n.disabled).map(n=>({text:n.textContent.trim().slice(0,35),w:n.getBoundingClientRect().width,h:n.getBoundingClientRect().height})).filter(n=>n.w<44||n.h<44));
+  assert.deepEqual(small,[],name+' target size');
+  await page.screenshot({path:path.join(out,name+'-'+width+'.png'),fullPage:true});
+ }
+ for(const width of [1440,390])for(const [name,action]of [['admin-recovery','admin-reset-1'],['admin-deletion','admin-delete-1']]){await page.setViewportSize({width,height:1000});await page.goto(origin+'/?fixture=admin#admin');await page.locator(`[data-action=${action}]`).click();await page.evaluate(()=>document.fonts.ready);assert.ok(await page.getByRole('dialog').evaluate(n=>n.scrollWidth<=n.clientWidth+1),name+' dialog overflow');await page.screenshot({path:path.join(out,name+'-'+width+'.png')});await page.getByRole('button',{name:'キャンセル',exact:true}).click();}
+ for(const width of [360,768,1280]){await page.setViewportSize({width,height:1000});await page.goto(origin+'/#dashboard');assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'fluid width '+width);}
+ await page.goto(origin+'/#dashboard');await page.getByLabel('メニューを開く').click();await page.keyboard.press('Escape');assert.equal(await page.locator('.menu').getAttribute('open'),null);assert.equal(await page.getByLabel('メニューを開く').evaluate(n=>n===document.activeElement),true);
+ const vars=await page.evaluate(()=>{const s=getComputedStyle(document.documentElement);return Object.fromEntries(['canvas','surface','elevated','text','muted','line','pink','cyan','mint','lavender','warning','danger','on-accent'].map(k=>[k,s.getPropertyValue('--'+k).trim()]));});
+ const lum=h=>{const v=h.slice(1).match(/../g).map(x=>parseInt(x,16)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4);return v[0]*.2126+v[1]*.7152+v[2]*.0722;};
+ const contrast=(a,b)=>(Math.max(lum(a),lum(b))+.05)/(Math.min(lum(a),lum(b))+.05);
+ for(const color of ['text','muted','cyan','mint','lavender','warning','danger'])for(const bg of ['canvas','surface','elevated'])assert.ok(contrast(vars[color],vars[bg])>=4.5,color+'/'+bg);
+ for(const bg of ['canvas','surface','elevated'])assert.ok(contrast(vars.line,vars[bg])>=3,'boundary/'+bg);
+ for(let n=0;n<=100;n++){const rgb=k=>vars[k].slice(1).match(/../g).map(x=>parseInt(x,16));const a=rgb('pink'),b=rgb('cyan');const c='#'+a.map((v,i)=>Math.round(v+(b[i]-v)*n/100).toString(16).padStart(2,'0')).join('');assert.ok(contrast(c,vars['on-accent'])>=4.5,'gradient label '+n);}
+ assert.deepEqual(unsafeRequests,[],'no API/upstream requests');assert.deepEqual(errors,[],'browser JS errors');
+ console.log('PASS: R2 navigation/setup gate, shared login, account×game switches, schedule placement, prototype admin role gate/recovery form, deletion/queued/unknown semantics, contrast, 44px targets and responsive widths.');
+ console.log('18 PNGs in '+out+'; no MCP, backend, authenticator or upstream used.');
+}finally{if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));}

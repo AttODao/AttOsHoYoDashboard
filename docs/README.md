@@ -9,7 +9,7 @@
 | [実装計画・検証課題](plans/AttOsGameDashboard.md) | 実装済み範囲、残る上流実証、検証ギャップを確認する |
 | [Dashboard OpenAPI 3.1](dashboard-api.json) | WebセッションAPIの手書き契約を機械可読で確認する |
 | [Dashboard運用手順](dashboard-operations.md) | migration、bootstrap、TLS/Origin、秘密鍵、バックアップ、shutdownを確認する |
-| [UIデザイン案](ui-design/README.md) | Penpotの比較案・Desktop／Mobile・共通設定・人間の確定待ち事項を確認する |
+| [UIデザイン案](ui-design/README.md) | AGDのR2ローカルプレビュー、設定集約案、旧Penpot案、反映待ち事項を確認する |
 
 ## HoYoLABクライアント
 

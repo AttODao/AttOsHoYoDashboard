@@ -1,78 +1,48 @@
-# AttOsGameDashboard UIデザイン案
+# AGD UIデザイン案
 
-**AI制作の編集用ドラフト。人間の承認前。本番Dioxusには反映していない。**
+**最新はR2。AIの編集用案・人間の承認前。本番Dioxus・API・DBは未変更。**
 
-## Penpotを開く
+## 今回の成果物
 
-接続先ファイル: **New File 1** / `129977ce-683b-806a-8008-c9d0bedd3212`。
+- [`preview/index.html`](preview/index.html)：ブラウザで開ける画面／操作プレビュー。HTML・CSS・JavaScriptのデザイン資料であり、本番フロントエンドではない。
+- [`revision-2.md`](revision-2.md)：参照UI、画面構成、初期設定の制約、管理者ログの未確定範囲、Penpot反映手順。
+- [`DESIGN.md`](DESIGN.md)：R2の配色・タイポグラフィ・レイアウト。値の正本は`preview/style.css`。
+- [`review.md`](review.md)：実際に行ったSkill利用・旧案の問題・R2の検証と限界。
 
-- [比較案 A / B](https://design.penpot.app/#/workspace?file-id=129977ce-683b-806a-8008-c9d0bedd3212&page-id=609d2656-00af-8046-8008-ca15c8b814d2) — `Draft / 01 / Concepts`
-- [Desktopの編集](https://design.penpot.app/#/workspace?file-id=129977ce-683b-806a-8008-c9d0bedd3212&page-id=609d2656-00af-8046-8008-ca15c8b8f352) — `Draft / 02 / Desktop`
-- [Mobileの編集](https://design.penpot.app/#/workspace?file-id=129977ce-683b-806a-8008-c9d0bedd3212&page-id=609d2656-00af-8046-8008-ca15c8b9979b) — `Draft / 03 / Mobile`
-- [部品マスター](https://design.penpot.app/#/workspace?file-id=129977ce-683b-806a-8008-c9d0bedd3212&page-id=609d2656-00af-8046-8008-ca15c8ba4085) — `Draft / 04 / Components`
-- 共通設定ページ: `Draft / 00 / Design System`。ボードは保存済み。**全体の最終描画検証は未完了**。
+`preview/index.html`は直接開ける。Webフォントの読込にはインターネットが必要で、未読込時はフォールバックする。操作は合成状態の切替のみ。認証入力欄は読取専用で、実Cookie・パスワードを入力しない。下部の「デザイン確認用」は製品メニューではない。
 
-リンクは接続先のPenpotにログインして使う。URLで開けない場合はファイルIDとページ名で探す。開始時の空の `Page 1` は残し、承認済みデザインは上書きしていない。
+## 新しい構成
 
-## コンセプト比較
+- 表記は**AGD**。ユーザー指定の[NFT/Web3参照](https://www.uupm.cc/demo/nft-web3)を基に、黒い面、マゼンタ／シアン、角のある表示書体、余白を採用。マーケットプレイス機能・NFT画像・ウォレットは追加しない。
+- **常設サイドバーなし**。上部のハンバーガーメニュー1つからHoYoLAB連携、設定、管理者設定（管理者のみ）、ログアウト。
+- ダッシュボードはゲーム状態＋ゲームごとの自動受け取りON/OFF。時刻設定、手動実行、履歴、UID表示、連携、セキュリティ、自己削除は設定ページへまとめる。
+- ログインは**共通ユーザー名＋1枚のフォーム**。パスワード／パスキーで同じユーザー名を使う。
+- 仮登録は**独立した初期設定画面**。パスワード変更→Cookie保存→本人確認。完了前はログアウト以外の遷移を禁止し、本人確認成功後にダッシュボードへ移動する。新UIDは非表示なので初回はEmptyになり得る。
+- 管理者設定は既存ユーザー管理を維持。ログ確認は要望の置き場所を用意するが、現行の取得APIがないため架空のログ・機能を動作済みとして示さない。
 
-| | A / Orbit Folio（推奨候補） | B / Arcade Index（比較案） |
-|---|---|---|
-| 見た目 | コバルトのナビ・ミント／ラベンダーのゲーム面 | プラムの背景・アプリコットの選択色 |
-| 構成 | 選択ゲームを主役に、UID・ボーナスを下に配置 | UID・ゲーム・ボーナスの3カラム |
-| 長所 | 日本語が読みやすく、1カラムへ再構成しやすい | Desktopでボーナスが早く目に入る |
-| 課題 | Mobileは情報量が多く縦長になる | 狭いゲーム欄・長いラベルへの余裕が少ない |
+## Penpotの状態
 
-Aを推奨し、Bの明確な派遣見出しとボーナスへの導線を取り入れる。画面構造は通常のWeb操作のまま、ゲームごとの面色・current/max/full-atのまとまりで個性を出す。軌道模様や公式キャラクター画像、グリッチ等は追加しない。最終採用は人間が判断する。
+**ユーザーの指示以降、MCPを使っていない。R2はまだPenpotへ反映していない。接続設定の再調査・再変更も行っていない。**
 
-## 共通設定とレスポンシブ
+保存済みのR1は同じファイル **New File 1** / `129977ce-683b-806a-8008-c9d0bedd3212` にある。R2では既存ボードを上書きせず、別ページに展開する。
 
-数値は [`tokens.json`](tokens.json)。Penpotの `Tokens > attos-orbit` に配色・余白・角丸・文字サイズを登録し、要素に適用する。本文はNoto Sans JP、ブランドと大きな数値はBarlow。本文16px、補足14px、見出し20／32px。Typography assetsの共通書体を編集できる。
+| 旧R1ページ | ID |
+|---|---|
+| `Draft / 00 / Design System` | `609d2656-00af-8046-8008-ca15c8b64a3a` |
+| `Draft / 01 / Concepts` | `609d2656-00af-8046-8008-ca15c8b814d2` |
+| `Draft / 02 / Desktop` | `609d2656-00af-8046-8008-ca15c8b8f352` |
+| `Draft / 03 / Mobile` | `609d2656-00af-8046-8008-ca15c8b9979b` |
+| `Draft / 04 / Components` | `609d2656-00af-8046-8008-ca15c8ba4085` |
 
-Desktopは1440px、左ナビ232px、内側余白56px。Mobileは390px、余白20px、1カラム、48pxの操作部品。フォーム・ユーザー一覧は横スクロールの縮小版にせず、上下のパネルへ再構成する。後続CSSは内容に応じたbreakpoint、Flex/Grid、可変高さを使用する。390pxのアートボードは実装の固定幅指定ではない。
+R1の説明は[`revision-1.md`](revision-1.md)、制作スクリプトは`penpot/`、旧トークンは`tokens.json`。いずれも**R2の生成コードではない**。描画キャッシュと見出しの問題が残ったR1の最終状態を合格とは扱わない。`finish.js`をそのまま再実行しない。
 
-font-familyトークンの直接適用は接続プラグインでエラーになったため、**書体の共通変更はTypography assets**で行う。家族名トークンは登録情報として残し、適用済みと偽らない。サイズはトークン、色・余白・角丸も可能な箇所でトークンに結び付ける。
+## 検証コマンド
 
-## 画面とDioxus対応案
+```sh
+node docs/ui-design/check.mjs
+node docs/ui-design/preview/check.mjs
+```
 
-新しいAPIや公開routeは追加しない。画面名は `/` 内の既存Page／Phaseを視覚的に整理したもの。詳細・状態ボードも既存レスポンスの表示例であり、新規endpointを意味しない。
+2つ目は既存のPlaywright／Chromiumが必要。既存UIテストと同じ`ATTOS_TEST_PLAYWRIGHT_MODULE`でインストール済みモジュールを指定できる。キャプチャはデフォルトで`/tmp/agd-r2/`へ保存し、生成PNGやMCP認証設定はコミットしない。
 
-| Penpot画面 | 対応する既存責務 | 主な部品 |
-|---|---|---|
-| ログイン・読み込み・パスキー待機 | `pages/auth.rs`, `app/session.rs`, `webauthn.rs` | SignInForm、Status、Button、Field |
-| 初期設定・HoYoLAB本人確認 | `pages/auth.rs`, `pages/hoyolab.rs` | SetupStatus、PasswordCard、CookieCard |
-| ダッシュボード・スターレイル・取得エラー・Empty | `pages/dashboard.rs`, `app/data.rs` | GameStatusCard、Metric、ExpeditionList、UID selector |
-| UID表示設定 | `pages/accounts.rs` | AccountTable／MobileのAccountRow |
-| ログインボーナス・202受付・実行詳細 | `pages/rewards.rs` | RewardSettingCard、RewardHistory、RunState |
-| セキュリティ | `pages/security.rs` | PasswordCard、PasskeyCard、Field |
-| ユーザー管理・有効／無効ユーザー操作 | `pages/admin.rs` | AdminCard、AdminUserRow |
-| アカウント削除・受付 | `pages/deletion.rs` | DeleteAccountCard、Danger notice |
-| 読み取り専用API仕様 | `pages/docs.rs` | OpenAPI viewer（try-itなし） |
-| ナビ・Mobileメニュー・権限不足 | `pages/shell.rs`, `app/state.rs` | Header、NavButton、Status |
-
-再利用の基礎は既存Dioxus Components由来のButton/Cardと既存Field。PenpotのButton／Input／Checkbox／Notice等をこれらへ対応させる。最終RSX、CSS、状態管理の変更は次の指示で行う。
-
-## 調査結果と仕様差分
-
-正本は `docs/spec/AttOsGameDashboard.md` と確定済み計画、補足は `docs/design/AttOsGameDashboard.md`、HTTPフィールドは `docs/dashboard-api.json`。開始時HEADは `fd72268`。最初の作業ツリーには未追跡のSkillsと `.pi/` があり、これらは成果物としてコミットしない。assetsは既存CSSのみ。
-
-- HoYoLAB連携・手動／定期報酬は通常機能。暗号化設定、PW変更、検証済み連携など現在の条件に従う。利用承認は上流契約の実証ではない。ユーザーの追加指示によりdocsの古い制限説明を削除・更新した。API構造は変更していない。
-- 現行UIの本人確認／報酬ボタンは、利用可否の説明があっても一部の無効化条件が不足する。デザインはpending・busy・実際の設定不足を区別する。Cookie保存を本人確認成功、202受付を受取成功として扱わない。
-- ページ単位のLoadingと真のEmptyが不十分。UID・履歴・パスキーの未取得を空として断定しない。Linkの通常画面で取得エラーの表示が不足する。
-- 現行画面に出ていない検出日時、must_change_password、履歴の試行番号／開始・終了／安全なコードは既存DTO内の情報として詳細表示へ整理できる。
-- セッション固定期限、復旧時の失効、再有効化時の自動OFF、削除受付と背景完了の区別を説明する。削除完了の進捗APIは追加しない。
-- 原神・スターレイルの上限や回復推定値は製品定数にしない。例の142/200、178/300などは合成レスポンス値。欠落値は未取得と表示する。
-
-## Skillsの利用実績と検証
-
-[`review.md`](review.md)に実行した機能、比較批評、修正、検証範囲を記録。CLIが動かなかったものや未検証項目を利用済みとは数えない。
-
-制作スクリプトは `penpot/` に保存。Penpot Plugin API用で、製品コード・ブラウザ配信用コードではない。**編集後のPenpotが正であり、再実行して人間の修正を上書きしない**。`setup.js` は空の作業用ページの初回制作のみ。接続し直す場合は `bind.js` と関数定義を読み込み、必要な操作を小さい単位で実行する。長い一括作成はMCPタイムアウトの可能性がある。
-
-## 人間の判断・未完了
-
-- A／Bどちらの方向性を採用するか、彩度、Barlowの数値、日本語ラベル、Mobileの情報順序と密度を判断する。
-- Penpotで本文・ボタン・背景・カードを個別に編集し、共通部品はマスター／Assetsで変更する。画像一枚で作った画面ではない。
-- 保存済みの75ボード・26部品を内蔵MCPで確認したが、コピー文字の描画キャッシュとMobile見出しの問題が残った。全体の修正処理はタイムアウトし、最終状態は未検証。完成を宣言しない。最新指示ではこの旧方向性を再設計する。
-- ネイティブSVGをChromiumで描画して視覚検査できたが、これは製品のHTML／RSXや認証器の動作検証ではない。実機、Safari、200%拡大、キーボード／スクリーンリーダーは次工程。
-- 実Cookie・実アカウント・本番DB・上流APIを使用していない。React等への移行も、本番UI/API/DBの変更もしていない。
+プレビューの画面遷移・配置・表示規則の検査であって、実APIの認可、認証器、HoYoLAB契約、本番ブラウザアクセシビリティの証明ではない。最終RSX／CSS実装は別の指示で行う。
