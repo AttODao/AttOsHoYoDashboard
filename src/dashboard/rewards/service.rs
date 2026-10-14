@@ -1,34 +1,32 @@
+use self::cache::{CACHE_VERSION, cache_fresh};
 use super::schedule;
 use crate::dashboard::{
     auth::sessions::Identity,
-    db::entities::{
-        hoyolab_account, reward_attempt, reward_run, reward_setting, reward_status_cache,
-    },
+    db::entities::{reward_attempt, reward_run, reward_setting, reward_status_cache},
     error::{Error, Result},
     hoyolab::{
-        credentials::Credentials,
-        gateway::{self, DailyState, Gateway, LiveGateway},
+        gateway::{self, Gateway, LiveGateway},
         store::CookieStore,
     },
 };
-use attosgameapi::game::GameKind;
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
-    QueryOrder, QuerySelect, Set, TransactionTrait, sea_query::OnConflict,
+    QueryOrder, QuerySelect, Set, TransactionTrait,
 };
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::sync::Arc;
 use uuid::Uuid;
 
 #[cfg(test)]
+mod test_support;
+
+mod cache;
+#[cfg(test)]
 #[path = "service_tests.rs"]
 mod tests;
-#[path = "worker.rs"]
 mod worker;
 
-const CACHE_VERSION: i32 = 1;
-const FRESH_TTL: Duration = Duration::minutes(5);
 const HISTORY_DAYS: i64 = 5;
 const RUN_LIMIT: u64 = 16;
 const MAX_ATTEMPTS: i32 = 4;
@@ -239,34 +237,6 @@ impl<G: Gateway> Rewards<G> {
         Ok(views)
     }
 
-    async fn refresh_cache(
-        &self,
-        actor: &Identity,
-        link: &hoyolab_account::Model,
-        cookie: &Credentials,
-        setting_id: Uuid,
-        game: GameKind,
-        prior: Option<&reward_status_cache::Model>,
-    ) -> Result<reward_status_cache::Model> {
-        match self.store.gateway.daily(cookie, game).await {
-            Ok(state) => {
-                self.recheck_actor_link(actor, link.id, link.credential_version, setting_id)
-                    .await?;
-                upsert_cache(&self.store.db, setting_id, CacheWrite::success(state)).await
-            }
-            Err(error) => {
-                let write = CacheWrite::failure(gateway::error_code(&error), prior);
-                self.recheck_actor_link(actor, link.id, link.credential_version, setting_id)
-                    .await?;
-                let row = upsert_cache(&self.store.db, setting_id, write).await?;
-                if gateway::cookie_invalid(&error) {
-                    self.store.mark_cookie_invalid(actor.user.id).await?;
-                }
-                Ok(row)
-            }
-        }
-    }
-
     async fn recheck_actor_link(
         &self,
         actor: &Identity,
@@ -321,75 +291,4 @@ async fn enqueue_in(
     }
     .insert(db)
     .await?)
-}
-
-struct CacheWrite {
-    fetched_at: Option<DateTime<Utc>>,
-    payload: Option<Value>,
-    error_code: Option<String>,
-    error_at: Option<DateTime<Utc>>,
-}
-
-impl CacheWrite {
-    fn success(state: DailyState) -> Self {
-        Self {
-            fetched_at: Some(Utc::now()),
-            payload: Some(
-                json!({"is_sign": state.is_sign, "total_sign_day": state.total_sign_day}),
-            ),
-            error_code: None,
-            error_at: None,
-        }
-    }
-    fn failure(code: String, prior: Option<&reward_status_cache::Model>) -> Self {
-        let supported = prior.filter(|row| row.payload_version == CACHE_VERSION);
-        Self {
-            fetched_at: supported.and_then(|row| row.fetched_at),
-            payload: supported.and_then(|row| row.payload.clone()),
-            error_code: Some(code),
-            error_at: Some(Utc::now()),
-        }
-    }
-}
-
-async fn upsert_cache(
-    db: &impl ConnectionTrait,
-    setting_id: Uuid,
-    write: CacheWrite,
-) -> Result<reward_status_cache::Model> {
-    use reward_status_cache::Column;
-    Ok(
-        reward_status_cache::Entity::insert(reward_status_cache::ActiveModel {
-            setting_id: Set(setting_id),
-            fetched_at: Set(write.fetched_at),
-            updated_at: Set(Utc::now()),
-            payload: Set(write.payload),
-            payload_version: Set(CACHE_VERSION),
-            error_code: Set(write.error_code),
-            error_at: Set(write.error_at),
-        })
-        .on_conflict(
-            OnConflict::column(Column::SettingId)
-                .update_columns([
-                    Column::FetchedAt,
-                    Column::UpdatedAt,
-                    Column::Payload,
-                    Column::PayloadVersion,
-                    Column::ErrorCode,
-                    Column::ErrorAt,
-                ])
-                .to_owned(),
-        )
-        .exec_with_returning(db)
-        .await?,
-    )
-}
-
-fn cache_fresh(cache: &reward_status_cache::Model, now: DateTime<Utc>) -> bool {
-    cache.payload_version == CACHE_VERSION
-        && cache.payload.is_some()
-        && cache.fetched_at.is_some_and(|at| {
-            let age = now.signed_duration_since(at);
-            age >= Duration::zero() && age <= FRESH_TTL
-        })
 }

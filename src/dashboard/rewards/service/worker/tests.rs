@@ -1,10 +1,19 @@
 //! Regression checks for durable send admission and deletion after history expiry.
-use super::super::tests::{
+use super::super::test_support::{
     MockGateway, inserted_run, key, ready_identity, service, setting, verified_link,
 };
-use super::*;
-use crate::dashboard::{db::entities::reward_status_cache, test_support::TestDatabase};
+use super::state::upsert_guard;
+use crate::dashboard::{
+    db::entities::{
+        hoyolab_account, reward_attempt, reward_guard, reward_run, reward_setting,
+        reward_status_cache,
+    },
+    hoyolab::gateway::{self, DailyState},
+    test_support::TestDatabase,
+};
 use attosgameapi::hoyolab::Error as UpstreamError;
+use chrono::{Duration, Utc};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set};
 
 #[tokio::test]
 async fn deletion_confirms_guard_only_and_ended_unknown_without_posting() {
