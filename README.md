@@ -64,7 +64,10 @@ src/dashboard/
 │   ├── sessions.rs             # 発行・固定期限・認証・失効
 │   └── passkeys/               # WebAuthn登録・認証・challenge・credential codec
 ├── hoyolab/
-│   ├── credentials.rs          # Cookie正規化・AES-GCM保存
+│   ├── credentials.rs          # Credentials / CookieKeyの窓口
+│   ├── credentials/
+│   │   ├── parser.rs           # legacy/v2 Cookie解析・正規化
+│   │   └── crypto.rs           # v1 AES-256-GCM保存・owner/UID AAD
 │   ├── store.rs                # owner lock・running gate・status/submit
 │   ├── verification.rs         # identity候補・roles sync・same-UID update
 │   ├── operations.rs           # owner単位の非global順序化
@@ -73,8 +76,16 @@ src/dashboard/
 │   ├── service.rs              # UID visibility・status cache
 │   └── summary.rs              # curated daily-note projection
 ├── rewards/
-│   ├── service.rs              # settings・manual run・history・cache
-│   ├── worker.rs               # scheduler/retry/may-have-sent guard
+│   ├── service.rs              # settings・manual enqueue・history・共通認可再検査
+│   ├── service/
+│   │   ├── cache.rs            # status cache更新・TTL・payload保持
+│   │   ├── test_support.rs     # service/worker共通の合成gateway・fixture
+│   │   └── worker/
+│   │       ├── mod.rs          # serviceの子workerを構成
+│   │       ├── scheduler.rs    # tick・due schedule・history cleanup
+│   │       ├── attempt.rs      # prepare・POST・GET確認
+│   │       ├── state.rs        # durable送信状態・guard・完了transaction
+│   │       └── deletion.rs     # 削除時の未確定報酬GET確認
 │   └── schedule.rs             # fixed-offset next tick
 ├── http/
 │   ├── mod.rs                  # route合成・HTTPサーバー生存期間
@@ -91,6 +102,17 @@ src/dashboard/
 ```
 
 HTTPは輸送と入力型、`auth/`は認証・ユーザーライフサイクル、`hoyolab/`はCookie保存とproof gate、`games/`と`rewards/`は所有者scopeの業務処理、`db/`は保存モデルとスキーマを担当します。認可や復旧ルールをハンドラーに複製せず、DBトランザクション・userロック・owner operation lockは業務側で一か所に維持します。構造変更・認証・永続化の増分ごとにhighレビューする方針は`AGENTS.md`に記載しています。
+
+### Dioxus UIのモジュール地図
+
+- `dashboard-ui/src/app.rs`: App合成・起動・60秒周期のDashboard更新。
+- `dashboard-ui/src/app/state.rs`: AppState、Page/Phase、generation・busy・owner切替・画面アクセス制御と関連テスト。
+- `dashboard-ui/src/app/data.rs`: 画面別のAPIデータ取得。
+- `dashboard-ui/src/app/session.rs`: bootstrap、fresh me適用、signed-out・logout失敗時の状態。
+- `dashboard-ui/src/app/actions.rs`: 非同期操作のsingle-flightと完了・エラー制御。
+- `dashboard-ui/src/app/display.rs`: 表示用の名前・日時・値整形。
+- `dashboard-ui/src/pages/mod.rs`: モジュール宣言のみ。`auth`、`shell`、`dashboard`、`hoyolab`、`accounts`、`rewards`、`security`、`admin`、`deletion`、`docs`に画面責務を分け、`common`に共通部品を置く。
+- `dashboard-ui/src/api.rs` / `models.rs` / `webauthn.rs`: 共通HTTP・DTO・ブラウザ認証器境界（維持）。
 
 ## ビルド・テスト
 
@@ -117,7 +139,7 @@ Dashboardテストは`initdb`・`pg_ctl`を使い、テストごとに専用Post
 ATTOS_TEST_PG_BIN=/path/to/postgresql/bin cargo test --locked --all-targets
 ```
 
-テストは設定・CLI・DB制約・アカウント・パスワード・セッション・パスキー・HTTP・HoYoLABプロトコルごとに所有モジュールへ配置しています。例：`cargo test --locked --bin attosgameapi dashboard::auth::sessions`。APIテストは現在実装済みのエンドポイントだけを対象とし、HoYoLABモックは実際のHTTPSホスト名・パスをループバックへ解決します。実APIテスト1件は外部通信の明示承認を要するため通常実行では`ignored`です。DBテストのツール不足や実APIテストの明示実行時の設定不足は失敗させます。合成UID・ソフトウェア鍵・モックは実APIの本人UID拘束・実認証器の確認の代わりではありません。
+テストは設定・CLI・DB制約・アカウント・パスワード・セッション・パスキー・HTTP・HoYoLABプロトコルごとに所有モジュールへ配置しています。アカウントのpassword rotationは`auth/accounts_tests/password_rotation.rs`、削除完了・queueは`auth/deletion_tests/completion.rs`へ分離し、元の親テストにpolicy/requestシナリオと小さな共通fixtureを残します。reward cacheテストは`rewards/service/cache_tests.rs`、reward実行シナリオは`rewards/service/worker/execution_tests.rs`・`tests.rs`に配置し、共通MockGateway/fixtureは`rewards/service/test_support.rs`から参照します。例：`cargo test --locked --bin attosgameapi dashboard::auth::sessions`。APIテストは現在実装済みのエンドポイントだけを対象とし、HoYoLABモックは実際のHTTPSホスト名・パスをループバックへ解決します。実APIテスト1件は外部通信の明示承認を要するため通常実行では`ignored`です。DBテストのツール不足や実APIテストの明示実行時の設定不足は失敗させます。合成UID・ソフトウェア鍵・モックは実APIの本人UID拘束・実認証器の確認の代わりではありません。
 
 バックエンドの起動手順は次節を参照してください。Dashboard API契約は手書きのOpenAPI 3.1として管理します。
 

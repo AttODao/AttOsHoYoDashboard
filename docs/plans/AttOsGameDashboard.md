@@ -71,9 +71,32 @@ node dashboard-ui/tests/browser.mjs
 node -e "const fs=require('fs'); const api=JSON.parse(fs.readFileSync('docs/dashboard-api.json','utf8')); console.log(Object.keys(api.paths).length, Object.values(api.paths).reduce((n,p)=>n+Object.keys(p).length,0))"
 ```
 
-最終ローカル検証: workspace 181 tests passed / 1 ignored（未承認のlive GETのみ）。native/WASM Clippy `-D warnings`、backend build、DX 0.7.10 release buildは成功。public出力は `target/dx/attos-dashboard-ui/release/web/public` を確認済み。Chromiumで実WASM bundleとexternal module loader用CSP（`wasm-unsafe-eval`のみ、inline/一般evalなし）を検証した。ローカル合成API fixtureで初期設定、管理・本人削除へのアクセス、Cookie入力消去、virtual WebAuthn登録/assertion、未使用のmutation成功bodyをdecodeしないack処理、public docsのOpenAPI GETが1回・認証API呼び出しなし、UID filtering、同時認証の拒否・HttpOnly Cookieと表示owner一致、logout失敗の警告/reload/retry、mobile docsを確認。Playwright/Chromiumは別途必要で、不足時はfailする。実認証器やbackend認可、上流token bindingの証明ではない。highレビューの3指摘（認証single-flight、派遣durationのstring/integer両対応、logout失敗の正確な表示）を修正済み。JSON/OpenAPI/Markdown/Mermaidの確認も行う。旧native Node UI checksを新UIの検証に流用しない。
+最終ローカル検証（モジュール分割後）: workspace 184 tests passed / 1 ignored（未承認のlive GETのみ）。native/WASM Clippy `-D warnings`、backend build、DX 0.7.10 release buildは成功。public出力は `target/dx/attos-dashboard-ui/release/web/public` を確認済み。Chromiumで実WASM bundleとexternal module loader用CSP（`wasm-unsafe-eval`のみ、inline/一般evalなし）を検証した。ローカル合成API fixtureで初期設定、管理・本人削除へのアクセス、Cookie入力消去、virtual WebAuthn登録/assertion、未使用のmutation成功bodyをdecodeしないack処理、public docsのOpenAPI GETが1回・認証API呼び出しなし、UID filtering、同時認証の拒否・HttpOnly Cookieと表示owner一致、logout失敗の警告/reload/retry、mobile docsを確認。Playwright/Chromiumは別途必要で、不足時はfailする。実認証器やbackend認可、上流token bindingの証明ではない。highレビューの3指摘（認証single-flight、派遣durationのstring/integer両対応、logout失敗の正確な表示）を修正済み。JSON/OpenAPI/Markdown/Mermaidの確認も行う。旧native Node UI checksを新UIの検証に流用しない。
 
 既存ライブラリ簡素化を実施済み: SeaORM cache/role upsert（事前SELECT削除）、derive_moreのstatic allowlist Debug、Rand/web-sys typed API、action終了処理とdocs取得ownerの集約。cache nullable overwrite/retention、role ID/visibility・消失/再出現、全11 entityのcompact/pretty redactionを回帰検証した。独立highレビューで具体的な残存regressionは見つからなかった。API/UI構成の評価と見送った置換は[設計 §1.1–1.2](../design/AttOsGameDashboard.md#11-dioxusとapiui境界)に記録する。
+
+### 5.1. 責務別モジュール分割の検証記録
+
+事前調査の行数と実装開始時の対象は一致していた。処理本体を移動し、参照・imports・必要最小限のvisibilityを調整した。API仕様・DBスキーマ・migration・本番proof/reward gateは変更していない。旧パス互換re-exportや新しい状態管理抽象化は導入していない。
+
+| 対象 | 分割前 → 分割後（行） | 抽出先 |
+|---|---|---|
+| UI pages/mod.rs | 918 → 11 | auth 153、shell 127、dashboard 152、hoyolab 71、accounts 70、rewards 124、security 91、admin 101、deletion 48、docs 75、common 11 |
+| UI app.rs | 850 → 72 | state 314、data 245、session 235、actions 81、display 50 |
+| HoYoLAB credentials.rs | 352 → 24 | parser 216、crypto 124 |
+| credentials_tests.rs | 261 → 旧ファイル削除 | parser/tests 118、crypto/tests 159（独立した合成v1暗号文の互換テスト1件追加） |
+| rewards/service.rs | 395 → 294 | service/cache 123、共通認可recheckはserviceに維持 |
+| rewards/worker.rs | 614 → 旧ファイル削除 | service/worker/mod 10、scheduler 113、attempt 229、state 247、deletion 87 |
+| rewards/service_tests.rs | 838 → 158 | service/cache_tests 198、worker/execution_tests 315、共通test_support 199 |
+| rewards/worker_tests.rs | 334 → 旧ファイル削除 | service/worker/tests 343 |
+| auth/accounts_tests.rs | 711 → 478 | accounts_tests/password_rotation 248 |
+| auth/deletion_tests.rs | 741 → 451 | deletion_tests/completion 304 |
+
+UI・credentials・rewards・authテスト整理を独立したread-only highレビューで確認した。既存関数・テスト本体の比較で意図しない挙動/assertion変更は見つからず、generation/busy・owner切替・logout失敗・初期設定制限・60秒更新、暗号化v1/AAD、owner/DBロック・durable送信状態・不確定POST再送禁止を維持する。UIにはactionの古いgeneration拒否と表示整形のfocused testを追加した。
+
+検証: fmt、workspace all-target check/test/Clippy（`-D warnings`）、UI WASM check/Clippy、Dioxus 0.7.10 release build、Chromium browser fixtureは成功。DBは既存TestDatabaseのisolated PostgreSQL 18.4一時クラスタを使用し、production DATABASE_URLはunsetした。Dioxus CLIとPlaywrightはPATH/通常module解決外の既存インストールを明示指定し、Chromium共有ライブラリは既存Nixライブラリを実行環境だけで指定した。新しい依存関係・生成物は追加していない。60秒timerの実時間ブラウザ検証はなく、既存実装の構造比較による確認に留まる。
+
+見送り: auth/accounts.rsはlifecycle/session/audit transactionと共通認可、games/service.rsはowner lock下のstatus/cache/error効果が密結合のため維持。HoYoLAB client/mod.rs・client/test_support.rsとUI webauthn.rsはそれぞれtransport・TLS mock server・ブラウザadapterとしてまとまっている。games/service_tests.rsはfixture共有の増加に見合う独立責務がなく、db/game_tests.rsも今回の業務分割と独立したschema/migration検証として保持する。api.rs・models.rs・verification.rs・既存migrationは指定どおり維持する。
 
 ## 6. 合意済み方針
 

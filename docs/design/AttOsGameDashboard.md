@@ -23,13 +23,15 @@ flowchart TB
 
 責務:
 
-- `dashboard-ui/src/`: Dioxus RSX app/pages、typed browser API models、web-sys/js-sys WebAuthn bridge。localStorage secrets、manual Cookie/Origin header、SSR/fullstack serverは持たない。
+- `dashboard-ui/src/app.rs`: App合成・起動・60秒周期のDashboard更新。`app/state.rs`はAppState・Page/Phaseと状態操作、`data.rs`は画面データ取得、`session.rs`はbootstrap・fresh me・logout、`actions.rs`は非同期操作のadmission/完了/エラー、`display.rs`は表示整形を持つ。generationによる古い応答の破棄、busyによる重複抑制、owner切替の初期化・初期設定の画面制限を維持する。
+- `dashboard-ui/src/pages/`: `auth`・`shell`・`dashboard`・`hoyolab`・`accounts`・`rewards`・`security`・`admin`・`deletion`・`docs`に画面責務を分け、`common`にField/Metricなどを置く。Signals/Hooks・イベント・状態共有は既存のまま。`api.rs`・`models.rs`・`webauthn.rs`はHTTP・DTO・ブラウザ認証器境界を持ち、localStorage secrets、manual Cookie/Origin header、SSR/fullstack serverは持たない。
 - `dashboard-ui/src/components/`: official Dioxus Components由来Button/Card/Card partsとMIT/provenance。
 - `src/dashboard/http/`: route composition、DTO、Origin/session boundary、safe error mapping、compiled Dioxus UI、`/docs` index、`/openapi.json`。
 - `src/dashboard/auth/`: user lifecycle、password/session、passkey registration/authentication、deletion request。
-- `src/dashboard/hoyolab/`: Cookie parse/seal、owner operation lock、proof-gated verification/sync。
+- `src/dashboard/hoyolab/`: owner operation lock、proof-gated verification/sync。`credentials.rs`がCredentials/CookieKeyの窓口を持ち、`credentials/parser.rs`がCookie解析・正規化、`credentials/crypto.rs`がAES-256-GCM保存を担当する。Cookie claimは本人確認の証拠にせず、暗号化v1のnonce・AAD・保存形式は維持する。
 - `src/dashboard/games/`: owned game UID list、visibility、curated status cache。
-- `src/dashboard/rewards/`: settings、runs、attempts、guard、worker、fixed-offset schedule。
+- `src/dashboard/rewards/service.rs`: settings・manual enqueue・historyと共通のactor/link/credential version再検査。`service/cache.rs`がrefresh・TTL・cache upsertを持つ。認可再検査はcache専用ではないためserviceに残す。
+- `src/dashboard/rewards/service/worker/`: serviceの子workerを維持し、`scheduler.rs`にtick・due schedule・history cleanup、`attempt.rs`にprepare・POST・GET確認、`state.rs`にdurable may-have-sent・guard・完了transaction、`deletion.rs`に削除時のGET-only確認を置く。owner operation lock、DB transaction/row lock、POST前のdurable記録と不確定時の再送禁止は移動前と同じ境界を保つ。fixed-offset計算は`rewards/schedule.rs`。
 - `src/hoyolab/client/`: typed upstream protocol client。Dashboard policyをここへ混ぜない。
 
 APIとschedulerは同じDB/業務処理を使う。単一process/instance前提で、Redisや分散queueはない。更新時down timeは許容する。
