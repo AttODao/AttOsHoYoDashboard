@@ -2,7 +2,7 @@
 
 ## 1. 現在の実装状態
 
-この文書は実装済み範囲、未解消の上流実証、検証gapを追跡する。実アカウントGETやreward POSTの承認ではない。
+この文書は実装済み範囲、ユーザー承認による通常機能の提供、未解消の上流実証・検証gapを追跡する。利用承認と科学的実証は区別する。
 
 | 領域 | 状態 |
 |---|---|
@@ -10,25 +10,25 @@
 | 認証 | password login/logout、固定期限session、password rotation、管理者user管理、passkey login/registration/list/delete |
 | UI | Dioxus 0.7.10 Web/WASM RSX。standalone `dashboard-ui` / `attos-dashboard-ui` crate、official Dioxus Components由来Button/Cardをsource同梱 |
 | HoYoLAB Cookie | legacy/v2 parse normalization、AES-GCM保存、pending status、same-UID proof path実装 |
-| Proof-gated verification | account/community identity候補、role sync、version recheck、same-UID update preservationを実装・mock検証済み。本番gate false |
+| 連携検証 | account/community identity・Cookie claim整合性、role sync、version recheck、same-UID update preservation。暗号化設定と検証成功で通常利用可能 |
 | Game status | owned UID list/visibility、curated cache version 1、5分TTL、failure keeps old payload |
-| Rewards | settings/list/update/manual run/history、worker、durable may-have-sent guard、GET/POST/GET flowを実装。本番reward gate false |
+| Rewards | settings/list/update/manual run/history、worker、durable may-have-sent guard、GET/POST/GET flow。verified linkで手動・定期受け取り可能。自動は初期OFF、既存UIでユーザーが有効化 |
 | Deletion | self/admin-delete-other、actor password、typed username、last active admin保護、inactive+revoke+background completion |
 | OpenAPI/operations docs | manual OpenAPI 3.1 と運用手順を追加 |
 
 `/` と `/docs` は同じcompiled Dioxus `index.html` を返し、`/docs` は認証なしread-only OpenAPI viewerとして動作する。`/openapi.json` はstandalone contract。`/assets/{...}` は `DASHBOARD_UI_DIR/assets` のcompiled hash asset専用で、旧native `/assets/app.js`・`/assets/style.css`・`/assets/docs.js` はAPI pathではない。
 
-## 2. 本番rollout blocker
+## 2. 通常利用の承認と実証の限界
 
-最重要blockerは実装量ではなく、HoYoLAB上流契約の証拠不足である。
+ユーザーは実アクセス・手動および定期の報酬受け取りと趣味用途での利用を明示承認した。旧hardcoded-false rollout gateを撤去し、`HOYOLAB_COOKIE_KEY`による暗号化設定と既存の連携検証成功で通常利用できる。新たな設定switchや開発専用制限は追加しない。identity/roles・Cookie claim整合性、verified link、認証・認可、owner lock、POST前のdurable may-have-sent記録、GET確認、不確定POST再送禁止は維持する。
 
-- `account_identity()` と `community_identity()` は候補GETとして実装されているが、返却UIDがCookie token本人に拘束されることを証明していない。
-- roles APIが同じprincipalに紐づくことも本番では未証明。
-- 実アカウント1個では token B + claim UID A gap を閉じられない。
-- reward POST contract（期間、反映遅延、final GETだけでの安全確認、unknown後の再送禁止条件）は未承認。
-- そのため `OWNER_BINDING_ESTABLISHED=false` と reward contract gate false を保つ。設定やGUIでoverrideしない。
+これは上流契約の実証とは異なる。
 
-この状態ではreal account onboarding completionもreward postingもできない。UI onboardingの完成は、本番proof gate解除なしには実運用可能とは言えない。
+- `account_identity()` / `community_identity()`の返却UIDがCookie token本人に拘束されること、roles APIのprincipal一致は実上流で未証明。
+- 実アカウント1個では token B + claim UID A gap を閉じられず、合成multi-identityテストもlive bindingの証明にはならない。
+- reward POST contract（期間、反映遅延、確認条件など）全体は未実証。実POST結果は報告されていない。
+
+ユーザー提供の `current_read_only_endpoints` 実行結果は **1 passed / 0 failed / 0 ignored（3.72s）**。accountsと両ゲームのdaily_info/daily_home/index/daily_noteへのアクセスを確認するが、account_identity/community_identityや報酬POSTは対象外で、上記の証明にはならない。
 
 ## 3. 実証が必要なこと
 
@@ -43,7 +43,7 @@
 | game record | 欠落・非公開・retcode 10102・cookie invalidの実応答と停止範囲 |
 | browser/security | real authenticator WebAuthn、production TLS/reverse proxy、secure cookie prefix behavior |
 
-実通信は別途承認が必要。受け取りPOSTは特に副作用があるため、read-only確認と分けて承認する。
+通常の連携・受け取りは承認済みだが、追加の実証試験はその範囲を明示し、read-only確認と副作用のあるPOSTを区別する。この文書更新では実通信を行わない。
 
 ## 4. 残る実装・運用課題
 
@@ -51,11 +51,11 @@
 - Cookie key rotation/re-encryption toolingは未実装。運用手順では「変更しない」を契約にする。
 - Single-process前提。HA、multi-instance scheduling、distributed lockは未設計。
 - docs examplesにsecret-like token/password/cookieを入れない。
-- 実認証器、production TLS/reverse proxy、実配置path、live HoYoLAB契約は未検証。合成fixtureの成功で本番proof gateを解除しない。
+- 実認証器、production TLS/reverse proxy、実配置path、live HoYoLAB契約は未検証。合成fixtureの成功を実上流契約の証明と扱わない。
 
 ## 5. 検証方針
 
-ローカル合成UID、mock gateway、software passkey、isolated PostgreSQLを使う。production DB、real Cookie、real reward POSTは使わない。関連する確認コマンドの例:
+通常の自動テストはローカル合成UID、mock gateway、software passkey、isolated PostgreSQLを使い、production DB、real Cookie、real reward POSTは使わない。関連する確認コマンドの例:
 
 ```console
 cargo fmt --all -- --check
@@ -71,13 +71,13 @@ node dashboard-ui/tests/browser.mjs
 node -e "const fs=require('fs'); const api=JSON.parse(fs.readFileSync('docs/dashboard-api.json','utf8')); console.log(Object.keys(api.paths).length, Object.values(api.paths).reduce((n,p)=>n+Object.keys(p).length,0))"
 ```
 
-最終ローカル検証（モジュール分割後）: workspace 184 tests passed / 1 ignored（未承認のlive GETのみ）。native/WASM Clippy `-D warnings`、backend build、DX 0.7.10 release buildは成功。public出力は `target/dx/attos-dashboard-ui/release/web/public` を確認済み。Chromiumで実WASM bundleとexternal module loader用CSP（`wasm-unsafe-eval`のみ、inline/一般evalなし）を検証した。ローカル合成API fixtureで初期設定、管理・本人削除へのアクセス、Cookie入力消去、virtual WebAuthn登録/assertion、未使用のmutation成功bodyをdecodeしないack処理、public docsのOpenAPI GETが1回・認証API呼び出しなし、UID filtering、同時認証の拒否・HttpOnly Cookieと表示owner一致、logout失敗の警告/reload/retry、mobile docsを確認。Playwright/Chromiumは別途必要で、不足時はfailする。実認証器やbackend認可、上流token bindingの証明ではない。highレビューの3指摘（認証single-flight、派遣durationのstring/integer両対応、logout失敗の正確な表示）を修正済み。JSON/OpenAPI/Markdown/Mermaidの確認も行う。旧native Node UI checksを新UIの検証に流用しない。
+当時のローカル検証記録（モジュール分割後、通常利用への変更前）: workspace 184 tests passed / 1 ignored（未承認のlive GETのみ）。native/WASM Clippy `-D warnings`、backend build、DX 0.7.10 release buildは成功。public出力は `target/dx/attos-dashboard-ui/release/web/public` を確認済み。Chromiumで実WASM bundleとexternal module loader用CSP（`wasm-unsafe-eval`のみ、inline/一般evalなし）を検証した。ローカル合成API fixtureで初期設定、管理・本人削除へのアクセス、Cookie入力消去、virtual WebAuthn登録/assertion、未使用のmutation成功bodyをdecodeしないack処理、public docsのOpenAPI GETが1回・認証API呼び出しなし、UID filtering、同時認証の拒否・HttpOnly Cookieと表示owner一致、logout失敗の警告/reload/retry、mobile docsを確認。Playwright/Chromiumは別途必要で、不足時はfailする。実認証器やbackend認可、上流token bindingの証明ではない。highレビューの3指摘（認証single-flight、派遣durationのstring/integer両対応、logout失敗の正確な表示）を修正済み。JSON/OpenAPI/Markdown/Mermaidの確認も行う。旧native Node UI checksを新UIの検証に流用しない。
 
 既存ライブラリ簡素化を実施済み: SeaORM cache/role upsert（事前SELECT削除）、derive_moreのstatic allowlist Debug、Rand/web-sys typed API、action終了処理とdocs取得ownerの集約。cache nullable overwrite/retention、role ID/visibility・消失/再出現、全11 entityのcompact/pretty redactionを回帰検証した。独立highレビューで具体的な残存regressionは見つからなかった。API/UI構成の評価と見送った置換は[設計 §1.1–1.2](../design/AttOsGameDashboard.md#11-dioxusとapiui境界)に記録する。
 
 ### 5.1. 責務別モジュール分割の検証記録
 
-事前調査の行数と実装開始時の対象は一致していた。処理本体を移動し、参照・imports・必要最小限のvisibilityを調整した。API仕様・DBスキーマ・migration・本番proof/reward gateは変更していない。旧パス互換re-exportや新しい状態管理抽象化は導入していない。
+以下は通常利用への変更前に行った分割の履歴である。事前調査の行数と実装開始時の対象は一致していた。処理本体を移動し、参照・imports・必要最小限のvisibilityを調整した。この分割時点ではAPI仕様・DBスキーマ・migration・本番proof/reward gateは変更していない。旧パス互換re-exportや新しい状態管理抽象化は導入していない。
 
 | 対象 | 分割前 → 分割後（行） | 抽出先 |
 |---|---|---|
@@ -98,12 +98,18 @@ UI・credentials・rewards・authテスト整理を独立したread-only highレ
 
 見送り: auth/accounts.rsはlifecycle/session/audit transactionと共通認可、games/service.rsはowner lock下のstatus/cache/error効果が密結合のため維持。HoYoLAB client/mod.rs・client/test_support.rsとUI webauthn.rsはそれぞれtransport・TLS mock server・ブラウザadapterとしてまとまっている。games/service_tests.rsはfixture共有の増加に見合う独立責務がなく、db/game_tests.rsも今回の業務分割と独立したschema/migration検証として保持する。api.rs・models.rs・verification.rs・既存migrationは指定どおり維持する。
 
+### 5.2. 通常の連携・報酬機能の有効化
+
+ユーザー承認に基づき、旧rollout gateとその到達不能な条件分岐を削除した。capabilities/verification_availableはCookie暗号化が設定されている場合にtrueとなるが、Cookie保存はpendingのままで、identity照合・verified linkなしではゲーム/報酬APIを拒否する。既存UIDと矛盾するCookie置換claimはupstream通信前に拒否し、claim一致だけでは検証を完了しない。
+
+fmt、workspace check/test/Clippy（184成功・live GET 1 ignored）、backend build、UI WASM check、Dioxus release buildとChromium browser fixtureは成功。browser fixtureもavailable=trueへ更新し、Verify bindingによる画面遷移・自動受け取り設定の保存・手動runのenqueueを現在のAPI pathだけで検証した。独立read-only highレビューで新たな認可/並行性/送信安全性の問題は見つからず、指摘された旧gate文言とbrowser fixtureの不足も修正した。この変更の自動検証では実Cookie・実報酬POSTを使っていない。
+
 ## 6. 合意済み方針
 
 - 1 user : 1 HoYoLAB account。追加連携・別UID置換・independent unlinkなし。
 - 削除はDashboard user deletion。selfとadmin-delete-otherを許可し、actor current passwordとtyped target usernameを要求する。
 - 最後のactive adminは削除不可。inactive adminは別active adminが削除可能。
 - Disable blocks new access/jobs and revokes sessions。Re-enable never revives old sessions and turns automatic rewards OFF。
-- Reward defaults: OFF、06:00、shared fixed +09:00、history 5 days、initial + 3 retries max、unknown no unconditional POST retry。
+- Reward defaults: OFF、06:00、shared fixed +09:00、history 5 days、initial + 3 retries max、unknown POST no resend。
 - Game cache latest only、version 1、TTL 5min、failure keeps old payload/fetched_at and records separate sanitized error/error_at。
 - Secrets are never logged/returned。Connection subscriber output is redacted; passkey library traces are suppressed around sensitive work。

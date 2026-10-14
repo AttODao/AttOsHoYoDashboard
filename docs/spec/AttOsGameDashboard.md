@@ -6,7 +6,7 @@ AttOsGameDashboard は、小規模な身内用に HoYoLAB のゲーム状態確�
 
 現在のUIは Dioxus 0.7.10 Web/WASM RSX で作成する。UIはstandalone workspace crate `dashboard-ui` / package `attos-dashboard-ui` で、公式Dioxus Components由来のButton/Card/Card partsをsource templateとして使う。公開routeは `/`, `/docs`, `/openapi.json` で、`/` と `/docs` は同じcompiled Dioxus `index.html` を返す。`/docs` はread-only OpenAPI viewerで、認証やtry-it mutationは提供しない。Dioxus buildのhash付き `/assets/{...}` は内部assetであり、`/assets/app.js`・`/assets/style.css`・`/assets/docs.js` のような安定API routeは仕様に含めない。
 
-重要な本番制限: HoYoLAB owner binding と reward POST contract は policy/業務処理として実装され、mockでは検証されているが、本番では hardcoded gate が false である。`OWNER_BINDING_ESTABLISHED=false` かつ reward contract gate も false のため、実アカウントは現在 verified onboarding を完了できず、reward posting も利用できない。これは「未実装」ではなく「上流契約未実証のためrollout blocked」である。
+HoYoLAB連携・手動報酬受け取り・自動報酬受け取りは通常機能として利用できる。Cookie暗号化の設定と既存のidentity照合・roles sync、パスワード変更を完了することが必要で、自動受け取りは既定OFFをユーザーがONにする。以前のhardcoded-false rollout gateはユーザー承認により削除した。利用可能であることは、実上流token-to-UID bindingや報酬期間・POST反映契約の実証完了を意味しない。実GET疎通の成功、単一実アカウントやmockの結果だけでそれらを証明したとは扱わない。
 
 ## 2. 利用者、認証、セッション
 
@@ -24,7 +24,7 @@ AttOsGameDashboard は、小規模な身内用に HoYoLAB のゲーム状態確�
 
 ## 3. 初期設定と通常利用ゲート
 
-初回または復旧後のユーザーは、仮パスワード変更と server-proven HoYoLAB Cookie の両方を終えるまで通常のゲーム・報酬APIを利用できない。限定的に利用できるのは `/me`、パスワード変更、Cookie入力、任意passkey/セキュリティ、管理者のbootstrap/account management、およびPW変更後の本人削除である。管理者復旧は信頼境界だが、通常画面/APIから他人のゲームデータを直接閲覧する経路は作らない。
+初回または復旧後のユーザーは、仮パスワード変更と upstream identity照合済み HoYoLAB Cookie の両方を終えるまで通常のゲーム・報酬APIを利用できない。限定的に利用できるのは `/me`、パスワード変更、Cookie入力、任意passkey/セキュリティ、管理者のbootstrap/account management、およびPW変更後の本人削除である。管理者復旧は信頼境界だが、通常画面/APIから他人のゲームデータを直接閲覧する経路は作らない。
 
 ```mermaid
 flowchart TD
@@ -32,9 +32,9 @@ flowchart TD
     B --> C{"仮PW変更済み?"}
     C -->|いいえ| D["PW変更のみ許可"]
     C -->|はい| E["HoYoLAB Cookie入力"]
-    E --> F{"owner binding gate true?"}
-    F -->|本番はfalse| G["pending_verification / 通常利用不可"]
-    F -->|承認済み証拠あり| H["UID検証・roles sync"]
+    E --> F{"fresh identity照合成功?"}
+    F -->|いいえ| G["pending_verification / 通常利用不可"]
+    F -->|はい| H["UID保存・roles sync"]
     H --> I["新UID hidden / rewards OFF"]
     I --> J["通常利用可"]
 ```
@@ -81,11 +81,11 @@ flowchart TD
 ## 7. ログインボーナス
 
 - 設定単位は HoYoLABアカウント × game。既定OFF、既定local time `06:00`、server共通固定offset（既定 `+09:00`）。ユーザー別TZ/DSTはない。
-- ON、時刻変更、Cookie更新の後は厳密に次の未来tickまで待つ。手動runはenabled flagと独立だがproof-gated。
+- ON、時刻変更、Cookie更新の後は厳密に次の未来tickまで待つ。手動runはenabled flagと独立だが、同じverified link・認可・credential version検査を要求する。
 - schedulerはpage viewに依存しない。停止中に時刻を逃した場合は現在分だけcatchupし、過去分を補填しない。
 - 実行はPOST前にdaily statusをGET確認する。成功はPOST応答だけでなく最終状態で確認する。
 - pre-POST/GET retry pathは初回+最大3回、10秒backoffを永続化する。不明または送信可能性がある場合はdurable guardを立て、restart・credential update・5日履歴cleanup後も無条件POST再送しない。
-- production reward contract gateはfalseのため、実POST系は503/unavailableとなる。
+- 手動runとschedulerは同じworkerを使用する。追加認証要求はaction_required、不確定な送信結果はunknownとして停止し、無条件にPOSTを再送しない。
 
 ## 8. Web API契約
 

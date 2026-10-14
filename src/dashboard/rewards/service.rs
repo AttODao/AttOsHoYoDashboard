@@ -169,8 +169,6 @@ impl<G: Gateway> Rewards<G> {
         actor: &Identity,
         id: Uuid,
     ) -> Result<reward_run::Model> {
-        self.store.require_binding()?;
-        self.store.require_reward_contract()?;
         let tx = self.store.db.begin().await?;
         let fresh = self.store.actor_locked(&tx, actor).await?;
         let (link, _) = self.store.owner_link_in(&tx, fresh.user.id).await?;

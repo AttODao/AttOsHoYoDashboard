@@ -36,11 +36,11 @@ async fn status(
     let row = store(&app)?.status(&actor).await?;
     Ok(Json(json!({
         "status": row.as_ref().map(|row| row.auth_status.as_str()).unwrap_or("not_configured"),
-        "setup_complete": store(&app)?.verification_available() && row.as_ref().is_some_and(|row| row.hoyolab_uid.is_some() && row.auth_status == "verified"),
+        "setup_complete": row.as_ref().is_some_and(|row| row.hoyolab_uid.is_some() && row.auth_status == "verified"),
         "updated_at": row.as_ref().map(|row| row.updated_at),
         "id":row.as_ref().map(|row|row.id),
         "hoyolab_uid":row.as_ref().and_then(|row|row.hoyolab_uid.as_deref()),
-        "verification_available":store(&app)?.verification_available(),
+        "verification_available":true,
     })))
 }
 
@@ -77,10 +77,9 @@ async fn submit(
 ) -> Result<(StatusCode, Json<Value>)> {
     store(&app)?.submit(&actor, &input.cookie).await?;
     let row = store(&app)?.status(&actor).await?;
-    let complete = store(&app)?.verification_available()
-        && row
-            .as_ref()
-            .is_some_and(|row| row.auth_status == "verified" && row.hoyolab_uid.is_some());
+    let complete = row
+        .as_ref()
+        .is_some_and(|row| row.auth_status == "verified" && row.hoyolab_uid.is_some());
     Ok((
         if complete {
             StatusCode::OK

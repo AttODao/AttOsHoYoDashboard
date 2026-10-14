@@ -14,9 +14,6 @@ use tokio::task::JoinSet;
 
 impl<G: Gateway> Rewards<G> {
     pub(in crate::dashboard) async fn tick(&self) -> Result<()> {
-        if !self.store.reward_available() || !self.store.verification_available() {
-            return Ok(());
-        }
         self.cleanup_history().await?;
         self.enqueue_due_schedules().await?;
         let runs = reward_run::Entity::find()

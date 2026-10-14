@@ -129,7 +129,7 @@ async fn owner_scoping_prevents_admin_peeking_or_cross_setting_enqueue() {
 }
 
 #[tokio::test]
-async fn initial_password_and_production_proof_gates_reject_work() {
+async fn initial_password_and_missing_verified_link_reject_work() {
     let fixture = TestDatabase::new().await;
     let must_change = identity_with(&fixture.db, "must-change", false, true).await;
     let ready = ready_identity(&fixture.db, "ready").await;
@@ -152,7 +152,7 @@ async fn initial_password_and_production_proof_gates_reject_work() {
     let production = Rewards::new(Arc::new(CookieStore::new(fixture.db.clone(), key)));
     assert!(matches!(
         production.enqueue(&ready, setting.id).await,
-        Err(Error::Unavailable(_))
+        Err(Error::InitialSetupRequired)
     ));
     production.tick().await.unwrap();
 }

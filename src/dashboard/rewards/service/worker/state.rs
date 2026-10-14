@@ -13,7 +13,6 @@ use uuid::Uuid;
 
 impl<G: Gateway> Rewards<G> {
     pub(super) async fn mark_may_have_sent(&self, prepared: &PreparedAttempt) -> Result<bool> {
-        self.store.require_reward_contract()?;
         let owner = self.run_owner(prepared.run.id).await?;
         let tx = self.store.db.begin().await?;
         let (link, _) = match self.store.owner_link_in(&tx, owner).await {

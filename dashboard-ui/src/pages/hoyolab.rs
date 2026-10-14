@@ -32,7 +32,7 @@ pub(super) fn CookieCard(mut state: Signal<AppState>) -> Element {
                 dl { class: "metric-list",
                     Metric { label: "Status", value: onboarding.as_ref().map(|o| humanize(&o.cookie_status)).unwrap_or_else(|| hoyolab.as_ref().map(|h| humanize(&h.status)).unwrap_or_else(|| "Not loaded".to_owned())) }
                     Metric { label: "HoYoLAB UID", value: hoyolab.as_ref().and_then(|h| h.hoyolab_uid.clone()).unwrap_or_else(|| "Only shown after backend verification".to_owned()) }
-                    Metric { label: "Verification", value: if onboarding.as_ref().is_some_and(|o| o.verification_available) || hoyolab.as_ref().is_some_and(|h| h.verification_available) { "Available".to_owned() } else { "Unavailable; ordinary UI remains blocked until server proof succeeds".to_owned() } }
+                    Metric { label: "Verification", value: if onboarding.as_ref().is_some_and(|o| o.verification_available) || hoyolab.as_ref().is_some_and(|h| h.verification_available) { "Available".to_owned() } else { "Unavailable; configure Cookie storage on the server".to_owned() } }
                     Metric { label: "Updated", value: hoyolab.as_ref().map(|h| display_date(&h.updated_at)).unwrap_or_else(|| "Not reported".to_owned()) }
                 }
                 Field { id: "hoyolab-cookie", label: "Paste one HoYoLAB Cookie",

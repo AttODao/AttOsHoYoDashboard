@@ -8,7 +8,7 @@
 flowchart TB
     browser["Dioxus Web/WASM RSX UI"] --> api["Axum Web Session API"]
     api --> auth["auth: accounts/sessions/passkeys"]
-    api --> hl["HoYoLAB proof gates"]
+    api --> hl["HoYoLAB verification/sync"]
     api --> games["games: role-owned status cache"]
     api --> rewards["rewards: settings/runs/worker"]
     rewards --> hl
@@ -18,7 +18,7 @@ flowchart TB
     hl --> db
     games --> db
     rewards --> db
-    client -. gated live calls .-> upstream["HoYoLAB upstream"]
+    client --> upstream["HoYoLAB upstream"]
 ```
 
 責務:
@@ -28,7 +28,7 @@ flowchart TB
 - `dashboard-ui/src/components/`: official Dioxus Components由来Button/Card/Card partsとMIT/provenance。
 - `src/dashboard/http/`: route composition、DTO、Origin/session boundary、safe error mapping、compiled Dioxus UI、`/docs` index、`/openapi.json`。
 - `src/dashboard/auth/`: user lifecycle、password/session、passkey registration/authentication、deletion request。
-- `src/dashboard/hoyolab/`: owner operation lock、proof-gated verification/sync。`credentials.rs`がCredentials/CookieKeyの窓口を持ち、`credentials/parser.rs`がCookie解析・正規化、`credentials/crypto.rs`がAES-256-GCM保存を担当する。Cookie claimは本人確認の証拠にせず、暗号化v1のnonce・AAD・保存形式は維持する。
+- `src/dashboard/hoyolab/`: owner operation lock、identity/roles整合性検証・sync。`credentials.rs`がCredentials/CookieKeyの窓口を持ち、`credentials/parser.rs`がCookie解析・正規化、`credentials/crypto.rs`がAES-256-GCM保存を担当する。Cookie claimは本人確認の証拠にせず、暗号化v1のnonce・AAD・保存形式は維持する。
 - `src/dashboard/games/`: owned game UID list、visibility、curated status cache。
 - `src/dashboard/rewards/service.rs`: settings・manual enqueue・historyと共通のactor/link/credential version再検査。`service/cache.rs`がrefresh・TTL・cache upsertを持つ。認可再検査はcache専用ではないためserviceに残す。
 - `src/dashboard/rewards/service/worker/`: serviceの子workerを維持し、`scheduler.rs`にtick・due schedule・history cleanup、`attempt.rs`にprepare・POST・GET確認、`state.rs`にdurable may-have-sent・guard・完了transaction、`deletion.rs`に削除時のGET-only確認を置く。owner operation lock、DB transaction/row lock、POST前のdurable記録と不確定時の再送禁止は移動前と同じ境界を保つ。fixed-offset計算は`rewards/schedule.rs`。
@@ -78,16 +78,13 @@ APIとschedulerは同じDB/業務処理を使う。単一process/instance前提�
 
 CookieはAES-256-GCMで保存し、AADに用途/version/owner/verified UID有無と値を含める。keyはDB外の `HOYOLAB_COOKIE_KEY`。key rotation/re-encryption toolingは未実装。
 
-## 4. HoYoLAB proof gate
+## 4. HoYoLAB連携と利用条件
 
-`CookieStore` には二つの本番gateがある。
+ユーザーは実アクセス・手動および定期の報酬受け取りを趣味用途の通常機能として承認した。`HOYOLAB_COOKIE_KEY`による暗号化設定と既存の連携検証成功を条件に利用できる。開発専用制限や追加の設定switchは設けず、自動受け取りは初期OFFのままユーザーが既存UIから有効にする。
 
-| Gate | 現在 | 理由 |
-|---|---|---|
-| owner binding | hardcoded false | account/community identity候補がtoken-to-UID bindingとroles principal一致の本番証拠ではない |
-| reward contract | hardcoded false | 実POSTの期間・確認・再送安全性が未承認 |
+確認処理は、v2 ltoken credential、fresh account identity、fresh community identity、Cookie claimed UID一致、既存UID一致、roles validation、credential version再確認、same-UID update preservationを要求する。Cookie UIDだけを本人確認の証拠にはしない。認証・認可・アカウント利用可否とverified link要件も維持する。
 
-実装済みの確認処理は、v2 ltoken credential、fresh account identity、fresh community identity、Cookie claimed UID一致、既存UID一致、roles validation、credential version再確認、same-UID update preservationを要求する。これらはmockで検証済みだが、本番gate解除の証拠ではない。
+利用承認は実上流のtoken-to-UID binding・roles principal一致やreward POST契約全体の科学的実証ではない。実アカウントは1個のみ。ユーザー提供のcurrent read-only GET suite成功はアクセスの確認であり、identity GETやreward POSTは対象外で、実POST結果も報告されていない。合成multi-identityテストではlive bindingを証明できない。
 
 ## 5. Owner operation ordering
 
@@ -100,8 +97,8 @@ sequenceDiagram
     participant H as HoYoLAB Gateway
     R->>O: acquire owner lock
     R->>D: re-authenticate actor / load link version
-    alt proof gate false or setup incomplete
-        D-->>R: 503 or initial_setup_required
+    alt encryption or setup incomplete
+        D-->>R: unavailable or initial_setup_required
     else live operation allowed
         R->>H: bounded GET/POST/GET as required
         R->>D: recheck actor/link/version before storing
@@ -142,7 +139,7 @@ stateDiagram-v2
     stopped --> [*]
 ```
 
-Worker tick is independent of page views. It first cleans completed 5-day history while preserving interrupted active work for confirmation, enqueues due enabled ready settings, then processes pending/running/retry_wait runs up to a small batch. `mark_may_have_sent` persists the guard before POST. Unknown/may-have-sent paths never unconditional POST retry; they use GET-only confirmation and otherwise remain unknown. In production the worker exits early because verification and reward gates are false.
+Worker tick is independent of page views. It first cleans completed 5-day history while preserving interrupted active work for confirmation, enqueues due enabled ready settings, then processes pending/running/retry_wait runs up to a small batch. `mark_may_have_sent` persists the guard before POST. Unknown/may-have-sent paths never resend POST; they use GET-only confirmation and otherwise remain unknown. A successful POST still requires daily GET `is_sign` confirmation. Manual and scheduled runs retain verified-link, authorization, owner serialization, and transaction/row-lock checks; automatic rewards default OFF and are enabled by the user through the existing UI.
 
 ## 8. Deletion workflow
 

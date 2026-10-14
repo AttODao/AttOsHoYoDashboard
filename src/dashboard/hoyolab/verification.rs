@@ -1,4 +1,4 @@
-//! Fresh identity/roles consistency, gated until the upstream principal contract is proven.
+//! Fresh upstream identity consistency and role synchronization; claims alone are not proof.
 use super::{credentials::Credentials, gateway::Gateway, store::CookieStore};
 use crate::dashboard::{
     auth::{accounts::record, sessions::Identity},
@@ -17,7 +17,6 @@ use uuid::Uuid;
 impl<G: Gateway> CookieStore<G> {
     pub(in crate::dashboard) async fn verify(&self, actor: &Identity) -> Result<()> {
         let _operation = self.operations.acquire(actor.user.id).await;
-        self.require_binding()?;
         let tx = self.db.begin().await?;
         self.actor_locked(&tx, actor).await?;
         let row = hoyolab_account::Entity::find()
@@ -40,12 +39,16 @@ impl<G: Gateway> CookieStore<G> {
         cookie: &Credentials,
         expected: Option<&str>,
     ) -> Result<()> {
-        self.require_binding()?;
         // Account identity protocol is currently a v2 ltoken candidate only.
         if !cookie.as_str().starts_with("ltoken_v2=") {
             return Err(Error::Invalid(
                 "v2 ltoken credentials are required for identity verification",
             ));
+        }
+        // Reject a conflicting replacement claim before upstream I/O; a matching claim
+        // still requires both fresh identity responses below, never serving as proof.
+        if expected.is_some_and(|uid| uid != cookie.claimed_uid()) {
+            return Err(Error::Forbidden);
         }
         let (account_uid, community_uid) = self.gateway.identity(cookie).await?;
         if account_uid != community_uid || account_uid != cookie.claimed_uid() {

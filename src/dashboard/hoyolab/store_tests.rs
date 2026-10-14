@@ -169,7 +169,9 @@ async fn stored_uid_cannot_be_replaced_by_a_cookie_claim_and_ciphertext_is_row_b
     let fixture = TestDatabase::new().await;
     let (_, actor) = fixture.ready_admin().await;
     let store = CookieStore::new(fixture.db.clone(), key());
-    store.submit(&actor, RAW).await.unwrap();
+    // Legacy syntax is stored but cannot verify: this fixture never calls live identity APIs.
+    let raw = "ltuid=123; ltoken=synthetic-cookie-token";
+    store.submit(&actor, raw).await.unwrap();
     let pending = store.status(&actor).await.unwrap().unwrap();
     // Synthetic verified row only: this is not upstream evidence.
     let mut verified = pending.clone().into_active_model();
@@ -179,17 +181,17 @@ async fn stored_uid_cannot_be_replaced_by_a_cookie_claim_and_ciphertext_is_row_b
         .seal(
             actor.user.id,
             Some("123"),
-            &Credentials::parse(RAW).unwrap(),
+            &Credentials::parse(raw).unwrap(),
         )
         .unwrap());
     let verified = verified.update(&fixture.db).await.unwrap();
     assert!(matches!(
         store.submit(&actor, "ltuid_v2=456; ltoken_v2=other").await,
-        Err(Error::Unavailable(_))
+        Err(Error::Forbidden)
     ));
     assert!(matches!(
-        store.submit(&actor, RAW).await,
-        Err(Error::Unavailable(_))
+        store.submit(&actor, raw).await,
+        Err(Error::Invalid(_))
     ));
     assert_eq!(store.status(&actor).await.unwrap().unwrap(), verified);
     let mut corrupted = verified.into_active_model();

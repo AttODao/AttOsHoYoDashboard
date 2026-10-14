@@ -1,4 +1,4 @@
-//! Encrypted Cookie setup and proof-gated linkage; Cookie claims alone are never proof.
+//! Encrypted Cookie setup and upstream identity consistency; Cookie claims alone are never proof.
 use super::{
     credentials::{CookieKey, Credentials},
     gateway::{Gateway, LiveGateway},
@@ -27,17 +27,12 @@ use uuid::Uuid;
 #[path = "store_tests.rs"]
 mod tests;
 
-// Remains false until live token-to-UID binding and roles principal consistency are independently established.
-const OWNER_BINDING_ESTABLISHED: bool = false;
-
 pub(in crate::dashboard) struct CookieStore<G: Gateway = LiveGateway> {
     pub(in crate::dashboard) db: DatabaseConnection,
     pub(in crate::dashboard) gateway: G,
     pub(in crate::dashboard) operations: Operations,
     pub(in crate::dashboard) timezone: FixedOffset,
     pub(super) key: Arc<CookieKey>,
-    pub(super) binding_established: bool,
-    pub(super) reward_contract_established: bool,
     pub(super) closing: AtomicBool,
 }
 impl CookieStore<LiveGateway> {
@@ -48,8 +43,6 @@ impl CookieStore<LiveGateway> {
             gateway: LiveGateway,
             operations: Operations::default(),
             timezone: FixedOffset::east_opt(9 * 3600).expect("fixed valid offset"),
-            binding_established: OWNER_BINDING_ESTABLISHED,
-            reward_contract_established: false,
             closing: AtomicBool::new(false),
         }
     }
@@ -64,28 +57,6 @@ impl<G: Gateway> CookieStore<G> {
     fn require_running(&self) -> Result<()> {
         if self.closing.load(Ordering::Acquire) {
             return Err(Error::Unavailable("server is shutting down"));
-        }
-        Ok(())
-    }
-    pub(in crate::dashboard) fn verification_available(&self) -> bool {
-        self.binding_established
-    }
-    pub(in crate::dashboard) fn reward_available(&self) -> bool {
-        self.reward_contract_established
-    }
-    pub(in crate::dashboard) fn require_reward_contract(&self) -> Result<()> {
-        if !self.reward_contract_established {
-            return Err(Error::Unavailable(
-                "upstream reward period contract is not yet confirmed",
-            ));
-        }
-        Ok(())
-    }
-    pub(in crate::dashboard) fn require_binding(&self) -> Result<()> {
-        if !self.binding_established {
-            return Err(Error::Unavailable(
-                "upstream identity binding is not yet confirmed",
-            ));
         }
         Ok(())
     }
@@ -107,7 +78,6 @@ impl<G: Gateway> CookieStore<G> {
         &self,
         actor: &Identity,
     ) -> Result<(hoyolab_account::Model, Credentials)> {
-        self.require_binding()?;
         let tx = self.db.begin().await?;
         let fresh = self.actor_locked(&tx, actor).await?;
         let result = self.owner_link_in(&tx, fresh.user.id).await?;
@@ -120,7 +90,6 @@ impl<G: Gateway> CookieStore<G> {
         owner: Uuid,
     ) -> Result<(hoyolab_account::Model, Credentials)> {
         self.require_running()?;
-        self.require_binding()?;
         let user = lock_user(tx, owner).await?;
         require_ready(&user)?;
         let row = hoyolab_account::Entity::find()
@@ -187,8 +156,6 @@ impl<G: Gateway> CookieStore<G> {
             gateway,
             operations: Operations::default(),
             timezone: FixedOffset::east_opt(9 * 3600).unwrap(),
-            binding_established: true,
-            reward_contract_established: true,
             closing: AtomicBool::new(false),
         }
     }

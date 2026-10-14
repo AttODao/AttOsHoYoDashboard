@@ -94,16 +94,15 @@ async fn row<G: Gateway>(store: &CookieStore<G>, owner: uuid::Uuid) -> hoyolab_a
 }
 
 #[tokio::test]
-async fn production_candidates_cannot_complete_setup_or_enable_post_contract() {
+async fn live_store_does_not_treat_pending_cookie_submission_as_verified_link() {
     let fixture = TestDatabase::new().await;
     let (_, actor) = fixture.ready_admin().await;
     let store = CookieStore::<LiveGateway>::new(fixture.db.clone(), key());
     store.submit(&actor, &cookie("42")).await.unwrap();
-    assert!(!store.verification_available());
-    assert!(!store.reward_available());
+    // Readiness must still reject a Cookie claim before any upstream call.
     assert!(matches!(
-        store.verify(&actor).await,
-        Err(Error::Unavailable(_))
+        store.ready_link(&actor).await,
+        Err(Error::InitialSetupRequired)
     ));
     let row = row(&store, actor.user.id).await;
     assert_eq!(row.hoyolab_uid, None);

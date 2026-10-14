@@ -1,6 +1,6 @@
 # Dashboard operations
 
-This document is the deployment and recovery contract for the Dashboard web session service. It does not authorize live HoYoLAB probing or reward POSTs; production owner binding and reward posting are intentionally unavailable until the upstream contracts are separately approved.
+This document is the deployment and recovery contract for the Dashboard web session service. The user has authorized real HoYoLAB access and manual and scheduled reward receipt for hobby use. These are normal features when `HOYOLAB_COOKIE_KEY` encryption is configured and existing link verification succeeds; automatic rewards default OFF and users enable them through the existing UI.
 
 ## Before serving
 
@@ -50,11 +50,12 @@ The default `DASHBOARD_UI_DIR` is `target/dx/attos-dashboard-ui/release/web/publ
 - SIGINT/SIGTERM stop new operations, mark HoYoLAB work as closing, and drain bounded in-flight work/confirmation before the process exits.
 - Disabling a user blocks new API access/jobs and revokes sessions. Re-enabling does not revive old sessions and turns automatic rewards off.
 
-## Production capability limits
+## HoYoLAB availability and evidence limits
 
-- Owner binding policy, same-UID update checks, role sync, game cache, reward settings, retry guards, and deletion workflow are implemented in code and covered by local/mock tests.
-- In production, `OWNER_BINDING_ESTABLISHED` and the reward contract gate are hardcoded false with no configuration or UI override. Real users currently cannot complete verified HoYoLAB onboarding or send reward POSTs.
-- Do not perform real HoYoLAB account GETs or reward POSTs from operations unless a separate approval explicitly authorizes that evidence collection.
+- Normal integration and manual/scheduled rewards retain fresh account/community identity, Cookie-claim and roles consistency checks, same-UID update checks, verified-link requirements, authentication, authorization, and account lifecycle checks. Cookie UID alone is not ownership proof. No additional rollout switch or development-only mode is required.
+- Owner serialization, transaction/row locks, durable may-have-sent recording **before** POST, and daily GET `is_sign` confirmation remain required. An uncertain POST is never resent; use GET-only confirmation and otherwise retain unknown status. Do not clear guards to force another POST.
+- User-approved availability is not scientific proof of live token-to-UID binding, roles principal consistency, or the full reward contract. Only one real account is available; synthetic multiple identities cannot establish live binding.
+- The user reported the current read-only GET suite passed (1 passed, 0 failed, 0 ignored; 3.72s). It checks accounts and both games' daily_info/daily_home/index/daily_note access, not account_identity/community_identity or reward POSTs. No live POST result has been reported. Additional evidence collection must stay within its approved scope; do not log Cookie values, credentials, payloads, or raw upstream errors.
 
 ## Verification commands
 

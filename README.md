@@ -2,7 +2,7 @@
 
 原神・崩壊：スターレイルのHoYoLAB APIを呼ぶ型付きRustクライアントと、身内用Dashboard WebセッションAPIです。DashboardはSeaORM＋PostgreSQL、パスワード／パスキー認証、Dioxus Web/WASM RSX UI、HoYoLAB Cookie保存、ゲーム状態cache、報酬worker、ユーザー削除workflowを持ちます。
 
-重要: HoYoLAB owner binding と reward POST contract はpolicy実装・mock検証済みですが、本番gateはhardcoded falseです。実アカウントのverified onboarding完了とreward postingは、上流契約の別途承認済み証拠が得られるまで利用できません。
+HoYoLAB連携と手動・定期の報酬受け取りは、ユーザーが実アクセス・受け取りと趣味用途での利用を承認した通常機能です。`HOYOLAB_COOKIE_KEY`による暗号化を設定し、既存の連携検証に成功すると利用できます。自動受け取りは初期OFFで、ユーザーが既存UIから有効にします。この利用承認は、実上流のtoken-to-UID bindingやreward POST契約全体の実証を意味しません。
 
 Dashboardの仕様・設計・計画・OpenAPI・運用手順は[ドキュメント一覧](docs/README.md)を参照してください。
 
@@ -31,7 +31,7 @@ let home = client.daily_home(Starrail).await?;
 
 `index`と`daily_note`には、対象ゲームのUIDとserverが必要です。serverはアカウント一覧から取得した値を渡してください。`daily_info`、`daily_home`、`daily_sign`はCookieのアカウントを対象とします。戻り値は検証済みエンベロープの内側の型付き`data`です。
 
-`daily_sign(Genshin)`／`daily_sign(Starrail)`だけは実際に報酬を受け取るPOSTです。自動再試行はしません。成功retcodeでも追加認証が必要な場合があるため、戻り値の`requires_verification()`と認証情報を確認してください。`None`は受取成功を意味せず、受取の確定には`daily_info`の`is_sign`を再確認します。テストはローカルのモックAPIだけを使用し、本番の受け取り操作は行いません。
+`daily_sign(Genshin)`／`daily_sign(Starrail)`だけは実際に報酬を受け取るPOSTです。自動再試行はしません。成功retcodeでも追加認証が必要な場合があるため、戻り値の`requires_verification()`と認証情報を確認してください。`None`は受取成功を意味せず、受取の確定には`daily_info`の`is_sign`を再確認します。通常のテストはローカルのモックAPIを使用し、明示実行のlive GETテストも受け取りPOSTは行いません。
 
 クライアントのエラーは`hoyolab::Error`です。通信・HTTP・retcode・レスポンス形式を型で区別でき、文字列診断には`to_string()`を使います。上流の`message`は秘密情報を含み得るため保持・表示しません。`Result<T, String>`境界の`?`変換は提供しますが、String固有の操作は明示的な変換が必要です。
 
@@ -101,7 +101,7 @@ src/dashboard/
     └── migrations/             # スキーマ変更
 ```
 
-HTTPは輸送と入力型、`auth/`は認証・ユーザーライフサイクル、`hoyolab/`はCookie保存とproof gate、`games/`と`rewards/`は所有者scopeの業務処理、`db/`は保存モデルとスキーマを担当します。認可や復旧ルールをハンドラーに複製せず、DBトランザクション・userロック・owner operation lockは業務側で一か所に維持します。構造変更・認証・永続化の増分ごとにhighレビューする方針は`AGENTS.md`に記載しています。
+HTTPは輸送と入力型、`auth/`は認証・ユーザーライフサイクル、`hoyolab/`はCookie保存と連携検証、`games/`と`rewards/`は所有者scopeの業務処理、`db/`は保存モデルとスキーマを担当します。認可や復旧ルールをハンドラーに複製せず、DBトランザクション・userロック・owner operation lockは業務側で一か所に維持します。構造変更・認証・永続化の増分ごとにhighレビューする方針は`AGENTS.md`に記載しています。
 
 ### Dioxus UIのモジュール地図
 
@@ -210,7 +210,7 @@ unset temporary_password
 
 ### HoYoLAB連携の現在地
 
-Cookie受付・暗号化保存、owner lock、identity候補、roles sync、same-UID update、game UID visibility/cache、reward settings/worker/deletion confirmationは実装済みです。ただし本番では owner binding gate と reward contract gate がfalseのため、real account onboarding completionとreward postingは503/unavailableまたはpending状態になります。ローカルmockや合成UIDは実上流token bindingの証拠ではありません。
+Cookie受付・暗号化保存、owner lock、account/community identityとCookie claimの整合性検査、roles sync、same-UID update、game UID visibility/cache、手動・定期報酬と削除時確認を提供します。Cookie UIDだけを本人確認の証拠とはせず、verified link、認証・認可・アカウント利用可否の再検査を維持します。報酬POST前のdurable may-have-sent記録とGET確認を維持し、不確定なPOSTは再送しません。ローカルmockや合成UIDは実上流token bindingの証拠ではありません。
 
 削除は本人または管理者が実行でき、actorの現在パスワードと対象usernameの完全一致入力が必要です。最後のactive admin削除は拒否します。受付時に対象をinactive化しsession/passkeyを失効、backgroundで送信済みreward POSTのGET-only確認を有界に行ってから全対象データを削除し、verified UID uniquenessを解放します。
 
@@ -218,13 +218,13 @@ Cookie受付・暗号化保存、owner lock、identity候補、roles sync、same
 
 海外版HoYoLABの読み取り・ログインボーナスAPIはCookie認証を使います。Dashboardの保存処理はlegacy `ltoken` familyまたはv2 `ltoken_v2` familyを正規化し、UID aliasの矛盾、legacy/v2混在、placeholder、不正文字を拒否します。
 
-v2では `ltuid_v2` / `account_id_v2` と `ltoken_v2` を扱い、`ltmid_v2` / `account_mid_v2` があれば保持します。MIDが不要であることは未実証なので、最小2項目だけで十分とは扱いません。draft verification pathは現在v2 ltoken credentialだけを候補にし、legacy保存対応は本番owner proofの証拠ではありません。
+v2では `ltuid_v2` / `account_id_v2` と `ltoken_v2` を扱い、`ltmid_v2` / `account_mid_v2` があれば保持します。MIDが不要であることは未実証なので、最小2項目だけで十分とは扱いません。連携検証は現在v2 ltoken credentialを要求し、legacy保存対応は本番owner proofの証拠ではありません。
 
 ゲームレコードにはゲームUID (`game_uid`) とサーバー識別子 (`region`) も必要ですが、これはCookieではありません。検証後のroles syncで取得します。HoYoLAB APIは公式の公開APIではなく、エンドポイント、署名用salt、必要Cookieが予告なく変わる可能性があります。Cookieはパスワード同様の秘密情報として扱ってください。
 
 ## 調査したリクエスト仕様
 
-2026-10-12（環境の日時）に`genshin.py` master (`ab289440508ef81a9672a198a53b9a31f9365c4a`) と実エンドポイントへの無効Cookie GETを使って再確認しました。以前の`cf675f3`と比べ、以下の移植対象のURL・Cookie利用・DS署名・ヘッダー値に変更はありません。原神には`GET /gcg/matchList`が追加されていますが、既存の疎通プログラムの範囲には含めません。有効Cookieでの成功や全レスポンスフィールドの不変性は未確認です。詳しい結果と根拠は[再確認記録](docs/hoyolab-api.md#以前の仕様との差分と現行値)を参照してください。
+2026-10-12（環境の日時）に`genshin.py` master (`ab289440508ef81a9672a198a53b9a31f9365c4a`) と実エンドポイントへの無効Cookie GETを使って再確認しました。以前の`cf675f3`と比べ、以下の移植対象のURL・Cookie利用・DS署名・ヘッダー値に変更はありません。原神には`GET /gcg/matchList`が追加されていますが、既存の疎通プログラムの範囲には含めません。この再確認時点では有効Cookieでの成功や全レスポンスフィールドの不変性は未確認でした。詳しい結果と根拠は[再確認記録](docs/hoyolab-api.md#以前の仕様との差分と現行値)を参照してください。
 
 アカウント一覧:
 
@@ -261,9 +261,9 @@ v2では `ltuid_v2` / `account_id_v2` と `ltoken_v2` を扱い、`ltmid_v2` / `
 1. ブラウザで <https://www.hoyolab.com> にログインする。
 2. 開発者ツールの Application（Firefoxでは Storage）から、`https://www.hoyolab.com` のCookiesを開く。
 3. 必要なcredential familyのCookie項目を秘密としてコピーする。コンソールにCookieを表示するスクリプトは実行しない。
-4. 実通信を別途承認された検証でだけ、実行プロセスの環境変数へ `HOYOLAB_COOKIE` を設定する。`.env`を読ませる前提にせず、値をshell history・文書・ログ・commitへ残さない。
+4. Dashboardでは暗号化鍵を設定した上で既存UIからCookieを登録し、連携検証を行う。クライアントのlive GETテストでは、実行プロセスの環境変数へ `HOYOLAB_COOKIE` を設定する。`.env`を読ませる前提にせず、値をshell history・文書・ログ・commitへ残さない。
 
-Dashboard本番連携はこの手順だけでは有効化されません。owner binding proof gateがfalseの間、実Cookieを保存してもverified onboarding完了にはなりません。
+Cookie保存だけではverified linkになりません。account/community identity・Cookie claim・rolesの既存整合性検査に成功する必要があります。
 
 ## 現行エンドポイントのテスト
 
@@ -287,6 +287,8 @@ cargo test --locked --lib hoyolab::client::live_tests::current_read_only_endpoin
 | 月間報酬一覧 | `/event/sol/home` | `/event/luna/hkrpg/os/home` |
 | 基本ゲームレコード | `/event/game_record/genshin/api/index` | `/game_record/hkrpg/api/index` |
 | リアルタイム状態 | `/event/game_record/genshin/api/dailyNote` | `/game_record/hkrpg/api/note` |
+
+ユーザー提供の実行結果は **1 passed / 0 failed / 0 ignored（3.72s）** でした。利用可能な実アカウントは1個で、このGET suiteの成功はアクセスを確認するものであり、`account_identity` / `community_identity`やtoken-to-UID binding、reward POST契約全体の証明ではありません。実POST結果は報告されていません。
 
 これは読み取り専用の確認です。ログインボーナスを実際に受け取る`POST .../sign`や公開設定の変更は行いません。リアルタイム状態が`retcode=10102`になる場合は、HoYoLABの戦績画面でリアルタイムノートの公開設定を確認してください。
 

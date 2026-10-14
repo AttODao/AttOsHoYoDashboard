@@ -65,10 +65,7 @@ async fn me(
         Some(store) => store.status(&actor).await?,
         None => None,
     };
-    let available = app
-        .cookies
-        .as_ref()
-        .is_some_and(|store| store.verification_available());
+    let available = app.cookies.is_some();
     let complete = available
         && row
             .as_ref()
@@ -76,7 +73,7 @@ async fn me(
     Ok(Json(MeView {
         user: UserView::from(actor.user.clone()),
         onboarding: serde_json::json!({"password_change_required":actor.user.must_change_password,"cookie_setup_complete":complete,"cookie_status":row.as_ref().map(|row|row.auth_status.as_str()).unwrap_or(if app.cookies.is_some(){"not_configured"}else{"storage_unavailable"}),"verification_available":available}),
-        capabilities: serde_json::json!({"reward_posting_available":app.cookies.as_ref().is_some_and(|store|store.reward_available())}),
+        capabilities: serde_json::json!({"reward_posting_available":available}),
     }))
 }
 #[derive(Deserialize)]

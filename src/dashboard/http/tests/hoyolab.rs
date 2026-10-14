@@ -15,7 +15,7 @@ async fn cookie_setup_routes_store_pending_without_returning_credentials_or_clai
     assert_eq!(initial.status(), StatusCode::OK);
     assert_eq!(
         body(initial).await,
-        json!({"status":"not_configured","setup_complete":false,"updated_at":null,"id":null,"hoyolab_uid":null,"verification_available":false})
+        json!({"status":"not_configured","setup_complete":false,"updated_at":null,"id":null,"hoyolab_uid":null,"verification_available":true})
     );
     let response = call(
         &app,
@@ -47,7 +47,7 @@ async fn cookie_setup_routes_store_pending_without_returning_credentials_or_clai
     assert_eq!(data.as_object().unwrap().len(), 6);
     assert!(data["id"].is_string());
     assert!(data["hoyolab_uid"].is_null());
-    assert_eq!(data["verification_available"], false);
+    assert_eq!(data["verification_available"], true);
     assert!(!data.to_string().contains("synthetic-private-token"));
 }
 
@@ -117,6 +117,11 @@ async fn cookie_routes_use_existing_auth_origin_dto_and_configuration_boundaries
     let state = Arc::get_mut(&mut app).unwrap();
     state.cookies = None;
     state.config.cookie_key = None;
+    let me = body(call(&app, request("GET", "/api/v1/me", Some(&session), None)).await).await;
+    assert_eq!(me["onboarding"]["cookie_setup_complete"], false);
+    assert_eq!(me["onboarding"]["cookie_status"], "storage_unavailable");
+    assert_eq!(me["onboarding"]["verification_available"], false);
+    assert_eq!(me["capabilities"]["reward_posting_available"], false);
     error(
         call(
             &app,

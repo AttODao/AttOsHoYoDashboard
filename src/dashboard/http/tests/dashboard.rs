@@ -1,4 +1,4 @@
-//! Actual mounted endpoints and production rollout gates, without any upstream request.
+//! Actual mounted endpoints and setup requirements, without any upstream request.
 use super::*;
 use crate::dashboard::{
     db::entities::{deletion_request, user},
@@ -72,7 +72,7 @@ async fn compiled_dioxus_assets_are_public_local_and_hardened() {
     }
 }
 #[tokio::test]
-async fn current_game_reward_verify_routes_authenticate_and_fail_closed_before_network() {
+async fn current_game_reward_verify_routes_require_authentication_and_verified_setup() {
     let fixture = TestDatabase::new().await;
     let (accounts, actor) = fixture.ready_admin().await;
     let app = app(accounts);
@@ -109,15 +109,15 @@ async fn current_game_reward_verify_routes_authenticate_and_fail_closed_before_n
         .await;
         error(
             call(&app, request(method, &path, Some(&cookie), input)).await,
-            StatusCode::SERVICE_UNAVAILABLE,
-            "unavailable",
+            StatusCode::FORBIDDEN,
+            "initial_setup_required",
         )
         .await;
     }
     let me = body(call(&app, request("GET", "/api/v1/me", Some(&cookie), None)).await).await;
     assert_eq!(me["onboarding"]["cookie_setup_complete"], false);
-    assert_eq!(me["onboarding"]["verification_available"], false);
-    assert_eq!(me["capabilities"]["reward_posting_available"], false);
+    assert_eq!(me["onboarding"]["verification_available"], true);
+    assert_eq!(me["capabilities"]["reward_posting_available"], true);
 }
 #[tokio::test]
 async fn delete_endpoint_queues_owner_deletion_revokes_session_and_rejects_last_admin() {

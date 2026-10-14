@@ -22,6 +22,7 @@ const loginGate=new Promise(resolve=>{allowLogin=resolve;});
 const settingsGate=new Promise(resolve=>{allowSettings=resolve;});
 const counts=new Map();const failures=[];
 const accounts=[{id:uid(3),visible:false,detected:true,game_uid:'600000003'},{id:uid(4),visible:true,detected:false,game_uid:'600000004'},{id:uid(5),visible:true,detected:true,game_uid:'600000005'}].map(a=>({...a,hoyolab_account_id:uid(2),game_kind:'genshin',region:'os_usa',last_detected_at:new Date().toISOString()}));
+const rewardSettings=['genshin','starrail'].map((game_kind,i)=>({id:uid(20+i),game_kind,enabled:false,local_time:'06:00',auth_status:'ready',next_run_at:null,last_run:null,is_sign:!!i,last_checked_at:new Date().toISOString(),error_code:null,error_at:null}));
 const json=(res,data,status=200)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
 let origin;
 const server=http.createServer(async(req,res)=>{
@@ -44,10 +45,11 @@ const server=http.createServer(async(req,res)=>{
     res.setHeader('Set-Cookie','attos_session=synthetic-a; HttpOnly; SameSite=Strict; Path=/');return json(res,user);
    }
    if(!actor)return json(res,{error:'unauthorized'},401);
-   if(p==='/api/v1/me')return json(res,{...actor,onboarding:{password_change_required:false,cookie_setup_complete:verified,cookie_status:verified?'verified':'pending_verification',verification_available:false},capabilities:{reward_posting_available:false}});
-   if(p==='/api/v1/me/hoyolab')return json(res,{id:uid(2),hoyolab_uid:verified?'123':null,status:verified?'verified':'pending_verification',setup_complete:verified,updated_at:null,verification_available:false});
+   if(p==='/api/v1/me')return json(res,{...actor,onboarding:{password_change_required:false,cookie_setup_complete:verified,cookie_status:verified?'verified':'pending_verification',verification_available:true},capabilities:{reward_posting_available:true}});
+   if(p==='/api/v1/me/hoyolab')return json(res,{id:uid(2),hoyolab_uid:verified?'123':null,status:verified?'verified':'pending_verification',setup_complete:verified,updated_at:null,verification_available:true});
    // Intentionally empty/malformed success bodies exercise client-only acknowledgement policy, not the backend JSON contract.
    if(p==='/api/v1/me/hoyolab/cookie'){assert.ok(body.cookie.startsWith('ltuid_v2=123;'));res.writeHead(202,{'Content-Type':'application/json'});return res.end('ignored acknowledgement');}
+   if(p==='/api/v1/me/hoyolab/verify'){assert.equal(req.method,'POST');assert.deepEqual(body,{});verified=true;res.writeHead(204);return res.end();}
    if(p==='/api/v1/me/passkeys/options')return json(res,{challenge_id:uid(10),options:{publicKey:{challenge:Buffer.from('synthetic-browser-challenge-32-bytes').toString('base64url'),rp:{id:'localhost',name:'Synthetic UI check'},user:{id:Buffer.from('synthetic-user').toString('base64url'),name:user.username,displayName:user.username},pubKeyCredParams:[{type:'public-key',alg:-7}],timeout:60000,authenticatorSelection:{userVerification:'required',residentKey:'preferred'},attestation:'none'}}});
    if(p==='/api/v1/me/passkeys/verify'){
     assert.ok(body.response.response.clientDataJSON);assert.ok(body.response.response.attestationObject);assert.equal(body.response.type,'public-key');
@@ -64,7 +66,9 @@ const server=http.createServer(async(req,res)=>{
    }
    if(p==='/api/v1/game-accounts')return json(res,accounts);
    if(p===`/api/v1/game-accounts/${uid(5)}/status`)return json(res,{...accounts[2],data:{current_resin:actor===user?0:77,max_resin:200,finished_task_num:0,total_task_num:4,expeditions:[]},fetched_at:new Date().toISOString(),error_code:null,error_at:null,stale:false});
-   if(p==='/api/v1/reward-settings')return json(res,['genshin','starrail'].map((game_kind,i)=>({id:uid(20+i),game_kind,enabled:false,local_time:'06:00',auth_status:'ready',next_run_at:null,last_run:null,is_sign:!!i,last_checked_at:new Date().toISOString(),error_code:null,error_at:null})));
+   if(p==='/api/v1/reward-settings'){assert.equal(req.method,'GET');return json(res,rewardSettings);}
+   if(p===`/api/v1/reward-settings/${uid(20)}`){assert.equal(req.method,'PATCH');assert.deepEqual(body,{enabled:true,local_time:'06:00'});Object.assign(rewardSettings[0],body,{next_run_at:new Date(Date.now()+86400000).toISOString()});res.writeHead(204);return res.end();}
+   if(p===`/api/v1/reward-settings/${uid(20)}/run`){assert.equal(req.method,'POST');assert.deepEqual(body,{});res.writeHead(202);return res.end();}
    if(p==='/api/v1/reward-runs')return json(res,[]);
    throw new Error('Unexpected implemented-API request: '+req.method+' '+p);
   }
@@ -123,14 +127,32 @@ try{
  await page.getByLabel('New passkey label').fill('Synthetic browser key');
  await page.getByRole('button',{name:'Register passkey',exact:true}).click();
  await page.getByText(/Synthetic browser key — created/).waitFor();
- // A fixture-only change exercises the ready branch; no production proof gate is changed.
- verified=true;
- await page.getByRole('button',{name:'Refresh setup status',exact:true}).click();
+ // Synthetic verification exercises the available=true UI contract, not live identity proof.
+ await page.getByRole('button',{name:'Verify binding',exact:true}).click();
  await page.getByRole('heading',{name:'Dashboard',exact:true}).waitFor();
  await page.getByText('0/200',{exact:true}).waitFor();
  assert.equal(await page.locator('#selected-account option').count(),1);
  assert.equal(counts.get(`/api/v1/game-accounts/${uid(3)}/status`)||0,0);
  assert.equal(counts.get(`/api/v1/game-accounts/${uid(4)}/status`)||0,0);
+ assert.equal(counts.get('/api/v1/me/hoyolab/verify'),1);
+ await page.getByRole('button',{name:'Rewards',exact:true}).click();
+ await page.getByRole('heading',{name:'Rewards',exact:true}).waitFor();
+ await page.getByRole('button',{name:'Run now',exact:true}).first().waitFor();
+ assert.equal(await page.getByText(/Reward posting is not available/).count(),0);
+ assert.ok(await page.getByRole('button',{name:'Run now',exact:true}).first().isEnabled());
+ await page.getByRole('checkbox').first().check();
+ const saveReward=page.waitForResponse(r=>r.url()===origin+`/api/v1/reward-settings/${uid(20)}`&&r.request().method()==='PATCH');
+ await page.getByRole('button',{name:'Save',exact:true}).first().click();
+ assert.equal((await saveReward).status(),204);
+ await page.getByText('Reward setting saved.',{exact:true}).waitFor();
+ assert.equal(rewardSettings[0].enabled,true);
+ const runReward=page.waitForResponse(r=>r.url()===origin+`/api/v1/reward-settings/${uid(20)}/run`&&r.request().method()==='POST');
+ await page.getByRole('button',{name:'Run now',exact:true}).first().click();
+ assert.equal((await runReward).status(),202);
+ await page.getByText('Manual reward run queued.',{exact:true}).waitFor();
+ assert.equal(counts.get(`/api/v1/reward-settings/${uid(20)}/run`),1);
+ await page.getByRole('button',{name:'Dashboard',exact:true}).click();
+ await page.getByText('0/200',{exact:true}).waitFor();
  failLogout=true;
  await page.getByRole('button',{name:'Logout',exact:true}).click();
  await page.getByRole('button',{name:'Retry server logout',exact:true}).waitFor();
@@ -171,5 +193,5 @@ try{
  assert.deepEqual([...counts].filter(([p])=>p.startsWith('/api/v1/')),apiCountsBeforeDocs,'public docs sends no authenticated GETs or mutations');
  assert.deepEqual(errors,[],'release CSP and Wasm render without JS/browser errors');
  assert.deepEqual(failures,[]);
- console.log('Dioxus browser check passed: auth/onboarding, admin/delete access, secret clearing, native WebAuthn registration/assertion, mutation acknowledgements, ready/UID filter, single-flight Set-Cookie/owner consistency, failed logout/retry/reload, mobile docs, release CSP.');
+ console.log('Dioxus browser check passed: auth/onboarding, admin/delete access, secret clearing, native WebAuthn registration/assertion, mutation acknowledgements, verification availability, reward schedule save/manual enqueue, ready/UID filter, single-flight Set-Cookie/owner consistency, failed logout/retry/reload, mobile docs, release CSP.');
 }catch(error){console.error('Browser diagnostics:',JSON.stringify({errors,failures,requests:Object.fromEntries(counts),text:page?await page.locator('body').innerText().catch(()=>'<no page>'):''}));throw error;}finally{if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));}
