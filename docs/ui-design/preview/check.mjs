@@ -5,11 +5,14 @@ import path from 'node:path';
 import http from 'node:http';
 import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
+import {captureScene} from './scene.mjs';
+import {createHash} from 'node:crypto';
 const require=createRequire(import.meta.url);
 const {chromium}=require(process.env.ATTOS_TEST_PLAYWRIGHT_MODULE||'playwright');
 const root=path.dirname(fileURLToPath(import.meta.url));
 const out=process.env.ATTOS_DESIGN_CAPTURE_DIR||'/tmp/agd-r2';fs.mkdirSync(out,{recursive:true});
 const source=fs.readFileSync(path.join(root,'preview.js'),'utf8');
+const sourceHash=createHash('sha256').update(['index.html','style.css','preview.js','scene.mjs'].map(n=>fs.readFileSync(path.join(root,n),'utf8')).join('\0')).digest('hex');
 assert.doesNotMatch(source,/\b(fetch|XMLHttpRequest|localStorage|sessionStorage|PublicKeyCredential)\s*[.(]/,'no API/storage/authenticator operations');
 const server=http.createServer((req,res)=>{
  const name=new URL(req.url,'http://localhost').pathname;
@@ -93,16 +96,46 @@ try{
  await page.goto(origin+'/?state=logout-error#dashboard');
  await page.getByLabel('メニューを開く').click();await page.getByRole('button',{name:'ログアウト',exact:true}).click();
  assert.match(await page.title(),/ダッシュボード/,'failed logout is not assumed successful');
- const captures=[['dashboard','/#dashboard'],['login','/#login'],['setup','/?fixture=provisional#setup'],['settings','/#settings'],['admin','/?fixture=admin#admin'],['unknown','/?state=unknown#settings'],['queued','/?state=queued#settings']];
+ async function saveScene(name,width){
+  await page.evaluate(()=>document.fonts.ready);
+  assert.ok(await page.evaluate(()=>['Noto Sans JP','Orbitron'].every(name=>Array.from(document.fonts).some(f=>f.family.replace(/["']/g,'')===name&&f.status==='loaded'))),'measure actual fonts, not fallback');
+  const scene=await page.evaluate(captureScene,name+'-'+width),nodes=[];const walk=n=>{nodes.push(n);(n.children||[]).forEach(walk);};scene.children.forEach(walk);
+  assert.equal(scene.source,'agd-r2-local-synthetic');assert.ok(nodes.length>10&&nodes.length<2000);
+  assert.ok(nodes.every(n=>[n.x,n.y,n.width,n.height].every(Number.isFinite)&&n.width>0&&n.height>0),'finite editable geometry');
+  assert.ok(nodes.filter(n=>n.inputType==='password').every(n=>n.children[0].text===' '),'password values never captured');
+  assert.ok(!JSON.stringify(scene).includes('デザイン確認用（製品のメニューではありません）'),'review tools excluded');
+  scene.sourceHash=sourceHash;
+  fs.writeFileSync(path.join(out,scene.key+'.json'),JSON.stringify(scene));
+ }
+ const captures=[['dashboard','/#dashboard'],['login','/#login'],['setup','/?fixture=provisional#setup'],['settings','/#settings'],['admin','/?fixture=admin#admin'],['unknown','/?state=unknown#settings'],['queued','/?state=queued#settings'],['loading','/?state=loading#dashboard'],['empty','/?state=empty#dashboard'],['error','/?state=error#dashboard'],['storage','/?state=storage#settings'],['permission','/#admin'],['passkey-cancel','/?state=passkey-cancel#login']];
  for(const width of [1440,390])for(const [name,url]of captures){
   await page.setViewportSize({width,height:1000});await page.goto(origin+url);await page.evaluate(()=>document.fonts.ready);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),name+' horizontal overflow at '+width);
+  assert.doesNotMatch(await page.locator('#app').innerText(),/AttOs/,'visible branding is AGD');
   assert.ok(await page.locator('.draft-note').evaluate(n=>parseFloat(getComputedStyle(n).fontSize)>=12),'review notice is at least 12px');
   const small=await page.locator('button,summary,select,.switch,.check').evaluateAll(nodes=>nodes.filter(n=>n.getClientRects().length&&!n.disabled).map(n=>({text:n.textContent.trim().slice(0,35),w:n.getBoundingClientRect().width,h:n.getBoundingClientRect().height})).filter(n=>n.w<44||n.h<44));
   assert.deepEqual(small,[],name+' target size');
+  await saveScene(name,width);
   await page.screenshot({path:path.join(out,name+'-'+width+'.png'),fullPage:true});
  }
- for(const width of [1440,390])for(const [name,action]of [['admin-recovery','admin-reset-1'],['admin-deletion','admin-delete-1']]){await page.setViewportSize({width,height:1000});await page.goto(origin+'/?fixture=admin#admin');await page.locator(`[data-action=${action}]`).click();await page.evaluate(()=>document.fonts.ready);assert.ok(await page.getByRole('dialog').evaluate(n=>n.scrollWidth<=n.clientWidth+1),name+' dialog overflow');await page.screenshot({path:path.join(out,name+'-'+width+'.png')});await page.getByRole('button',{name:'キャンセル',exact:true}).click();}
+ for(const width of [1440,390])for(const [name,action]of [['admin-recovery','admin-reset-1'],['admin-deletion','admin-delete-1']]){await page.setViewportSize({width,height:1000});await page.goto(origin+'/?fixture=admin#admin');await page.locator(`[data-action=${action}]`).click();await page.evaluate(()=>document.fonts.ready);assert.ok(await page.getByRole('dialog').evaluate(n=>n.scrollWidth<=n.clientWidth+1),name+' dialog overflow');await saveScene(name,width);await page.screenshot({path:path.join(out,name+'-'+width+'.png')});await page.getByRole('button',{name:'キャンセル',exact:true}).click();}
+ for(const width of [1440,390]){
+  await page.setViewportSize({width,height:1000});await page.goto(origin+'/?fixture=provisional#setup');await page.evaluate(()=>document.fonts.ready);
+  await page.getByRole('button',{name:'パスワードを変更',exact:true}).click();await saveScene('setup-cookie',width);
+  await page.getByRole('button',{name:'Cookieを保存',exact:true}).click();await saveScene('setup-pending',width);
+  await page.getByRole('button',{name:'本人確認を実行',exact:true}).click();await saveScene('dashboard-new-uids',width);
+  await page.goto(origin+'/#login');await page.getByRole('radio',{name:'パスキー',exact:true}).check();await saveScene('login-passkey',width);
+  await page.goto(origin+'/#dashboard');await page.getByLabel('メニューを開く').click();await saveScene('menu',width);await page.keyboard.press('Escape');
+  await page.goto(origin+'/#dashboard');await page.getByRole('switch',{name:'原神の自動受け取り',exact:true}).check();await saveScene('dashboard-on',width);
+  await page.getByRole('button',{name:'崩壊：スターレイル',exact:true}).click();await saveScene('dashboard-starrail',width);
+ }
+ await page.setViewportSize({width:1440,height:1000});await page.goto(origin+'/?privacy=check#login');
+ await page.evaluate(()=>{
+  Object.defineProperty(HTMLInputElement.prototype,'value',{get(){throw Error('Input value read forbidden during capture');}});
+  const attribute=HTMLInputElement.prototype.getAttribute;
+  HTMLInputElement.prototype.getAttribute=function(name){if(name==='value'&&this.type!=='radio')throw Error('Input value attribute read forbidden during capture');return attribute.call(this,name);};
+ });
+ await saveScene('privacy-check',1440);
  for(const width of [360,768,1280]){await page.setViewportSize({width,height:1000});await page.goto(origin+'/#dashboard');assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'fluid width '+width);}
  await page.goto(origin+'/#dashboard');await page.getByLabel('メニューを開く').click();await page.keyboard.press('Escape');assert.equal(await page.locator('.menu').getAttribute('open'),null);assert.equal(await page.getByLabel('メニューを開く').evaluate(n=>n===document.activeElement),true);
  const vars=await page.evaluate(()=>{const s=getComputedStyle(document.documentElement);return Object.fromEntries(['canvas','surface','elevated','text','muted','line','pink','cyan','mint','lavender','warning','danger','on-accent'].map(k=>[k,s.getPropertyValue('--'+k).trim()]));});
@@ -113,5 +146,5 @@ try{
  for(let n=0;n<=100;n++){const rgb=k=>vars[k].slice(1).match(/../g).map(x=>parseInt(x,16));const a=rgb('pink'),b=rgb('cyan');const c='#'+a.map((v,i)=>Math.round(v+(b[i]-v)*n/100).toString(16).padStart(2,'0')).join('');assert.ok(contrast(c,vars['on-accent'])>=4.5,'gradient label '+n);}
  assert.deepEqual(unsafeRequests,[],'no API/upstream requests');assert.deepEqual(errors,[],'browser JS errors');
  console.log('PASS: R2 navigation/setup gate, shared login, account×game switches, schedule placement, prototype admin role gate/recovery form, deletion/queued/unknown semantics, contrast, 44px targets and responsive widths.');
- console.log('18 PNGs in '+out+'; no MCP, backend, authenticator or upstream used.');
+ console.log('30 PNGs + 44 scene JSONs (and one privacy check) in '+out+'; no MCP, backend, authenticator or upstream used.');
 }finally{if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));}

@@ -8,6 +8,7 @@
 - [`revision-2.md`](revision-2.md)：参照UI、画面構成、初期設定の制約、管理者ログの未確定範囲、Penpot反映手順。
 - [`DESIGN.md`](DESIGN.md)：R2の配色・タイポグラフィ・レイアウト。値の正本は`preview/style.css`。
 - [`review.md`](review.md)：実際に行ったSkill利用・旧案の問題・R2の検証と限界。
+- [`preview/scene.mjs`](preview/scene.mjs)／[`penpot/r2-import.js`](penpot/r2-import.js)：合成プレビューの配置を計測し、ネイティブ部品へ取り込む準備コード。Penpotでは未実行。
 
 `preview/index.html`は直接開ける。Webフォントの読込にはインターネットが必要で、未読込時はフォールバックする。操作は合成状態の切替のみ。認証入力欄は読取専用で、実Cookie・パスワードを入力しない。下部の「デザイン確認用」は製品メニューではない。
 
@@ -34,15 +35,18 @@
 | `Draft / 03 / Mobile` | `609d2656-00af-8046-8008-ca15c8b9979b` |
 | `Draft / 04 / Components` | `609d2656-00af-8046-8008-ca15c8ba4085` |
 
-R1の説明は[`revision-1.md`](revision-1.md)、制作スクリプトは`penpot/`、旧トークンは`tokens.json`。いずれも**R2の生成コードではない**。描画キャッシュと見出しの問題が残ったR1の最終状態を合格とは扱わない。`finish.js`をそのまま再実行しない。
+R1の説明は[`revision-1.md`](revision-1.md)、旧制作スクリプトは`penpot/`の`r2-*`以外、旧トークンは`tokens.json`。これらは**R2の生成コードではない**。描画キャッシュと見出しの問題が残ったR1の最終状態を合格とは扱わない。`finish.js`をそのまま再実行しない。
 
 ## 検証コマンド
 
 ```sh
 node docs/ui-design/check.mjs
 node docs/ui-design/preview/check.mjs
+node docs/ui-design/penpot/r2-check.mjs
 ```
 
-2つ目は既存のPlaywright／Chromiumが必要。既存UIテストと同じ`ATTOS_TEST_PLAYWRIGHT_MODULE`でインストール済みモジュールを指定できる。キャプチャはデフォルトで`/tmp/agd-r2/`へ保存し、生成PNGやMCP認証設定はコミットしない。
+2つ目は既存のPlaywright／Chromiumが必要。既存UIテストと同じ`ATTOS_TEST_PLAYWRIGHT_MODULE`でインストール済みモジュールを指定できる。キャプチャはデフォルトで`/tmp/agd-r2/`へ30 PNG・44計測JSON・入力秘匿の検査JSONを保存する。実書体の読込を要求し、未読込のfallback計測を成功扱いしない。生成PNG／JSONやMCP認証設定はコミットしない。
+
+3つ目は2つ目の生成JSONを使う限定的な模擬テスト。44場面、20種類の共通操作部品、上書き防止、書体・配色・寸法の事前検査、途中失敗からの盲目的な再開防止を検査する。**実PenpotのAPI互換性・描画・編集性は証明しない**。Nativeへの反映手順と残る制約は[`revision-2.md`](revision-2.md#オフライン取り込み準備)を参照。
 
 プレビューの画面遷移・配置・表示規則の検査であって、実APIの認可、認証器、HoYoLAB契約、本番ブラウザアクセシビリティの証明ではない。最終RSX／CSS実装は別の指示で行う。
