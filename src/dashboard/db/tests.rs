@@ -47,7 +47,8 @@ async fn migrations_are_ordered_idempotent_and_reversible() {
         [
             "m20261012_000001_accounts",
             "m20261012_000002_passkeys",
-            "m20261013_000003_hoyolab_accounts"
+            "m20261013_000003_hoyolab_accounts",
+            "m20261013_000004_dashboard_games"
         ]
     );
     migrations::Migrator::down(&fixture.db, None).await.unwrap();

@@ -26,4 +26,6 @@ pub(super) async fn migrate(db: &DatabaseConnection) -> Result<()> {
 }
 
 #[cfg(test)]
+mod game_tests;
+#[cfg(test)]
 mod tests;
