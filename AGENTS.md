@@ -5,10 +5,9 @@
 - Use synthetic credentials, local mocks, and isolated temporary PostgreSQL clusters. Never use production `DATABASE_URL` or skip DB tests silently when tools are missing. One real HoYoLAB account is currently available; simulated multiple identities are not evidence of live token-to-UID binding.
 - Run relevant checks when changing code, and report verification gaps.
 - Commit each verified, coherent work unit separately with a descriptive message. Inspect staged paths and diffs; do not mix unrelated work or include `.env`, credential values, generated output, or temporary fixtures. Only push when the user requests it, using the current branch/upstream without force-pushing.
-- Run `/review high` frequently at meaningful increments, especially after structural, authentication, persistence, or concurrency changes. If unavailable, use an independent, read-only subagent with high thinking; resolve concrete findings before proceeding.
 - Keep `src/dashboard` organized by responsibility: `auth/` owns account lifecycle, authentication, sessions, and passkeys; `http/` owns routes, DTOs, cookies, and protocol boundaries; `db/entities/` owns stored models and `db/migrations/` owns schema evolution. HoYoLAB application logic belongs in its own feature directory, not in HTTP or authentication.
 - Keep `mod.rs` focused on module declarations and composition. Split substantial workflows along named responsibilities, not one file per tiny function, and avoid compatibility re-exports or speculative interfaces.
 - Keep authorization/lifecycle rules shared in the business layer, and preserve transaction/lock boundaries when splitting files. Do not duplicate policy in individual routes.
 - Favor readable, explicit imports and narrow visibility. Do not expose internal modules more broadly merely to make a refactor compile.
 - Update the module map in `README.md` and design/plan documentation when responsibilities or paths change.
-- Never read or log secrets from `.env`, credential models, request payloads, or unredacted upstream errors during review or verification. Do not access real accounts or send reward POSTs without approval.
+- Never read or log secrets from `.env`, credential models, request payloads, or unredacted upstream errors during investigation or verification. Do not access real accounts or send reward POSTs without approval.

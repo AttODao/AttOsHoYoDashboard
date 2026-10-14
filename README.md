@@ -101,7 +101,7 @@ src/dashboard/
     └── migrations/             # スキーマ変更
 ```
 
-HTTPは輸送と入力型、`auth/`は認証・ユーザーライフサイクル、`hoyolab/`はCookie保存と連携検証、`games/`と`rewards/`は所有者scopeの業務処理、`db/`は保存モデルとスキーマを担当します。認可や復旧ルールをハンドラーに複製せず、DBトランザクション・userロック・owner operation lockは業務側で一か所に維持します。構造変更・認証・永続化の増分ごとにhighレビューする方針は`AGENTS.md`に記載しています。
+HTTPは輸送と入力型、`auth/`は認証・ユーザーライフサイクル、`hoyolab/`はCookie保存と連携検証、`games/`と`rewards/`は所有者scopeの業務処理、`db/`は保存モデルとスキーマを担当します。認可や復旧ルールをハンドラーに複製せず、DBトランザクション・userロック・owner operation lockは業務側で一か所に維持します。変更単位ごとの検証・コミット方針は`AGENTS.md`に記載しています。
 
 ### Dioxus UIのモジュール地図
 
