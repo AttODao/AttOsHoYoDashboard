@@ -327,15 +327,16 @@ async fn list_uses_fresh_cache_and_retains_old_payload_on_stale_failure() {
     let key = key();
     let link = verified_link(&fixture.db, &key, actor.user.id, "123").await;
     let stale = setting(&fixture.db, link.id, "genshin", true).await;
-    cache(
-        &fixture.db,
-        stale.id,
-        Utc::now() - Duration::minutes(10),
-        true,
-    )
-    .await;
+    let fetched_at = Utc::now() - Duration::minutes(10);
+    cache(&fixture.db, stale.id, fetched_at, true).await;
     let gateway = MockGateway::new(
-        [Err(UpstreamError::Network)],
+        [
+            Err(UpstreamError::Network),
+            Ok(DailyState {
+                is_sign: false,
+                total_sign_day: 10,
+            }),
+        ],
         Vec::<UpstreamResult<SignState>>::new(),
     );
     let rewards = service(fixture.db.clone(), key, gateway.clone());
@@ -345,7 +346,99 @@ async fn list_uses_fresh_cache_and_retains_old_payload_on_stale_failure() {
     assert_eq!(views.len(), 1);
     assert_eq!(views[0].is_sign, Some(true));
     assert_eq!(views[0].error_code.as_deref(), Some("network"));
+    assert_eq!(
+        views[0].last_checked_at.unwrap().timestamp_micros(),
+        fetched_at.timestamp_micros()
+    );
+    assert!(views[0].error_at.is_some());
     assert_eq!(gateway.daily_calls(), 1);
+    let stored = reward_status_cache::Entity::find_by_id(stale.id)
+        .one(&fixture.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.fetched_at, views[0].last_checked_at);
+    assert_eq!(stored.payload.as_ref().unwrap()["is_sign"], true);
+    assert_eq!(stored.payload_version, 1);
+
+    let views = rewards.list(&actor).await.unwrap();
+    assert_eq!(views[0].is_sign, Some(false));
+    assert!(views[0].last_checked_at.unwrap() > fetched_at);
+    assert!(views[0].error_code.is_none());
+    assert!(views[0].error_at.is_none());
+    let stored = reward_status_cache::Entity::find_by_id(stale.id)
+        .one(&fixture.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.fetched_at, views[0].last_checked_at);
+    assert_eq!(stored.payload.as_ref().unwrap()["total_sign_day"], 10);
+    assert!(stored.error_code.is_none());
+    assert!(stored.error_at.is_none());
+    rewards.list(&actor).await.unwrap();
+    assert_eq!(gateway.daily_calls(), 2);
+}
+
+#[tokio::test]
+async fn cache_upsert_returns_persisted_nullable_overwrites_in_a_transaction() {
+    let fixture = TestDatabase::new().await;
+    let actor = ready_identity(&fixture.db, "owner").await;
+    let key = key();
+    let link = verified_link(&fixture.db, &key, actor.user.id, "123").await;
+    let setting = setting(&fixture.db, link.id, "genshin", false).await;
+    let tx = fixture.db.begin().await.unwrap();
+    let failed = upsert_cache(&tx, setting.id, CacheWrite::failure("network".into(), None))
+        .await
+        .unwrap();
+    assert_eq!(failed.setting_id, setting.id);
+    assert!(failed.payload.is_none());
+    assert!(failed.fetched_at.is_none());
+    assert_eq!(failed.payload_version, 1);
+    assert_eq!(failed.error_code.as_deref(), Some("network"));
+    assert!(failed.error_at.is_some());
+
+    let success = upsert_cache(
+        &tx,
+        setting.id,
+        CacheWrite::success(DailyState {
+            is_sign: true,
+            total_sign_day: 1,
+        }),
+    )
+    .await
+    .unwrap();
+    assert!(success.payload.is_some());
+    assert!(success.fetched_at.is_some());
+    assert!(success.error_code.is_none());
+    assert!(success.error_at.is_none());
+    let mut unsupported = success.clone().into_active_model();
+    unsupported.payload_version = Set(99);
+    unsupported.update(&tx).await.unwrap();
+    let cleared = upsert_cache(
+        &tx,
+        setting.id,
+        CacheWrite {
+            fetched_at: None,
+            payload: None,
+            error_code: None,
+            error_at: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(cleared.payload.is_none());
+    assert!(cleared.fetched_at.is_none());
+    assert!(cleared.error_code.is_none());
+    assert!(cleared.error_at.is_none());
+    assert_eq!(cleared.payload_version, 1);
+    assert!(cleared.updated_at >= success.updated_at);
+    let persisted = reward_status_cache::Entity::find_by_id(setting.id)
+        .one(&tx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(cleared, persisted);
+    tx.commit().await.unwrap();
 }
 
 #[tokio::test]

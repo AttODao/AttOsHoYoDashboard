@@ -11,8 +11,7 @@ use crate::dashboard::{
 use attosgameapi::hoyolab::RecordAccount;
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Set,
-    TransactionTrait,
+    ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set, TransactionTrait, sea_query::OnConflict,
 };
 use serde_json::Value;
 use std::sync::Arc;
@@ -305,30 +304,29 @@ async fn upsert_cache(
     game_account_id: Uuid,
     write: CacheWrite,
 ) -> Result<()> {
-    if let Some(existing) = game_status_cache::Entity::find_by_id(game_account_id)
-        .one(db)
-        .await?
-    {
-        let mut row = existing.into_active_model();
-        row.fetched_at = Set(write.fetched_at);
-        row.updated_at = Set(write.updated_at);
-        row.payload = Set(write.payload);
-        row.payload_version = Set(CACHE_VERSION);
-        row.error_code = Set(write.error_code);
-        row.error_at = Set(write.error_at);
-        row.update(db).await?;
-    } else {
-        game_status_cache::ActiveModel {
-            game_account_id: Set(game_account_id),
-            fetched_at: Set(write.fetched_at),
-            updated_at: Set(write.updated_at),
-            payload: Set(write.payload),
-            payload_version: Set(CACHE_VERSION),
-            error_code: Set(write.error_code),
-            error_at: Set(write.error_at),
-        }
-        .insert(db)
-        .await?;
-    }
+    use game_status_cache::Column;
+    game_status_cache::Entity::insert(game_status_cache::ActiveModel {
+        game_account_id: Set(game_account_id),
+        fetched_at: Set(write.fetched_at),
+        updated_at: Set(write.updated_at),
+        payload: Set(write.payload),
+        payload_version: Set(CACHE_VERSION),
+        error_code: Set(write.error_code),
+        error_at: Set(write.error_at),
+    })
+    .on_conflict(
+        OnConflict::column(Column::GameAccountId)
+            .update_columns([
+                Column::FetchedAt,
+                Column::UpdatedAt,
+                Column::Payload,
+                Column::PayloadVersion,
+                Column::ErrorCode,
+                Column::ErrorAt,
+            ])
+            .to_owned(),
+    )
+    .exec_without_returning(db)
+    .await?;
     Ok(())
 }

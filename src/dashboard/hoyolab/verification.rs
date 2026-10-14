@@ -9,7 +9,7 @@ use attosgameapi::models::account::Account;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseTransaction, EntityTrait, IntoActiveModel, QueryFilter,
-    Set, SqlErr, TransactionTrait,
+    Set, SqlErr, TransactionTrait, sea_query::OnConflict,
 };
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -183,6 +183,7 @@ fn validate_roles(roles: &[Account]) -> Result<()> {
     Ok(())
 }
 async fn apply_roles(tx: &DatabaseTransaction, link: Uuid, roles: &[Account]) -> Result<()> {
+    use game_account::Column;
     use sea_orm::sea_query::Expr;
     game_account::Entity::update_many()
         .col_expr(game_account::Column::Detected, Expr::value(false))
@@ -204,32 +205,28 @@ async fn apply_roles(tx: &DatabaseTransaction, link: Uuid, roles: &[Account]) ->
         if !seen.insert((kind, uid.clone(), role.region.clone())) {
             continue;
         }
-        let row = game_account::Entity::find()
-            .filter(game_account::Column::HoyolabAccountId.eq(link))
-            .filter(game_account::Column::GameKind.eq(kind))
-            .filter(game_account::Column::GameUid.eq(&uid))
-            .filter(game_account::Column::Region.eq(&role.region))
-            .one(tx)
-            .await?;
-        if let Some(row) = row {
-            let mut row = row.into_active_model();
-            row.detected = Set(true);
-            row.last_detected_at = Set(Utc::now());
-            row.update(tx).await?;
-        } else {
-            game_account::ActiveModel {
-                id: Set(Uuid::new_v4()),
-                hoyolab_account_id: Set(link),
-                game_kind: Set(kind.into()),
-                game_uid: Set(uid),
-                region: Set(role.region.clone()),
-                visible: Set(false),
-                detected: Set(true),
-                last_detected_at: Set(Utc::now()),
-            }
-            .insert(tx)
-            .await?;
-        }
+        game_account::Entity::insert(game_account::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            hoyolab_account_id: Set(link),
+            game_kind: Set(kind.into()),
+            game_uid: Set(uid),
+            region: Set(role.region.clone()),
+            visible: Set(false),
+            detected: Set(true),
+            last_detected_at: Set(Utc::now()),
+        })
+        .on_conflict(
+            OnConflict::columns([
+                Column::HoyolabAccountId,
+                Column::GameKind,
+                Column::GameUid,
+                Column::Region,
+            ])
+            .update_columns([Column::Detected, Column::LastDetectedAt])
+            .to_owned(),
+        )
+        .exec_without_returning(tx)
+        .await?;
     }
     Ok(())
 }

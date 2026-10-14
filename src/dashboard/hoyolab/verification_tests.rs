@@ -231,19 +231,34 @@ async fn same_uid_update_preserves_visibility_and_schedules_only_the_next_tick()
     setting.enabled = Set(true);
     setting.next_run_at = Set(Some(Utc::now() - chrono::Duration::days(1)));
     let setting = setting.update(&store.db).await.unwrap();
+    gateway.state.lock().unwrap().roles = json!([
+        { "game_biz":"hk4e_global","region":"os_asia","game_uid":"1001" },
+        { "game_biz":"hk4e_global","region":"os_asia","game_uid":"001001" },
+        { "game_biz":"hk4e_global","region":"os_usa","game_uid":"1001" },
+        { "game_biz":"unsupported","region":"invalid region","game_uid":"not-a-uid" }
+    ]);
     store.submit(&actor, &cookie("42")).await.unwrap();
     let updated = row(&store, actor.user.id).await;
     assert_eq!(updated.id, link.id);
     assert_eq!(updated.hoyolab_uid, link.hoyolab_uid);
     assert_eq!(updated.credential_version, link.credential_version + 1);
-    assert!(
-        game_account::Entity::find_by_id(game.id)
-            .one(&store.db)
-            .await
-            .unwrap()
-            .unwrap()
-            .visible
-    );
+    let roles = game_account::Entity::find()
+        .filter(game_account::Column::HoyolabAccountId.eq(link.id))
+        .all(&store.db)
+        .await
+        .unwrap();
+    assert_eq!(roles.len(), 2);
+    let existing = roles.iter().find(|row| row.region == "os_asia").unwrap();
+    assert_eq!(existing.id, game.id);
+    assert_eq!(existing.game_uid, "1001");
+    assert!(existing.visible);
+    assert!(existing.detected);
+    assert!(existing.last_detected_at >= game.last_detected_at);
+    let new_region = roles.iter().find(|row| row.region == "os_usa").unwrap();
+    assert_ne!(new_region.id, game.id);
+    assert_eq!(new_region.game_uid, "1001");
+    assert!(!new_region.visible);
+    assert!(new_region.detected);
     assert!(
         reward_setting::Entity::find_by_id(setting.id)
             .one(&store.db)
@@ -261,6 +276,7 @@ async fn same_uid_update_preserves_visibility_and_schedules_only_the_next_tick()
         .await
         .unwrap()
         .unwrap();
+    assert_eq!(missing.id, game.id);
     assert!(missing.visible);
     assert!(!missing.detected);
     gateway.state.lock().unwrap().roles =
@@ -271,6 +287,7 @@ async fn same_uid_update_preserves_visibility_and_schedules_only_the_next_tick()
         .await
         .unwrap()
         .unwrap();
+    assert_eq!(found.id, game.id);
     assert!(found.visible);
     assert!(found.detected);
     gateway.state.lock().unwrap().account = "43".into();

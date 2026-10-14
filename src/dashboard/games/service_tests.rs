@@ -362,7 +362,7 @@ async fn upstream_failure_retains_supported_old_payload_and_records_safe_error()
         1,
     )
     .await;
-    let gateway = MockGateway::new([Err(UpstreamError::Network)]);
+    let gateway = MockGateway::new([Err(UpstreamError::Network), Ok(json!({}))]);
     let games = service(fixture.db.clone(), key, gateway.clone());
 
     let status = games.status(&actor, account.id).await.unwrap();
@@ -382,7 +382,25 @@ async fn upstream_failure_retains_supported_old_payload_and_records_safe_error()
         .unwrap()
         .unwrap();
     assert_eq!(stored.payload, Some(old));
+    assert_eq!(stored.fetched_at, status.fetched_at);
+    assert_eq!(stored.payload_version, 1);
     assert_eq!(stored.error_code.as_deref(), Some("network"));
+    assert!(stored.error_at.is_some());
+
+    let refreshed = games.status(&actor, account.id).await.unwrap();
+    assert_eq!(gateway.calls(), 2);
+    assert!(!refreshed.stale);
+    assert!(refreshed.payload.is_none());
+    let stored = game_status_cache::Entity::find_by_id(account.id)
+        .one(&fixture.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(stored.payload.is_none());
+    assert!(stored.fetched_at.unwrap() > fetched_at);
+    assert_eq!(stored.payload_version, 1);
+    assert!(stored.error_code.is_none());
+    assert!(stored.error_at.is_none());
 }
 
 #[tokio::test]
@@ -408,6 +426,9 @@ async fn first_failed_fetch_has_no_payload_or_fetched_at() {
         .unwrap();
     assert!(stored.payload.is_none());
     assert!(stored.fetched_at.is_none());
+    assert_eq!(stored.payload_version, 1);
+    assert_eq!(stored.error_code.as_deref(), Some("http:500"));
+    assert!(stored.error_at.is_some());
 }
 
 #[tokio::test]
@@ -425,20 +446,35 @@ async fn unsupported_cache_version_is_not_displayed_and_is_replaced_by_refresh()
         99,
     )
     .await;
-    let gateway = MockGateway::new([Ok(json!({
-        "current_stamina": 120,
-        "max_stamina": 240,
-        "stamina_recover_time": 0,
-        "current_reserve_stamina": 9,
-        "current_train_score": 100,
-        "max_train_score": 500,
-        "expeditions": []
-    }))]);
+    let gateway = MockGateway::new([
+        Err(UpstreamError::Network),
+        Ok(json!({
+            "current_stamina": 120,
+            "max_stamina": 240,
+            "stamina_recover_time": 0,
+            "current_reserve_stamina": 9,
+            "current_train_score": 100,
+            "max_train_score": 500,
+            "expeditions": []
+        })),
+    ]);
     let games = service(fixture.db.clone(), key, gateway.clone());
+
+    let failed = games.status(&actor, account.id).await.unwrap();
+    assert!(failed.payload.is_none());
+    assert!(failed.fetched_at.is_none());
+    let stored = game_status_cache::Entity::find_by_id(account.id)
+        .one(&fixture.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(stored.payload.is_none());
+    assert!(stored.fetched_at.is_none());
+    assert_eq!(stored.payload_version, 1);
 
     let status = games.status(&actor, account.id).await.unwrap();
 
-    assert_eq!(gateway.calls(), 1);
+    assert_eq!(gateway.calls(), 2);
     assert_eq!(status.payload.as_ref().unwrap()["current_stamina"], 120);
     assert!(status.payload.as_ref().unwrap().get("old").is_none());
     let stored = game_status_cache::Entity::find_by_id(account.id)

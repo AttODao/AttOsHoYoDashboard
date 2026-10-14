@@ -15,7 +15,7 @@ use attosgameapi::game::GameKind;
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
-    QueryOrder, QuerySelect, Set, TransactionTrait,
+    QueryOrder, QuerySelect, Set, TransactionTrait, sea_query::OnConflict,
 };
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -357,32 +357,32 @@ async fn upsert_cache(
     setting_id: Uuid,
     write: CacheWrite,
 ) -> Result<reward_status_cache::Model> {
-    let now = Utc::now();
-    if let Some(existing) = reward_status_cache::Entity::find_by_id(setting_id)
-        .one(db)
-        .await?
-    {
-        let mut row = existing.into_active_model();
-        row.fetched_at = Set(write.fetched_at);
-        row.updated_at = Set(now);
-        row.payload = Set(write.payload);
-        row.payload_version = Set(CACHE_VERSION);
-        row.error_code = Set(write.error_code);
-        row.error_at = Set(write.error_at);
-        Ok(row.update(db).await?)
-    } else {
-        Ok(reward_status_cache::ActiveModel {
+    use reward_status_cache::Column;
+    Ok(
+        reward_status_cache::Entity::insert(reward_status_cache::ActiveModel {
             setting_id: Set(setting_id),
             fetched_at: Set(write.fetched_at),
-            updated_at: Set(now),
+            updated_at: Set(Utc::now()),
             payload: Set(write.payload),
             payload_version: Set(CACHE_VERSION),
             error_code: Set(write.error_code),
             error_at: Set(write.error_at),
-        }
-        .insert(db)
-        .await?)
-    }
+        })
+        .on_conflict(
+            OnConflict::column(Column::SettingId)
+                .update_columns([
+                    Column::FetchedAt,
+                    Column::UpdatedAt,
+                    Column::Payload,
+                    Column::PayloadVersion,
+                    Column::ErrorCode,
+                    Column::ErrorAt,
+                ])
+                .to_owned(),
+        )
+        .exec_with_returning(db)
+        .await?,
+    )
 }
 
 fn cache_fresh(cache: &reward_status_cache::Model, now: DateTime<Utc>) -> bool {
