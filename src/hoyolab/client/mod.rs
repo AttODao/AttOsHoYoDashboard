@@ -1,6 +1,6 @@
 mod identity;
 
-use rand::Rng;
+use rand::distr::{Alphabetic, SampleString};
 use reqwest::{
     Client,
     header::{COOKIE, HeaderValue, USER_AGENT},
@@ -226,15 +226,11 @@ fn parse<T: serde::de::DeserializeOwned>(data: &RawValue) -> Result<T> {
 }
 
 fn dynamic_secret() -> Result<String> {
-    const LETTERS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| Error::Clock)?
         .as_secs();
-    let mut rng = rand::rng();
-    let nonce: String = (0..6)
-        .map(|_| LETTERS[rng.random_range(0..LETTERS.len())] as char)
-        .collect();
+    let nonce = Alphabetic.sample_string(&mut rand::rng(), 6);
     Ok(sign_secret(timestamp, &nonce))
 }
 
