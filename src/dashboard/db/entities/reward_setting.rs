@@ -1,7 +1,8 @@
 //! Per-game login reward configuration for one HoYoLAB account.
 use sea_orm::entity::prelude::*;
 
-#[derive(Clone, PartialEq, DeriveEntityModel)]
+#[derive(Clone, PartialEq, DeriveEntityModel, derive_more::Debug)]
+#[debug("RewardSetting {{ id: {id:?}, hoyolab_account_id: {hoyolab_account_id:?}, .. }}")]
 #[sea_orm(table_name = "reward_settings")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
@@ -15,15 +16,6 @@ pub struct Model {
 }
 
 // Generated ActiveModel diagnostics are not a logging boundary: never log/instrument it.
-impl std::fmt::Debug for Model {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RewardSetting")
-            .field("id", &self.id)
-            .field("hoyolab_account_id", &self.hoyolab_account_id)
-            .finish_non_exhaustive()
-    }
-}
-
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
 impl ActiveModelBehavior for ActiveModel {}

@@ -31,7 +31,7 @@ async fn insert_user(db: &DatabaseConnection, username: &str) -> user::Model {
 }
 
 async fn insert_hoyolab(db: &DatabaseConnection, owner_user_id: Uuid) -> hoyolab_account::Model {
-    hoyolab_account::ActiveModel {
+    let model = hoyolab_account::ActiveModel {
         id: Set(Uuid::new_v4()),
         owner_user_id: Set(owner_user_id),
         hoyolab_uid: Set(Some("123456789".to_owned())),
@@ -43,7 +43,9 @@ async fn insert_hoyolab(db: &DatabaseConnection, owner_user_id: Uuid) -> hoyolab
     }
     .insert(db)
     .await
-    .unwrap()
+    .unwrap();
+    assert_debug_allowlist(&model, "HoyolabAccount { .. }");
+    model
 }
 
 async fn insert_game_account(
@@ -95,6 +97,12 @@ async fn insert_reward_run(db: &DatabaseConnection, setting_id: Uuid) -> reward_
     .insert(db)
     .await
     .unwrap()
+}
+
+fn assert_debug_allowlist(model: &impl std::fmt::Debug, expected: &str) {
+    for diagnostic in [format!("{model:?}"), format!("{model:#?}")] {
+        assert_eq!(diagnostic, expected);
+    }
 }
 
 async fn exec_err(db: &DatabaseConnection, sql: String) {
@@ -189,7 +197,13 @@ async fn game_accounts_enforce_identity_defaults_foreign_keys_and_cascade() {
     let game = insert_game_account(&fixture.db, account.id).await;
     assert!(!game.visible);
     assert!(game.detected);
-    assert!(!format!("{game:?}").contains("800000001"));
+    assert_debug_allowlist(
+        &game,
+        &format!(
+            "GameAccount {{ id: {:?}, hoyolab_account_id: {:?}, .. }}",
+            game.id, game.hoyolab_account_id
+        ),
+    );
 
     let duplicate = game_account::ActiveModel {
         id: Set(Uuid::new_v4()),
@@ -263,6 +277,13 @@ async fn reward_settings_enforce_per_game_defaults_and_time_state_checks() {
     assert!(!setting.enabled);
     assert_eq!(setting.local_time, "06:00");
     assert_eq!(setting.auth_status, "ready");
+    assert_debug_allowlist(
+        &setting,
+        &format!(
+            "RewardSetting {{ id: {:?}, hoyolab_account_id: {:?}, .. }}",
+            setting.id, setting.hoyolab_account_id
+        ),
+    );
 
     let duplicate = reward_setting::ActiveModel {
         id: Set(Uuid::new_v4()),
@@ -326,6 +347,13 @@ async fn reward_runs_attempts_and_guards_enforce_state_checks_and_cascade() {
     let run = insert_reward_run(&fixture.db, setting.id).await;
     assert_eq!(run.attempt_count, 0);
     assert_eq!(run.send_state, "not_sent");
+    assert_debug_allowlist(
+        &run,
+        &format!(
+            "RewardRun {{ id: {:?}, setting_id: {:?}, .. }}",
+            run.id, run.setting_id
+        ),
+    );
 
     for sql in [
         format!(
@@ -381,7 +409,13 @@ async fn reward_runs_attempts_and_guards_enforce_state_checks_and_cascade() {
     .await
     .unwrap();
     assert_eq!(attempt.send_state, "not_sent");
-    assert!(!format!("{attempt:?}").contains("retcode"));
+    assert_debug_allowlist(
+        &attempt,
+        &format!(
+            "RewardAttempt {{ id: {:?}, run_id: {:?}, number: {:?}, .. }}",
+            attempt.id, attempt.run_id, attempt.number
+        ),
+    );
 
     let duplicate = reward_attempt::ActiveModel {
         id: Set(Uuid::new_v4()),
@@ -428,6 +462,10 @@ async fn reward_runs_attempts_and_guards_enforce_state_checks_and_cascade() {
     .await
     .unwrap();
     assert!(!guard.post_may_have_happened);
+    assert_debug_allowlist(
+        &guard,
+        &format!("RewardGuard {{ setting_id: {:?}, .. }}", guard.setting_id),
+    );
 
     reward_setting::Entity::delete_by_id(setting.id)
         .exec(&fixture.db)
@@ -474,9 +512,13 @@ async fn game_status_cache_allows_initial_failure_and_redacts_payload_and_errors
     .unwrap();
     assert_eq!(cache.fetched_at, None);
     assert_eq!(cache.payload_version, 1);
-    let debug = format!("{cache:?}");
-    assert!(!debug.contains("private_note"));
-    assert!(!debug.contains("retcode"));
+    assert_debug_allowlist(
+        &cache,
+        &format!(
+            "GameStatusCache {{ game_account_id: {:?}, fetched_at: {:?}, updated_at: {:?}, .. }}",
+            cache.game_account_id, cache.fetched_at, cache.updated_at
+        ),
+    );
 
     for sql in [
         format!(
@@ -535,9 +577,13 @@ async fn reward_status_cache_allows_initial_failure_default_version_and_cascade(
     .unwrap();
     assert_eq!(cache.fetched_at, None);
     assert_eq!(cache.payload_version, 1);
-    let debug = format!("{cache:?}");
-    assert!(!debug.contains("private_note"));
-    assert!(!debug.contains("retcode"));
+    assert_debug_allowlist(
+        &cache,
+        &format!(
+            "RewardStatusCache {{ setting_id: {:?}, fetched_at: {:?}, updated_at: {:?}, .. }}",
+            cache.setting_id, cache.fetched_at, cache.updated_at
+        ),
+    );
 
     for sql in [
         format!(
@@ -586,6 +632,13 @@ async fn deletion_requests_cascade_with_target_and_null_deleted_requester() {
     .await
     .unwrap();
     assert_eq!(row.requested_by_user_id, Some(requester.id));
+    assert_debug_allowlist(
+        &row,
+        &format!(
+            "DeletionRequest {{ user_id: {:?}, requested_by_user_id: {:?}, .. }}",
+            row.user_id, row.requested_by_user_id
+        ),
+    );
 
     exec_err(
         &fixture.db,

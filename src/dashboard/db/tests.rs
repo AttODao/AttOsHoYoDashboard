@@ -156,7 +156,9 @@ async fn audit_requires_existing_subject_and_diagnostics_redact_credentials() {
             .is_err(),
         "audit deletion must be handled explicitly by future account deletion"
     );
-    assert!(!format!("{owner:?}").contains("synthetic-private-hash"));
+    for diagnostic in [format!("{owner:?}"), format!("{owner:#?}")] {
+        assert_eq!(diagnostic, format!("User {{ id: {:?}, .. }}", owner.id));
+    }
     let key = passkey::Model {
         id: Uuid::new_v4(),
         user_id: owner.id,
@@ -165,5 +167,7 @@ async fn audit_requires_existing_subject_and_diagnostics_redact_credentials() {
         credential: serde_json::json!({"synthetic-private-metadata":true}),
         created_at: Utc::now(),
     };
-    assert!(!format!("{key:?}").contains("synthetic-private"));
+    for diagnostic in [format!("{key:?}"), format!("{key:#?}")] {
+        assert_eq!(diagnostic, format!("Passkey {{ id: {:?}, .. }}", key.id));
+    }
 }

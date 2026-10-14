@@ -388,6 +388,7 @@ dependencies = [
  "argon2",
  "axum",
  "chrono",
+ "derive_more",
  "dotenvy",
  "md5",
  "openssl",
