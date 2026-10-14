@@ -1,4 +1,4 @@
-use super::session::signed_out;
+use super::session::{refresh_me, signed_out};
 use super::state::{AppState, generation_matches, set_status};
 use crate::api;
 use dioxus::prelude::*;
@@ -16,6 +16,29 @@ pub(super) fn handle_api_error_for(state: Signal<AppState>, generation: u64, err
         signed_out(state, "Please sign in again.");
     } else {
         set_status(state, error.to_string(), "error");
+    }
+}
+
+pub(super) async fn handle_password_error_for(
+    state: Signal<AppState>,
+    generation: u64,
+    error: api::ApiError,
+) {
+    if !generation_matches(state, generation) {
+        return;
+    }
+    if !error.is_unauthorized() {
+        handle_api_error_for(state, generation, error);
+        return;
+    }
+    // Password confirmation and session expiry both return 401. Check the
+    // session without retrying the mutation or discarding a valid login.
+    if refresh_me(state).await && generation_matches(state, generation) {
+        set_status(
+            state,
+            "The current password was not accepted. Please try again.",
+            "error",
+        );
     }
 }
 
@@ -65,6 +88,13 @@ mod tests {
             finish_action(state, generation - 1);
             assert!(state.read().busy);
             handle_api_error_for(state, generation - 1, api::ApiError::browser("stale"));
+            let mut password_error = std::pin::pin!(handle_password_error_for(
+                state,
+                generation - 1,
+                api::ApiError::browser("stale password confirmation"),
+            ));
+            let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+            assert!(password_error.as_mut().poll(&mut context).is_ready());
             assert!(state.read().status.is_none());
 
             finish_action(state, generation);

@@ -1,8 +1,8 @@
 use super::common::Field;
-use crate::app::actions::{handle_api_error_for, spawn_action};
+use crate::app::actions::{handle_api_error_for, handle_password_error_for, spawn_action};
 use crate::app::data::load_passkeys;
 use crate::app::session::bootstrap;
-use crate::app::state::AppState;
+use crate::app::state::{AppState, Phase};
 use crate::app::state::{generation_matches, set_status};
 use crate::components::{
     Button, ButtonVariant, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,
@@ -35,14 +35,20 @@ pub(super) fn PasswordCard(mut state: Signal<AppState>, title: &'static str) -> 
                 Field { id: "new-password", label: "New password", input { id: "new-password", r#type: "password", autocomplete: "new-password", value: "{new_password}", minlength: "12", oninput: move |event| new_password.set(event.value()) } }
             }
             CardFooter { Button { r#type: "button", onclick: move |_| {
+                let owner = state.read().me.as_ref().map(|me| me.id);
                 let current_password = std::mem::take(&mut *current.write());
                 let next = std::mem::take(&mut *new_password.write());
                 let state = state;
                 spawn_action(state, move |generation| async move {
                                 match crate::api::send("PUT", "/me/password", Some(json!({"current_password": current_password, "new_password": next}))).await {
-                        Ok(()) if generation_matches(state, generation) => { set_status(state, "Password changed.", "success"); bootstrap(state).await; }
+                        Ok(()) if generation_matches(state, generation) => {
+                            bootstrap(state).await;
+                            if state.read().phase == Phase::SignedIn && state.read().me.as_ref().map(|me| me.id) == owner {
+                                set_status(state, "Password changed.", "success");
+                            }
+                        }
                         Ok(()) => {}
-                        Err(error) => { handle_api_error_for(state, generation, error); }
+                        Err(error) => { handle_password_error_for(state, generation, error).await; }
                     }
                 });
             }, "Change password" } }

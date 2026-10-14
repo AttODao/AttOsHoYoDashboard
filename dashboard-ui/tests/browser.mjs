@@ -16,7 +16,7 @@ const csp=fs.readFileSync(path.join(root,'src/dashboard/http/ui.rs'),'utf8').mat
 const uid=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const user={id:uid(1),username:'synthetic-admin',is_admin:true,active:true,must_change_password:true};
 const other={...user,id:uid(9),username:'synthetic-other',is_admin:false,must_change_password:false};
-let verified=false,passkeys=[],credentialId,failLogout=false,allowLogin,allowSettings;
+let verified=false,passkeys=[],credentialId,failLogout=false,allowLogin,allowSettings,expirePasswordSession=false,sessionExpired=false;
 const createdUsers=[];
 const loginGate=new Promise(resolve=>{allowLogin=resolve;});
 const settingsGate=new Promise(resolve=>{allowSettings=resolve;});
@@ -35,7 +35,7 @@ const server=http.createServer(async(req,res)=>{
    const body=raw?JSON.parse(raw):null;
    if(req.method!=='GET')assert.equal(req.headers.origin,origin,'browser emits the real same-origin Origin');
    const actor=req.headers.cookie?.includes('attos_session=synthetic-a')?user:req.headers.cookie?.includes('attos_session=synthetic-b')?other:null;
-   if(p==='/api/v1/auth/login'){const loginUser=body.username===user.username?user:body.username===other.username?other:null;assert.ok(loginUser);await loginGate;res.setHeader('Set-Cookie',`attos_session=synthetic-${loginUser===user?'a':'b'}; HttpOnly; SameSite=Strict; Path=/`);return json(res,loginUser);}
+   if(p==='/api/v1/auth/login'){const loginUser=body.username===user.username?user:body.username===other.username?other:null;assert.ok(loginUser);await loginGate;sessionExpired=false;res.setHeader('Set-Cookie',`attos_session=synthetic-${loginUser===user?'a':'b'}; HttpOnly; SameSite=Strict; Path=/`);return json(res,loginUser);}
    if(p==='/api/v1/auth/logout'){if(failLogout)return json(res,{error:'unavailable'},503);res.setHeader('Set-Cookie','attos_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');return json(res,{});}
    if(p==='/api/v1/auth/passkey/options'){assert.equal(body.username,user.username);assert.ok(credentialId);return json(res,{challenge_id:uid(13),options:{publicKey:{challenge:Buffer.from('synthetic-assertion-challenge-32-bytes').toString('base64url'),rpId:'localhost',allowCredentials:[{type:'public-key',id:credentialId,transports:['internal']}],userVerification:'required',timeout:60000}}});}
    if(p==='/api/v1/auth/passkey/verify'){
@@ -44,10 +44,17 @@ const server=http.createServer(async(req,res)=>{
     assert.ok(body.response.response.userHandle===null||typeof body.response.response.userHandle==='string');
     res.setHeader('Set-Cookie','attos_session=synthetic-a; HttpOnly; SameSite=Strict; Path=/');return json(res,user);
    }
-   if(!actor)return json(res,{error:'unauthorized'},401);
+   if(!actor||sessionExpired)return json(res,{error:'unauthorized'},401);
+   if(p==='/api/v1/me'&&req.method==='DELETE'){assert.deepEqual(body,{current_password:'wrong-synthetic-password',confirmation:user.username});return json(res,{error:'unauthorized'},401);}
    if(p==='/api/v1/me')return json(res,{...actor,onboarding:{password_change_required:actor.must_change_password,cookie_setup_complete:verified,cookie_status:verified?'verified':'pending_verification',verification_available:true},capabilities:{reward_posting_available:true}});
    if(p==='/api/v1/me/hoyolab'){await settingsGate;return json(res,{id:uid(2),hoyolab_uid:verified?'123':null,status:verified?'verified':'pending_verification',setup_complete:verified,updated_at:null,verification_available:true});}
-   if(p==='/api/v1/me/password'){assert.equal(req.method,'PUT');assert.deepEqual(body,{current_password:'synthetic-password-123',new_password:'synthetic-permanent-password-123'});actor.must_change_password=false;return json(res,actor);}
+   if(p==='/api/v1/me/password'){
+    assert.equal(req.method,'PUT');
+    if(expirePasswordSession){sessionExpired=true;return json(res,{error:'unauthorized'},401);}
+    assert.equal(body.new_password,'synthetic-permanent-password-123');
+    if(body.current_password==='wrong-synthetic-password')return json(res,{error:'unauthorized'},401);
+    assert.equal(body.current_password,'synthetic-password-123');actor.must_change_password=false;return json(res,actor);
+   }
    // Intentionally empty/malformed success bodies exercise client-only acknowledgement policy, not the backend JSON contract.
    if(p==='/api/v1/me/hoyolab/cookie'){assert.equal(actor.must_change_password,false);assert.ok(body.cookie.startsWith('ltuid_v2=123;'));res.writeHead(202,{'Content-Type':'application/json'});return res.end('ignored acknowledgement');}
    if(p==='/api/v1/me/hoyolab/verify'){assert.equal(req.method,'POST');assert.deepEqual(body,{});verified=true;res.writeHead(204);return res.end();}
@@ -115,13 +122,28 @@ try{
  assert.ok(await page.getByLabel('Paste one HoYoLAB Cookie').isDisabled());
  for(const name of ['Save Cookie','Verify binding','Sync metadata'])assert.ok(await page.getByRole('button',{name,exact:true}).isDisabled());
  assert.equal(counts.get('/api/v1/me/hoyolab/cookie')||0,0);
+ await page.getByLabel('Current password',{exact:true}).fill('wrong-synthetic-password');
+ await page.getByLabel('New password',{exact:true}).fill('synthetic-permanent-password-123');
+ await page.getByRole('button',{name:'Change password',exact:true}).click();
+ await page.getByText('The current password was not accepted. Please try again.',{exact:true}).waitFor();
+ await page.waitForFunction(()=>document.querySelector('fieldset.app-shell')?.disabled===false);
+ assert.equal(counts.get('/api/v1/me/password'),1,'a rejected password mutation is not retried');
+ assert.equal(await page.getByRole('button',{name:'Sign in',exact:true}).count(),0,'wrong current password preserves a valid session');
+ assert.ok(await page.getByLabel('Paste one HoYoLAB Cookie').isDisabled());
  await page.getByLabel('Current password',{exact:true}).fill('synthetic-password-123');
  await page.getByLabel('New password',{exact:true}).fill('synthetic-permanent-password-123');
  await page.getByRole('button',{name:'Change password',exact:true}).click();
  await page.getByRole('button',{name:'Re-enable',exact:true}).waitFor();
- assert.equal(counts.get('/api/v1/me/password'),1);
+ assert.equal(counts.get('/api/v1/me/password'),2);
+ await page.getByText('Password changed.',{exact:true}).waitFor();
  assert.ok(await page.getByLabel('Paste one HoYoLAB Cookie').isEnabled());
  await page.getByRole('button',{name:'Delete my account',exact:true}).waitFor();
+ await page.locator('#delete-confirmation').fill(user.username);
+ await page.locator('#delete-password').fill('wrong-synthetic-password');
+ await page.getByRole('button',{name:'Delete my account',exact:true}).click();
+ await page.getByText('The current password was not accepted. Please try again.',{exact:true}).waitFor();
+ await page.waitForFunction(()=>document.querySelector('fieldset.app-shell')?.disabled===false);
+ assert.equal(await page.getByRole('button',{name:'Sign in',exact:true}).count(),0,'deletion password confirmation shares the valid-session boundary');
  assert.equal(counts.get('/api/v1/game-accounts')||0,0);
  assert.equal(counts.get('/api/v1/reward-settings')||0,0);
  await page.getByLabel('Paste one HoYoLAB Cookie').fill('ltuid_v2=123; ltoken_v2=synthetic-browser-token');
@@ -192,6 +214,20 @@ try{
  await page.getByText('77/200',{exact:true}).waitFor();
  assert.equal((await context.cookies()).find(c=>c.name==='attos_session').value,'synthetic-b');
  assert.equal(await page.getByRole('button',{name:'Admin',exact:true}).count(),0);
+ await page.getByRole('button',{name:'Security',exact:true}).click();
+ await page.getByLabel('Current password',{exact:true}).fill('synthetic-password-456');
+ await page.getByLabel('New password',{exact:true}).fill('synthetic-permanent-password-456');
+ expirePasswordSession=true;
+ const passwordRequests=counts.get('/api/v1/me/password');
+ await page.getByRole('button',{name:'Change password',exact:true}).click();
+ await page.getByRole('button',{name:'Sign in',exact:true}).waitFor();
+ assert.equal(counts.get('/api/v1/me/password'),passwordRequests+1,'expired-session mutation is not retried');
+ await page.getByText('Please sign in again.',{exact:true}).waitFor();
+ expirePasswordSession=false;
+ await page.getByLabel('Username',{exact:true}).first().fill(other.username);
+ await page.getByLabel('Password',{exact:true}).fill('synthetic-password-456');
+ await page.getByRole('button',{name:'Sign in',exact:true}).click();
+ await page.getByText('77/200',{exact:true}).waitFor();
  await page.getByRole('button',{name:'Logout',exact:true}).click();
  await page.getByRole('button',{name:'Sign in',exact:true}).waitFor();
  await page.setViewportSize({width:390,height:844});
@@ -204,5 +240,5 @@ try{
  assert.deepEqual([...counts].filter(([p])=>p.startsWith('/api/v1/')),apiCountsBeforeDocs,'public docs sends no authenticated GETs or mutations');
  assert.deepEqual(errors,[],'release CSP and Wasm render without JS/browser errors');
  assert.deepEqual(failures,[]);
- console.log('Dioxus browser check passed: auth/onboarding/password-before-Cookie, admin/delete access, secret clearing, native WebAuthn registration/assertion, mutation acknowledgements, verification availability, reward schedule save/manual enqueue, ready/UID filter, single-flight Set-Cookie/owner consistency, failed logout/retry/reload, mobile docs, release CSP.');
+ console.log('Dioxus browser check passed: auth/onboarding/password-before-Cookie/password-confirmation-session-boundary, admin/delete access, secret clearing, native WebAuthn registration/assertion, mutation acknowledgements, verification availability, reward schedule save/manual enqueue, ready/UID filter, single-flight Set-Cookie/owner consistency, failed logout/retry/reload, mobile docs, release CSP.');
 }catch(error){console.error('Browser diagnostics:',JSON.stringify({errors,failures,requests:Object.fromEntries(counts),text:page?await page.locator('body').innerText().catch(()=>'<no page>'):''}));throw error;}finally{if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));}

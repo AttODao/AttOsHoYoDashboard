@@ -1,5 +1,5 @@
 use super::common::Field;
-use crate::app::actions::{handle_api_error_for, spawn_action};
+use crate::app::actions::{handle_password_error_for, spawn_action};
 use crate::app::session::signed_out;
 use crate::app::state::AppState;
 use crate::app::state::generation_matches;
@@ -40,7 +40,7 @@ pub(super) fn DeleteAccountCard(mut state: Signal<AppState>) -> Element {
                                 match crate::api::send("DELETE", "/me", Some(json!({"current_password": pass, "confirmation": confirm}))).await {
                     Ok(()) if generation_matches(state, generation) => signed_out(state, "Account deletion accepted."),
                     Ok(()) => {}
-                    Err(error) => { handle_api_error_for(state, generation, error); }
+                    Err(error) => { handle_password_error_for(state, generation, error).await; }
                 }
             }); }, "Delete my account" } }
         }
