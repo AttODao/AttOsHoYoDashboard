@@ -20,6 +20,7 @@
 
 本番release bundleとlocal mockによるブラウザ検証を完了。
 
+- 追加のworkspace全targetテストも成功：合計209件成功、失敗0件。実HoYoLAB GETの1件だけは、明示承認が必要なため既定のignoreを維持した。
 - backend：隔離PostgreSQL 18、`DATABASE_URL`を除外してDashboardテスト165件成功。現在値省略・通常変更拒否・再利用・期限・再発行・lock競合を含む。
 - UI：native unit 34件成功。workspace全targetのClippyとWASM Clippyを`-D warnings`で通過。`dx build --package attos-dashboard-ui --platform web --release`成功。
 - Chromiumで本番bundleを通常motion／reduced-motionの双方で実行して回帰検証成功。ログイン・必須設定／検証済み再設定・401時のsession再確認・2ゲームのUIDとautomation分離・設定タブと時刻・drawer閉鎖／focus復帰・非機密設定永続化・WebAuthn・生成失敗／clipboardの待機と失敗／削除受付・owner切替・read-only docsとCSPを検査した。管理者が2人いるfixtureでも自分の行から再発行・無効化・削除を送信しない。
@@ -31,8 +32,7 @@
 ## 再実行
 
 ```sh
-env -u DATABASE_URL cargo test --locked --bin attosgameapi dashboard:: -- --test-threads=2
-cargo test --locked -p attos-dashboard-ui
+env -u DATABASE_URL cargo test --locked --workspace --all-targets -- --test-threads=2
 cargo check --locked -p attos-dashboard-ui --target wasm32-unknown-unknown
 dx build --package attos-dashboard-ui --platform web --release
 # Playwright/Chromiumを用意し、必要ならATTOS_TEST_PLAYWRIGHT_MODULEを指定
