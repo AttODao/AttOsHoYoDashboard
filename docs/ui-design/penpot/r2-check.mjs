@@ -6,6 +6,8 @@ const source=fs.readFileSync(new URL('./r2-import.js',import.meta.url),'utf8');
 const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
 const run=new AsyncFunction('penpot','penpotUtils','storage',source);
 const finish=new AsyncFunction('penpot','penpotUtils','storage',fs.readFileSync(new URL('./r2-finish.js',import.meta.url),'utf8'));
+const guide=new AsyncFunction('penpot','penpotUtils','storage',fs.readFileSync(new URL('./r2-guide.js',import.meta.url),'utf8'));
+const refresh=new AsyncFunction('penpot','penpotUtils','storage',fs.readFileSync(new URL('./r2-refresh.js',import.meta.url),'utf8'));
 let seq=0;
 class Shape{
  constructor(type){this.id='fake-'+seq++;this.type=type;this.name='';this.children=[];this.interactions=[];this.data={};this.fills=[];this.strokes=[];this.width=this.height=1;this.x=this.y=0;this.layoutChild={};}
@@ -16,7 +18,7 @@ class Shape{
  applyToken(t,props){this.tokens??={};for(const p of props){this.tokens[p]=t.name;if(p==='strokeColor'&&!this.strokes.length)this.strokes=[{strokeWidth:1}];}}
  applyTypography(t){this.typography=t;this.fontSize=t.fontSize;}
  addFlexLayout(){return this.flex={};}
- component(){return this._component;}
+ component(){return this._component||this.parent?.component();}
  setParentIndex(i){const list=this.parent.children;list.splice(list.indexOf(this),1);list.splice(i,0,this);}
  addInteraction(trigger,action){this.interactions.push({trigger,action});}
  remove(){if(this.parent)this.parent.children=this.parent.children.filter(s=>s!==this);}
@@ -24,7 +26,7 @@ class Shape{
 }
 function fake(){
  const pages=[],colors=[],typographies=[],components=[];
- const api={currentFile:{id:'129977ce-683b-806a-8008-c9d0bedd3212',pages,validate:()=>[]},fonts:{findByName:()=>({variants:['400','500','600','700'].map(fontWeight=>({fontWeight,fontStyle:'normal'}))})},createPage:()=>{const p={root:new Shape('root'),flows:[],createFlow(name,start){this.flows.push({name,start});}};pages.push(p);return p;},openPage:async p=>{api.currentPage=p;},createBoard:()=>new Shape('board'),createRectangle:()=>new Shape('rectangle'),createText:t=>{const s=new Shape('text');s.characters=t;return s;},createShapeFromSvg:async svg=>{const s=new Shape('group');if(svg.includes('linearGradient'))s.fills=[{fillColorGradient:{type:'fake-editable-gradient'}}];else s.children=[new Shape('path')];return s;},library:{local:{tokens:{addSet:()=>({active:true,addToken:t=>t})},createColor:()=>{const c={};colors.push(c);return c;},createTypography:()=>{const t={setFont(){}};typographies.push(t);return t;},createComponent:([main])=>{const c={instance:()=>{const s=main.clone();s._component=c;return s;}};components.push(c);return c;}}}};
+ const api={currentFile:{id:'129977ce-683b-806a-8008-c9d0bedd3212',pages,validate:()=>[]},fonts:{findByName:()=>({variants:['400','500','600','700'].map(fontWeight=>({fontWeight,fontStyle:'normal'}))})},createPage:()=>{const p={id:'fake-page-'+seq++,root:new Shape('root'),flows:[],createFlow(name,start){this.flows.push({name,start});}};pages.push(p);return p;},openPage:async p=>{api.currentPage=p;},createBoard:()=>new Shape('board'),createRectangle:()=>new Shape('rectangle'),createText:t=>{const s=new Shape('text');s.characters=t;return s;},createShapeFromSvg:async svg=>{const s=new Shape('group');if(svg.includes('linearGradient'))s.fills=[{fillColorGradient:{type:'fake-editable-gradient'}}];else s.children=[new Shape('path')];return s;},library:{local:{tokens:{addSet:()=>({active:true,addToken:t=>t})},createColor:()=>{const c={};colors.push(c);return c;},createTypography:()=>{const t={setFont(){}};typographies.push(t);return t;},createComponent:([main])=>{const c={instance:()=>{const s=main.clone();s._component=c;return s;}};components.push(c);return c;}}}};
  return {api,utils:{getPageByName:n=>pages.find(p=>p.name===n)},storage:{},pages,colors,typographies,components};
 }
 const directory=process.env.ATTOS_DESIGN_CAPTURE_DIR||'/tmp/agd-r2';
@@ -46,4 +48,8 @@ const interrupted=fake();interrupted.storage.agdR2Scene=structuredClone(scenes[0
 const wired=await finish(f.api,f.utils,f.storage);assert.ok(wired.linksAdded>0);assert.equal(desktop.flows.length,4);assert.equal(mobile.flows.length,4);
 for(const p of [desktop,mobile])for(const b of p.root.children){const k=b.getPluginData('agd-r2-key');assert.ok(b.children.at(-1).name.startsWith('header /'));if(k.startsWith('setup')){const targets=[];const walk=s=>{targets.push(...s.interactions.map(i=>i.action.destination.getPluginData('agd-r2-key')));s.children.forEach(walk);};walk(b);assert.ok(targets.every(t=>/^(login|setup-cookie|setup-pending|dashboard-new-uids)-/.test(t)),'setup cannot navigate to settings or admin');}}
 assert.equal((await finish(f.api,f.utils,f.storage)).linksAdded,0,'do not duplicate human prototype links');
+const guideResult=await guide(f.api,f.utils,f.storage);assert.equal(guideResult.counts.swatches,14);assert.equal(guideResult.counts.instances,4);assert.equal(f.utils.getPageByName('AGD R2 Draft / Guide').root.children.length,1);
+await assert.rejects(()=>guide(f.api,f.utils,f.storage),/Guide marker exists/,'guide does not overwrite human edits');
+f.storage.agdR2RefreshPage=desktop.name;const prepared=await refresh(f.api,f.utils,f.storage);assert.ok(prepared.count>0);const pending=f.storage.agdR2.glyphRefresh;const sizes=pending.rows.map(r=>r.size);assert.ok(pending.rows.every(r=>Number(r.shape.fontSize)===Number(r.size)+1&&r.shape.characters===' '));
+f.storage.agdR2RefreshPage=mobile.name;await assert.rejects(()=>refresh(f.api,f.utils,f.storage),/Restore pending page/);f.storage.agdR2RefreshPage=desktop.name;assert.equal((await refresh(f.api,f.utils,f.storage)).phase,'restored');assert.equal(f.storage.agdR2.glyphRefresh,null);assert.deepEqual(pending.rows.map(r=>r.shape.fontSize),sizes);assert.ok(pending.rows.every(r=>r.shape.characters===r.text));assert.equal(human.fontSize,undefined);
 console.log('PASS: 50 measured scenes import in the narrow fake; controls share '+f.components.length+' assets; wrong file/font/paint/geometry stop before mutations; human work, duplicate and interruption guards preserved. Native validation still required.');

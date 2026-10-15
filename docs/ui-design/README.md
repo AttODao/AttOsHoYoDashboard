@@ -8,8 +8,9 @@
 - [`revision-2.md`](revision-2.md)：参照UI、画面構成、初期設定の制約、管理者ログの未確定範囲、Penpot反映手順。
 - [`DESIGN.md`](DESIGN.md)：R2の配色・タイポグラフィ・レイアウト。値の正本は`preview/style.css`。
 - [`review.md`](review.md)：実際に行ったSkill利用・旧案の問題・R2の検証と限界。
-- [`preview/scene.mjs`](preview/scene.mjs)／[`penpot/r2-import.js`](penpot/r2-import.js)：合成プレビューの配置計測とNativeへの取り込み。ユーザー許可後、24場面を実作成済み。
-- [`native-status.md`](native-status.md)：保存できた場面、実検証と模擬検証の区別、再開手順・未完了項目。
+- [`preview/scene.mjs`](preview/scene.mjs)／[`penpot/r2-import.js`](penpot/r2-import.js)：合成プレビューの配置計測とNativeへの取り込み。ユーザー許可後、50場面を実作成済み。
+- [`native-status.md`](native-status.md)：保存できた場面、実検証と模擬検証の区別、未完了項目。
+- [`penpot/r2-guide.js`](penpot/r2-guide.js)／[`penpot/r2-refresh.js`](penpot/r2-refresh.js)：Nativeガイド追加と、コピー文字の描画キャッシュを2回のRPCで更新する補助。
 
 `preview/index.html`は直接開ける。Webフォントの読込にはインターネットが必要で、未読込時はフォールバックする。操作は合成状態の切替のみ。認証入力欄は読取専用で、実Cookie・パスワードを入力しない。下部の「デザイン確認用」は製品メニューではない。
 
@@ -24,7 +25,7 @@
 
 ## Penpotの状態
 
-**ユーザーの再開許可後、通常のMCPでR2を24場面・共通部品20種類まで追加。現在はPenpotタブのheartbeat停止で中断。残り26場面と最終検証は未完了。** 接続設定の再調査・再変更は行っていない。
+**通常のMCPでR2を50場面・共通部品20種類・Design Guideまで追加。代表導線240件を設定。メニューと重要状態を画像確認し、残る制約を記録した未承認ドラフト。** 接続設定の再調査・再変更は行っていない。
 
 保存済みのR1は同じファイル **New File 1** / `129977ce-683b-806a-8008-c9d0bedd3212` にある。R2では既存ボードを上書きせず、別ページに展開する。
 
