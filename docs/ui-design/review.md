@@ -1,5 +1,15 @@
 # 制作・批評・検査記録
 
+## 最新：R3内の目・英語・drawer小改修
+
+- R4ではなく既存R3を狭く修正。Impeccable harden／craft-floor、UI UX Pro Max Quick Referenceを読んで適用。Python CLI実行成功の主張はしない。R1／R2、本番Dioxus／API／DBは未変更。
+- 参照調査`01a13f78-baf6-70b4-b4f6-59df54c604d8`は`https://artifact-diagnoser.ktonk.com/`を実Chromiumの1440×1000／390×844で操作。右全高304px、暗いbackdrop、本文移動なし、右から約300ms、外側／Escapeで閉じる、gear・Xなしを観察した。画像は`/tmp/agd-menu-reference/{desktop,mobile}-{closed,open,dark,language}.png`等。正確な参照CSSのduration／easing取得ではない。AGDはハンバーガーを維持しX追加、native dialog／フォーカス復帰、280ms transform＋discrete close／reduced-motionを採用。
+- 全パスワード入力に目と日英の表示／非表示名・`aria-controls`・`aria-pressed`。空・read-onlyの合成入力でtypeのみ切替、値getterなし。render／window blur／document hidden／メニューを開く時に再マスク。英語は製品画面全体、言語／テーマの操作はメニュー内。保存は`agd-preview-lang`／`agd-preview-theme`だけで秘密／表示状態なし。ログイン／初期設定のメニュー非表示とログアウトのみの制限ゲートを維持。
+- ブラウザ59場面の検査成功（`/tmp/agd-r3/manifest.json`、当初43＋両幅の代表16）。Dashboard／menuはen-dark・ja-light・en-light、Login／Settings認証はen-light。表示切替／再マスク／秘密非読取、英語、保存設定、focus、drawer寸法／本文非移動／入場motion、contrastと既存責務を検査。これは実API・支援技術全体の合格ではない。
+- 限定模擬59場面・common map50件も成功。R2／人間編集の隔離、メニューのboard ID維持、目の冪等追加、設定の代表リンク、重複／中断、2 RPC文字復元を検査。**模擬map50はNative数や実描画の証明ではない。**
+- Native実行済みは既存12枚の静的な目20個＋別の共有master、既存メニュー4枚の子の置換（board ID保持）。元25共通Assetsと他39枚の本文を保持（一部に目のみ追加）。追加16枚も保存し、最終29＋30枚・共通map51＋目master・207リンク・文字266＋263件復元・途中印なし・ファイル検証エラー0を確認。旧Mobile Loginの目はNative PNGで確認。追加ライト画像はユーザー指定で省略。
+- 元本文のhashは意図的に旧値を保持し、新メニュー／代表場面は新hash。Nativeの目は秘密を表示せず、設定リンクも代表静的状態のみ。実show/hide・motion・設定永続化は合成ブラウザ資料に限る。詳細・hashは`revision-3.md`。以下の43場面・25部品・171リンク・文字191＋194件等は当初R3の履歴で、今回の最終検証結果ではない。
+
 ## UI UX Pro Max — 最初の設計入力
 
 `SKILL.md`を読み、`--design-system` とUX／日本語タイポグラフィ検索を実行しようとしたが、環境にPythonがなく起動できなかった。Pythonは追加インストールしていない。**CLIによるデザインシステム生成成功とは報告しない。** 同梱CSVをJavaScriptで解析・検索し、カテゴリと実際の推奨内容を確認した。
@@ -106,13 +116,13 @@ Questions skipped: 初回はAI制作後に人間がPenpotで最終選定する�
 - 自己削除受付のHTML例から認証済みヘッダーを除き、管理者による削除受付では管理者ナビを維持した。管理者メニューと両削除受付を加え、ローカル対象は50場面になった。実ブラウザのゲート・重ね順・入力秘匿、限定模擬の導線・重複拒否・中断ガードと構文／contrast検査は成功。
 - 25件目`empty-1440`はMCPがheartbeatなし40秒／タブsuspendedとして拒否。無条件に再試行せず停止した。その後、以下の再開作業で残り26場面を追加した。
 
-## R3 — 最新のユーザー指摘反映
+## 当初R3 — ユーザー指摘反映（43場面の基準記録）
 
 - 通常画面の説明文を除去し、中央ログイン、Desktopの2ゲーム同時表示、色付きカード内のON/OFF、文字なしメニュー、設定／Mobileゲームの切替タブ、時・分selectとtimezone、初期登録／再発行後の分離、生成仮パスワードの受渡しmock、ユーザー削除表記を実装した。
 - read-only批評`01a13f43-25d5-70b4-b4f6-59d229110b9d`がブラウザ12画像を確認。Mobile設定タブの断片的な改行を1件指摘し、短い表示名＋完全なARIA名へ一度修正して再検査した。Native修正前の承認と取り違えない。
 - 契約調査`01a13f3c-099e-70b4-b4f6-59d0bc143cf0`は現在値必須のパスワードAPI、temporary_passwordを呼出側が指定する管理者API、既存検証済み連携を再発行で維持する点を確認。未実装の現在値省略／自動生成方針を本番動作済みとせず、`revision-3.md`に記録した。
 - 既存R2各25枚を確認してR3を別scopeへ追加。中央LoginをNative試験exportし、残りへ展開。43場面／25共通部品／代表171リンク／名前付き10 Flowを保存。コピー文字191＋194件を空白化と復元の別RPCで更新。途中マーカーなし。
-- 全43場面のhashは現在のpreview sourceと一致。Nativeで再発行画面のCookie／現在値0、一般fixtureの管理者項目0、disabledリンク0、ファイル検証エラー0、旧R2各25枚の維持を確認した。
+- 当初の全43場面のhashは当時のpreview sourceと一致（今回の小改修後の全キー一致ではない）。Nativeで再発行画面のCookie／現在値0、一般fixtureの管理者項目0、disabledリンク0、ファイル検証エラー0、旧R2各25枚の維持を確認した。
 - SVG exportのResourceRequest／応答timeoutがあった。完全SVGからのPNGに加え、直接PNG exportで両DashboardとMobile時刻設定を確認。Login両幅、初期設定、再発行後、生成結果、削除タブも画像確認した。全43枚の最終画像批評・全操作・完全可変layoutの検証ではない。
 - browserの43場面検査、限定模擬import／隔離／171導線／2RPC復元、歴史的R1構文／contrastの検査は別々に扱う。詳細・残る制約は`revision-3.md`。本番・実アカウント・MCP接続設定は未変更。
 

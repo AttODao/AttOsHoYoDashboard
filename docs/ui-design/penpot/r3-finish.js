@@ -1,4 +1,4 @@
-// Additive native R3 prototype links only. Run after all 43 R3 scenes are imported.
+// Additive native R3 prototype links. Core scenes plus optional language/theme samples.
 // Inventory: /tmp/agd-r3/manifest.json (agd-r3-local-synthetic).
 // Never changes components, visual content, R2 assets, or existing interactions.
 const A=storage.agdR3;
@@ -14,7 +14,7 @@ for(const [label,width] of [['Desktop',1440],['Mobile',390]]){
  const page=pages[0],byKey=new Map(),expected=new Set([...commonKeys,...(width===390?['dashboard-starrail']:[])].map(k=>k+'-'+width));
  for(const board of page.root.children){
   const key=board.getPluginData('agd-r3-key');if(!key)continue;
-  if(!expected.has(key)||byKey.has(key)||board.width!==width)throw Error('Unexpected, duplicate, or wrong-width R3 board: '+key);
+  if((!expected.has(key)&&!/^(?:dashboard|menu)-(?:en-dark|en-light|ja-light)-(?:390|1440)$|^(?:login|settings-security)-en-light-(?:390|1440)$/.test(key))||byKey.has(key)||board.width!==width)throw Error('Unexpected, duplicate, or wrong-width R3 board: '+key);
   byKey.set(key,board);
  }
  for(const key of expected)if(!byKey.has(key))throw Error('Missing R3 board: '+key);
@@ -29,18 +29,25 @@ for(const {page,width,byKey} of plans){
  // Native objects may be inspected from any page, but only mutated on their owning page.
  await penpot.openPage(page);
  for(const [fullKey,board] of byKey){
-  const key=fullKey.slice(0,-('-'+width).length);
+  const rawKey=fullKey.slice(0,-('-'+width).length),variant=rawKey.match(/-(en-dark|en-light|ja-light)$/)?.[0]||'',key=variant?rawKey.slice(0,-variant.length):rawKey;
+  const menuOpen=key==='menu'||key==='menu-admin';
   const admin=key==='admin'||key.startsWith('admin-')||key==='menu-admin';
   for(const {shape:s,ancestors} of entries(board)){
    const action=s.getPluginData('agd-r3-action');if(!action)continue;
    const lineage=[...ancestors,s];
    if(lineage.some(n=>n.hidden||n.getPluginData('agd-r3-disabled')==='1'||n.component?.()?.name?.includes('Disabled'))){blocked++;continue;}
-   // Do not make covered controls behind a modal into additional click targets.
+   // Neither form dialogs nor drawer backdrops expose the covered page's controls.
    if(modalKeys.has(key)&&!lineage.some(n=>n.name==='dialog / confirmation'))continue;
+   if(menuOpen&&!lineage.some(n=>n.name==='dialog / account-menu'||n.name==='Dialog backdrop'))continue;
    // Existing human interactions on this target, its contents, or a container win.
    if(lineage.some(n=>(n.interactions||[]).length)||entries(s).some(({shape:n})=>(n.interactions||[]).length)){preserved++;continue;}
-   let target;
-   if(restrictedKeys.has(key)){
+   let target,targetVariant=variant;
+   if(menuOpen&&key!=='menu-admin'&&(action==='toggle-theme'||action.startsWith('language-'))){
+    const lang=action.startsWith('language-')?action.slice(9):variant.startsWith('-en')?'en':'ja';
+    const mode=action==='toggle-theme'?(variant.endsWith('light')?'dark':'light'):(variant.endsWith('light')?'light':'dark');
+    target=lang==='ja'&&mode==='dark'?'menu':'menu-'+lang+'-'+mode;targetVariant='';
+   }else if(menuOpen&&action==='close-menu')target=key==='menu-admin'?'admin':!variant&&width===390?'dashboard-starrail':'dashboard';
+   else if(restrictedKeys.has(key)){
     // No settings/menu/admin escapes before setup completion; recovery has no Cookie step.
     if(action==='logout')target='login';
     else if(action==='setup-password'&&key==='setup')target='setup-cookie';
@@ -77,8 +84,8 @@ for(const {page,width,byKey} of plans){
     // No self-deletion acceptance board, passkey-login board, logs API, save/result,
     // switch matrix, or refresh result is captured: leave those actions unlinked.
    }
-   const destination=target&&byKey.get(target+'-'+width);
-   if(!destination||target===key)continue;
+   const destination=target&&byKey.get(target+targetVariant+'-'+width);
+   if(!destination||destination.id===board.id)continue;
    s.addInteraction('click',{type:'navigate-to',destination,preserveScrollPosition:false});linkcount++;
   }
  }

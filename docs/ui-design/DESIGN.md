@@ -4,7 +4,7 @@ Surface mode: **Operate**。指定の[NFT/Web3参照](https://www.uupm.cc/demo/n
 
 ## 配色
 
-値の正本：[`preview/style.css`](preview/style.css)の`:root`。R2を保存し、R3専用のNative Assets／ページへ登録する。
+値の正本：[`preview/style.css`](preview/style.css)の`:root`とlight用semantic tokens。下表はdarkの基準。dark／lightは背景・本文・操作部まで一緒に切り替え、両方で本文4.5:1・意味のある境界3:1を保つ。R2を保存し、同じR3内の小改修として扱う（R4ではない）。
 
 | Primitive / semantic | 値 | 役割 |
 |---|---|---|
@@ -27,7 +27,10 @@ Surface mode: **Operate**。指定の[NFT/Web3参照](https://www.uupm.cc/demo/n
 - Settingsは5つのタブで内容を置き換える。Mobileは「ゲーム／ボーナス／連携／認証／削除」に短縮し、ARIA名は完全な項目名を保つ。選択線・文字色で現在位置を示し、矢印／Home／Endとroving tabindexに対応する。時間は大きな時・分のselect、下にタイムゾーン`+09:00`を残す。
 - ログインは幅480pxの中央カードだけ。パスワード欄から送信まで24px以上空ける。左の紹介欄・送信下の説明は置かない。通常UIの補助説明は削除し、ラベル・データ・状態／エラーだけを残す。
 - Card radius16px、Button/Input radius8px。操作高さ48px。タブも44px以上。スイッチの見た目のトラックは48×28px、ラベル全体の当たり判定は48px高。
-- 唯一の上部メニューは文字なしの48pxハンバーガーアイコン。透明背景の簡素な操作部にし、アクセシブル名を残す。開いたメニューは272px、Mobileは画面幅内に収める。Escapeで閉じてトリガーへフォーカスを戻す。
+- 唯一の上部メニューは文字なしの48pxハンバーガー。右端・全高の304px drawer（狭幅では画面内）、暗いbackdropで本文を動かさない。native `dialog`でモーダルフォーカスを管理し、明示X／外側クリック／Escapeで閉じてトリガーへ戻す。280msのtransform＋display／overlayのdiscrete close、reduced-motionでは即時。
+- 参照`https://artifact-diagnoser.ktonk.com/`は実Chromiumの1440／390pxで観察：右全高304px、暗いbackdrop、本文移動なし、右から約300ms、外側／Escapeで閉じる。参照はgearでXなし、AGDはハンバーガーを維持してXを足す。参照の正確なCSS duration／easingを取得した主張ではない。
+- 日本語／英語とdark／lightの操作は**メニュー内だけ**。テーマは背面の製品画面も変更し、言語は閉じずに即時反映。英語はメニューだけでなく製品画面全体が対象。ログイン／制限中の初期設定にはメニューを出さず保存済み設定を継承し、完了前のログアウトのみのゲートを維持する。
+- 全パスワード入力に48pxの目アイコン。入力label／ID、対象の`aria-controls`、`aria-pressed`、翻訳済みの表示／非表示名を持つ。空・read-onlyの合成入力のtypeだけを切り替え、値getterは使わない。再render／window blur／document hidden／メニューを開く時に再マスク。`localStorage`は`agd-preview-lang`／`agd-preview-theme`だけで、秘密・表示状態は保存しない。
 - Focus2px cyan +4px offset。文字選択・caretも配色に合わせる。Switchは120msの短い状態変化のみ。reduced-motionでは即時。
 - 数字の上限は合成レスポンスの例であり、200／300を製品定数にしない。NFT画像・ウォレット・取引機能はこの画面に含めない。
 
@@ -35,4 +38,4 @@ Surface mode: **Operate**。指定の[NFT/Web3参照](https://www.uupm.cc/demo/n
 
 OrbitronとNoto Sans JPは公開Google Fontsをプレビューだけで読み込む。読込不能時はfallback。承認後の本番では配信・ライセンス・CSP・最小サブセットを別途確認する。ここで本番CSPや依存関係を変更しない。
 
-Iconsは20pxの少数path SVG、同じstroke1.8px。ゲームの写真・公式画像・ロゴ素材は未使用。HTMLプレビューは後続Penpot制作の参照であり、ネイティブ部品の共有編集性を証明するものではない。
+Iconsは20pxの少数path SVG、同じstroke1.8px。ゲームの写真・公式画像・ロゴ素材は未使用。HTMLプレビューは合成動作の参照。実際の表示切替・motion・設定保存はブラウザ資料だけで、本番実装ではない。Nativeの目は静的な編集用アイコンでフォームの秘密を表示しない。Nativeメニューは言語／テーマの代表状態へリンクできるが、全role・全ページの組合せや設定永続化を再現しない。最新の保存・検証範囲とライト画像確認省略は`revision-3.md`を参照。

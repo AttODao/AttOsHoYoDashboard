@@ -1,6 +1,10 @@
-// Synthetic design preview only. No API, storage, authenticator or real credentials.
+// Synthetic design preview only. No API, authenticator or real credentials.
+// Only language/theme preferences use localStorage; never password visibility or input.
 const app=document.querySelector('#app'),toast=document.querySelector('#toast');
 const params=new URLSearchParams(location.search);
+const preference=(key,allowed,fallback)=>{try{const value=params.get(key)||localStorage.getItem('agd-preview-'+key);return allowed.includes(value)?value:fallback;}catch{return allowed.includes(params.get(key))?params.get(key):fallback;}};
+let language=preference('lang',['ja','en'],'ja'),theme=preference('theme',['dark','light'],'dark'),fieldNo=0;
+const savePreference=(key,value)=>{try{localStorage.setItem('agd-preview-'+key,value);}catch{/* Session-only when browser storage is unavailable. */}};
 const fixture=['player','admin','provisional','recovery'].includes(params.get('fixture'))?params.get('fixture'):'player';
 const recovery=fixture==='recovery',states=['normal','loading','empty','error','stale','storage','queued','unknown','passkey-cancel','logout-error'];
 let state=states.includes(params.get('state'))?params.get('state'):'normal';
@@ -9,14 +13,19 @@ const settingsTabs=[['uids','ゲーム表示'],['bonus','ログインボーナ�
 let settingsTab=settingsTabs.some(([k])=>k===params.get('tab'))?params.get('tab'):'uids';
 const visible={genshin:fixture!=='provisional',starrail:fixture!=='provisional'},automatic={genshin:false,starrail:false},schedule={genshin:'06:00',starrail:'06:00'};
 const games={genshin:{name:'原神',uid:'800000001',resource:'天然樹脂',current:142,max:200,full:'10/14 21:44',metric:'洞天宝銭',value:'1,820',metric2:'参量物質変化器',value2:'未取得'},starrail:{name:'崩壊：スターレイル',uid:'800000002',resource:'開拓力',current:178,max:300,full:'10/15 02:12',metric:'予備開拓力',value:'640',metric2:'模擬宇宙',value2:'7,500 / 14,000'}};
-const icons={menu:'M4 6h16M4 12h16M4 18h16',settings:'M4 7h16M4 17h16M8 4v6M16 14v6',link:'M10 13a4 4 0 0 0 6 0l4-4a4 4 0 0 0-6-6l-2 2M14 11a4 4 0 0 0-6 0l-4 4a4 4 0 0 0 6 6l2-2',user:'M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M4 21v-2a8 8 0 0 1 16 0v2',logout:'M10 4H4v16h6M9 12h12m-4-4 4 4-4 4'};
+const icons={eye:'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',hide:'M3 3l18 18M9.5 5.3A12 12 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-4 4.7M6 6.5A19 19 0 0 0 2 12s3.5 7 10 7a12 12 0 0 0 5-1.1M10 10a3 3 0 0 0 4 4',close:'M6 6l12 12M6 18 18 6',menu:'M4 6h16M4 12h16M4 18h16',settings:'M4 7h16M4 17h16M8 4v6M16 14v6',link:'M10 13a4 4 0 0 0 6 0l4-4a4 4 0 0 0-6-6l-2 2M14 11a4 4 0 0 0-6 0l-4 4a4 4 0 0 0 6 6l2-2',user:'M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M4 21v-2a8 8 0 0 1 16 0v2',logout:'M10 4H4v16h6M9 12h12m-4-4 4 4-4 4'};
 const icon=name=>`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${icons[name]}"></path></svg>`;
 const button=(text,action,kind='',disabled=false)=>`<button type="button" data-action="${action}" class="${kind}" ${disabled?'disabled':''}>${text}</button>`;
-const field=(label,value='',type='text',id='')=>`<label class="field"><span>${label}</span><input ${id?`id="${id}"`:''} type="${type}" value="${value}" readonly aria-describedby="preview-readonly" ${type==='password'?`autocomplete="${label==='パスワード'||label.startsWith('現在')||label.startsWith('管理者自身')?'current-password':'new-password'}"`:id==='username'?'autocomplete="username"':''}></label>`;
+function field(label,value='',type='text',id=''){
+ id||='field-'+fieldNo++;
+ const input=`<input id="${id}" type="${type}" value="${value}" readonly aria-describedby="preview-readonly" ${type==='password'?`data-password autocomplete="${label==='パスワード'||label.startsWith('現在')||label.startsWith('管理者自身')?'current-password':'new-password'}"`:id==='username'?'autocomplete="username"':''}>`;
+ if(type==='password')return `<div class="field"><label for="${id}">${label}</label><div class="password-control">${input}<button type="button" class="password-eye" data-action="reveal-${id}" aria-label="パスワードを表示" aria-controls="${id}" aria-pressed="false">${icon('eye')}</button></div></div>`;
+ return `<label class="field"><span>${label}</span>${input}</label>`;
+}
 const notice=(title,body='',kind='')=>`<div class="notice ${kind}"><strong>${title}</strong>${body?`<p>${body}</p>`:''}</div>`;
 const username=fixture==='admin'?'demo_admin':fixture==='provisional'?'demo_pending':recovery?'demo_recovery':'demo_player';
 function header(){
- const menu=`<details class="menu"><summary aria-label="メニューを開く">${icon('menu')}</summary><nav aria-label="アカウントメニュー">${button(icon('link')+'HoYoLAB連携','link')}${button(icon('settings')+'設定','settings')}${fixture==='admin'?button(icon('user')+'管理者設定','admin'):''}${button(icon('logout')+'ログアウト','logout')}</nav></details>`;
+ const menu=`<button type="button" class="menu" id="menu-trigger" data-action="menu" aria-label="メニューを開く" aria-controls="account-menu" aria-expanded="false">${icon('menu')}</button>`;
  return `<header class="topbar"><div class="topbar-inner"><span class="wordmark">AGD</span><div class="account">${view==='login'||view==='deleted'?'':`<span class="muted account-name">${username}</span>${restricted?button('ログアウト','logout'):menu}`}</div></div></header>`;
 }
 function intro(title,back=false){return `<div class="page-intro"><h1 tabindex="-1">${title}</h1>${back?button('ダッシュボードへ','dashboard'):''}</div>`;}
@@ -63,19 +72,35 @@ function render(next,focus=false){
  if(!['dashboard','login','setup','settings','admin','deleted','admin-deleted'].includes(next))next='dashboard';
  if(restricted&&next!=='login')next='setup';view=next;toast.hidden=true;
  const content={dashboard,login,setup,settings,admin,deleted:()=>accepted(),'admin-deleted':()=>accepted(true)};
- app.innerHTML=header()+`<main class="container">${content[view]()}</main>`+reviewTools();
- document.title=`AGD — ${document.querySelector('h1,h2')?.textContent}（デザイン案）`;
+ fieldNo=0;document.documentElement.style.overflow='';document.documentElement.lang=language;document.documentElement.dataset.theme=theme;
+ app.innerHTML=header()+`<main class="container">${content[view]()}</main>`+reviewTools();localize(app);
+ document.title=`AGD — ${document.querySelector('h1,h2')?.textContent}${language==='en'?' (Design draft)':'（デザイン案）'}`;
  if(location.hash!=='#'+view)history.replaceState(null,'','#'+view);if(focus)document.querySelector('h1')?.focus({preventScroll:true});
 }
-function notify(text){toast.textContent=text;toast.hidden=false;}
+function notify(text){toast.textContent=translate(text);toast.hidden=false;}
 function navigate(target){render(target,true);window.scrollTo({top:0,behavior:'instant'});}
 function section(id){settingsTab=id;navigate('settings');}
-function openDialog(title,content){document.querySelector('#confirmation')?.remove();const d=document.createElement('dialog');d.id='confirmation';d.setAttribute('aria-labelledby','confirmation-title');d.innerHTML=`<h2 id="confirmation-title">${title}</h2>${content}`;app.appendChild(d);d.showModal();}
+function openDialog(title,content){document.querySelector('#confirmation')?.remove();const d=document.createElement('dialog');d.id='confirmation';d.setAttribute('aria-labelledby','confirmation-title');d.innerHTML=`<h2 id="confirmation-title">${title}</h2>${content}`;app.appendChild(d);localize(d);d.showModal();}
+function maskPasswords(){for(const input of document.querySelectorAll('[data-password]')){input.type='password';const b=input.parentElement.querySelector('.password-eye');b.setAttribute('aria-pressed','false');b.setAttribute('aria-label',translate('パスワードを表示'));b.innerHTML=icon('eye');}}
+function closeMenu(){document.querySelector('#account-menu')?.close();document.documentElement.style.overflow='';const trigger=document.querySelector('#menu-trigger');trigger?.setAttribute('aria-expanded','false');trigger?.focus({preventScroll:true});}
+function openMenu(){
+ maskPasswords();document.querySelector('#account-menu')?.remove();
+ const d=document.createElement('dialog');d.id='account-menu';d.className='menu-drawer';d.setAttribute('aria-label',translate('アカウントメニュー'));
+ d.innerHTML=`<div class="drawer-heading"><h2>メニュー</h2><button type="button" class="icon-button" data-action="close-menu" aria-label="メニューを閉じる">${icon('close')}</button></div><nav aria-label="アカウントメニュー">${button(icon('link')+'HoYoLAB連携','link')}${button(icon('settings')+'設定','settings')}${fixture==='admin'?button(icon('user')+'管理者設定','admin'):''}${button(icon('logout')+'ログアウト','logout')}</nav><div class="menu-preferences"><button type="button" class="mode-switch" role="switch" aria-checked="${theme==='dark'}" data-action="toggle-theme"><span>ダークモード</span><span class="mode-track"><span class="mode-thumb"></span></span></button><fieldset class="language-options"><legend>言語</legend><div>${['ja','en'].map(lang=>`<button type="button" data-action="language-${lang}" lang="${lang}" aria-pressed="${language===lang}">${lang==='ja'?'日本語':'English'}</button>`).join('')}</div></fieldset></div>`;
+ app.appendChild(d);localize(d);d.addEventListener('cancel',e=>{e.preventDefault();closeMenu();});d.addEventListener('click',e=>{const r=d.getBoundingClientRect();if(e.target===d&&(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom))closeMenu();});
+ d.showModal();document.documentElement.style.overflow='hidden';document.querySelector('#menu-trigger').setAttribute('aria-expanded','true');
+}
 function generatedPassword(title,name){openDialog(title,`<p>${name}</p><label class="field"><span>仮パスワード</span><output class="generated-password">DEMO-ONLY-4829</output></label><div class="actions">${button('コピー','copy-generated')}${button('閉じる','cancel-delete','primary')}</div>`);}
 function activateTab(kind,key){if(kind==='settings')settingsTab=key;else game=key;render(view);document.querySelector(`#${kind}-tab-${key}`)?.focus({preventScroll:true});}
 app.addEventListener('click',e=>{
  const tab=e.target.closest('[role=tab]');if(tab){activateTab(tab.dataset.settingsTab?'settings':'game',tab.dataset.settingsTab||tab.dataset.gameTab);return;}
  const b=e.target.closest('[data-action]');if(!b||b.disabled)return;const action=b.dataset.action;
+ if(action==='menu'){openMenu();return;}if(action==='close-menu'){closeMenu();return;}
+ if(action.startsWith('language-')||action==='toggle-theme'){
+  const focusAction=action;if(action==='toggle-theme'){theme=theme==='dark'?'light':'dark';savePreference('theme',theme);}else{language=action.slice(9);savePreference('lang',language);}
+  render(view);openMenu();document.querySelector(`[data-action="${focusAction}"]`)?.focus({preventScroll:true});return;
+ }
+ if(action.startsWith('reveal-')){const input=document.getElementById(b.getAttribute('aria-controls')),shown=input.type==='password';input.type=shown?'text':'password';b.setAttribute('aria-pressed',String(shown));b.setAttribute('aria-label',translate(shown?'パスワードを隠す':'パスワードを表示'));b.innerHTML=icon(shown?'hide':'eye');return;}
  if(restricted&&!['logout','setup-password','setup-cookie','setup-verify','sign-in'].includes(action))return;
  if(action==='logout'){if(state==='logout-error'){notify('ログアウトできませんでした');return;}restricted=false;navigate('login');return;}
  if(action==='sign-in'){restricted=!setupComplete;navigate(restricted?'setup':'dashboard');return;}
@@ -103,7 +128,9 @@ app.addEventListener('change',e=>{
  if(e.target.dataset.visible)visible[e.target.dataset.visible]=e.target.checked;
  if(e.target.id==='preview-state'){state=e.target.value;render(view);document.querySelector('#preview-state')?.focus();}
 });
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){const menu=document.querySelector('.menu[open]');if(menu){menu.open=false;menu.querySelector('summary').focus();}toast.hidden=true;}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')toast.hidden=true;});
+window.addEventListener('blur',maskPasswords);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)maskPasswords();});
 window.addEventListener('hashchange',()=>render(location.hash.slice(1),true));
 matchMedia('(max-width:900px)').addEventListener('change',()=>{if(view==='dashboard')render(view);});
 const initial=location.hash.slice(1)||'dashboard';if(initial==='setup'){setupComplete=false;restricted=true;if(!recovery){visible.genshin=false;visible.starrail=false;}}

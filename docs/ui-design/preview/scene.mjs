@@ -25,7 +25,7 @@ export function captureScene(key){
    if(!paths.length||paths.length>8||r.width>64||r.height>64)throw Error('Only authored small icons are supported');
    return {kind:'icon',id:'n'+id++,name:'Icon',...box(r),paths,color:hex(c.color),strokeWidth:parseFloat(c.strokeWidth)||1.8};
   }
-  const tag=e.tagName.toLowerCase(),label=e.closest('label')?.textContent.trim()||e.getAttribute('aria-label')||tag;
+  const tag=e.tagName.toLowerCase(),label=e.labels?.[0]?.textContent.trim()||e.closest('label')?.textContent.trim()||e.getAttribute('aria-label')||tag;
   const heading=e.matches('main,section,.panel,.auth-copy')?e.querySelector('h1,h2,h3')?.textContent:null;
   const name=e.id||heading||(label===tag?e.className:label)||tag;
   const out={kind:'board',id:'n'+id++,name:tag+' / '+name,...box(r),paint:paint(e,c),children:[]};
@@ -41,9 +41,9 @@ export function captureScene(key){
    out.children.push({kind:'board',id:'n'+id++,name:'Divider / '+side,x:out.x+(side==='Right'?out.width-w:0),y:out.y+(side==='Bottom'?out.height-w:0),width:['Top','Bottom'].includes(side)?out.width:w,height:['Left','Right'].includes(side)?out.height:w,paint:{fill:hex(c['border'+side+'Color']),stroke:{color:'#000000',opacity:0},strokeWidth:0,radius:0},children:[]});
   }
   if(tag==='input'||tag==='select'){
-   const inputType=e.type||'select';out.inputType=inputType;out.name='Input / '+label.slice(0,48);out.disabled=!!e.disabled;
+   const inputType=e.hasAttribute('data-password')?'password':e.type||'select';out.inputType=inputType;out.name='Input / '+label.slice(0,48);out.disabled=!!e.disabled;
    if(inputType==='checkbox'||inputType==='radio'){
-    out.kind='check';out.checked=e.checked;out.radio=inputType==='radio';out.color={color:'#49EEFF',opacity:1};
+    out.kind='check';out.checked=e.checked;out.radio=inputType==='radio';out.color=hex(c.accentColor);
     if(e.dataset.automatic)out.action='automatic-'+e.dataset.automatic;
     if(e.name==='method')out.action='method-'+e.getAttribute('value');
     if(out.checked)out.children.push(out.radio?{kind:'board',id:'n'+id++,name:'Radio selected indicator',x:out.x+out.width*.28,y:out.y+out.height*.28,width:out.width*.44,height:out.height*.44,paint:{fill:{color:'#0B0B10',opacity:1},stroke:{color:'#000000',opacity:0},strokeWidth:0,radius:999},children:[]}:{kind:'icon',id:'n'+id++,name:'Checkbox checked indicator',...box(r),paths:['M5 12l4 4L19 6'],color:{color:'#0B0B10',opacity:1},strokeWidth:2.4});
@@ -56,9 +56,9 @@ export function captureScene(key){
    else if(inputType==='time')text='06:00';
    else if(/Cookie/.test(label))text=' ';
    else if(e.id==='new-username'||/新しいユーザー名/.test(label))text='demo_new';
-   else if(/ユーザー名/.test(label))text=fixture==='admin'?'demo_admin':fixture==='provisional'?'demo_pending':'demo_player';
-   else if(/対象名/.test(label))text=document.querySelector('#confirmation-title')?.textContent.includes('demo_inactive')?'demo_inactive':'demo_player';
-   out.children.push({kind:'text',id:'n'+id++,name:'Value / synthetic',text,x:out.x+14,y:out.y+12,width:out.width-28,height:24,type:type(c)});
+   else if(/対象名|target username/i.test(label))text=document.querySelector('#confirmation-title')?.textContent.includes('demo_inactive')?'demo_inactive':'demo_player';
+   else if(/ユーザー名|username/i.test(label))text=fixture==='admin'?'demo_admin':fixture==='provisional'?'demo_pending':'demo_player';
+   out.children.push({kind:'text',id:'n'+id++,name:'Value / synthetic',text,x:out.x+14,y:out.y+12,width:out.width-28-(e.hasAttribute('data-password')?48:0),height:24,type:type(c)});
    if(tag==='select')out.children.push({kind:'icon',id:'n'+id++,name:'Select indicator',x:out.x+out.width-26,y:out.y+out.height/2-6,width:12,height:12,paths:['M4 8l8 8 8-8'],color:hex(c.color),strokeWidth:1.8});
    if(!e.disabled)out.component='Input/'+(tag==='select'?'Select':inputType==='password'?'Password':'Default');
    return out;
@@ -67,12 +67,12 @@ export function captureScene(key){
    out.name='Button / '+(e.textContent.trim()||e.getAttribute('aria-label')||'');out.disabled=!!e.disabled;
    out.action=e.dataset.action||(tag==='summary'?'menu':e.dataset.gameTab?'game-'+e.dataset.gameTab:e.dataset.settingsTab?'settings-'+e.dataset.settingsTab:undefined);
    // Icon-specific controls keep separate masters; copy structures stay immutable.
-   out.component='Button/'+(e.disabled?'Disabled':tag==='summary'?'Menu':e.closest('.menu nav')?'Nav-'+out.action:e.classList.contains('primary')?'Primary':e.classList.contains('danger')?'Danger':'Secondary');
+   out.component='Button/'+(e.disabled?'Disabled':e.classList.contains('password-eye')?'Visibility':e.classList.contains('menu')?'Menu':tag==='summary'?'Menu':e.closest('.menu-drawer nav')?'Nav-'+out.action:e.classList.contains('primary')?'Primary':e.classList.contains('danger')?'Danger':'Secondary');
    if(!e.querySelector('svg'))out.layout={paddingX:parseFloat(c.paddingLeft)||0,paddingY:parseFloat(c.paddingTop)||0};
   }
   if(tag==='progress'){
-   out.paint.fill={color:'#24222C',opacity:1};out.paint.radius=4;
-   out.children.push({kind:'board',id:'n'+id++,name:'Resource progress',x:out.x,y:out.y,width:out.width*e.value/e.max,height:out.height,paint:{fill:{color:e.closest('.starrail')?'#D5B7FF':'#93F5CE',opacity:1},stroke:{color:'#000000',opacity:0},strokeWidth:0,radius:4},children:[]});
+   out.paint.fill=hex(c.backgroundColor);out.paint.radius=4;
+   out.children.push({kind:'board',id:'n'+id++,name:'Resource progress',x:out.x,y:out.y,width:out.width*e.value/e.max,height:out.height,paint:{fill:{color:getComputedStyle(e).getPropertyValue(e.closest('.starrail')?'--lavender':'--mint').trim().toUpperCase(),opacity:1},stroke:{color:'#000000',opacity:0},strokeWidth:0,radius:4},children:[]});
   }
   if(e.classList.contains('switch')){out.action='automatic-'+e.querySelector('input').dataset.automatic;out.checked=e.querySelector('input').checked;out.component='Switch/'+(out.checked?'On':'Off');}
   for(const child of e.childNodes){const n=node(child);if(n)out.children.push(n);}
@@ -84,8 +84,8 @@ export function captureScene(key){
  }
  // CSS z-index: the header menu must paint above the main content.
  const children=[node(main),node(header)].filter(Boolean);
- if(dialog){children.push({kind:'board',id:'n'+id++,name:'Dialog backdrop',x:0,y:0,width:innerWidth,height:innerHeight,paint:{fill:{color:'#000000',opacity:.7},stroke:{color:'#000000',opacity:0},strokeWidth:0,radius:0},children:[]});children.push(node(dialog));}
+ if(dialog){children.push({kind:'board',id:'n'+id++,name:'Dialog backdrop',...(dialog.id==='account-menu'?{action:'close-menu'}:{}),x:0,y:0,width:innerWidth,height:innerHeight,paint:{fill:{color:'#000000',opacity:.7},stroke:{color:'#000000',opacity:0},strokeWidth:0,radius:0},children:[]});children.push(node(dialog));}
  const vars=getComputedStyle(document.documentElement),palette={};
  for(const k of ['canvas','surface','elevated','text','muted','line','decorative','pink','cyan','mint','lavender','warning','danger','on-accent'])palette[k]=vars.getPropertyValue('--'+k).trim().toUpperCase();
- return {schema:1,source:'agd-r3-local-synthetic',key,width:innerWidth,height:dialog?innerHeight:Math.ceil(Math.max(...children.map(n=>n.y+n.height)))+32,palette,children};
+ return {schema:1,source:'agd-r3-local-synthetic',language:document.documentElement.lang,theme:document.documentElement.dataset.theme||'dark',key,width:innerWidth,height:dialog?innerHeight:Math.ceil(Math.max(...children.map(n=>n.y+n.height)))+32,palette,children};
 }

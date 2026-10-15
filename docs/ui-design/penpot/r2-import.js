@@ -7,7 +7,11 @@ if(!scene||!/^[a-f0-9]{64}$/.test(scene.sourceHash)||scene.schema!==1||!['agd-r2
 const revision=scene.source==='agd-r3-local-synthetic'?'R3':'R2',prefix='agd-'+revision.toLowerCase(),assetPath='AGD '+revision+' Draft',storeKey='agd'+revision;
 const pageName=assetPath+' / '+(scene.width===390?'Mobile':'Desktop');
 const existing=penpotUtils.getPageByName(pageName);
-if(existing?.root.children.some(s=>s.getPluginData(prefix+'-key')===scene.key))throw Error('Existing '+revision+' board; preserve human edits');
+const target=existing?.root.children.find(s=>s.getPluginData(prefix+'-key')===scene.key),update=storage.agdR3MenuUpdate;
+const fingerprint=s=>JSON.stringify([s.id,s.name,s.x,s.y,s.width,s.height,s.characters||'',s.fills,s.strokes,(s.children||[]).map(c=>fingerprint(c))]);
+if(target){
+ if(revision!=='R3'||!/^menu(?:-admin)?-(390|1440)$/.test(scene.key)||!update||update.key!==scene.key||update.id!==target.id||update.hash!==target.getPluginData(prefix+'-source-hash')||update.fingerprint!==fingerprint(target))throw Error('Existing '+revision+' board; preserve human edits');
+}else if(update)throw Error('Menu update target missing; no mutation');
 if(!storage[storeKey]&&penpotUtils.getPageByName(assetPath+' / Components'))throw Error('Existing '+revision+' assets; rebind, do not regenerate');
 if(storage[storeKey]?.inProgress)throw Error('Prior import interrupted; inspect before resuming');
 const validColor=p=>p&&/^#[0-9A-F]{6}$/.test(p.color)&&Number.isFinite(p.opacity)&&p.opacity>=0&&p.opacity<=1;
@@ -37,6 +41,11 @@ if(!A.set){
   A.tokens[value]=A.set.addToken({type:'color',name:prefix.replace('-','.')+'.color.'+name,value});
  }
  if(!A.set.active)A.set.toggleActive();
+}
+// Additional theme colors stay in this revision's assets, never mutate dark tokens.
+for(const [name,value]of Object.entries(scene.palette))if(!A.tokens[value]){
+ const asset=penpot.library.local.createColor();asset.name='AGD '+revision+'/'+(scene.theme||'dark')+'/'+name;asset.color=value;
+ A.tokens[value]=A.set.addToken({type:'color',name:prefix.replace('-','.')+'.color.'+(scene.theme||'dark')+'.'+name,value});
 }
 A.sizes??={};A.radii??={};A.spaces??={};
 const dimension=(map,type,name,value)=>map[value]||(map[value]=A.set.addToken({type,name:prefix.replace('-','.')+'.'+name+'.s'+String(value).replace('.','_'),value:String(value)}));
@@ -94,8 +103,12 @@ for(const n of nodes.filter(n=>n.component)){
 }
 const page=A.pages[pageName]||existing||penpot.createPage();page.name=pageName;A.pages[pageName]=page;
 await penpot.openPage(page);
-const y=page.root.children.reduce((b,s)=>Math.max(b,s.y+s.height),0)+80;
-const board=penpot.createBoard();board.name='AGD '+revision+' / '+scene.key+' / 未承認・合成';board.resize(scene.width,scene.height);board.x=0;board.y=y;board.clipContent=true;board.showInViewMode=true;board.setPluginData(prefix+'-key',scene.key);board.setPluginData(prefix+'-source-hash',scene.sourceHash);page.root.appendChild(board);fill(board,{color:scene.palette.canvas,opacity:1});
-for(const n of scene.children)await draw(board,n,0,y);
+const y=target?target.y:page.root.children.reduce((b,s)=>Math.max(b,s.y+s.height),0)+80;
+const board=penpot.createBoard();board.name='AGD '+revision+' / '+scene.key+' / 未承認・合成';board.resize(scene.width,scene.height);board.x=target?.x||0;board.y=y;board.clipContent=true;board.showInViewMode=true;board.setPluginData(prefix+'-key',scene.key);board.setPluginData(prefix+'-source-hash',scene.sourceHash);page.root.appendChild(board);fill(board,{color:scene.palette.canvas,opacity:1});
+for(const n of scene.children)await draw(board,n,target?.x||0,y);
+if(target){
+ const previous=[...target.children];for(const child of [...board.children])target.appendChild(child);for(const child of previous)child.remove();
+ target.resize(scene.width,scene.height);target.setPluginData(prefix+'-source-hash',scene.sourceHash);board.remove();storage.agdR3MenuUpdate=null;
+}
 A.inProgress=null;
-return {key:scene.key,id:board.id,nodes:nodes.length,components:Object.keys(A.components).length,status:'draft — native visual/geometry/prototype checks still required'};
+return {key:scene.key,id:target?.id||board.id,nodes:nodes.length,components:Object.keys(A.components).length,status:'draft — native visual/geometry/prototype checks still required'};
