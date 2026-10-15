@@ -5,7 +5,19 @@ use crate::models::{
     ServerSettings, UserView,
 };
 use dioxus::prelude::*;
+use std::collections::BTreeMap;
 use uuid::Uuid;
+
+pub(super) const DASHBOARD_GAMES: [&str; 2] = ["genshin", "starrail"];
+
+#[derive(Clone, Default, PartialEq)]
+pub(super) struct GameSelection {
+    pub(super) id: Option<Uuid>,
+    pub(super) request: u64,
+    pub(super) generation: u64,
+    pub(super) loading: bool,
+    pub(super) error: Option<String>,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Page {
@@ -52,6 +64,7 @@ pub(super) struct AppState {
     pub(super) accounts: Vec<GameAccount>,
     pub(super) accounts_error: Option<String>,
     pub(super) selected_account: Option<Uuid>,
+    pub(super) selected_accounts: BTreeMap<&'static str, GameSelection>,
     pub(super) account_statuses: Vec<AccountStatusEntry>,
     pub(super) rewards: Vec<RewardSetting>,
     pub(super) rewards_error: Option<String>,
@@ -81,6 +94,7 @@ impl AppState {
             accounts: Vec::new(),
             accounts_error: None,
             selected_account: None,
+            selected_accounts: BTreeMap::new(),
             account_statuses: Vec::new(),
             rewards: Vec::new(),
             rewards_error: None,
@@ -112,12 +126,49 @@ impl AppState {
         visible_detected_accounts(&self.accounts)
     }
 
+    pub(super) fn selected_game_account(&self, game: &str) -> Option<Uuid> {
+        let current = self
+            .selected_accounts
+            .get(game)
+            .and_then(|selection| selection.id);
+        select_game_account(current, &self.accounts, game)
+    }
+
+    pub(super) fn select_game_account(&mut self, game: &'static str, id: Option<Uuid>) {
+        if !DASHBOARD_GAMES.contains(&game) {
+            return;
+        }
+        let id = select_game_account(id, &self.accounts, game);
+        let selection = self.selected_accounts.entry(game).or_default();
+        if selection.id != id {
+            selection.id = id;
+            selection.request = selection.request.saturating_add(1);
+            selection.loading = false;
+            selection.error = None;
+        }
+    }
+
+    pub(super) fn reconcile_dashboard_accounts(&mut self) {
+        for game in DASHBOARD_GAMES {
+            let id = self.selected_game_account(game);
+            self.select_game_account(game, id);
+        }
+        let selected: Vec<_> = self
+            .selected_accounts
+            .values()
+            .filter_map(|selection| selection.id)
+            .collect();
+        self.account_statuses
+            .retain(|entry| selected.contains(&entry.id));
+    }
+
     pub(super) fn clear_owner_data(&mut self) {
         self.hoyolab = None;
         self.hoyolab_error = None;
         self.accounts.clear();
         self.accounts_error = None;
         self.selected_account = None;
+        self.selected_accounts.clear();
         self.account_statuses.clear();
         self.rewards.clear();
         self.rewards_error = None;
@@ -219,6 +270,24 @@ pub(super) fn select_account(current: Option<Uuid>, accounts: &[GameAccount]) ->
     }
 }
 
+pub(super) fn select_game_account(
+    current: Option<Uuid>,
+    accounts: &[GameAccount],
+    game: &str,
+) -> Option<Uuid> {
+    let mut eligible = accounts.iter().filter(|account| {
+        account.game_kind == game
+            && account.visible
+            && account.detected
+            && !account.game_uid.is_empty()
+    });
+    if current.is_some_and(|id| eligible.clone().any(|account| account.id == id)) {
+        current
+    } else {
+        eligible.next().map(|account| account.id)
+    }
+}
+
 pub(super) fn visible_detected_accounts(accounts: &[GameAccount]) -> Vec<GameAccount> {
     accounts
         .iter()
@@ -293,6 +362,38 @@ mod tests {
         ];
         assert_eq!(visible_detected_accounts(&rows)[0].id, keep);
         assert_eq!(select_account(None, &rows), Some(keep));
+    }
+
+    #[test]
+    fn game_selections_are_independent_and_reconcile_visibility() {
+        let mut state = AppState::new(Page::Dashboard);
+        let mut starrail = account(uuid(3), true, true, "700000001");
+        starrail.game_kind = "starrail".to_owned();
+        state.accounts = vec![
+            account(uuid(1), true, true, "600000001"),
+            account(uuid(2), true, true, "600000002"),
+            starrail,
+            account(uuid(4), false, true, "600000004"),
+            account(uuid(5), true, false, "600000005"),
+            account(uuid(6), true, true, ""),
+        ];
+        state.reconcile_dashboard_accounts();
+        state.select_game_account("genshin", Some(uuid(2)));
+        assert_eq!(state.selected_game_account("genshin"), Some(uuid(2)));
+        assert_eq!(state.selected_game_account("starrail"), Some(uuid(3)));
+        assert_eq!(
+            select_game_account(Some(uuid(3)), &state.accounts, "genshin"),
+            Some(uuid(1))
+        );
+        state.accounts[1].visible = false;
+        state.reconcile_dashboard_accounts();
+        assert_eq!(state.selected_game_account("genshin"), Some(uuid(1)));
+        state.accounts[0].detected = false;
+        state.reconcile_dashboard_accounts();
+        assert_eq!(state.selected_game_account("genshin"), None);
+        assert_eq!(state.selected_game_account("starrail"), Some(uuid(3)));
+        state.clear_owner_data();
+        assert!(state.selected_accounts.is_empty());
     }
 
     #[test]

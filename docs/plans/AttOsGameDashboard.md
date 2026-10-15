@@ -8,7 +8,7 @@
 |---|---|
 | 基盤 | PostgreSQL migration、CLI `serve`/`migrate`/`bootstrap-admin`、安全な設定読み込み |
 | 認証 | password login/logout、固定期限session、password rotation、管理者user管理、passkey login/registration/list/delete |
-| UI | Dioxus 0.7.10 Web/WASM RSX。standalone `dashboard-ui` / `attos-dashboard-ui` crate、official Dioxus Components由来Button/Cardをsource同梱 |
+| UI | Dioxus 0.7.10 Web/WASM RSX。承認済みAGD R3を本番RSXに実装。検証・残課題は[本番R3記録](../ui-design/production-r3.md)。official Dioxus Components由来Button/Cardをsource同梱 |
 | HoYoLAB Cookie | legacy/v2 parse normalization、AES-GCM保存、pending status、same-UID proof path実装 |
 | 連携検証 | account/community identity・Cookie claim整合性、role sync、version recheck、same-UID update preservation。暗号化設定と検証成功で通常利用可能 |
 | Game status | owned UID list/visibility、curated cache version 1、5分TTL、failure keeps old payload |

@@ -3,7 +3,7 @@ name = "attos-dashboard-ui"
 default_platform = "web"
 
 [web.app]
-title = "AttOs Game Dashboard"
+title = "AGD"
 
 [web.watcher]
 reload_html = true

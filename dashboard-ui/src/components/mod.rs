@@ -8,4 +8,4 @@ mod button;
 #[path = "card/component.rs"]
 mod card;
 pub(crate) use button::{Button, ButtonVariant};
-pub(crate) use card::{Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle};
+pub(crate) use card::{Card, CardContent, CardDescription, CardHeader, CardTitle};

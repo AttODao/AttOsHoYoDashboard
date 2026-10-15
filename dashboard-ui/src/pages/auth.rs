@@ -1,29 +1,33 @@
-use super::admin::AdminCard;
-use super::common::{Field, Metric};
-use super::deletion::DeleteAccountCard;
+use super::common::{Field, PasswordInput};
 use super::hoyolab::CookieCard;
-use super::security::{PasskeyCard, PasswordCard};
-use super::shell::{Header, ServerSettingsCard, Status};
+use super::security::PasswordCard;
+use super::shell::{Header, Status};
 use crate::app::actions::{handle_api_error_for, spawn_action};
-use crate::app::display::humanize;
+use crate::app::preferences::use_preferences;
 use crate::app::session::{bootstrap, logout};
-use crate::app::state::AppState;
-use crate::app::state::generation_matches;
-use crate::components::{
-    Button, ButtonVariant, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,
-};
+use crate::app::state::{AppState, generation_matches, set_status};
+use crate::components::{Button, ButtonVariant};
 use dioxus::prelude::*;
 use serde_json::json;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LoginMethod {
+    Password,
+    Passkey,
+}
+
+fn login_fields_complete(method: LoginMethod, username: &str, password: &str) -> bool {
+    !username.trim().is_empty() && (method == LoginMethod::Passkey || !password.is_empty())
+}
+
 #[component]
 pub(in crate::app) fn LoadingPage() -> Element {
+    let ui = use_preferences();
     rsx! {
-        main { class: "center-page", "aria-live": "polite",
-            Card { class: "narrow-card",
-                CardHeader {
-                    CardTitle { "AttOs Game Dashboard" }
-                    CardDescription { "Loading dashboard state…" }
-                }
+        main { class: "auth-layout", "aria-live": "polite",
+            section { class: "panel auth-panel",
+                h1 { "AGD" }
+                p { {ui.text("読み込み中…", "Loading…")} }
             }
         }
     }
@@ -31,71 +35,76 @@ pub(in crate::app) fn LoadingPage() -> Element {
 
 #[component]
 pub(in crate::app) fn LoginPage(mut state: Signal<AppState>) -> Element {
+    let ui = use_preferences();
     let mut username = use_signal(String::new);
     let mut password = use_signal(String::new);
-    let mut passkey_username = use_signal(String::new);
+    let mut method = use_signal(|| LoginMethod::Password);
+    use_drop(move || {
+        username.write().clear();
+        password.write().clear();
+    });
 
     rsx! {
-        main { class: "center-page",
-            div { class: "brand-block",
-                h1 { "AttOs Game Dashboard" }
-                p { "Sign in with a password, or enter your username first to use a registered passkey." }
-            }
-            Status { state }
-            if state.read().logout_unconfirmed {
-                Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| { spawn_action(state, move |generation| async move { logout(state, generation).await; }); }, "Retry server logout" }
-            }
-            div { class: "auth-grid",
-                Card {
-                    CardHeader {
-                        CardTitle { "Password sign in" }
-                        CardDescription { "Credentials are sent only to the same-origin dashboard API." }
-                    }
-                    CardContent { class: "form-stack",
-                        Field { id: "login-username", label: "Username",
-                            input { id: "login-username", autocomplete: "username", value: "{username}", oninput: move |event| username.set(event.value()) }
-                        }
-                        Field { id: "login-password", label: "Password",
-                            input { id: "login-password", r#type: "password", autocomplete: "current-password", value: "{password}", oninput: move |event| password.set(event.value()) }
-                        }
-                    }
-                    CardFooter {
-                        Button { r#type: "button", onclick: move |_| {
-                            let user = std::mem::take(&mut *username.write());
-                            let pass = std::mem::take(&mut *password.write());
-                            let state = state;
-                            spawn_action(state, move |generation| async move {
-                                match crate::api::send("POST", "/auth/login", Some(json!({"username": user, "password": pass}))).await {
-                                    Ok(()) if generation_matches(state, generation) => bootstrap(state).await,
-                                    Ok(()) => {}
-                                    Err(error) => { handle_api_error_for(state, generation, error); }
-                                }
-                            });
-                        }, "Sign in" }
-                    }
+        Header { state }
+        main { class: "auth-layout",
+            section { class: "panel auth-panel",
+                h1 { {ui.text("ログイン", "Sign in")} }
+                Status { state }
+                if state.read().logout_unconfirmed {
+                    Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| {
+                        password.write().clear();
+                        spawn_action(state, move |generation| async move { logout(state, generation).await; });
+                    }, {ui.text("ログアウトを再試行", "Retry server logout")} }
                 }
-                Card {
-                    CardHeader {
-                        CardTitle { "Passkey sign in" }
-                        CardDescription { "Enter your username, then approve the browser passkey prompt." }
+                form { onsubmit: move |event| {
+                    event.prevent_default();
+                    if state.read().busy { return; }
+                    let user = std::mem::take(&mut *username.write());
+                    let pass = std::mem::take(&mut *password.write());
+                    let selected = *method.read();
+                    if !login_fields_complete(selected, &user, &pass) {
+                        set_status(state, ui.text("ユーザー名と認証情報を入力してください。", "Enter your username and credentials."), "error");
+                        return;
                     }
-                    CardContent { class: "form-stack",
-                        Field { id: "passkey-login-username", label: "Username",
-                            input { id: "passkey-login-username", autocomplete: "username webauthn", value: "{passkey_username}", oninput: move |event| passkey_username.set(event.value()) }
+                    spawn_action(state, move |generation| async move {
+                        let result = match selected {
+                            LoginMethod::Password => crate::api::send("POST", "/auth/login", Some(json!({"username": user, "password": pass}))).await,
+                            LoginMethod::Passkey => crate::webauthn::login(&user).await,
+                        };
+                        match result {
+                            Ok(()) if generation_matches(state, generation) => bootstrap(state).await,
+                            Ok(()) => {}
+                            Err(error) => { handle_api_error_for(state, generation, error); }
+                        }
+                    });
+                },
+                    Field { id: "login-username", label: ui.text("ユーザー名", "Username"),
+                        input { id: "login-username", autocomplete: "username webauthn", value: "{username}", oninput: move |event| username.set(event.value()) }
+                    }
+                    fieldset { class: "auth-method",
+                        legend { {ui.text("ログイン方法", "Sign-in method")} }
+                        label { r#for: "login-method-password",
+                            input { id: "login-method-password", r#type: "radio", name: "login-method", value: "password", checked: *method.read() == LoginMethod::Password,
+                                onchange: move |_| { password.write().clear(); method.set(LoginMethod::Password); }
+                            }
+                            {ui.text("パスワード", "Password")}
+                        }
+                        label { r#for: "login-method-passkey",
+                            input { id: "login-method-passkey", r#type: "radio", name: "login-method", value: "passkey", checked: *method.read() == LoginMethod::Passkey,
+                                onchange: move |_| { password.write().clear(); method.set(LoginMethod::Passkey); }
+                            }
+                            {ui.text("パスキー", "Passkey")}
                         }
                     }
-                    CardFooter {
-                        Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| {
-                            let user = std::mem::take(&mut *passkey_username.write());
-                            let state = state;
-                            spawn_action(state, move |generation| async move {
-                                match crate::webauthn::login(&user).await {
-                                    Ok(()) if generation_matches(state, generation) => bootstrap(state).await,
-                                    Ok(()) => {}
-                                    Err(error) => { handle_api_error_for(state, generation, error); }
-                                }
-                            });
-                        }, "Use passkey" }
+                    if *method.read() == LoginMethod::Password {
+                        Field { id: "login-password", label: ui.text("パスワード", "Password"),
+                            PasswordInput { id: "login-password", value: password, autocomplete: "current-password" }
+                        }
+                    }
+                    div { class: "auth-submit",
+                        Button { r#type: "submit", disabled: state.read().busy,
+                            {if *method.read() == LoginMethod::Password { ui.text("ログイン", "Sign in") } else { ui.text("パスキーでログイン", "Use passkey") }}
+                        }
                     }
                 }
             }
@@ -105,49 +114,59 @@ pub(in crate::app) fn LoginPage(mut state: Signal<AppState>) -> Element {
 
 #[component]
 pub(in crate::app) fn OnboardingPage(mut state: Signal<AppState>) -> Element {
-    let me = state.read().me.clone();
-    let onboarding = me.as_ref().map(|me| me.onboarding.clone());
-    let password_title = if onboarding
+    let ui = use_preferences();
+    let onboarding = state.read().me.as_ref().map(|me| me.onboarding.clone());
+    let password_required = onboarding
         .as_ref()
-        .is_some_and(|o| o.password_change_required)
-    {
-        "Change temporary password"
-    } else {
-        "Change password"
-    };
+        .is_some_and(|o| o.password_change_required);
+    let cookie_complete = onboarding.as_ref().is_some_and(|o| o.cookie_setup_complete);
     rsx! {
-        main { class: "page-wrap",
-            Header { state }
+        Header { state }
+        main { class: "setup-wrap page-stack",
+            h1 { {ui.text("初期設定", "Setup")} }
             Status { state }
-            div { class: "setup-grid",
-                Card {
-                    CardHeader {
-                        CardTitle { "Setup status" }
-                        CardDescription { "Ordinary game status and reward screens stay locked until password and Cookie requirements are complete." }
-                    }
-                    CardContent {
-                        dl { class: "metric-list",
-                            Metric { label: "Password changed", value: if onboarding.as_ref().is_some_and(|o| o.password_change_required) { "Required".to_owned() } else { "Complete".to_owned() } }
-                            Metric { label: "Cookie setup", value: onboarding.as_ref().map(|o| if o.cookie_setup_complete { "Complete".to_owned() } else { humanize(&o.cookie_status) }).unwrap_or_else(|| "Not loaded".to_owned()) }
-                            Metric { label: "Server verification", value: onboarding.as_ref().map(|o| if o.verification_available { "Available".to_owned() } else { "Not available on this server".to_owned() }).unwrap_or_else(|| "Not reported".to_owned()) }
-                        }
-                        if let Some(error) = &state.read().hoyolab_error { p { class: "warning", "{error}" } }
-                    }
-                    CardFooter {
-                        Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| { let state = state; spawn_action(state, move |_| async move { bootstrap(state).await; }); }, "Refresh setup status" }
-                    }
-                }
-                PasswordCard { state, title: password_title }
-                if state.read().password_ok() {
-                    ServerSettingsCard { state }
-                    PasskeyCard { state }
-                    DeleteAccountCard { state }
-                }
-                CookieCard { state }
-                if me.as_ref().is_some_and(|me| me.is_admin) && state.read().password_ok() {
-                    AdminCard { state, compact: true }
+            if !cookie_complete {
+                div { class: "setup-progress", "aria-label": ui.text("設定の進行状況", "Setup progress"),
+                    span { class: if password_required { "current" } else { "" }, {ui.text("1. パスワード変更", "1. Change password")} }
+                    span { class: if !password_required { "current" } else { "" }, {ui.text("2. HoYoLAB連携", "2. HoYoLAB link")} }
                 }
             }
+            if password_required {
+                PasswordCard { state, title: ui.text("パスワードを変更", "Change password") }
+            } else if !cookie_complete {
+                CookieCard { state }
+            }
+            if let Some(error) = &state.read().hoyolab_error { p { class: "warning", "{error}" } }
+            Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| {
+                spawn_action(state, move |_| async move { bootstrap(state).await; });
+            }, {ui.text("設定状況を更新", "Refresh setup status")} }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn passkey_is_username_first_and_password_method_requires_both_fields() {
+        for method in [LoginMethod::Password, LoginMethod::Passkey] {
+            assert!(!login_fields_complete(method, "  ", "synthetic-password"));
+        }
+        assert!(login_fields_complete(
+            LoginMethod::Passkey,
+            "synthetic-user",
+            ""
+        ));
+        assert!(!login_fields_complete(
+            LoginMethod::Password,
+            "synthetic-user",
+            ""
+        ));
+        assert!(login_fields_complete(
+            LoginMethod::Password,
+            "synthetic-user",
+            "synthetic-password"
+        ));
     }
 }

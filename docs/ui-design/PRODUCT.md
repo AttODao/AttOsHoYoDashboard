@@ -2,6 +2,8 @@
 
 <!-- impeccable:product-schema 1 -->
 
+本書はドラフト制作時点のproduct context。[後続の本番R3実装・検証](production-r3.md)とは記録を分ける。
+
 ## Platform
 web
 

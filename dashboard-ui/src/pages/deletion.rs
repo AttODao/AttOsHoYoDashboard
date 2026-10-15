@@ -1,26 +1,26 @@
-use super::common::Field;
+use super::common::{Field, PasswordInput};
 use crate::app::actions::{handle_password_error_for, spawn_action};
+use crate::app::preferences::use_preferences;
 use crate::app::session::signed_out;
-use crate::app::state::AppState;
-use crate::app::state::generation_matches;
-use crate::components::{
-    Button, ButtonVariant, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,
-};
+use crate::app::state::{AppState, generation_matches};
+use crate::components::{Button, ButtonVariant};
 use dioxus::prelude::*;
 use serde_json::json;
 
 #[component]
 pub(super) fn DeletePage(state: Signal<AppState>) -> Element {
+    let preferences = use_preferences();
     rsx! {
-        div { class: "page-stack",
-            h2 { "Delete your account" }
+        section { class: "panel page-stack danger-zone",
+            h2 { {preferences.text("ユーザー削除", "Delete user")} }
             DeleteAccountCard { state }
         }
     }
 }
 
 #[component]
-pub(super) fn DeleteAccountCard(mut state: Signal<AppState>) -> Element {
+pub(super) fn DeleteAccountCard(state: Signal<AppState>) -> Element {
+    let preferences = use_preferences();
     let username = state
         .read()
         .me
@@ -29,20 +29,59 @@ pub(super) fn DeleteAccountCard(mut state: Signal<AppState>) -> Element {
         .unwrap_or_default();
     let mut password = use_signal(String::new);
     let mut confirmation = use_signal(String::new);
+    let disabled =
+        state.read().busy || !deletion_confirmed(&username, &confirmation(), &password());
     rsx! {
-        Card { class: "danger-zone",
-            CardHeader { CardTitle { "Irreversible account deletion" } CardDescription { "Type your username exactly and enter your current password. The backend protects the last active admin." } }
-            CardContent { class: "form-stack",
-                Field { id: "delete-confirmation", label: "Type username: {username}", input { id: "delete-confirmation", autocomplete: "off", value: "{confirmation}", oninput: move |event| confirmation.set(event.value()) } }
-                Field { id: "delete-password", label: "Current password", input { id: "delete-password", r#type: "password", autocomplete: "current-password", value: "{password}", oninput: move |event| password.set(event.value()) } }
+        div { class: "form-stack",
+            p { {preferences.text("対象ユーザー", "Target user")} " · {username}" }
+            Field { id: "delete-confirmation", label: preferences.text("ユーザー名（完全一致）", "Username (exact match)"),
+                input { id: "delete-confirmation", autocomplete: "off", value: "{confirmation}", oninput: move |event| confirmation.set(event.value()) }
             }
-            CardFooter { Button { variant: ButtonVariant::Destructive, r#type: "button", onclick: move |_| { let pass = std::mem::take(&mut *password.write()); let confirm = std::mem::take(&mut *confirmation.write()); let state = state; spawn_action(state, move |generation| async move {
-                                match crate::api::send("DELETE", "/me", Some(json!({"current_password": pass, "confirmation": confirm}))).await {
-                    Ok(()) if generation_matches(state, generation) => signed_out(state, "Account deletion accepted."),
-                    Ok(()) => {}
-                    Err(error) => { handle_password_error_for(state, generation, error).await; }
-                }
-            }); }, "Delete my account" } }
+            Field { id: "delete-password", label: preferences.text("現在のパスワード", "Current password"),
+                PasswordInput { id: "delete-password", value: password, autocomplete: "current-password" }
+            }
+            div { class: "button-row",
+                Button { variant: ButtonVariant::Destructive, r#type: "button", disabled, onclick: move |_| {
+                    let current_username = state.read().me.as_ref().map(|me| me.username.clone()).unwrap_or_default();
+                    if !deletion_confirmed(&current_username, &confirmation(), &password()) { return; }
+                    let pass = std::mem::take(&mut *password.write());
+                    let confirm = confirmation();
+                    spawn_action(state, move |generation| async move {
+                        match crate::api::send("DELETE", "/me", Some(json!({"current_password": pass, "confirmation": confirm}))).await {
+                            Ok(()) if generation_matches(state, generation) => signed_out(state, preferences.text("ユーザー削除を受け付けました（処理待ち）", "User deletion accepted; processing pending.")),
+                            Ok(()) => {}
+                            Err(error) => { handle_password_error_for(state, generation, error).await; }
+                        }
+                    });
+                }, {preferences.text("ユーザー削除", "Delete user")} }
+            }
         }
+    }
+}
+
+fn deletion_confirmed(username: &str, confirmation: &str, password: &str) -> bool {
+    !username.is_empty() && confirmation == username && !password.is_empty()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deletion_requires_exact_username_and_actor_password() {
+        assert!(deletion_confirmed(
+            "synthetic-user",
+            "synthetic-user",
+            "synthetic-password"
+        ));
+        for confirmation in ["", "Synthetic-user", "synthetic-user ", " synthetic-user"] {
+            assert!(!deletion_confirmed(
+                "synthetic-user",
+                confirmation,
+                "synthetic-password"
+            ));
+        }
+        assert!(!deletion_confirmed("synthetic-user", "synthetic-user", ""));
+        assert!(!deletion_confirmed("", "", "synthetic-password"));
     }
 }

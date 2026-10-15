@@ -1,10 +1,10 @@
 # AGD / R3 visual contract
 
-Surface mode: **Operate**。指定の[NFT/Web3参照](https://www.uupm.cc/demo/nft-web3)から世界観を採用し、ゲーム状態を読む・設定する用途へ翻訳する。旧Orbit Folio／Arcade IndexはR1の履歴として扱う。これはAI制作案であり、最終視覚承認ではない。
+Surface mode: **Operate**。指定の[NFT/Web3参照](https://www.uupm.cc/demo/nft-web3)から世界観を採用し、ゲーム状態を読む・設定する用途へ翻訳する。旧Orbit Folio／Arcade IndexはR1の履歴として扱う。R3は本実装の基準としてユーザー承認済み。本書はドラフトのvisual contractであり、[本番実装・検証](production-r3.md)とは区別する。
 
 ## 配色
 
-値の正本：[`preview/style.css`](preview/style.css)の`:root`とlight用semantic tokens。下表はdarkの基準。dark／lightは背景・本文・操作部まで一緒に切り替え、両方で本文4.5:1・意味のある境界3:1を保つ。R2を保存し、同じR3内の小改修として扱う（R4ではない）。
+ドラフト値の正本：[`preview/style.css`](preview/style.css)の`:root`とlight用semantic tokens。本番の配信元は`dashboard-ui/assets/dashboard.css`。下表はdarkの基準。dark／lightは背景・本文・操作部まで一緒に切り替え、両方で本文4.5:1・意味のある境界3:1を保つ。R2を保存し、同じR3内の小改修として扱う（R4ではない）。
 
 | Primitive / semantic | 値 | 役割 |
 |---|---|---|

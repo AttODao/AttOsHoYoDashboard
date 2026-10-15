@@ -105,12 +105,16 @@ HTTPは輸送と入力型、`auth/`は認証・ユーザーライフサイクル
 
 ### Dioxus UIのモジュール地図
 
+承認済みAGD R3の本番RSX・検証と限界は[本番R3記録](docs/ui-design/production-r3.md)を参照。
+
 - `dashboard-ui/src/app.rs`: App合成・起動・60秒周期のDashboard更新。
 - `dashboard-ui/src/app/state.rs`: AppState、Page/Phase、generation・busy・owner切替・画面アクセス制御と関連テスト。
-- `dashboard-ui/src/app/data.rs`: 画面別のAPIデータ取得。
+- `dashboard-ui/src/app/data.rs`: 画面別のAPIデータ取得、ゲームごとのUID状態更新、ボーナス設定保存の共有処理。
+- `dashboard-ui/src/app/preferences.rs`: 日本語／英語・dark／light。localStorageには非機密の選択だけを保存。
+- `dashboard-ui/src/app/credentials.rs`: 管理者用仮パスワードのWeb Crypto生成・clipboard境界。生成結果は成功時だけメモリ内表示。
 - `dashboard-ui/src/app/session.rs`: bootstrap、fresh me適用、signed-out・logout失敗時の状態。
 - `dashboard-ui/src/app/actions.rs`: 非同期操作のsingle-flightと完了・エラー制御。
-- `dashboard-ui/src/app/display.rs`: 表示用の名前・日時・値整形。
+- `dashboard-ui/src/app/display.rs`: nullableな数値ペアの表示整形。
 - `dashboard-ui/src/pages/mod.rs`: モジュール宣言のみ。`auth`、`shell`、`dashboard`、`hoyolab`、`accounts`、`rewards`、`security`、`admin`、`deletion`、`docs`に画面責務を分け、`common`に共通部品を置く。
 - `dashboard-ui/src/api.rs` / `models.rs` / `webauthn.rs`: 共通HTTP・DTO・ブラウザ認証器境界（維持）。
 

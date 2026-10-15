@@ -1,6 +1,8 @@
 mod actions;
+mod credentials;
 mod data;
 mod display;
+mod preferences;
 mod session;
 mod state;
 
@@ -17,8 +19,22 @@ use pages::{
 use session::{bootstrap, refresh_me};
 use state::{AppState, Page, Phase, current_ready_page, initial_page};
 
+// External CSS uses these fingerprinted filenames; retain them without a second DX suffix.
+#[used]
+static FONT_JP: Asset = asset!(
+    "/assets/fonts/noto-sans-jp-293812b054e0.woff2",
+    AssetOptions::builder().with_hash_suffix(false)
+);
+#[used]
+static FONT_DISPLAY: Asset = asset!(
+    "/assets/fonts/orbitron-4354932df8f5.woff2",
+    AssetOptions::builder().with_hash_suffix(false)
+);
+
 #[component]
 pub fn App() -> Element {
+    let preferences = use_context_provider(|| Signal::new(preferences::Preferences::load()));
+    use_effect(move || preferences.read().apply());
     let state = use_signal(|| AppState::new(initial_page()));
 
     use_future(move || async move {
@@ -48,10 +64,12 @@ pub fn App() -> Element {
         .map(|me| me.id.to_string())
         .unwrap_or_default();
     rsx! {
+        document::Link { rel: "license", href: asset!("/assets/fonts/noto-sans-jp-OFL.txt") }
+        document::Link { rel: "license", href: asset!("/assets/fonts/orbitron-OFL.txt") }
         document::Stylesheet { href: asset!("/assets/dx-components-theme.css") }
         document::Stylesheet { href: asset!("/assets/dashboard.css") }
         document::Link { rel: "license", href: asset!("/src/components/LICENSE-MIT") }
-        fieldset { class: "app-shell", disabled: state.read().busy, "aria-label": "Dashboard actions",
+        fieldset { class: "app-shell", disabled: state.read().busy, "aria-label": preferences.read().text("ダッシュボードの操作", "Dashboard actions"),
             if state.read().page == Page::Docs {
                 DocsPage { state }
             } else {

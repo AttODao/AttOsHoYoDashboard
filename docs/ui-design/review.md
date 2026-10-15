@@ -1,6 +1,8 @@
 # 制作・批評・検査記録
 
-## 最新：R3内の目・英語・drawer小改修
+本番RSXへの反映と検証は[production-r3.md](production-r3.md)に記録する。以下は`16326e6`までのデザイン作業の検査履歴。
+
+## デザイン最終：R3内の目・英語・drawer小改修
 
 - R4ではなく既存R3を狭く修正。Impeccable harden／craft-floor、UI UX Pro Max Quick Referenceを読んで適用。Python CLI実行成功の主張はしない。R1／R2、本番Dioxus／API／DBは未変更。
 - 参照調査`01a13f78-baf6-70b4-b4f6-59df54c604d8`は`https://artifact-diagnoser.ktonk.com/`を実Chromiumの1440×1000／390×844で操作。右全高304px、暗いbackdrop、本文移動なし、右から約300ms、外側／Escapeで閉じる、gear・Xなしを観察した。画像は`/tmp/agd-menu-reference/{desktop,mobile}-{closed,open,dark,language}.png`等。正確な参照CSSのduration／easing取得ではない。AGDはハンバーガーを維持しX追加、native dialog／フォーカス復帰、280ms transform＋discrete close／reduced-motionを採用。

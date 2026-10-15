@@ -24,7 +24,8 @@ flowchart TB
 責務:
 
 - `dashboard-ui/src/app.rs`: App合成・起動・60秒周期のDashboard更新。`app/state.rs`はAppState・Page/Phaseと状態操作、`data.rs`は画面データ取得、`session.rs`はbootstrap・fresh me・logout、`actions.rs`は非同期操作のadmission/完了/エラー、`display.rs`は表示整形を持つ。generationによる古い応答の破棄、busyによる重複抑制、owner切替の初期化・初期設定の画面制限を維持する。
-- `dashboard-ui/src/pages/`: `auth`・`shell`・`dashboard`・`hoyolab`・`accounts`・`rewards`・`security`・`admin`・`deletion`・`docs`に画面責務を分け、`common`にField/Metricなどを置く。Signals/Hooks・イベント・状態共有は既存のまま。`api.rs`・`models.rs`・`webauthn.rs`はHTTP・DTO・ブラウザ認証器境界を持ち、localStorage secrets、manual Cookie/Origin header、SSR/fullstack serverは持たない。
+- `dashboard-ui/src/app/preferences.rs`は言語・テーマだけの永続化、`credentials.rs`はWeb Cryptoによる仮パスワード生成とclipboard境界を持つ。秘密・表示状態は永続化しない。
+- `dashboard-ui/src/pages/`: `auth`・`shell`・`dashboard`・`hoyolab`・`accounts`・`rewards`・`security`・`admin`・`deletion`・`docs`に画面責務を分け、`common`にField/Metric/PasswordInputなどを置く。AGD R3はサイドバーなしの右drawer、5つの設定タブ、desktopの2ゲーム同時表示とmobileのゲームタブを使う。UID選択・status取得はゲームごと、automation変更と時刻保存は`app/data.rs`の共有処理を通す。`api.rs`・`models.rs`・`webauthn.rs`はHTTP・DTO・ブラウザ認証器境界を持ち、localStorage secrets、manual Cookie/Origin header、SSR/fullstack serverは持たない。
 - `dashboard-ui/src/components/`: official Dioxus Components由来Button/Card/Card partsとMIT/provenance。
 - `src/dashboard/http/`: route composition、DTO、Origin/session boundary、safe error mapping、compiled Dioxus UI、`/docs` index、`/openapi.json`。
 - `src/dashboard/auth/`: user lifecycle、password/session、passkey registration/authentication、deletion request。
