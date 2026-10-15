@@ -17,7 +17,7 @@ const username=fixture==='admin'?'demo_admin':fixture==='provisional'?'demo_pend
 function header(){
  const logout=button('ログアウト','logout');
  const menu=`<details class="menu"><summary aria-label="メニューを開く">${icon('menu')}<span>メニュー</span></summary><nav aria-label="アカウントメニュー">${button(icon('link')+'HoYoLAB連携','link')}${button(icon('settings')+'設定','settings')}${fixture==='admin'?button(icon('user')+'管理者設定','admin'):''}${button(icon('logout')+'ログアウト','logout')}</nav></details>`;
- return `<header class="topbar"><div class="topbar-inner"><span class="wordmark">AGD</span><div class="account">${view==='login'?'':`<span class="muted account-name">${username}</span>${restricted?logout:menu}`}</div></div></header>`;
+ return `<header class="topbar"><div class="topbar-inner"><span class="wordmark">AGD</span><div class="account">${view==='login'||view==='deleted'?'':`<span class="muted account-name">${username}</span>${restricted?logout:menu}`}</div></div></header>`;
 }
 function intro(title,description,back=false){return `<div class="page-intro"><div><h1 tabindex="-1">${title}</h1><p class="muted">${description}</p></div>${back?button('ダッシュボードへ','dashboard'):''}</div>`;}
 function stateNotice(){

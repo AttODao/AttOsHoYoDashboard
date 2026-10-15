@@ -102,6 +102,8 @@ try{
   const scene=await page.evaluate(captureScene,name+'-'+width),nodes=[];const walk=n=>{nodes.push(n);(n.children||[]).forEach(walk);};scene.children.forEach(walk);
   assert.equal(scene.source,'agd-r2-local-synthetic');assert.ok(nodes.length>10&&nodes.length<2000);
   assert.ok(nodes.every(n=>[n.x,n.y,n.width,n.height].every(Number.isFinite)&&n.width>0&&n.height>0),'finite editable geometry');
+  if(!name.startsWith('menu'))assert.equal(nodes.some(n=>n.name.startsWith('nav / アカウントメニュー')),false,'closed details menu is not rendered');
+  assert.ok(scene.children.findIndex(n=>n.name.startsWith('header /'))>scene.children.findIndex(n=>n.name.startsWith('main /')),'header paints above main content');
   assert.ok(nodes.filter(n=>n.inputType==='password').every(n=>n.children[0].text===' '),'password values never captured');
   assert.ok(!JSON.stringify(scene).includes('デザイン確認用（製品のメニューではありません）'),'review tools excluded');
   scene.sourceHash=sourceHash;
@@ -128,6 +130,9 @@ try{
   await page.goto(origin+'/#dashboard');await page.getByLabel('メニューを開く').click();await saveScene('menu',width);await page.keyboard.press('Escape');
   await page.goto(origin+'/#dashboard');await page.getByRole('switch',{name:'原神の自動受け取り',exact:true}).check();await saveScene('dashboard-on',width);
   await page.getByRole('button',{name:'崩壊：スターレイル',exact:true}).click();await saveScene('dashboard-starrail',width);
+  await page.goto(origin+'/?fixture=admin#admin');await page.getByLabel('メニューを開く').click();await saveScene('menu-admin',width);await page.keyboard.press('Escape');
+  await page.goto(origin+'/#deleted');assert.equal(await page.locator('.account button,.account .menu').count(),0,'accepted self-deletion has no authenticated navigation');await saveScene('deleted',width);
+  await page.goto(origin+'/?fixture=admin#admin-deleted');assert.match(await page.locator('main').textContent(),/管理者自身のセッションは継続/);await saveScene('admin-deleted',width);
  }
  await page.setViewportSize({width:1440,height:1000});await page.goto(origin+'/?privacy=check#login');
  await page.evaluate(()=>{
@@ -146,5 +151,5 @@ try{
  for(let n=0;n<=100;n++){const rgb=k=>vars[k].slice(1).match(/../g).map(x=>parseInt(x,16));const a=rgb('pink'),b=rgb('cyan');const c='#'+a.map((v,i)=>Math.round(v+(b[i]-v)*n/100).toString(16).padStart(2,'0')).join('');assert.ok(contrast(c,vars['on-accent'])>=4.5,'gradient label '+n);}
  assert.deepEqual(unsafeRequests,[],'no API/upstream requests');assert.deepEqual(errors,[],'browser JS errors');
  console.log('PASS: R2 navigation/setup gate, shared login, account×game switches, schedule placement, prototype admin role gate/recovery form, deletion/queued/unknown semantics, contrast, 44px targets and responsive widths.');
- console.log('30 PNGs + 44 scene JSONs (and one privacy check) in '+out+'; no MCP, backend, authenticator or upstream used.');
+ console.log('30 PNGs + 50 scene JSONs (and one privacy check) in '+out+'; no MCP, backend, authenticator or upstream used.');
 }finally{if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));}

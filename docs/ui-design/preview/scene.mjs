@@ -5,17 +5,20 @@ export function captureScene(key){
  const origin=dialog?0:header.getBoundingClientRect().top;
  const hex=value=>{if(value==='transparent')return {color:'#000000',opacity:0};const m=value.match(/^rgba?\(([^)]+)\)$/);if(!m)throw Error('Unsupported CSS color: '+value);const n=m[1].split(',').map(Number);return {color:'#'+n.slice(0,3).map(v=>Math.round(v).toString(16).padStart(2,'0')).join('').toUpperCase(),opacity:n[3]??1};};
  const box=r=>({x:r.x,y:r.y-origin,width:r.width,height:r.height});
- const paint=(e,c)=>({fill:hex(c.backgroundColor),stroke:hex(c.borderTopColor),strokeWidth:parseFloat(c.borderTopWidth)||0,radius:parseFloat(c.borderTopLeftRadius)||0});
- const type=c=>({family:c.fontFamily.split(',')[0].replace(/["']/g,'').trim(),size:parseFloat(c.fontSize),weight:c.fontWeight,lineHeight:parseFloat(c.lineHeight)/parseFloat(c.fontSize)||1.6,align:c.textAlign,color:hex(c.color)});
+ const paint=(e,c)=>{const widths=['Top','Right','Bottom','Left'].map(s=>parseFloat(c['border'+s+'Width'])||0);return {fill:hex(c.backgroundColor),stroke:hex(c.borderTopColor),strokeWidth:widths.every(w=>w===widths[0])?widths[0]:0,radius:parseFloat(c.borderTopLeftRadius)||0};};
+ const type=c=>({family:c.fontFamily.split(',')[0].replace(/["']/g,'').trim(),size:parseFloat(c.fontSize),weight:c.fontWeight,lineHeight:parseFloat(c.lineHeight)/parseFloat(c.fontSize)||1.6,align:c.textAlign,color:hex(c.color),...(parseFloat(c.letterSpacing)?{letterSpacing:parseFloat(c.letterSpacing)}:{})});
  let id=0;
  function node(e){
   if(e.nodeType===Node.TEXT_NODE){
    const text=e.textContent.replace(/\s+/g,' ').trim();if(!text)return null;
    const r=document.createRange();r.selectNodeContents(e);const bounds=r.getBoundingClientRect();if(!bounds.width||!bounds.height)return null;
-   return {kind:'text',id:'n'+id++,name:'Text / '+text.slice(0,32),text,...box(bounds),type:type(getComputedStyle(e.parentElement))};
+   const parent=e.parentElement,c=getComputedStyle(parent),p=parent.getBoundingClientRect();
+   const width=/^(H[1-6]|P)$/.test(parent.tagName)?Math.max(bounds.width,p.right-parseFloat(c.paddingRight||0)-bounds.x):bounds.width;
+   return {kind:'text',id:'n'+id++,name:'Text / '+text.slice(0,32),text,...box(bounds),width:Math.ceil(width)+4,type:type(c)};
   }
   if(e.nodeType!==Node.ELEMENT_NODE)return null;
   const c=getComputedStyle(e);if(c.display==='none'||c.visibility==='hidden'||c.opacity==='0'||e.closest('.review-tools'))return null;
+  if(e.tagName!=='DETAILS'&&e.closest('details:not([open])')&&!e.closest('summary'))return null;
   const r=e.getBoundingClientRect();if(!r.width||!r.height)return null;
   if(e.tagName.toLowerCase()==='svg'){
    const paths=Array.from(e.querySelectorAll('path')).map(p=>p.getAttribute('d'));
@@ -32,6 +35,10 @@ export function captureScene(key){
    const stops=[...c.backgroundImage.matchAll(/rgba?\([^)]+\)|transparent/g)].map(m=>hex(m[0]));
    if(stops.length!==2)throw Error('Only two-stop gradients are supported');
    out.paint.gradient={angle:Number(angle[1]),stops};
+  }
+  if(out.paint.strokeWidth===0)for(const side of ['Top','Right','Bottom','Left']){
+   const w=parseFloat(c['border'+side+'Width'])||0;if(!w)continue;
+   out.children.push({kind:'board',id:'n'+id++,name:'Divider / '+side,x:out.x+(side==='Right'?out.width-w:0),y:out.y+(side==='Bottom'?out.height-w:0),width:['Top','Bottom'].includes(side)?out.width:w,height:['Left','Right'].includes(side)?out.height:w,paint:{fill:hex(c['border'+side+'Color']),stroke:{color:'#000000',opacity:0},strokeWidth:0,radius:0},children:[]});
   }
   if(tag==='input'||tag==='select'){
    const inputType=e.type||'select';out.inputType=inputType;out.name='Input / '+label.slice(0,48);out.disabled=!!e.disabled;
@@ -75,7 +82,8 @@ export function captureScene(key){
   }
   return out;
  }
- const children=[node(header),node(main)].filter(Boolean);
+ // CSS z-index: the header menu must paint above the main content.
+ const children=[node(main),node(header)].filter(Boolean);
  if(dialog){children.push({kind:'board',id:'n'+id++,name:'Dialog backdrop',x:0,y:0,width:innerWidth,height:innerHeight,paint:{fill:{color:'#000000',opacity:.7},stroke:{color:'#000000',opacity:0},strokeWidth:0,radius:0},children:[]});children.push(node(dialog));}
  const vars=getComputedStyle(document.documentElement),palette={};
  for(const k of ['canvas','surface','elevated','text','muted','line','decorative','pink','cyan','mint','lavender','warning','danger','on-accent'])palette[k]=vars.getPropertyValue('--'+k).trim().toUpperCase();

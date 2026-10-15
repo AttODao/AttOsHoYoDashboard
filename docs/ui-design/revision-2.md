@@ -45,18 +45,18 @@ DashboardはDesktopで約1232pxの幅を使い、ゲーム状態を大きく、�
 
 `preview/scene.mjs`はこの合成プレビュー専用。任意サイトからの取込器ではない。実書体のCSS矩形・色・テキストと少数pathアイコンを計測し、確認用フッターを除く。入力の`.value`や非radioの`value`属性は読まず、ユーザー名・Cookieの注意文・空パスワード・初期06:00を合成する。ブラウザ検査では値getterを失敗させても計測が完了することを確認する。通常場面とモーダルのviewport切り出しは別に扱う。
 
-`preview/check.mjs`がDesktop／Mobile各22場面を生成する。基本7画面状態、Loading／Empty／Error／設定不足／権限不足／パスキー中断、管理者の再発行／削除ダイアログ、初期設定のCookie入力／本人確認待ち／新UID非表示、パスキー方式、メニュー、ON切替、スターレイルを含む。HTML／CSS／JS／計測コードのSHA-256を添え、以前のモデルとの取り違えを防ぐ参照値にする。
+`preview/check.mjs`がDesktop／Mobile各25場面を生成する。基本7画面状態、Loading／Empty／Error／設定不足／権限不足／パスキー中断、管理者の再発行／削除ダイアログ、初期設定のCookie入力／本人確認待ち／新UID非表示、パスキー方式、一般／管理者メニュー、ON切替、スターレイル、自己／管理者削除受付を含む。HTML／CSS／JS／計測コードのSHA-256を添え、以前のモデルとの取り違えを防ぐ参照値にする。
 
-`penpot/r2-import.js`は**未実行の準備コード**。再開許可後に、生成JSONを`storage.agdR2Scene`へセットして1場面ずつ実行する。対象ファイルID、既存キー、書体、配色、寸法を先に検査し、既存R1・人間の編集を上書きしない。中断マーカーが残った場合は止まり、状態確認なしの再実行を拒否する。セッションstorageを失った既存R2にも自動再生成しない。
+`penpot/r2-import.js`は再開許可後に**24場面の実取り込みに成功**。現在の保存状態・停止理由は[`native-status.md`](native-status.md)。生成JSONを`storage.agdR2Scene`へセットして1場面ずつ実行する。対象ファイルID、既存キー、書体、配色、寸法を先に検査し、既存R1・人間の編集を上書きしない。中断マーカーが残った場合は止まり、状態確認なしの再実行を拒否する。セッションstorageを失った既存R2にも自動再生成しない。
 
-準備している出力はネイティブBoard／Text／小さなベクトル、共通Button／Input／SwitchのAssetsとコピー、色・文字サイズ・角丸・Button内paddingのtokens、書体のTypography assets。グラデーションは小さなSVG矩形からeditable fillへ変換できた場合だけ使い、画像へのfallbackはしない。書体ファミリーはTypography assets、グラデーションは部品masterで編集する想定。色Assetsの値を変えるだけでtokensが同期するとは保証しない。
+準備している出力はネイティブBoard／Text／小さなベクトル、共通Button／Input／SwitchのAssetsとコピー、色・文字サイズ・角丸・Button内paddingのtokens、書体のTypography assets。グラデーションは確認済みのNative Gradient APIを使用する。SVG経由の変換は失敗したため廃止し、画像へのfallbackはしない。書体ファミリーはTypography assets、グラデーションは部品masterで編集する想定。色Assetsの値を変えるだけでtokensが同期するとは保証しない。
 
-**残る制約**：ネイティブAPIの実互換性、SVGのgradient／path編集性、字体と文字コピーの描画キャッシュ、共有編集、token反映は未検証。単一テキストButton以外の複雑な配置は計測位置を保持し、柔軟なAuto Layoutは初回Native確認後に整える。背景のradial ambient、CSS shadow、hover／focusはこの計測器では移植しない。actionはラベル付きmetadataであり、まだプロトタイプリンクではない。Design System説明ボードも未制作。これらを省いたままR2完成・最終合格とは扱わない。
+**残る制約**：主要Native APIと10場面のexportは実確認したが、全場面のAPI互換性、path編集性、字体と文字コピーの描画キャッシュ、共有編集、token反映の最終検査は未完了。単一テキストButton以外の複雑な配置は計測位置を保持し、柔軟なAuto Layoutは初回Native確認後に整える。背景のradial ambient、CSS shadow、hover／focusはこの計測器では移植しない。action metadataから`r2-finish.js`で代表導線を作成し、主要10場面では40リンク・8開始Flowを実作成した。フォーム入力や全状態組合せのシミュレーションではない。Design System説明ボードも未制作。これらを省いたままR2完成・最終合格とは扱わない。
 
 ## MCP再開後の作業
 
 1. 正常になった接続を使い、ファイルと保存状態を読み取り確認する。接続設定の再修復を前提にしない。
-2. 旧`Draft / ...`と空の`Page 1`を残す。準備コードの対象は`AGD R2 Draft / Desktop`、`AGD R2 Draft / Mobile`、`AGD R2 Draft / Components`。まずLogin 1場面で実API・書体・gradient・コピーの描画を確認してから進む。Design Systemの説明ボードは別途作成。人間が編集した既存ボードは上書きしない。
+2. 旧`Draft / ...`と空の`Page 1`を残す。準備コードの対象は`AGD R2 Draft / Desktop`、`AGD R2 Draft / Mobile`、`AGD R2 Draft / Components`。Loginと主要10場面の確認は実施済み。保存キーと中断マーカーを照合して不足分のみ進める。Design Systemの説明ボードは別途作成。人間が編集した既存ボードは上書きしない。
 3. このプレビューを配置の参照にしつつ、ネイティブテキスト、Button、Field、Switch、Notice、GameStatus、Menuなどを部品化する。HTMLやPNGを1枚貼って完了にしない。
 4. R2の色・余白・角丸・文字サイズ・書体を新しいAssetsへ登録。共有変更、コピー文字の描画、長い日本語の折り返し、初期設定の遷移禁止、Mobileメニューを実際に検査する。
 5. 初期設定・通常利用・管理者のプロトタイプフローを分けてリンクする。未実装のログは操作可能なAPIとしてリンクしない。人間の選定後にのみRSX実装へ進む。
