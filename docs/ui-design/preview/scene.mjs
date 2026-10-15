@@ -54,18 +54,18 @@ export function captureScene(key){
    const fixture=new URLSearchParams(location.search).get('fixture');
    if(tag==='select')text=e.selectedOptions[0]?.textContent||' ';
    else if(inputType==='time')text='06:00';
-   else if(/Cookie/.test(label))text='実Cookieを入力しないでください';
-   else if(/新しいユーザー名/.test(label))text='demo_new';
+   else if(/Cookie/.test(label))text=' ';
+   else if(e.id==='new-username'||/新しいユーザー名/.test(label))text='demo_new';
    else if(/ユーザー名/.test(label))text=fixture==='admin'?'demo_admin':fixture==='provisional'?'demo_pending':'demo_player';
    else if(/対象名/.test(label))text=document.querySelector('#confirmation-title')?.textContent.includes('demo_inactive')?'demo_inactive':'demo_player';
    out.children.push({kind:'text',id:'n'+id++,name:'Value / synthetic',text,x:out.x+14,y:out.y+12,width:out.width-28,height:24,type:type(c)});
-   if(tag==='select')out.children.push({kind:'icon',id:'n'+id++,name:'Select indicator',x:out.x+out.width-26,y:out.y+18,width:12,height:12,paths:['M4 8l8 8 8-8'],color:hex(c.color),strokeWidth:1.8});
+   if(tag==='select')out.children.push({kind:'icon',id:'n'+id++,name:'Select indicator',x:out.x+out.width-26,y:out.y+out.height/2-6,width:12,height:12,paths:['M4 8l8 8 8-8'],color:hex(c.color),strokeWidth:1.8});
    if(!e.disabled)out.component='Input/'+(tag==='select'?'Select':inputType==='password'?'Password':'Default');
    return out;
   }
   if(tag==='button'||tag==='summary'){
-   out.name='Button / '+e.textContent.trim();out.disabled=!!e.disabled;
-   out.action=e.dataset.action||(tag==='summary'?'menu':e.dataset.game?'game-'+e.dataset.game:undefined);
+   out.name='Button / '+(e.textContent.trim()||e.getAttribute('aria-label')||'');out.disabled=!!e.disabled;
+   out.action=e.dataset.action||(tag==='summary'?'menu':e.dataset.gameTab?'game-'+e.dataset.gameTab:e.dataset.settingsTab?'settings-'+e.dataset.settingsTab:undefined);
    // Icon-specific controls keep separate masters; copy structures stay immutable.
    out.component='Button/'+(e.disabled?'Disabled':tag==='summary'?'Menu':e.closest('.menu nav')?'Nav-'+out.action:e.classList.contains('primary')?'Primary':e.classList.contains('danger')?'Danger':'Secondary');
    if(!e.querySelector('svg'))out.layout={paddingX:parseFloat(c.paddingLeft)||0,paddingY:parseFloat(c.paddingTop)||0};
@@ -87,5 +87,5 @@ export function captureScene(key){
  if(dialog){children.push({kind:'board',id:'n'+id++,name:'Dialog backdrop',x:0,y:0,width:innerWidth,height:innerHeight,paint:{fill:{color:'#000000',opacity:.7},stroke:{color:'#000000',opacity:0},strokeWidth:0,radius:0},children:[]});children.push(node(dialog));}
  const vars=getComputedStyle(document.documentElement),palette={};
  for(const k of ['canvas','surface','elevated','text','muted','line','decorative','pink','cyan','mint','lavender','warning','danger','on-accent'])palette[k]=vars.getPropertyValue('--'+k).trim().toUpperCase();
- return {schema:1,source:'agd-r2-local-synthetic',key,width:innerWidth,height:dialog?innerHeight:Math.ceil(Math.max(...children.map(n=>n.y+n.height)))+32,palette,children};
+ return {schema:1,source:'agd-r3-local-synthetic',key,width:innerWidth,height:dialog?innerHeight:Math.ceil(Math.max(...children.map(n=>n.y+n.height)))+32,palette,children};
 }

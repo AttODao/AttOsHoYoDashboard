@@ -1,14 +1,15 @@
-// Native R2 draft importer. One synthetic scene per call; see native-status.md.
+// Native R2/R3 importer. Validated scene source selects separate revision assets.
 // Set storage.agdR2Scene to a JSON emitted by preview/check.mjs, then run this file.
 // Native Gradient is supported. Shared edits, geometry and copy glyphs still require inspection.
 const scene=storage.agdR2Scene;
 if(penpot.currentFile.id!=='129977ce-683b-806a-8008-c9d0bedd3212')throw Error('Wrong Penpot file; no mutation');
-if(!scene||!/^[a-f0-9]{64}$/.test(scene.sourceHash)||scene.schema!==1||scene.source!=='agd-r2-local-synthetic'||!/^[-a-z0-9]+-(390|1440)$/.test(scene.key))throw Error('Invalid synthetic scene');
-const pageName='AGD R2 Draft / '+(scene.width===390?'Mobile':'Desktop');
+if(!scene||!/^[a-f0-9]{64}$/.test(scene.sourceHash)||scene.schema!==1||!['agd-r2-local-synthetic','agd-r3-local-synthetic'].includes(scene.source)||!/^[-a-z0-9]+-(390|1440)$/.test(scene.key))throw Error('Invalid synthetic scene');
+const revision=scene.source==='agd-r3-local-synthetic'?'R3':'R2',prefix='agd-'+revision.toLowerCase(),assetPath='AGD '+revision+' Draft',storeKey='agd'+revision;
+const pageName=assetPath+' / '+(scene.width===390?'Mobile':'Desktop');
 const existing=penpotUtils.getPageByName(pageName);
-if(existing?.root.children.some(s=>s.getPluginData('agd-r2-key')===scene.key))throw Error('Existing R2 board; preserve human edits');
-if(!storage.agdR2&&penpotUtils.getPageByName('AGD R2 Draft / Components'))throw Error('Existing R2 assets; rebind, do not regenerate');
-if(storage.agdR2?.inProgress)throw Error('Prior import interrupted; inspect before resuming');
+if(existing?.root.children.some(s=>s.getPluginData(prefix+'-key')===scene.key))throw Error('Existing '+revision+' board; preserve human edits');
+if(!storage[storeKey]&&penpotUtils.getPageByName(assetPath+' / Components'))throw Error('Existing '+revision+' assets; rebind, do not regenerate');
+if(storage[storeKey]?.inProgress)throw Error('Prior import interrupted; inspect before resuming');
 const validColor=p=>p&&/^#[0-9A-F]{6}$/.test(p.color)&&Number.isFinite(p.opacity)&&p.opacity>=0&&p.opacity<=1;
 if(!scene.palette||!Object.values(scene.palette).every(v=>/^#[0-9A-F]{6}$/.test(v)))throw Error('Invalid palette');
 const nodes=[];const walk=(n,depth=0)=>{if(depth>80||nodes.length>=2000||!Array.isArray(n.children||[]))throw Error('Invalid scene tree');nodes.push(n);for(const c of n.children||[])walk(c,depth+1);};scene.children.forEach(n=>walk(n));
@@ -28,20 +29,20 @@ for(const n of nodes){
   if(!fonts.has(k)){const font=penpot.fonts.findByName(n.type.family);const variant=font?.variants.find(v=>String(v.fontWeight)===String(n.type.weight)&&v.fontStyle==='normal');if(!variant)throw Error('Required font variant unavailable: '+k);fonts.set(k,{font,variant,type:n.type});}
  }
 }
-const A=storage.agdR2||(storage.agdR2={pages:{},typo:{},components:{},tokens:{}});A.inProgress=scene.key;
+const A=storage[storeKey]||(storage[storeKey]={pages:{},typo:{},components:{},tokens:{}});A.inProgress=scene.key;
 if(!A.set){
- A.set=penpot.library.local.tokens.addSet({name:'agd-r2-draft'});
+ A.set=penpot.library.local.tokens.addSet({name:prefix+'-draft'});
  for(const [name,value] of Object.entries(scene.palette)){
-  const asset=penpot.library.local.createColor();asset.name='AGD R2/'+name;asset.color=value;
-  A.tokens[value]=A.set.addToken({type:'color',name:'agd.r2.color.'+name,value});
+  const asset=penpot.library.local.createColor();asset.name='AGD '+revision+'/'+name;asset.color=value;
+  A.tokens[value]=A.set.addToken({type:'color',name:prefix.replace('-','.')+'.color.'+name,value});
  }
  if(!A.set.active)A.set.toggleActive();
 }
 A.sizes??={};A.radii??={};A.spaces??={};
-const dimension=(map,type,name,value)=>map[value]||(map[value]=A.set.addToken({type,name:'agd.r2.'+name+'.s'+String(value).replace('.','_'),value:String(value)}));
+const dimension=(map,type,name,value)=>map[value]||(map[value]=A.set.addToken({type,name:prefix.replace('-','.')+'.'+name+'.s'+String(value).replace('.','_'),value:String(value)}));
 for(const f of fonts.values())dimension(A.sizes,'fontSizes','type.size',f.type.size);
 for(const n of nodes)if(n.paint?.radius)dimension(A.radii,'borderRadius','radius',n.paint.radius);
-for(const [k,f]of fonts)if(!A.typo[k]){const t=penpot.library.local.createTypography();t.name='AGD R2/'+k;t.setFont(f.font,f.variant);t.fontSize=String(f.type.size);t.lineHeight=String(f.type.lineHeight);t.letterSpacing=String(f.type.letterSpacing||0);A.typo[k]=t;}
+for(const [k,f]of fonts)if(!A.typo[k]){const t=penpot.library.local.createTypography();t.name='AGD '+revision+'/'+k;t.setFont(f.font,f.variant);t.fontSize=String(f.type.size);t.lineHeight=String(f.type.lineHeight);t.letterSpacing=String(f.type.letterSpacing||0);A.typo[k]=t;}
 const fill=(s,p)=>{s.fills=p.opacity?[{fillColor:p.color,fillOpacity:p.opacity}]:[];if(p.opacity===1&&A.tokens[p.color])s.applyToken(A.tokens[p.color],['fill']);};
 const position=(s,n,dx,dy)=>{s.resize(n.width,n.height);s.x=n.x+dx;s.y=n.y+dy;};
 const escape=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
@@ -56,11 +57,11 @@ async function style(s,n){
 }
 const skeleton=n=>({kind:n.kind,type:n.type,paths:n.paths,paint:n.paint,inputType:n.inputType,checked:n.checked,children:(n.children||[]).map(skeleton)});
 const componentKey=n=>n.component+' / '+JSON.stringify(skeleton(n));
-function textStyle(s,n){const k=fontKey(n.type);s.applyTypography(A.typo[k]);s.applyToken(A.sizes[n.type.size],['fontSize']);s.align=['center','right'].includes(n.type.align)?n.type.align:'left';s.growType='auto-height';fill(s,n.type.color);}
+function textStyle(s,n){const k=fontKey(n.type);s.applyTypography(A.typo[k]);s.lineHeight=String(n.type.lineHeight);s.letterSpacing=String(n.type.letterSpacing||0);s.applyToken(A.sizes[n.type.size],['fontSize']);s.align=['center','right'].includes(n.type.align)?n.type.align:'left';s.growType='auto-height';fill(s,n.type.color);}
 function overrides(s,n,dx,dy){
  s.name=n.name;position(s,n,dx,dy);
  if(n.kind==='text'){s.characters=n.text;s.fontSize=String(n.type.size+1);textStyle(s,n);position(s,n,dx,dy);}
- if(n.action)s.setPluginData('agd-r2-action',n.action);if(n.disabled)s.setPluginData('agd-r2-disabled','1');
+ if(n.action)s.setPluginData(prefix+'-action',n.action);if(n.disabled)s.setPluginData(prefix+'-disabled','1');
  // No children are inserted or removed inside a component instance.
  if(n.children){if(s.children.length!==n.children.length)throw Error('Component topology mismatch; stop');n.children.forEach((c,i)=>overrides(s.children[i],c,dx,dy));}
 }
@@ -74,7 +75,7 @@ async function draw(parent,n,dx,dy,instances=true){
  }else if(n.kind==='check'){
   s=penpot.createBoard();parent.appendChild(s);s.clipContent=false;s.borderRadius=n.radio?999:4;fill(s,{color:n.checked?'#49EEFF':'#24222C',opacity:1});s.strokes=[{strokeColor:'#7F778E',strokeWidth:1,strokeStyle:'solid',strokeAlignment:'inner'}];
  }else{s=penpot.createBoard();parent.appendChild(s);s.clipContent=false;}
- s.name=n.name;position(s,n,dx,dy);if(n.kind==='board')await style(s,n);if(n.action)s.setPluginData('agd-r2-action',n.action);if(n.disabled)s.setPluginData('agd-r2-disabled','1');
+ s.name=n.name;position(s,n,dx,dy);if(n.kind==='board')await style(s,n);if(n.action)s.setPluginData(prefix+'-action',n.action);if(n.disabled)s.setPluginData(prefix+'-disabled','1');
  for(const c of n.children||[])await draw(s,c,dx,dy,instances);
  // ponytail: complex panels retain measured positions; add flexible layouts after native render verification.
  if(n.layout&&s.children.length===1&&n.children[0].kind==='text'){
@@ -84,17 +85,17 @@ async function draw(parent,n,dx,dy,instances=true){
  }
  return s;
 }
-const cp=A.pages.components||penpotUtils.getPageByName('AGD R2 Draft / Components')||penpot.createPage();cp.name='AGD R2 Draft / Components';A.pages.components=cp;
+const cp=A.pages.components||penpotUtils.getPageByName(assetPath+' / Components')||penpot.createPage();cp.name=assetPath+' / Components';A.pages.components=cp;
 await penpot.openPage(cp);
 for(const n of nodes.filter(n=>n.component)){
  const k=componentKey(n);if(A.components[k])continue;
  const y=cp.root.children.reduce((b,s)=>Math.max(b,s.y+s.height),0)+24;
- const s=await draw(cp.root,n,32-n.x,y-n.y,false);const c=penpot.library.local.createComponent([s]);c.name=n.component.replaceAll('/',' ')+' · '+Object.keys(A.components).length;c.path='AGD R2 Draft';A.components[k]=c;
+ const s=await draw(cp.root,n,32-n.x,y-n.y,false);const c=penpot.library.local.createComponent([s]);c.name=n.component.replaceAll('/',' ')+' · '+Object.keys(A.components).length;c.path=assetPath;A.components[k]=c;
 }
 const page=A.pages[pageName]||existing||penpot.createPage();page.name=pageName;A.pages[pageName]=page;
 await penpot.openPage(page);
 const y=page.root.children.reduce((b,s)=>Math.max(b,s.y+s.height),0)+80;
-const board=penpot.createBoard();board.name='AGD R2 / '+scene.key+' / 未承認・合成';board.resize(scene.width,scene.height);board.x=0;board.y=y;board.clipContent=true;board.showInViewMode=true;board.setPluginData('agd-r2-key',scene.key);board.setPluginData('agd-r2-source-hash',scene.sourceHash);page.root.appendChild(board);fill(board,{color:scene.palette.canvas,opacity:1});
+const board=penpot.createBoard();board.name='AGD '+revision+' / '+scene.key+' / 未承認・合成';board.resize(scene.width,scene.height);board.x=0;board.y=y;board.clipContent=true;board.showInViewMode=true;board.setPluginData(prefix+'-key',scene.key);board.setPluginData(prefix+'-source-hash',scene.sourceHash);page.root.appendChild(board);fill(board,{color:scene.palette.canvas,opacity:1});
 for(const n of scene.children)await draw(board,n,0,y);
 A.inProgress=null;
 return {key:scene.key,id:board.id,nodes:nodes.length,components:Object.keys(A.components).length,status:'draft — native visual/geometry/prototype checks still required'};

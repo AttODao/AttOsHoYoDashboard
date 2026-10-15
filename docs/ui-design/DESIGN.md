@@ -1,10 +1,10 @@
-# AGD / R2 visual contract
+# AGD / R3 visual contract
 
 Surface mode: **Operate**。指定の[NFT/Web3参照](https://www.uupm.cc/demo/nft-web3)から世界観を採用し、ゲーム状態を読む・設定する用途へ翻訳する。旧Orbit Folio／Arcade IndexはR1の履歴として扱う。これはAI制作案であり、最終視覚承認ではない。
 
 ## 配色
 
-値の正本：[`preview/style.css`](preview/style.css)の`:root`。Penpot R2への登録は未実施。
+値の正本：[`preview/style.css`](preview/style.css)の`:root`。R2を保存し、R3専用のNative Assets／ページへ登録する。
 
 | Primitive / semantic | 値 | 役割 |
 |---|---|---|
@@ -23,9 +23,11 @@ Surface mode: **Operate**。指定の[NFT/Web3参照](https://www.uupm.cc/demo/n
 
 - ブランドは**AGD**、Orbitron 700・26px。大きな数値もOrbitron、44–64px。日本語本文はNoto Sans JP・16px、補足14px、セクション22px、画面見出し28–36px、行間1.6（見出し1.45）。
 - Max content 1280px、実体の左右padding24px。1440pxでカード領域約1232px。Mobileはpadding20px。サイドバーは0px。
-- 主領域とボーナスの比率1.8:1、gap24px。900px以下は1カラム。フォームは2列から600px以下で1列へ。設定内のセクションは自然な可変高さで、見出し・補足を固定y位置に置かない。
-- Card radius16px、Button/Input radius8px。操作高さ48px。設定内の目次も44px以上。スイッチの見た目のトラックは48×28px、ラベル全体の当たり判定は48px高。
-- 唯一の上部メニューを主要色で示す。開いたメニューは272px、Mobileは画面幅内に収める。Escapeで閉じてトリガーへフォーカスを戻す。
+- Desktop Dashboardは2ゲームを等幅2列・gap24pxで同時表示。カード全面を原神`#132B27`／スターレイル`#27223E`に分け、補足色も`#B7D9CC`／`#CDC3E7`へ寄せる。900px以下はゲームタブで1枚ずつ表示し、ON/OFFは各カードの上部に置く。
+- Settingsは5つのタブで内容を置き換える。Mobileは「ゲーム／ボーナス／連携／認証／削除」に短縮し、ARIA名は完全な項目名を保つ。選択線・文字色で現在位置を示し、矢印／Home／Endとroving tabindexに対応する。時間は大きな時・分のselect、下にタイムゾーン`+09:00`を残す。
+- ログインは幅480pxの中央カードだけ。パスワード欄から送信まで24px以上空ける。左の紹介欄・送信下の説明は置かない。通常UIの補助説明は削除し、ラベル・データ・状態／エラーだけを残す。
+- Card radius16px、Button/Input radius8px。操作高さ48px。タブも44px以上。スイッチの見た目のトラックは48×28px、ラベル全体の当たり判定は48px高。
+- 唯一の上部メニューは文字なしの48pxハンバーガーアイコン。透明背景の簡素な操作部にし、アクセシブル名を残す。開いたメニューは272px、Mobileは画面幅内に収める。Escapeで閉じてトリガーへフォーカスを戻す。
 - Focus2px cyan +4px offset。文字選択・caretも配色に合わせる。Switchは120msの短い状態変化のみ。reduced-motionでは即時。
 - 数字の上限は合成レスポンスの例であり、200／300を製品定数にしない。NFT画像・ウォレット・取引機能はこの画面に含めない。
 
