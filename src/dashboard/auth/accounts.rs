@@ -93,27 +93,48 @@ impl Accounts {
     pub(in crate::dashboard) async fn change_password(
         &self,
         actor: &Identity,
-        current: String,
+        current: Option<String>,
         new: String,
     ) -> Result<(user::Model, IssuedSession)> {
-        if !self
-            .passwords
-            .verify(current.clone(), Some(&actor.user.password_hash))
-            .await?
-        {
-            return Err(Error::Unauthorized);
-        }
-        if current == new {
-            return Err(Error::Invalid(
-                "new password must differ from current password",
-            ));
-        }
+        // Do expensive password work before locking, then validate the snapshot below.
+        let (current_valid, unchanged) = if let Some(current) = current {
+            let unchanged = current == new;
+            (
+                Some(
+                    self.passwords
+                        .verify(current, Some(&actor.user.password_hash))
+                        .await?,
+                ),
+                unchanged,
+            )
+        } else {
+            (
+                None,
+                self.passwords
+                    .verify(new.clone(), Some(&actor.user.password_hash))
+                    .await?,
+            )
+        };
         let password_hash = self.passwords.hash(new).await?;
         let tx = self.db.begin().await?;
         lock_user(&tx, actor.user.id).await?;
         let fresh = Sessions::authenticate(&tx, &actor.token_hash).await?;
-        if fresh.user.password_hash != actor.user.password_hash {
+        if fresh.user.id != actor.user.id
+            || fresh.user.password_hash != actor.user.password_hash
+            || fresh.user.must_change_password != actor.user.must_change_password
+        {
             return Err(Error::Unauthorized);
+        }
+        // Only a freshly authenticated mandatory-setup session may omit the current password.
+        match current_valid {
+            Some(true) => {}
+            None if fresh.user.must_change_password => {}
+            _ => return Err(Error::Unauthorized),
+        }
+        if unchanged {
+            return Err(Error::Invalid(
+                "new password must differ from current password",
+            ));
         }
         let mut update = fresh.user.into_active_model();
         update.password_hash = Set(password_hash);

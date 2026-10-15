@@ -63,7 +63,7 @@ async fn login(State(app): State<App>, Json(input): Json<Login>) -> Result<Respo
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PasswordChange {
-    current_password: String,
+    current_password: Option<String>,
     new_password: String,
 }
 async fn change_password(

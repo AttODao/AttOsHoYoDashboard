@@ -61,7 +61,7 @@ impl TestDatabase {
         .await
         .expect("authenticate synthetic admin");
         let (_, session) = accounts
-            .change_password(&actor, TEMP_PASSWORD.to_owned(), PASSWORD.to_owned())
+            .change_password(&actor, Some(TEMP_PASSWORD.to_owned()), PASSWORD.to_owned())
             .await
             .expect("complete synthetic admin password setup");
         let actor = Sessions::authenticate(

@@ -167,7 +167,7 @@ async fn bootstrap_requires_empty_table_and_temporary_admin_must_change_password
     // Logout revokes this token, not every session owned by the same user.
     let actor = identity(&test.db, &second).await;
     let (ready, replacement) = accounts
-        .change_password(&actor, TEMP_PASSWORD.to_owned(), PASSWORD.to_owned())
+        .change_password(&actor, Some(TEMP_PASSWORD.to_owned()), PASSWORD.to_owned())
         .await
         .unwrap();
     assert!(!ready.must_change_password);
@@ -212,7 +212,7 @@ async fn creation_and_recovery_audit_temporary_password_and_delete_only_target_p
         Err(Error::PasswordChangeRequired)
     ));
     let (_, changed) = accounts
-        .change_password(&actor, TEMP_PASSWORD.to_owned(), PASSWORD.to_owned())
+        .change_password(&actor, Some(TEMP_PASSWORD.to_owned()), PASSWORD.to_owned())
         .await
         .unwrap();
     let (_, other) = accounts
@@ -360,7 +360,11 @@ async fn admin_mutations_reauthenticate_instead_of_trusting_snapshot_or_other_ow
         .unwrap();
     let temporary = identity(&test.db, &issued).await;
     let (_, issued) = accounts
-        .change_password(&temporary, TEMP_PASSWORD.to_owned(), PASSWORD.to_owned())
+        .change_password(
+            &temporary,
+            Some(TEMP_PASSWORD.to_owned()),
+            PASSWORD.to_owned(),
+        )
         .await
         .unwrap();
     let member = identity(&test.db, &issued).await;

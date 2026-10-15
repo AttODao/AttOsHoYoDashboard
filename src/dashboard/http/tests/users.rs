@@ -128,7 +128,7 @@ async fn user_routes_enforce_auth_admin_and_temporary_password_exceptions() {
             "PUT",
             "/api/v1/me/password",
             Some(&temporary),
-            Some(json!({"current_password": TEMP_PASSWORD, "new_password": PASSWORD})),
+            Some(json!({"new_password": PASSWORD})),
         ),
     )
     .await;

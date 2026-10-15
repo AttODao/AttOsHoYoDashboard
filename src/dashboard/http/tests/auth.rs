@@ -108,6 +108,22 @@ async fn public_password_login_rotates_cookie_without_extending_expiry_and_logou
         .await
         .unwrap();
     let original_cookie = format!("{}={}", cookie_name(&app.config), issued.token);
+    // Missing current password reaches shared business policy rather than DTO rejection.
+    error(
+        call(
+            &app,
+            request(
+                "PUT",
+                "/api/v1/me/password",
+                Some(&original_cookie),
+                Some(json!({"new_password": "another-permanent-password"})),
+            ),
+        )
+        .await,
+        StatusCode::UNAUTHORIZED,
+        "unauthorized",
+    )
+    .await;
     let response = call(
         &app,
         request(

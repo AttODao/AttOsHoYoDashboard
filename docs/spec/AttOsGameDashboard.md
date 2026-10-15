@@ -18,6 +18,7 @@ HoYoLAB連携・手動報酬受け取り・自動報酬受け取りは通常機�
 - 招待・自由登録・PAT・Scope・外部クライアントAPIは提供しない。
 - 認証はWebセッションCookieのみ。HTTPSでは `__Host-attos_session`、localhost HTTPでは `attos_session` を使う。Cookieは HttpOnly / SameSite=Strict、HTTPSでは Secure。
 - セッションはログイン時から固定期限（既定7日）で、アクセスでは延長しない。パスワード変更は他セッションを失効させ、現在セッションの期限は延長しない。
+- 初回・再発行後の必須パスワード設定は新パスワード＋確認のみを入力し、ログイン時の仮パスワードを保持しない。`PUT /api/v1/me/password` の `current_password` は、ユーザー行lock下で再認証した最新アカウントが `must_change_password=true` の場合のみ省略（またはnull）できる。通常変更は正しい現在パスワードが必須で、明示した不正な値は必須設定時も拒否する。新パスワードは省略時も保存済みパスワードと異なる必要があり、確認入力はクライアントで照合してAPIには送らない。失効・期限切れセッションや競合でhash/必須flagが変わったsnapshotは拒否する。
 - mutationは同一Originを必須とし、`Origin` が `PUBLIC_ORIGIN` と完全一致しなければ拒否する。
 - JSON DTOは未知fieldを拒否する。エラーは安全な `error` code とsanitized `message` で返し、Cookie・パスワード・セッショントークン・上流raw messageを含めない。
 - ログイン入口は全体で毎分20リクエストに制限する。passkey CPU枠が満杯の場合は待機列を増やさず503を返す。

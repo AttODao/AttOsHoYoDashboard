@@ -61,7 +61,7 @@ pub(super) async fn ready_user(accounts: &Accounts, admin: &Identity, username: 
         .await
         .unwrap();
     let (_, session) = accounts
-        .change_password(&actor, TEMP_PASSWORD.into(), PASSWORD.into())
+        .change_password(&actor, Some(TEMP_PASSWORD.into()), PASSWORD.into())
         .await
         .unwrap();
     Sessions::authenticate(&accounts.db, &token_hash(&session.token).unwrap())

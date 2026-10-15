@@ -138,7 +138,11 @@ async fn delete_endpoint_queues_owner_deletion_revokes_session_and_rejects_last_
     .await
     .unwrap();
     accounts
-        .change_password(&actor, PASSWORD.into(), "changed-http-password-123".into())
+        .change_password(
+            &actor,
+            Some(PASSWORD.into()),
+            "changed-http-password-123".into(),
+        )
         .await
         .unwrap();
     let app = app(accounts);

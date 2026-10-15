@@ -35,7 +35,11 @@ async fn ready_user(accounts: &Accounts, admin: &Identity, username: &str) -> Id
         .unwrap();
     let temporary = identity(&accounts.db, &issued).await;
     let (_, issued) = accounts
-        .change_password(&temporary, TEMP_PASSWORD.to_owned(), PASSWORD.to_owned())
+        .change_password(
+            &temporary,
+            Some(TEMP_PASSWORD.to_owned()),
+            PASSWORD.to_owned(),
+        )
         .await
         .unwrap();
     identity(&accounts.db, &issued).await

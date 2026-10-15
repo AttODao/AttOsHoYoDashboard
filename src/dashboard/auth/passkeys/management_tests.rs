@@ -234,7 +234,7 @@ async fn recovery_removes_keys_and_sessions_and_invalidates_both_pending_ceremon
         .unwrap();
     fixture
         .accounts
-        .change_password(&temporary, TEMP_PASSWORD.into(), PASSWORD.into())
+        .change_password(&temporary, Some(TEMP_PASSWORD.into()), PASSWORD.into())
         .await
         .unwrap();
     assert!(matches!(

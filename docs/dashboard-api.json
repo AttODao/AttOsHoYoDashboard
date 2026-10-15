@@ -755,6 +755,7 @@
         ],
         "operationId": "changePassword",
         "summary": "Change current user's password and rotate the session secret without extending expiry.",
+        "description": "Authenticated mandatory first/reissued password setup may omit current_password. Ordinary changes require the correct current_password; an explicitly supplied incorrect value is always rejected. The new password must differ from the stored password even when current_password is omitted. Confirmation is checked by the client, not sent to this endpoint. The business layer reauthenticates the session and validates account freshness under the user lock, revokes all existing sessions, and issues a replacement with the same login deadline.",
         "responses": {
           "200": {
             "description": "OK.",
@@ -2791,13 +2792,16 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "current_password",
           "new_password"
         ],
         "properties": {
           "current_password": {
-            "type": "string",
-            "format": "password"
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "password",
+            "description": "Required for ordinary password changes. May be omitted or null only for a fresh authenticated account with must_change_password=true (first/reissued setup). If supplied, must be correct."
           },
           "new_password": {
             "type": "string",

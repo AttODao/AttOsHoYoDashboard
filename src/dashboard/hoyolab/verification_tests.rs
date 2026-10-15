@@ -192,7 +192,7 @@ async fn candidate_or_claim_mismatch_never_promotes_and_uid_collision_does_not_r
     let (_, session) = accounts
         .change_password(
             &login,
-            "temporary-password-123".into(),
+            Some("temporary-password-123".into()),
             "changed-password-123".into(),
         )
         .await
@@ -322,7 +322,7 @@ async fn disabling_during_identity_get_prevents_link_promotion() {
     let (_, session) = accounts
         .change_password(
             &first,
-            "temporary-password-123".into(),
+            Some("temporary-password-123".into()),
             "changed-password-123".into(),
         )
         .await

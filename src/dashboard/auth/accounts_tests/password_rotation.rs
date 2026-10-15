@@ -1,15 +1,206 @@
 use super::{audit_count, identity, stub_passkey};
 use crate::dashboard::{
-    auth::{accounts::lock_user, password::token_hash, sessions::Sessions},
+    auth::{
+        accounts::{Accounts, lock_user},
+        password::token_hash,
+        sessions::{Identity, Sessions},
+    },
     db::entities::{passkey, session, user},
     error::Error,
-    test_support::{PASSWORD, TestDatabase},
+    test_support::{PASSWORD, TEMP_PASSWORD, TestDatabase},
 };
 use chrono::{Duration, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait,
     PaginatorTrait, QueryFilter, Set, Statement, TransactionTrait,
 };
+
+async fn mandatory_admin(test: &TestDatabase) -> (Accounts, Identity) {
+    let accounts = Accounts::new(test.db.clone(), Duration::days(7))
+        .await
+        .unwrap();
+    accounts
+        .bootstrap_admin("admin".into(), TEMP_PASSWORD.into())
+        .await
+        .unwrap();
+    let (_, session) = accounts
+        .login("admin".into(), TEMP_PASSWORD.into())
+        .await
+        .unwrap();
+    (accounts, identity(&test.db, &session).await)
+}
+
+#[tokio::test]
+async fn mandatory_password_setup_omits_current_but_rejects_reuse_and_preserves_deadline() {
+    let test = TestDatabase::new().await;
+    let (accounts, original) = mandatory_admin(&test).await;
+    let deadline = chrono::DateTime::from_timestamp_micros(
+        (Utc::now() + Duration::minutes(4)).timestamp_micros(),
+    )
+    .unwrap();
+    let tx = test.db.begin().await.unwrap();
+    lock_user(&tx, original.user.id).await.unwrap();
+    let session = Sessions::issue_until(&tx, original.user.id, deadline)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let actor = identity(&test.db, &session).await;
+    assert!(matches!(
+        accounts
+            .change_password(&actor, None, TEMP_PASSWORD.into())
+            .await,
+        Err(Error::Invalid(
+            "new password must differ from current password"
+        ))
+    ));
+    // Optional does not mean an explicitly supplied incorrect value is ignored.
+    assert!(matches!(
+        accounts
+            .change_password(&actor, Some("incorrect-current".into()), PASSWORD.into())
+            .await,
+        Err(Error::Unauthorized)
+    ));
+    let (user, issued) = accounts
+        .change_password(&actor, None, PASSWORD.into())
+        .await
+        .unwrap();
+    assert!(!user.must_change_password);
+    assert_eq!(issued.expires_at, deadline);
+    for stale in [&actor, &original] {
+        assert!(matches!(
+            Sessions::authenticate(&test.db, &stale.token_hash).await,
+            Err(Error::Unauthorized)
+        ));
+        assert!(matches!(
+            accounts
+                .change_password(stale, None, "another-password".into())
+                .await,
+            Err(Error::Unauthorized)
+        ));
+    }
+    let ready = identity(&test.db, &issued).await;
+    assert_eq!(ready.expires_at, deadline);
+    assert!(matches!(
+        accounts
+            .change_password(&ready, None, "another-password".into())
+            .await,
+        Err(Error::Unauthorized)
+    ));
+    assert_eq!(
+        audit_count(&test.db, Some(user.id), user.id, "password_changed").await,
+        1
+    );
+}
+
+#[tokio::test]
+async fn mandatory_password_setup_rechecks_session_hash_and_flag_after_waiting_for_user_lock() {
+    for race in ["hash", "flag", "expired", "revoked"] {
+        let test = TestDatabase::new().await;
+        let (accounts, actor) = mandatory_admin(&test).await;
+        let gate = test.db.begin().await.unwrap();
+        lock_user(&gate, actor.user.id).await.unwrap();
+        let (changed, ()) = tokio::join!(
+            accounts.change_password(&actor, None, PASSWORD.into()),
+            async {
+                wait_for_lock_waiters(&test.db, 1).await;
+                match race {
+                    "hash" | "flag" => {
+                        let mut update = user::ActiveModel {
+                            id: Set(actor.user.id),
+                            ..Default::default()
+                        };
+                        if race == "hash" {
+                            update.password_hash = Set("synthetic-raced-hash".into());
+                        } else {
+                            update.must_change_password = Set(false);
+                        }
+                        update.update(&gate).await.unwrap();
+                    }
+                    "expired" => {
+                        session::ActiveModel {
+                            token_hash: Set(actor.token_hash.clone()),
+                            expires_at: Set(Utc::now() - Duration::seconds(1)),
+                            ..Default::default()
+                        }
+                        .update(&gate)
+                        .await
+                        .unwrap();
+                    }
+                    "revoked" => Sessions::revoke_all(&gate, actor.user.id).await.unwrap(),
+                    _ => unreachable!(),
+                }
+                gate.commit().await.unwrap();
+            }
+        );
+        assert!(matches!(changed, Err(Error::Unauthorized)), "race: {race}");
+        let unchanged = user::Entity::find_by_id(actor.user.id)
+            .one(&test.db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            unchanged.password_hash
+                == if race == "hash" {
+                    "synthetic-raced-hash"
+                } else {
+                    &actor.user.password_hash
+                }
+        );
+        assert_eq!(unchanged.must_change_password, race != "flag");
+        assert_eq!(
+            audit_count(
+                &test.db,
+                Some(actor.user.id),
+                actor.user.id,
+                "password_changed"
+            )
+            .await,
+            0
+        );
+    }
+}
+
+#[tokio::test]
+async fn reissued_password_revokes_old_mandatory_session_and_new_login_can_omit_current() {
+    let test = TestDatabase::new().await;
+    let (accounts, admin) = test.ready_admin().await;
+    let target = accounts
+        .create_user(&admin, "ordinary".into(), TEMP_PASSWORD.into())
+        .await
+        .unwrap();
+    let (_, old) = accounts
+        .login("ordinary".into(), TEMP_PASSWORD.into())
+        .await
+        .unwrap();
+    let stale = identity(&test.db, &old).await;
+    accounts
+        .reset_password(&admin, target.id, "reissued-temporary-password".into())
+        .await
+        .unwrap();
+    assert!(matches!(
+        accounts
+            .change_password(&stale, None, PASSWORD.into())
+            .await,
+        Err(Error::Unauthorized)
+    ));
+    let (_, login) = accounts
+        .login("ordinary".into(), "reissued-temporary-password".into())
+        .await
+        .unwrap();
+    let actor = identity(&test.db, &login).await;
+    assert!(matches!(
+        accounts
+            .change_password(&actor, None, "reissued-temporary-password".into())
+            .await,
+        Err(Error::Invalid(_))
+    ));
+    let (user, issued) = accounts
+        .change_password(&actor, None, PASSWORD.into())
+        .await
+        .unwrap();
+    assert!(!user.must_change_password);
+    assert_eq!(issued.expires_at, actor.expires_at);
+}
 
 async fn wait_for_lock_waiters(db: &DatabaseConnection, expected: i64) {
     // Each fixture owns a cluster; only these password-change transactions can be lock waiters.
@@ -48,9 +239,15 @@ async fn password_rotation_preserves_original_deadline_revokes_others_and_valida
     let key = stub_passkey(&test.db, admin.user.id).await;
     assert!(matches!(
         accounts
+            .change_password(&actor, None, "replacement-password".to_owned())
+            .await,
+        Err(Error::Unauthorized)
+    ));
+    assert!(matches!(
+        accounts
             .change_password(
                 &actor,
-                "incorrect-current".to_owned(),
+                Some("incorrect-current".to_owned()),
                 "replacement-password".to_owned()
             )
             .await,
@@ -58,13 +255,13 @@ async fn password_rotation_preserves_original_deadline_revokes_others_and_valida
     ));
     assert!(matches!(
         accounts
-            .change_password(&actor, PASSWORD.to_owned(), PASSWORD.to_owned())
+            .change_password(&actor, Some(PASSWORD.to_owned()), PASSWORD.to_owned())
             .await,
         Err(Error::Invalid(_))
     ));
     assert!(matches!(
         accounts
-            .change_password(&actor, PASSWORD.to_owned(), "short".to_owned())
+            .change_password(&actor, Some(PASSWORD.to_owned()), "short".to_owned())
             .await,
         Err(Error::Invalid(_))
     ));
@@ -76,7 +273,7 @@ async fn password_rotation_preserves_original_deadline_revokes_others_and_valida
     let (updated, replacement) = accounts
         .change_password(
             &actor,
-            PASSWORD.to_owned(),
+            Some(PASSWORD.to_owned()),
             "replacement-password".to_owned(),
         )
         .await
@@ -143,7 +340,7 @@ async fn password_change_reauthenticates_deadline_instead_of_trusting_live_snaps
     let (changed, ()) = tokio::join!(
         accounts.change_password(
             &actor,
-            PASSWORD.to_owned(),
+            Some(PASSWORD.to_owned()),
             "replacement-password".to_owned()
         ),
         async {
@@ -195,12 +392,12 @@ async fn concurrent_password_changes_from_same_authenticated_snapshot_have_one_w
     let (a, b, ()) = tokio::join!(
         accounts.change_password(
             &first,
-            PASSWORD.to_owned(),
+            Some(PASSWORD.to_owned()),
             "first-replacement-password".to_owned()
         ),
         accounts.change_password(
             &second,
-            PASSWORD.to_owned(),
+            Some(PASSWORD.to_owned()),
             "second-replacement-password".to_owned()
         ),
         async {
