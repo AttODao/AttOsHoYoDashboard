@@ -6,11 +6,11 @@
 
 | 領域 | 状態 |
 |---|---|
-| 基盤 | APIとDashboardを`serve-api`／`serve-dashboard`で独立起動。migrationと初期ユーザー作成はAPI側だけで実行し、既存ユーザーは上書きしない |
+| 基盤 | 単一バイナリの`serve`でAPI・Dashboardを同一portに公開。migrationと空DBへの初期管理者作成も行い、既存ユーザーは上書きしない |
 | 開発環境 | `devenv.nix`／`devenv.yaml`／`devenv.lock`でツールを固定。通常shell/testでは`.env`自動読込・DB service起動なし |
 | Project skills | `.agents/skills/`にCodex／共通版8件、`.pi/skills/`にImpeccable Pi版を実ファイルとしてGit管理。devenv・生成Pi設定・Nix storeリンクに非依存 |
-| 起動構成 | `launch-server`／`launch-api`／`launch-dashboard`。`.env.test`のDB名・role・passwordを使用し、SCRAM認証で接続。通常稼動用`.env`と分離 |
-| Compose | `dashboard`・`api`・`db`の3コンテナ。共通Dockerfile、DB用volume、初期化SQLだけの最小構成。実コンテナのbuild/起動はDocker環境で別途確認 |
+| 起動構成 | `launch-server`でapp・専用DBを起動。`.env.test`のDB名・role・passwordを使用し、SCRAM認証で接続。通常稼動用`.env`と分離。`scripts/`は開発・テスト専用 |
+| Compose | Alpineの`app`・`db`の2コンテナ。Rustバイナリ直接起動、本番専用`docker/init-db.sql`、DB volumeのみ。`scripts/`は不使用。外側のHTTPS proxyで同一Originの`/api/v1/...`を公開。Alpine image build・static linkage・UI optimizer・container起動・TLSは未検証 |
 | 認証 | password login/logout、固定期限session、password rotation、管理者user管理、passkey login/registration/list/delete |
 | UI | Dioxus 0.7.10 Web/WASM RSX。承認済みAGD R3を本番RSXに実装。検証・残課題は[本番R3記録](../ui-design/production-r3.md)。official Dioxus Components由来Button/Cardをsource同梱 |
 | HoYoLAB Cookie | legacy/v2 parse normalization、AES-GCM保存、pending status、same-UID proof path実装 |
@@ -58,6 +58,8 @@
 - 実認証器、production TLS/reverse proxy、実配置path、live HoYoLAB契約は未検証。合成fixtureの成功を実上流契約の証明と扱わない。
 
 ## 5. 検証方針
+
+統合`serve`変更後の検証: devenv経由のfmt、native/WASM Clippy、workspace tests（218成功・live GET 1 ignored）、UI release build、通常/reduced-motionのbrowser回帰が成功。隔離したPostgreSQLで本番初期化SQL・非特権role・SCRAM・自動migration/bootstrap・同一portのUI/API・Origin拒否・password変更・初期認証情報なしの再起動/上書き防止・INT/TERM停止を確認。Compose公式CLIのconfig検証とdevenv profile評価も成功。Docker/Podman不在のため、Alpine image自体のbuild・static linkage・packaged Binaryen/esbuildの互換性・container/TLS動作は未検証。
 
 通常の自動テストはローカル合成UID、mock gateway、software passkey、isolated PostgreSQLを使い、production DB、real Cookie、real reward POSTは使わない。関連する確認コマンドの例:
 

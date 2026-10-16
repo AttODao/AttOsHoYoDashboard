@@ -70,6 +70,42 @@ async fn identity(db: &DatabaseConnection, issued: &IssuedSession) -> Identity {
         .unwrap()
 }
 
+#[tokio::test]
+async fn startup_bootstrap_only_reads_credentials_for_an_empty_database() {
+    let fixture = TestDatabase::new().await;
+    let accounts = Accounts::new(fixture.db.clone(), Duration::days(7))
+        .await
+        .unwrap();
+    assert!(matches!(
+        accounts
+            .bootstrap_if_empty(|| Err(Error::Invalid("missing synthetic initial credentials")))
+            .await,
+        Err(Error::Invalid(_))
+    ));
+    assert_eq!(user::Entity::find().count(&fixture.db).await.unwrap(), 0);
+    accounts
+        .bootstrap_if_empty(|| Ok(("synthetic-startup".into(), TEMP_PASSWORD.into())))
+        .await
+        .unwrap();
+    accounts
+        .bootstrap_if_empty(|| panic!("existing user must not read initial credentials"))
+        .await
+        .unwrap();
+    assert_eq!(user::Entity::find().count(&fixture.db).await.unwrap(), 1);
+    assert!(
+        accounts
+            .login("synthetic-startup".into(), TEMP_PASSWORD.into())
+            .await
+            .is_ok()
+    );
+    assert!(matches!(
+        accounts
+            .bootstrap_admin("another".into(), TEMP_PASSWORD.into())
+            .await,
+        Err(Error::Invalid(_))
+    ));
+}
+
 #[test]
 fn username_validation_has_exact_ascii_bounds() {
     for name in ["a", "Admin09._-", &"a".repeat(64)] {

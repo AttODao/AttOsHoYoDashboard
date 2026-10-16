@@ -9,6 +9,7 @@ mod passkeys;
 mod response;
 mod runtime;
 mod session;
+mod ui;
 mod users;
 
 use super::{App, CookieStore, HttpState, auth::LoginBudget, router, session::cookie_name};
@@ -37,6 +38,7 @@ fn config(secure_cookie: bool) -> Config {
     Config {
         database_url: "postgres://unused@localhost/unused".to_owned(),
         listen: "127.0.0.1:0".parse().unwrap(),
+        ui_dir: std::env::temp_dir().join(format!("attos-missing-ui-{}", Uuid::new_v4())),
         origin: ORIGIN.to_owned(),
         rp_id: "dashboard.example.test".to_owned(),
         secure_cookie,

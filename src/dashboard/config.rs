@@ -14,11 +14,6 @@ pub(super) struct Config {
     pub session_ttl: Duration,
     pub timezone: FixedOffset,
     pub cookie_key: Option<Arc<CookieKey>>,
-}
-
-pub(super) struct DashboardConfig {
-    pub listen: SocketAddr,
-    pub api_origin: Url,
     pub ui_dir: PathBuf,
 }
 
@@ -91,9 +86,9 @@ impl Config {
         mut read: impl FnMut(&str) -> std::result::Result<String, env::VarError>,
     ) -> Result<Self> {
         let database_url = database_url(&mut read)?;
-        let listen = setting(&mut read, "API_BIND_ADDR", "127.0.0.1:8081")?
+        let listen = setting(&mut read, "BIND_ADDR", "127.0.0.1:8080")?
             .parse()
-            .map_err(|_| Error::Invalid("invalid API_BIND_ADDR"))?;
+            .map_err(|_| Error::Invalid("invalid BIND_ADDR"))?;
         let url = Url::parse(&setting(
             &mut read,
             "PUBLIC_ORIGIN",
@@ -129,6 +124,16 @@ impl Config {
         let timezone = setting(&mut read, "TIMEZONE_OFFSET", "+09:00")?
             .parse()
             .map_err(|_| Error::Invalid("TIMEZONE_OFFSET must be a fixed UTC offset"))?;
+        let ui_dir = setting(
+            &mut read,
+            "DASHBOARD_UI_DIR",
+            "target/dx/attos-dashboard-ui/release/web/public",
+        )?;
+        if ui_dir.trim().is_empty() || ui_dir.contains('\0') {
+            return Err(Error::Invalid(
+                "DASHBOARD_UI_DIR must be a nonempty directory path",
+            ));
+        }
         let cookie_key = match read("HOYOLAB_COOKIE_KEY") {
             Ok(value) => Some(Arc::new(CookieKey::from_hex(&value)?)),
             Err(env::VarError::NotPresent) => None,
@@ -143,48 +148,6 @@ impl Config {
             session_ttl,
             timezone,
             cookie_key,
-        })
-    }
-}
-
-impl DashboardConfig {
-    pub fn load() -> Result<Self> {
-        Self::load_from(|name| env::var(name))
-    }
-
-    fn load_from(
-        mut read: impl FnMut(&str) -> std::result::Result<String, env::VarError>,
-    ) -> Result<Self> {
-        let listen = setting(&mut read, "DASHBOARD_BIND_ADDR", "127.0.0.1:8080")?
-            .parse()
-            .map_err(|_| Error::Invalid("invalid DASHBOARD_BIND_ADDR"))?;
-        let api_origin = Url::parse(&setting(&mut read, "API_ORIGIN", "http://127.0.0.1:8081")?)
-            .map_err(|_| Error::Invalid("invalid API_ORIGIN"))?;
-        if !matches!(api_origin.scheme(), "http" | "https")
-            || api_origin.host_str().is_none()
-            || !api_origin.username().is_empty()
-            || api_origin.password().is_some()
-            || api_origin.path() != "/"
-            || api_origin.query().is_some()
-            || api_origin.fragment().is_some()
-        {
-            return Err(Error::Invalid(
-                "API_ORIGIN must be an HTTP(S) origin without credentials or path",
-            ));
-        }
-        let ui_dir = setting(
-            &mut read,
-            "DASHBOARD_UI_DIR",
-            "target/dx/attos-dashboard-ui/release/web/public",
-        )?;
-        if ui_dir.trim().is_empty() || ui_dir.contains('\0') {
-            return Err(Error::Invalid(
-                "DASHBOARD_UI_DIR must be a nonempty directory path",
-            ));
-        }
-        Ok(Self {
-            listen,
-            api_origin,
             ui_dir: ui_dir.into(),
         })
     }

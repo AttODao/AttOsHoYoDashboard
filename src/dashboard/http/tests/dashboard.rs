@@ -6,12 +6,18 @@ use crate::dashboard::{
 };
 use sea_orm::EntityTrait;
 #[tokio::test]
-async fn api_router_is_independent_of_dashboard_assets() {
-    let app = disconnected_app().await;
+async fn api_and_dashboard_routes_coexist_on_the_same_router() {
+    let (_bundle, app) = super::ui::fixture().await;
     for path in ["/", "/docs", "/assets/app.js"] {
         let response = call(&app, request("GET", path, None, None)).await;
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(response.status(), StatusCode::OK);
     }
+    error(
+        call(&app, request("GET", "/api/v1/me", None, None)).await,
+        StatusCode::UNAUTHORIZED,
+        "unauthorized",
+    )
+    .await;
     let response = call(&app, request("GET", "/openapi.json", None, None)).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert!(

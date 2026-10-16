@@ -1,7 +1,7 @@
 //! Command dispatch and bounded standard-input handling; no account policy here.
 use super::{
     auth::accounts::Accounts,
-    config::{Config, DashboardConfig},
+    config::Config,
     db,
     error::{Error, Result},
     http,
@@ -10,29 +10,33 @@ use std::io::Read;
 
 pub(crate) async fn run() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let command = args.first().map(String::as_str).unwrap_or("serve-api");
+    let command = args.first().map(String::as_str).unwrap_or("serve");
     if command == "help" || command == "--help" {
         println!(
-            "Commands: serve-api | serve-dashboard | migrate | bootstrap-admin [USERNAME]\nbootstrap-admin USERNAME reads the temporary password from standard input\nbootstrap-admin uses INITIAL_ADMIN_USERNAME and INITIAL_ADMIN_PASSWORD"
+            "Commands: serve | migrate | bootstrap-admin [USERNAME]\nbootstrap-admin USERNAME reads the temporary password from standard input\nbootstrap-admin uses INITIAL_ADMIN_USERNAME and INITIAL_ADMIN_PASSWORD"
         );
         return Ok(());
     }
     let valid = matches!(
         (command, args.len()),
-        ("serve" | "serve-api" | "serve-dashboard" | "migrate", 0 | 1) | ("bootstrap-admin", 1 | 2)
+        ("serve" | "migrate", 0 | 1) | ("bootstrap-admin", 1 | 2)
     );
     if !valid {
         return Err(Error::Invalid(
-            "usage: attosgameapi [serve-api | serve-dashboard | migrate | bootstrap-admin [USERNAME]]",
+            "usage: attosgameapi [serve | migrate | bootstrap-admin [USERNAME]]",
         ));
-    }
-    if command == "serve-dashboard" {
-        return http::ui::serve(DashboardConfig::load()?).await;
     }
     let config = Config::load()?;
     let db = db::connect(&config.database_url).await?;
     match command {
-        "serve" | "serve-api" => http::serve(db, config).await?,
+        "serve" => {
+            db::migrate(&db).await?;
+            let accounts = Accounts::new(db, config.session_ttl).await?;
+            accounts
+                .bootstrap_if_empty(|| initial_admin_from_env(|name| std::env::var(name)))
+                .await?;
+            http::serve(accounts, config).await?;
+        }
         "migrate" => {
             db::migrate(&db).await?;
             println!("Migrations applied");

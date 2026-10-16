@@ -8,7 +8,7 @@ mod response;
 mod rewards;
 mod runtime;
 mod session;
-pub(super) mod ui;
+mod ui;
 mod users;
 
 #[cfg(test)]
@@ -30,7 +30,6 @@ use axum::{
     middleware::from_fn_with_state,
     routing::get,
 };
-use sea_orm::DatabaseConnection;
 use serde_json::json;
 use std::{
     sync::{Arc, Mutex},
@@ -47,7 +46,8 @@ struct HttpState {
     login_budget: Mutex<auth::LoginBudget>,
 }
 
-pub(super) async fn serve(db: DatabaseConnection, config: Config) -> Result<()> {
+pub(super) async fn serve(accounts: Accounts, config: Config) -> Result<()> {
+    let db = accounts.db.clone();
     let operations = super::hoyolab::operations::Operations::default();
     let cookies = config.cookie_key.as_ref().map(|key| {
         let mut store = CookieStore::new(db.clone(), Arc::clone(key));
@@ -55,7 +55,6 @@ pub(super) async fn serve(db: DatabaseConnection, config: Config) -> Result<()> 
         store.timezone = config.timezone;
         Arc::new(store)
     });
-    let accounts = Accounts::new(db, config.session_ttl).await?;
     let passkeys = Passkeys::new(&config.rp_id, &config.origin)?;
     let app = Arc::new(HttpState {
         accounts,
@@ -68,11 +67,19 @@ pub(super) async fn serve(db: DatabaseConnection, config: Config) -> Result<()> 
             attempts: 0,
         }),
     });
+    if !tokio::fs::metadata(app.config.ui_dir.join("index.html"))
+        .await
+        .is_ok_and(|metadata| metadata.is_file())
+    {
+        return Err(Error::Unavailable(
+            "build the Dioxus UI before starting the server",
+        ));
+    }
     let router = router(app.clone());
     let listener = tokio::net::TcpListener::bind(app.config.listen)
         .await
         .map_err(|_| Error::Internal)?;
-    tracing::info!(address = %app.config.listen, timezone = %app.config.timezone, "api listening");
+    tracing::info!(address = %app.config.listen, timezone = %app.config.timezone, "dashboard listening");
     let (stop, stopped) = tokio::sync::watch::channel(false);
     let worker = tokio::spawn(runtime::run(app.clone(), stopped));
     let stopping = app.cookies.clone();
@@ -103,6 +110,7 @@ fn router(app: App) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/openapi.json", get(ui::openapi))
+        .merge(ui::routes(&app))
         .merge(auth::public_routes())
         .merge(passkeys::public_routes())
         .merge(protected)

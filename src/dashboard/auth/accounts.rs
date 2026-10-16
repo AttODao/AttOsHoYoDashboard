@@ -39,6 +39,19 @@ impl Accounts {
         })
     }
 
+    pub(in crate::dashboard) async fn bootstrap_if_empty(
+        &self,
+        credentials: impl FnOnce() -> Result<(String, String)>,
+    ) -> Result<()> {
+        if user::Entity::find().count(&self.db).await? != 0 {
+            return Ok(());
+        }
+        let (username, password) = credentials()?;
+        // bootstrap_admin owns the final empty-table check and exclusive lock.
+        self.bootstrap_admin(username, password).await?;
+        Ok(())
+    }
+
     pub(in crate::dashboard) async fn bootstrap_admin(
         &self,
         username: String,

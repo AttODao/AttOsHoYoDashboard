@@ -2,12 +2,11 @@
 
 ## 1. 構成
 
-APIとDashboardは独立したRustプロセスで起動する。APIはAxum HTTP、Tokio runtime、SeaORM + PostgreSQL、Argon2id、WebAuthnを使い、DashboardはDioxus 0.7.10 Web/WASM RSXの配信と固定API先へのproxyを担当する。UIはstandalone workspace crate `dashboard-ui` / package `attos-dashboard-ui` で構築し、`dx build --package attos-dashboard-ui --platform web --release` のpublic出力を `DASHBOARD_UI_DIR` から配信する。公式Dioxus Components由来のButton/Card/Card partsをDioxusLabs/components `9a758255ea26e2b20c8cecf4c1c946feb9e71da7`（MIT）からsource templateとして同梱し、`dioxus-primitives` も同じimmutable SHAにpinする。SSR/fullstack server、native app、CDN、危険なHTML injectionや`document::eval`は使わない。
+単一Rustバイナリの`serve`でAPIとDashboardを同じAxum HTTP listenerから提供する。Tokio runtime、SeaORM + PostgreSQL、Argon2id、WebAuthnを使い、DashboardはDioxus 0.7.10 Web/WASM RSXを配信する。UIはstandalone workspace crate `dashboard-ui` / package `attos-dashboard-ui` で構築し、`dx build --package attos-dashboard-ui --platform web --release` のpublic出力を `DASHBOARD_UI_DIR` から配信する。公式Dioxus Components由来のButton/Card/Card partsをDioxusLabs/components `9a758255ea26e2b20c8cecf4c1c946feb9e71da7`（MIT）からsource templateとして同梱し、`dioxus-primitives` も同じimmutable SHAにpinする。SSR/fullstack server、native app、CDN、危険なHTML injectionや`document::eval`は使わない。
 
 ```mermaid
 flowchart TB
-    browser["Dioxus Web/WASM RSX UI"] --> dashboard["Dashboard: static + same-origin proxy"]
-    dashboard --> api["Axum Web Session API"]
+    browser["Dioxus Web/WASM RSX UI"] --> api["Axum: Dashboard static + Web Session API"]
     api --> auth["auth: accounts/sessions/passkeys"]
     api --> hl["HoYoLAB verification/sync"]
     api --> games["games: role-owned status cache"]
@@ -28,7 +27,7 @@ flowchart TB
 - `dashboard-ui/src/app/preferences.rs`は言語・テーマだけの永続化、`credentials.rs`はWeb Cryptoによる仮パスワード生成とclipboard境界を持つ。秘密・表示状態は永続化しない。
 - `dashboard-ui/src/pages/`: `auth`・`shell`・`dashboard`・`hoyolab`・`accounts`・`rewards`・`security`・`admin`・`deletion`・`docs`に画面責務を分け、`common`にField/Metric/PasswordInputなどを置く。AGD R3はサイドバーなしの右drawer、5つの設定タブ、desktopの2ゲーム同時表示とmobileのゲームタブを使う。UID選択・status取得はゲームごと、automation変更と時刻保存は`app/data.rs`の共有処理を通す。`api.rs`・`models.rs`・`webauthn.rs`はHTTP・DTO・ブラウザ認証器境界を持ち、localStorage secrets、manual Cookie/Origin header、SSR/fullstack serverは持たない。
 - `dashboard-ui/src/components/`: official Dioxus Components由来Button/Card/Card partsとMIT/provenance。
-- `src/dashboard/http/mod.rs`: API route compositionとworker lifetime。`ui.rs`は独立Dashboard serverとしてcompiled UI・`/docs`・有界API proxyを提供する。API自身は`/openapi.json`を公開するがUI assetsを要求・配信しない。
+- `src/dashboard/http/mod.rs`: API・static route compositionと単一HTTP listener・worker lifetime。`ui.rs`はcompiled UI・`/docs`・`/assets`・`/openapi.json`を提供する。CLIの`serve`がmigrationと空DBの初期管理者作成を行い、事前に構築したAccountsをserverへ渡す。
 - `src/dashboard/auth/`: user lifecycle、password/session、passkey registration/authentication、deletion request。
 - `src/dashboard/hoyolab/`: owner operation lock、identity/roles整合性検証・sync。`credentials.rs`がCredentials/CookieKeyの窓口を持ち、`credentials/parser.rs`がCookie解析・正規化、`credentials/crypto.rs`がAES-256-GCM保存を担当する。Cookie claimは本人確認の証拠にせず、暗号化v1のnonce・AAD・保存形式は維持する。
 - `src/dashboard/games/`: owned game UID list、visibility、curated status cache。
@@ -40,7 +39,7 @@ APIとschedulerは同じDB/業務処理を使う。単一process/instance前提�
 
 ### 1.1. DioxusとAPI/UI境界
 
-現構成はDioxus Webのclient-side rendering + Axum REST APIで、`serve-api`と`serve-dashboard`を別プロセスで起動する。DashboardはAPI/DB停止中も起動でき、APIはUI bundleがなくても起動できる。ブラウザからはDashboard originの相対APIパスを使い、Dashboardが固定`API_ORIGIN`へ転送する。Origin/Cookie/複数Set-Cookieを維持し、hop-by-hop headersとHostは除外する。redirect追従・環境proxy・任意target指定は禁止し、request 16KiB/response 1MiBの境界を置く。Dioxusの[Resource公式API例](https://docs.rs/dioxus/0.7.10/dioxus/prelude/struct.Resource.html)も通常のHTTP取得を扱っており、この構成はDioxusに反しない。ただし「同一RustのUI専用backendで常に最良」とはしない。
+現構成はDioxus Webのclient-side rendering + Axum REST APIで、`serve`がUIとAPIを同一process・portで提供する。ブラウザは同一Originの相対`/api/v1/...`を直接使い、内部HTTP proxyやCORSはない。DockerはAlpineベースの`app`と`db`だけで、appはRustバイナリを直接起動する。`scripts/`は開発・テスト専用で、本番Dockerから除外する。DBの本番初期化は`docker/init-db.sql`を使う。公開時は`PUBLIC_ORIGIN=https://agd.example.com`、`RP_ID=agd.example.com`とし、外側のHTTPS reverse proxyからパスを変更せず転送する。
 
 [Dioxus 0.7 Fullstackのserver functions](https://dioxuslabs.com/learn/0.7/essentials/fullstack/server_functions/)はAxum互換endpointと型付きclient呼び出しを生成する。新規のUI専用Rustアプリなら、手書きURL/JSON transportとDTOの二重管理を減らす有力な選択である。業務serviceやAxumを捨てる必要はない。一方、認証・Origin/Cookie・fresh authorization・mutation single-flight・owner切替・safe error・POST不確実性の処理は自動的には代替されない。
 
