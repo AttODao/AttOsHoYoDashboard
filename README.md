@@ -54,6 +54,30 @@ RP_ID="agd.example.com"
 | `/docs` / `/openapi.json` | API仕様の閲覧／OpenAPI JSON |
 | `/health` | DB疎通確認。正常時 `{"status":"ok"}` |
 
+## 開発とUI設計
+
+ビルド・検証は `devenv shell -- …` 経由で実行します。UI回帰は `devenv shell -- test-ui`。
+
+Impeccableは `.pi/skills/impeccable/` にGit管理したプロジェクト専用スキルです。ルートの [PRODUCT.md](PRODUCT.md) と [DESIGN.md](DESIGN.md) が本実装のコンテキストです。
+
+```sh
+.pi/skills/impeccable/scripts/impeccable context --target dashboard-ui/src
+# ランチャーの隔離検証（外部通信なし）
+devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
+```
+
+エンジンは初回に公開releaseからSHA-256を確認して `.impeccable/cache/` へ取得します（未追跡）。curl／wgetがない場合は既存のNodeを使用します。ユーザー共通設定・スキルは変更しません。Pi向け自動detector hookはないため、UI変更の最後にスキルの指示に従い手動検査します。
+
+### UIモジュール
+
+| パス | 責務 |
+| --- | --- |
+| `dashboard-ui/src/app/navigation.rs` | URLハッシュと戻る／進む・初期ページの対応 |
+| `dashboard-ui/src/app/state.rs` | 画面状態、認証・初期設定ゲートと画面データ取得の起動 |
+| `dashboard-ui/src/app/display.rs` | 数値・ブラウザの言語／ローカル時刻による日時表示 |
+| `dashboard-ui/src/pages/` | 画面、メニュー、設定、ユーザー管理 |
+| `src/dashboard/games/summary.rs` | 上流ゲーム状態から画面用の要約への写像 |
+
 ## HoYoLAB連携
 
 初回パスワード変更後、連携画面からHoYoLAB Cookieを登録し、検証を完了してください。Cookieは <https://www.hoyolab.com> にログインしたブラウザのApplication／Storageから取得します。

@@ -35,6 +35,29 @@ fn is_own_user(state: Signal<AppState>, target: uuid::Uuid) -> bool {
     state.read().me.as_ref().is_some_and(|me| me.id == target)
 }
 
+// UI feedback only; the backend remains the authority on lifecycle policy.
+fn guard_user_change(state: Signal<AppState>, target: uuid::Uuid) -> bool {
+    if !is_admin(state) || state.read().busy {
+        return false;
+    }
+    let last_admin = {
+        let read = state.read();
+        let Some(user) = read.admin_users.iter().find(|user| user.id == target) else {
+            return false;
+        };
+        protected_last_admin(user, &read.admin_users)
+    };
+    if last_admin {
+        set_status(
+            state,
+            "admin.the_last_active_administrator_cannot_be_disabled_or_deleted",
+            "error",
+        );
+        return false;
+    }
+    !is_own_user(state, target)
+}
+
 #[component]
 pub(super) fn AdminPage(state: Signal<AppState>) -> Element {
     let prefs = use_preferences();
@@ -94,7 +117,20 @@ pub(super) fn AdminCard(state: Signal<AppState>, compact: bool) -> Element {
                 CardContent { class: "form-stack",
                     if state.read().admin_error.is_some() { p { class: "warning", role: "alert", {prefs.text("admin.could_not_load_users")} } }
                     if state.read().admin_users.is_empty() && state.read().admin_error.is_none() { p { {prefs.text("admin.no_users")} } }
-                    for user in state.read().admin_users.clone() { AdminUserRow { key: "{user.id}", state, user, result } }
+                    if !state.read().admin_users.is_empty() {
+                        div { class: "table-wrap", role: "region", tabindex: "0", "aria-label": prefs.text("admin.manage_users"),
+                            table { "aria-label": prefs.text("admin.manage_users"),
+                                thead { tr {
+                                    th { scope: "col", {prefs.text("admin.username")} }
+                                    th { scope: "col", {prefs.text("admin.status")} }
+                                    th { scope: "col", {prefs.text("admin.actions")} }
+                                } }
+                                tbody {
+                                    for user in state.read().admin_users.clone() { AdminUserRow { key: "{user.id}", state, user, result } }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             Card {
@@ -139,14 +175,18 @@ fn AdminUserRow(
     let last_admin = protected_last_admin(&user, &state.read().admin_users);
     let own_account = is_own_user(state, user.id);
     let reset_name = user.username.clone();
+    let status_class = if user.active { "status" } else { "status off" };
     rsx! {
-        div { class: "setting-row",
-            div {
-                h3 { "{user.username}" }
-                span { class: "status", {if user.active { prefs.text("admin.active") } else { prefs.text("admin.inactive") }} }
-                if user.is_admin { span { class: "role-chip", {prefs.text("admin.admin")} } }
+        tr {
+            th { scope: "row",
+                "{user.username}"
+                if user.is_admin { " " span { class: "role-chip", {prefs.text("admin.admin")} } }
             }
-            div { class: "actions",
+            td {
+                span { class: status_class, {if user.active { prefs.text("admin.active") } else { prefs.text("admin.inactive") }} }
+            }
+            td {
+                div { class: "actions",
                 Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: state.read().busy || result.read().is_some(), onclick: move |_| {
                     if !is_admin(state) || state.read().busy { return; }
                     // Self-reissue revokes the session before its generated secret can be delivered.
@@ -172,8 +212,8 @@ fn AdminUserRow(
                         }
                     });
                 }, {if own_account { prefs.text("admin.change_password") } else { prefs.text("admin.reissue_password") }} }
-                Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: state.read().busy || last_admin || own_account, onclick: move |_| {
-                    if !is_admin(state) || state.read().busy || last_admin || is_own_user(state, user.id) { return; }
+                Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: state.read().busy || (own_account && !last_admin), onclick: move |_| {
+                    if !guard_user_change(state, user.id) { return; }
                     let id = user.id;
                     let active = !user.active;
                     spawn_action(state, move |generation| async move {
@@ -188,11 +228,13 @@ fn AdminUserRow(
                         }
                     });
                 }, {if user.active { prefs.text("admin.disable") } else { prefs.text("admin.re_enable") }} }
-                Button { variant: ButtonVariant::Destructive, r#type: "button", disabled: state.read().busy || last_admin || own_account, onclick: move |_| { if is_admin(state) && !state.read().busy && !last_admin && !is_own_user(state, user.id) { deleting.set(true); } }, {prefs.text("deletion.delete_user")} }
-                if last_admin { p { class: "warning", {prefs.text("admin.the_last_active_administrator_cannot_be_disabled_or_deleted")} } }
+                Button { variant: ButtonVariant::Destructive, r#type: "button", disabled: state.read().busy || (own_account && !last_admin), onclick: move |_| {
+                    if guard_user_change(state, user.id) { deleting.set(true); }
+                }, {prefs.text("deletion.delete_user")} }
+                }
+                if deleting() { DeleteUserDialog { state, user, deleting } }
             }
         }
-        if deleting() { DeleteUserDialog { state, user, deleting } }
     }
 }
 
@@ -213,7 +255,6 @@ fn DeleteUserDialog(
     let id = user.id;
     let password_id = format!("admin-delete-password-{id}");
     let confirm_id = format!("admin-delete-confirm-{id}");
-    let last_admin = protected_last_admin(&user, &state.read().admin_users);
     rsx! {
         AdminDialog { id: format!("admin-delete-{id}"), title: prefs.text("deletion.delete_user"), onclose: move |_| { current.set(String::new()); confirmation.set(String::new()); deleting.set(false); },
             p { "{user.username}" }
@@ -225,8 +266,8 @@ fn DeleteUserDialog(
             }
             div { class: "actions",
                 Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| { current.set(String::new()); confirmation.set(String::new()); deleting.set(false); }, {prefs.text("admin.cancel")} }
-                Button { variant: ButtonVariant::Destructive, r#type: "button", disabled: state.read().busy || last_admin || current.read().is_empty() || *confirmation.read() != user.username, onclick: move |_| {
-                    if !is_admin(state) || state.read().busy || last_admin || *confirmation.read() != user.username { return; }
+                Button { variant: ButtonVariant::Destructive, r#type: "button", disabled: state.read().busy || current.read().is_empty() || *confirmation.read() != user.username, onclick: move |_| {
+                    if !guard_user_change(state, user.id) || current.read().is_empty() || *confirmation.read() != user.username { return; }
                     let pass = std::mem::take(&mut *current.write());
                     let confirm = std::mem::take(&mut *confirmation.write());
                     spawn_action(state, move |generation| async move {
@@ -348,6 +389,58 @@ mod tests {
             &[target.clone(), user(2, true, true)]
         ));
         assert!(!protected_last_admin(&user(4, false, true), &[]));
+    }
+
+    #[test]
+    fn lifecycle_guard_reports_last_admin_only_on_attempt_and_rechecks_current_rows() {
+        fn check() -> Element {
+            let mut state = use_signal(|| AppState::new(Page::Admin));
+            let target = user(1, true, true);
+            state.write().phase = Phase::SignedIn;
+            state.write().me = Some(
+                serde_json::from_value(json!({
+                    "id": target.id, "username": "mock-admin", "is_admin": true,
+                    "active": true, "must_change_password": false,
+                    "onboarding": {"password_change_required": false, "cookie_setup_complete": true,
+                        "cookie_status": "verified", "verification_available": false},
+                    "capabilities": {"reward_posting_available": false}
+                }))
+                .unwrap(),
+            );
+            state.write().admin_users = vec![target.clone()];
+            assert!(state.read().status.is_none());
+            assert!(!guard_user_change(state, target.id));
+            {
+                let read = state.read();
+                let status = read.status.as_ref().unwrap();
+                assert_eq!(
+                    status.message_key,
+                    "admin.the_last_active_administrator_cannot_be_disabled_or_deleted"
+                );
+                assert_eq!(status.kind, "error");
+            }
+            // Another active admin removes last-admin protection, not self protection.
+            state.write().admin_users.push(user(2, true, true));
+            state.write().status = None;
+            assert!(!guard_user_change(state, target.id));
+            assert!(state.read().status.is_none());
+            assert!(guard_user_change(state, uuid::Uuid::from_u128(2)));
+            // Recheck refreshed rows, including changes since a delete dialog opened.
+            state.write().admin_users[0].is_admin = false;
+            assert!(!guard_user_change(state, uuid::Uuid::from_u128(2)));
+            assert!(state.read().status.is_some());
+            state.write().status = None;
+            state.write().busy = true;
+            assert!(!guard_user_change(state, uuid::Uuid::from_u128(2)));
+            assert!(state.read().status.is_none());
+            state.write().busy = false;
+            assert!(!guard_user_change(state, uuid::Uuid::from_u128(99)));
+            state.write().phase = Phase::SignedOut;
+            assert!(!guard_user_change(state, uuid::Uuid::from_u128(2)));
+            assert!(state.read().status.is_none());
+            rsx! {}
+        }
+        VirtualDom::new(check).rebuild_in_place();
     }
 
     #[test]

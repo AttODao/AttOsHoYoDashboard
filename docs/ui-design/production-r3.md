@@ -12,6 +12,16 @@
 
 `pages/common.rs`は共通入力・アイコン・native dialogのDOM lifecycle、`app/preferences.rs`は非機密設定、`app/credentials.rs`は生成・clipboard境界、`app/data.rs`はゲーム別取得と設定保存の共有処理を持つ。
 
+## 2026-10-16 可読性・操作の修正
+
+- 全回復と宝銭上限の見込みを意味付き`time`で表示し、選択言語・ブラウザのローカル時刻／タイムゾーンに整形。全回復だけOrbitron、宝銭は本文フォント。未取得・不正な日時は従来の未取得表示とする。
+- 派遣の明示的な名称／場所名と空リストを要約に保持。原神の通常の派遣データには名前がないため、URLから推測せず「派遣 1」等の番号を使う。空配列は「派遣なし」、配列自体がない場合は未取得を区別する。Star Railの実通信での仕様差は確認していない。
+- メニューの連携画面ショートカットを外部HoYoLABリンクへ置換。連携設定タブは維持。言語はnative select。ログアウトの仕切り線と内側フォーカス枠を分離し、フォーカス時も配置を保つ。
+- ロゴはDashboardへのリンクで、初期設定中はゲートを維持。`app/navigation.rs`が画面ごとのURLハッシュと戻る／進む・再読み込みを扱い、`app/state.rs`は共有の画面遷移と取得起動を担う。
+- ログインボーナス設定と実行履歴の間に区切り線。ユーザー管理は横スクロール領域内の意味付きtableとし、最後の有効な管理者の警告は操作時にのみ表示する。業務層・DB側の保護は変更しない。
+
+検証：devenv経由の整形・workspace全target／WASM Clippy、UI単体42件、ゲーム要約7件、release buildと通常／reduced-motionのブラウザ回帰を通過。日時の言語／タイムゾーン・フォント、派遣の欠落／空配列、履歴・再読み込み・初期設定ゲート、外部リンク、selectの翻訳／保存、ログアウトのフォーカス位置、table／操作時の管理者保護を検査。Desktop／mobileをcaptureして確認。Impeccableの手動検査で既存タブの3px下線が角丸カードと誤検知されたため、`border-radius:0`の実装を根拠にCSSファイルだけの例外を`.impeccable/config.json`へ記録した。実アカウント／実HoYoLAB通信は未実施。
+
 ## 表示文のi18n分離
 
 本番RSXの対訳・固定表示文を`dashboard-ui/locales/ja.json`／`en.json`へ移した。`src/i18n.rs`が埋め込みカタログの参照・英語fallback・名前付き補間を持ち、`app/preferences.rs`は言語／テーマ選択だけを扱う。API／WebAuthnエラーも安全なキーを保持し、UIで翻訳する。通知・取得エラーは言語変更時に再描画され、パスワード／UID選択／認証境界は維持する。read-only docsの見出し・表ラベルも翻訳対象にし、APIの提供データはそのまま表示する。

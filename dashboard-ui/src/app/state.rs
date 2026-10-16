@@ -182,8 +182,16 @@ impl AppState {
     }
 }
 
-pub(super) fn set_page(mut state: Signal<AppState>, page: Page) {
+pub(super) fn set_page(state: Signal<AppState>, page: Page) {
     if state.read().busy {
+        return;
+    }
+    super::navigation::push_page(page);
+    restore_page(state, page);
+}
+
+pub(super) fn restore_page(mut state: Signal<AppState>, page: Page) {
+    if state.read().page == page {
         return;
     }
     state.write().page = page;
@@ -298,17 +306,7 @@ pub(super) fn visible_detected_accounts(accounts: &[GameAccount]) -> Vec<GameAcc
 }
 
 pub(super) fn initial_page() -> Page {
-    #[cfg(target_arch = "wasm32")]
-    {
-        if web_sys::window()
-            .and_then(|window| window.location().pathname().ok())
-            .as_deref()
-            == Some("/docs")
-        {
-            return Page::Docs;
-        }
-    }
-    Page::Dashboard
+    super::navigation::initial_page()
 }
 
 #[cfg(test)]

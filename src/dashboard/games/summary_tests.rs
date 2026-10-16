@@ -1,7 +1,78 @@
 use super::summary::summarize;
 use attosgameapi::game::{GameKind, Genshin, Starrail};
 use chrono::{TimeZone, Utc};
-use serde_json::json;
+use serde_json::{Value, json};
+
+#[test]
+fn typed_genshin_note_preserves_explicit_names_and_locations_without_inventing_labels() {
+    let mut raw: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/hoyolab/genshin-note.json"
+    ))
+    .unwrap();
+    let expedition = raw["expeditions"][0].clone();
+    raw["expeditions"] = json!([
+        {"name":"Assignment", "location":"Destination"},
+        {"location":"Destination"},
+        {"name":"  ", "location":"Destination"},
+        {"name":42, "location":"Destination"},
+        {}
+    ]);
+    for item in raw["expeditions"].as_array_mut().unwrap() {
+        for (key, value) in expedition.as_object().unwrap() {
+            item[key] = value.clone();
+        }
+    }
+    let note: attosgameapi::models::genshin::DailyNote = serde_json::from_value(raw).unwrap();
+    let summary = summarize(
+        GameKind::Genshin(Genshin),
+        Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap(),
+        &serde_json::to_value(note).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(summary["expeditions"][0]["name"], "Assignment");
+    for index in 1..4 {
+        assert_eq!(summary["expeditions"][index]["name"], "Destination");
+    }
+    assert!(summary["expeditions"][4].get("name").is_none());
+    assert!(summary["expeditions"][4].get("avatar_side_icon").is_none());
+}
+
+#[test]
+fn typed_starrail_note_reaches_summary_with_assignment_name_status_and_numeric_time() {
+    let note: attosgameapi::models::starrail::DailyNote = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/hoyolab/starrail-note.json"
+    ))
+    .unwrap();
+    let summary = summarize(
+        GameKind::Starrail(Starrail),
+        Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap(),
+        &serde_json::to_value(note).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        summary["expeditions"],
+        json!([
+            {"name":"test", "status":"Ongoing", "remaining_time":456}
+        ])
+    );
+}
+
+#[test]
+fn reported_empty_expeditions_are_distinct_from_missing_or_invalid_expeditions() {
+    let now = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
+    for game in [GameKind::Genshin(Genshin), GameKind::Starrail(Starrail)] {
+        let summary = summarize(game, now, &json!({"expeditions":[]})).unwrap();
+        assert_eq!(summary["expeditions"], json!([]));
+        for raw in [
+            json!({}),
+            json!({"expeditions":null}),
+            json!({"expeditions":{}}),
+            json!({"expeditions":[null, 42, {}]}),
+        ] {
+            assert!(summarize(game, now, &raw).is_none());
+        }
+    }
+}
 
 #[test]
 fn enormous_recovery_seconds_never_panic_or_fabricate_a_full_time() {

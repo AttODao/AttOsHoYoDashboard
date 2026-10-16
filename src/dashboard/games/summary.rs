@@ -131,13 +131,19 @@ fn copy_expeditions(
             if let Some(remaining) = item.get(remaining_key) {
                 projected.insert(remaining_key.to_owned(), remaining.clone());
             }
-            if let Some(name) = item.get("name") {
-                projected.insert("name".to_owned(), name.clone());
+            // Prefer an explicit assignment name, then an explicit destination label.
+            // Do not infer names or locations from avatar/icon asset URLs.
+            if let Some(name) = ["name", "location"].into_iter().find_map(|key| {
+                item.get(key)
+                    .and_then(Value::as_str)
+                    .filter(|name| !name.trim().is_empty())
+            }) {
+                projected.insert("name".to_owned(), Value::String(name.to_owned()));
             }
             (!projected.is_empty()).then_some(Value::Object(projected))
         })
         .collect();
-    if !expeditions.is_empty() {
+    if items.is_empty() || !expeditions.is_empty() {
         out.insert("expeditions".to_owned(), Value::Array(expeditions));
     }
 }

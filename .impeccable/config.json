@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "border-accent-on-rounded",
+        "value": "*",
+        "files": [
+          "dashboard-ui/assets/dashboard.css"
+        ],
+        "createdAt": "2026-10-16T18:15:44.752Z",
+        "reason": "Existing AGD settings/game tabs explicitly use border-radius:0; the 3px selected underline is not a rounded-card accent."
+      }
+    ]
+  }
+}

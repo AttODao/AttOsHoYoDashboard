@@ -1,7 +1,7 @@
 use super::common::{Metric, focus_element};
 use crate::app::actions::{spawn_action, spawn_root};
 use crate::app::data::{load_game_status, save_reward_setting};
-use crate::app::display::count_pair;
+use crate::app::display::{count_pair, localized_datetime};
 use crate::app::preferences::{Preferences, use_preferences};
 use crate::app::state::{AppState, DASHBOARD_GAMES, Page, set_page};
 use crate::models::{DailySummary, Expedition, GameStatus};
@@ -272,7 +272,7 @@ fn GameStatusCard(status: GameStatus) -> Element {
                     Resource { label: ui.text("dashboard.resin"), current: data.current_resin, maximum: data.max_resin, full_at: data.resin_full_at.clone() }
                     dl { class: "metrics",
                         Metric { label: ui.text("dashboard.realm_currency"), value: pair(data.current_home_coin, data.max_home_coin, ui) }
-                        Metric { label: ui.text("dashboard.currency_full_at"), value: date(&data.home_coin_full_at, ui) }
+                        Estimate { label: ui.text("dashboard.currency_full_at"), value: data.home_coin_full_at.clone() }
                         Metric { label: ui.text("dashboard.commissions"), value: pair(data.finished_task_num, data.total_task_num, ui) }
                         Metric { label: ui.text("dashboard.extra_commission_reward"), value: received(data.is_extra_task_reward_received, ui).to_owned() }
                     }
@@ -327,7 +327,29 @@ fn Resource(
                 progress { value: "{value}", max: "{max}", "aria-label": label }
             }
         }
-        dl { class: "row", Metric { label: ui.text("dashboard.full_recovery_at"), value: date(&full_at, ui) } }
+        dl { class: "row", Estimate { label: ui.text("dashboard.full_recovery_at"), value: full_at, numeric: true } }
+    }
+}
+
+#[component]
+fn Estimate(
+    label: &'static str,
+    value: Option<String>,
+    #[props(default)] numeric: bool,
+) -> Element {
+    let ui = use_preferences();
+    let formatted = localized_datetime(value.as_deref(), ui);
+    rsx! {
+        div { class: "metric",
+            dt { "{label}" }
+            dd {
+                if let Some(formatted) = formatted {
+                    time { class: if numeric { "recovery-at" } else { "estimate-at" }, datetime: value, "{formatted}" }
+                } else {
+                    {ui.text("dashboard.not_reported")}
+                }
+            }
+        }
     }
 }
 
@@ -340,9 +362,9 @@ fn ExpeditionList(expeditions: Option<Vec<Expedition>>) -> Element {
             if let Some(rows) = expeditions {
                 if rows.is_empty() { p { {ui.text("dashboard.no_expeditions")} } }
                 ul {
-                    for expedition in rows {
+                    for (index, expedition) in rows.into_iter().enumerate() {
                         li { class: "expedition",
-                            span { {expedition.name.as_deref().unwrap_or(ui.text("dashboard.unnamed"))} }
+                            span { {expedition_label(expedition.name.as_deref(), index, ui)} }
                             span { {expedition.status.as_deref().map(|value| model_status(value, ui)).unwrap_or(ui.text("dashboard.unknown"))} }
                             span { {ui.text("dashboard.remaining")} ": " {expedition.remained_time.or(expedition.remaining_time).map(|duration| duration.to_string()).unwrap_or_else(|| ui.text("dashboard.not_reported").to_owned())} }
                         }
@@ -351,6 +373,17 @@ fn ExpeditionList(expeditions: Option<Vec<Expedition>>) -> Element {
             } else { p { {ui.text("dashboard.not_reported")} } }
         }
     }
+}
+
+fn expedition_label(name: Option<&str>, index: usize, ui: Preferences) -> String {
+    name.filter(|name| !name.trim().is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            ui.format(
+                "dashboard.expedition_number",
+                &[("number", &(index + 1).to_string())],
+            )
+        })
 }
 
 fn missing_payload_notice(data: Option<&DailySummary>) -> Option<&'static str> {
@@ -439,6 +472,14 @@ mod tests {
             "未取得"
         );
         assert_eq!(count_pair(0, None), "0");
+    }
+
+    #[test]
+    fn unnamed_expeditions_use_numbered_labels_without_inventing_locations() {
+        let ui = Preferences::default();
+        assert_eq!(expedition_label(Some("Crystal"), 0, ui), "Crystal");
+        assert_eq!(expedition_label(None, 0, ui), "派遣 1");
+        assert_eq!(expedition_label(Some("  "), 1, ui), "派遣 2");
     }
 
     #[test]

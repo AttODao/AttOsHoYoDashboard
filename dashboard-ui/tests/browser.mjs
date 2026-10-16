@@ -97,7 +97,7 @@ const server=http.createServer(async(req,res)=>{
    }
    if(p==='/api/v1/game-accounts')return json(res,accounts);
    const account=accounts.find(a=>p===`/api/v1/game-accounts/${a.id}/status`);
-   if(account){assert.ok(account.visible&&account.detected);return json(res,{...account,data:account.game_kind==='genshin'?{current_resin:actor===user?(account.id===uid(5)?0:31):77,max_resin:200,finished_task_num:0,total_task_num:4,expeditions:[]}:{current_stamina:account.id===uid(7)?12:24,max_stamina:300},fetched_at:new Date().toISOString(),error_code:null,error_at:null,stale:false});}
+   if(account){assert.ok(account.visible&&account.detected);return json(res,{...account,data:account.game_kind==='genshin'?{current_resin:actor===user?(account.id===uid(5)?0:31):77,max_resin:200,finished_task_num:0,total_task_num:4,resin_full_at:account.id===uid(5)?'2026-10-17T12:38:00Z':'invalid-date',current_home_coin:510,max_home_coin:2400,home_coin_full_at:'2026-10-19T08:38:40Z',expeditions:[{status:'Ongoing',remained_time:'30354'}]}:{current_stamina:account.id===uid(7)?12:24,max_stamina:300,stamina_full_at:account.id===uid(7)?'2026-10-17T16:52:31Z':null,expeditions:[]},fetched_at:new Date().toISOString(),error_code:null,error_at:null,stale:false});}
    if(p==='/api/v1/reward-settings'){assert.equal(req.method,'GET');return json(res,rewardSettings);}
    const setting=rewardSettings.find(s=>p===`/api/v1/reward-settings/${s.id}`);
    if(setting){assert.equal(req.method,'PATCH');assert.deepEqual(Object.keys(body).sort(),['enabled','local_time']);rewardPatches.push({id:setting.id,...body});Object.assign(setting,body,{next_run_at:new Date(Date.now()+86400000).toISOString()});res.writeHead(204);return res.end();}
@@ -117,7 +117,7 @@ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));origin=`http://
 let browser,page,stage='login';const errors=[];
 try{
  browser=await chromium.launch({headless:true,args:['--no-sandbox']});
- const context=await browser.newContext({viewport:{width:1280,height:900},reducedMotion:process.argv.includes('--normal-motion')?'no-preference':'reduce'});
+ const context=await browser.newContext({viewport:{width:1280,height:900},timezoneId:'Asia/Tokyo',reducedMotion:process.argv.includes('--normal-motion')?'no-preference':'reduce'});
  context.setDefaultTimeout(10000);
  await context.addInitScript(()=>{if(!localStorage.getItem('agd-language'))localStorage.setItem('agd-language','en');});
  await context.route('**/*',route=>new URL(route.request().url()).origin===origin?route.continue():route.abort());
@@ -127,8 +127,8 @@ try{
  const button=name=>page.getByRole('button',{name,exact:true});
  const idle=()=>page.waitForFunction(()=>document.querySelector('fieldset.app-shell')?.disabled===false);
  const dashboard=async()=>{await page.getByRole('heading',{name:'Dashboard',exact:true}).waitFor();await idle();};
- const openMenu=async()=>{await page.locator('#agd-menu-trigger').click();await page.locator('#agd-menu[open]').waitFor();await page.waitForFunction(()=>Math.abs(document.getElementById('agd-menu').getBoundingClientRect().right-innerWidth)<1);};
- const menu=async name=>{await openMenu();await page.locator('#agd-menu').getByRole('button',{name,exact:true}).click();await page.locator('#agd-menu[open]').waitFor({state:'hidden'});await idle();};
+ const openMenu=async()=>{await page.locator('#agd-menu-trigger').click();await page.locator('#agd-menu[open]').waitFor();await page.waitForFunction(()=>Math.abs(document.getElementById('agd-menu').getBoundingClientRect().right-innerWidth)<1);await page.locator('#agd-menu').evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});};
+ const menu=async name=>{await openMenu();const dialog=await page.locator('#agd-menu').elementHandle();await page.locator('#agd-menu').getByRole('button',{name,exact:true}).click();await page.locator('#agd-menu[open]').waitFor({state:'hidden'});await dialog.evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});await dialog.dispose();await idle();};
  const settings=async key=>{await menu('Settings');await page.locator('#settings-tab-'+key).click();await idle();};
  const signIn=async actor=>{await page.locator('#login-username').fill(actor.username);await page.locator('#login-password').fill('synthetic-password-123');await button('Sign in').click();};
  const change=async(current)=>{if(current!==undefined)await page.locator('#current-password').fill(current);for(const id of ['new-password','confirm-password'])await page.locator('#'+id).fill('synthetic-permanent-password-123');await button('Change password').click();await idle();};
@@ -237,6 +237,9 @@ try{
  assert.equal(await button('Sign out').count(),1,'setup permits logout');
  assert.equal(await page.locator('#current-password').count(),0,'mandatory setup never requests a login secret');
  assert.equal(await page.locator('#hoyolab-cookie').count(),0,'password gate hides Cookie actions');
+ await page.locator('a.wordmark').click();await idle();
+ assert.equal(await page.locator('#new-password').count(),1,'brand navigation cannot bypass onboarding');
+ assert.equal(await page.getByRole('heading',{name:'Dashboard',exact:true}).count(),0);
  assert.equal(counts.get('/api/v1/game-accounts')||0,0);
  await eyes(['new-password','confirm-password']);
  // Confirm mismatch makes no request.
@@ -263,6 +266,14 @@ try{
  await starrail.locator('.resource strong').getByText('12',{exact:true}).waitFor();
  assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');
  assert.equal(await genshin.getAttribute('role'),'region');
+ const expectedDate=await page.evaluate(()=>new Date('2026-10-17T12:38:00Z').toLocaleString('en',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZoneName:'short'}));
+ assert.equal(await genshin.locator('time.recovery-at').innerText(),expectedDate);
+ assert.match(await genshin.locator('time.recovery-at').evaluate(e=>getComputedStyle(e).fontFamily),/Orbitron/);
+ assert.doesNotMatch(await genshin.locator('time.estimate-at').evaluate(e=>getComputedStyle(e).fontFamily),/Orbitron/);
+ assert.ok(!(await genshin.locator('time.estimate-at').innerText()).includes('T08:38:40'),'currency estimate is not raw ISO');
+ assert.equal(await genshin.locator('.expedition').first().locator('span').first().innerText(),'Expedition 1');
+ await starrail.getByText('No expeditions',{exact:true}).waitFor();
+ await page.screenshot({path:path.join(root,'target/ui-dashboard-desktop.png'),fullPage:true});
  const gbox=await genshin.boundingBox(),sbox=await starrail.boundingBox();
  assert.ok(Math.abs(gbox.y-sbox.y)<2&&sbox.x>gbox.x+gbox.width,'desktop dual columns');
  assert.equal(await page.locator('#selected-genshin option').count(),2);
@@ -274,9 +285,11 @@ try{
  for(const n of [3,4])assert.equal(counts.get('/api/v1/game-accounts/'+uid(n)+'/status')||0,0);
  await page.locator('#selected-genshin').selectOption(uid(6));
  await genshin.locator('.resource strong').getByText('31',{exact:true}).waitFor();
+ assert.equal(await genshin.locator('time.recovery-at').count(),0,'invalid estimate is not rendered as a date');
  assert.equal(await page.locator('#selected-starrail').inputValue(),uid(7));
  await page.locator('#selected-starrail').selectOption(uid(8));
  await starrail.locator('.resource strong').getByText('24',{exact:true}).waitFor();
+ assert.equal(await starrail.locator('time.recovery-at').count(),0,'missing estimate is not invented');
  assert.equal(await page.locator('#selected-genshin').inputValue(),uid(6));
  await genshin.getByRole('switch').check();await idle();
  assert.deepEqual(rewardPatches.at(-1),{id:uid(20),enabled:true,local_time:'06:00'});
@@ -286,6 +299,16 @@ try{
  const before=await page.locator('main.container').boundingBox();
  await openMenu();
  const drawer=page.locator('#agd-menu'),box=await drawer.boundingBox();
+ const hoyolabLink=drawer.getByRole('link',{name:'HoYoLAB',exact:true});
+ assert.equal(await hoyolabLink.getAttribute('href'),'https://www.hoyolab.com/home');
+ assert.equal(await hoyolabLink.getAttribute('target'),'_blank');
+ assert.equal(await drawer.getByRole('button',{name:'HoYoLAB link',exact:true}).count(),0);
+ const logoutButton=drawer.getByRole('button',{name:'Sign out',exact:true});
+ const logoutBefore=await logoutButton.boundingBox();
+ await page.keyboard.press('Tab');await logoutButton.focus();
+ const logoutAfter=await logoutButton.boundingBox();
+ assert.deepEqual(logoutAfter,logoutBefore,'logout keyboard focus does not move its box');
+ assert.equal(await logoutButton.evaluate(e=>getComputedStyle(e).outlineOffset),'-3px','focus ring stays inside drawer');
  await page.waitForFunction(()=>!['transparent','rgba(0, 0, 0, 0)'].includes(getComputedStyle(document.getElementById('agd-menu'),'::backdrop').backgroundColor));
  assert.ok(Math.abs(box.width-304)<1&&Math.abs(box.x+box.width-1280)<1);
  assert.ok(await drawer.evaluate(e=>e.matches(':modal')&&e.contains(document.activeElement)));
@@ -301,23 +324,25 @@ try{
  await drawer.getByRole('switch',{name:'Dark mode',exact:true}).click();
  await page.waitForFunction(()=>document.documentElement.dataset.theme==='light');
  assert.notEqual(await page.locator('html').evaluate(e=>getComputedStyle(e).getPropertyValue('--canvas')),darkToken);
- await drawer.getByRole('button',{name:'日本語',exact:true}).click();
+ await drawer.getByRole('combobox',{name:'Language',exact:true}).selectOption('ja');
  await page.waitForFunction(()=>document.documentElement.lang==='ja'&&localStorage.getItem('agd-language')==='ja');
  await drawer.getByRole('switch',{name:'ダークモード',exact:true}).waitFor();
  assert.equal(await drawer.getAttribute('aria-label'),'アカウントメニュー');
  assert.equal(await page.locator('#agd-menu-trigger').getAttribute('aria-label'),'メニューを開く');
- assert.equal(await drawer.getByRole('button',{name:'日本語',exact:true}).getAttribute('aria-pressed'),'true');
+ assert.equal(await drawer.getByRole('combobox',{name:'言語',exact:true}).inputValue(),'ja');
  await page.locator('h1').getByText('ダッシュボード',{exact:true}).waitFor();
+ const japaneseDate=await page.evaluate(()=>new Date('2026-10-19T08:38:40Z').toLocaleString('ja',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZoneName:'short'}));
+ assert.equal(await genshin.locator('time.estimate-at').innerText(),japaneseDate);
  assert.equal(await page.locator('#selected-genshin').inputValue(),uid(6),'language change preserves selected UID');
  assert.equal(await page.locator('#selected-starrail').inputValue(),uid(8));
  await page.reload();await idle();
  assert.equal(await page.locator('html').getAttribute('data-theme'),'light','theme persists across reload (DOM only)');
  assert.equal(await page.locator('html').getAttribute('lang'),'ja');
- await openMenu();await drawer.getByRole('button',{name:'English',exact:true}).click();
+ await openMenu();await drawer.getByRole('combobox',{name:'言語',exact:true}).selectOption('en');
  await drawer.getByRole('switch',{name:'Dark mode',exact:true}).waitFor();
  assert.equal(await drawer.getAttribute('aria-label'),'Account menu');
  assert.equal(await page.locator('#agd-menu-trigger').getAttribute('aria-label'),'Open menu');
- assert.equal(await drawer.getByRole('button',{name:'English',exact:true}).getAttribute('aria-pressed'),'true');
+ assert.equal(await drawer.getByRole('combobox',{name:'Language',exact:true}).inputValue(),'en');
  await drawer.getByRole('switch',{name:'Dark mode',exact:true}).click();
  await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark'&&localStorage.getItem('agd-theme')==='dark');
  await page.keyboard.press('Escape');await dashboard();
@@ -327,6 +352,7 @@ try{
  assert.ok(await brandIcon.isVisible());
  assert.ok(await page.locator('.topbar-inner').evaluate(e=>e.scrollWidth<=e.clientWidth),'mobile header fits with icon');
  assert.ok(await genshin.isVisible());assert.ok(await starrail.isHidden());
+ await page.screenshot({path:path.join(root,'target/ui-dashboard-mobile.png'),fullPage:true});
  await page.locator('#game-tab-genshin').focus();await page.keyboard.press('ArrowRight');
  await starrail.waitFor();assert.ok(await genshin.isHidden());
  assert.equal(await page.locator('#game-tab-starrail').getAttribute('aria-selected'),'true');
@@ -337,12 +363,21 @@ try{
  await page.keyboard.press('Home');await genshin.waitFor();
  await page.keyboard.press('End');await starrail.waitFor();
  await page.setViewportSize({width:1280,height:900});
+ // Same-document navigation supports back/forward and reload without bypassing auth gates.
+ await menu('Settings');
+ await page.locator('#settings-tab-security').click();await idle();
+ await page.goBack();await page.locator('#settings-tab-uids[aria-selected=true]').waitFor();await idle();
+ await page.goForward();await page.locator('#settings-tab-security[aria-selected=true]').waitFor();await idle();
+ await page.reload();await page.locator('#settings-tab-security[aria-selected=true]').waitFor();await idle();
+ await page.locator('a.wordmark').click();await dashboard();
+ assert.equal(new URL(page.url()).hash,'#dashboard');
  stage='settings';
  // Settings replaces the removed nav/schedule checkbox/input[type=time].
  await settings('bonus');
  assert.equal(await page.locator('.settings-tabs [role=tab]').count(),5);
  assert.equal(await page.locator('#settings-panel').getAttribute('aria-labelledby'),'settings-tab-bonus');
  assert.equal(await page.locator('#settings-panel input[type=time],#settings-panel input[type=checkbox]').count(),0);
+ assert.equal(await page.locator('#settings-panel hr.divider').count(),1,'history is separated from bonus settings');
  assert.equal(await page.locator('#reward-hour-'+uid(20)+' option').count(),24);
  assert.equal(await page.locator('#reward-minute-'+uid(20)+' option').count(),60);
  assert.ok((await page.locator('.timezone').first().innerText()).includes('+09:00'));
@@ -389,7 +424,7 @@ try{
   await page.locator('#'+id).fill('synthetic-navigation-secret');
   await page.locator('button[aria-controls="'+id+'"]').click();
  }
- await openMenu();await drawer.getByRole('button',{name:'日本語',exact:true}).click();
+ await openMenu();await drawer.getByRole('combobox',{name:'Language',exact:true}).selectOption('ja');
  await page.waitForFunction(()=>['current-password','new-password','confirm-password'].every(id=>document.getElementById(id)?.type==='password'));
  await page.locator('.status.error').getByText('新しいパスワードは12〜256バイトで確認欄と一致する必要があります。通常の変更には現在のパスワードも必要です。',{exact:true}).waitFor();
  assert.equal(await page.locator('.live-region').getAttribute('aria-live'),'polite');
@@ -397,7 +432,7 @@ try{
  assert.equal(await page.locator('#settings-tab-security').getAttribute('aria-selected'),'true');
  assert.equal(await page.locator('#settings-panel').getAttribute('aria-labelledby'),'settings-tab-security');
  assert.equal(await page.locator('button[aria-controls="current-password"]').getAttribute('aria-label'),'パスワードを表示');
- await drawer.getByRole('button',{name:'English',exact:true}).click();await page.keyboard.press('Escape');
+ await drawer.getByRole('combobox',{name:'言語',exact:true}).selectOption('en');await page.keyboard.press('Escape');
  await page.locator('.status.error').getByText(passwordValidation,{exact:true}).waitFor();
  assert.equal(await page.locator('#settings-tab-security').getAttribute('aria-label'),'Security');
  assert.equal(await page.locator('button[aria-controls="current-password"]').getAttribute('aria-label'),'Show password');
@@ -415,13 +450,27 @@ try{
  assert.ok(await button('Load logs').isDisabled(),'no invented admin log endpoint');
  assert.equal(await page.locator('[data-slot=card]').first().evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(24, 23, 29)','AGD card skin does not depend on hashed module class names');
  assert.equal(await page.locator('input[autocomplete=new-password]').count(),0,'no administrator-entered temporary password form');
- const ownRow=page.locator('.setting-row').filter({has:page.getByRole('heading',{name:user.username,exact:true})});
+ const ownRow=page.getByRole('row').filter({has:page.getByRole('rowheader',{name:new RegExp('^'+user.username)})});
+ assert.equal(await page.getByRole('table',{name:'Manage users',exact:true}).count(),1);
+ assert.equal(await page.getByText('The last active administrator cannot be disabled or deleted.',{exact:true}).count(),0,'protection warning is not permanent UI');
  assert.ok(await ownRow.getByRole('button',{name:'Disable',exact:true}).isDisabled());
  assert.ok(await ownRow.getByRole('button',{name:'Delete user',exact:true}).isDisabled());
  assert.equal(await ownRow.getByRole('button',{name:'Reissue password',exact:true}).count(),0,'self-reissue would revoke the only session able to receive the generated secret');
  await ownRow.getByRole('button',{name:'Change password',exact:true}).click();await page.locator('#current-password').waitFor();
  assert.equal(counts.get('/api/v1/admin/users/'+user.id+'/temporary-password')||0,0,'own password uses the ordinary confirmation flow');
+ secondAdmin.active=false;
  await menu('Administration');
+ await ownRow.getByRole('button',{name:'Delete user',exact:true}).click();
+ await page.getByText('The last active administrator cannot be disabled or deleted.',{exact:true}).waitFor();
+ assert.equal(await page.locator('#admin-delete-'+user.id+'[open]').count(),0,'last-admin attempt shows feedback, not a delete dialog');
+ assert.equal(counts.get('/api/v1/admin/users/'+user.id)||0,0,'last-admin attempt sends no lifecycle request');
+ secondAdmin.active=true;
+ await menu('Settings');await menu('Administration');
+ await page.screenshot({path:path.join(root,'target/ui-admin-desktop.png'),fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ assert.ok(await page.locator('main.container').evaluate(e=>e.scrollWidth<=e.clientWidth),'admin table scrolls within its wrapper on mobile');
+ await page.screenshot({path:path.join(root,'target/ui-admin-mobile.png'),fullPage:true});
+ await page.setViewportSize({width:1280,height:900});
  await page.locator('#admin-create-username').fill('synthetic-created');
  const adminBefore=counts.get('/api/v1/admin/users')||0;
  await page.evaluate(()=>{window.originalRandom=Crypto.prototype.getRandomValues;window.entropyCalls=0;Crypto.prototype.getRandomValues=function(){window.entropyCalls++;throw new Error('synthetic entropy unavailable');};});
@@ -446,14 +495,14 @@ try{
  await page.evaluate(()=>window.finishCopy());await page.getByText('Copied',{exact:true}).waitFor();
  await page.evaluate(()=>{Clipboard.prototype.writeText=window.originalClipboardWrite;});
  await button('Close').click();assert.equal(await page.locator('#admin-generated-password').count(),0);
- const createdRow=page.locator('.setting-row').filter({has:page.getByRole('heading',{name:'synthetic-created',exact:true})});
+ const createdRow=page.getByRole('row').filter({has:page.getByRole('rowheader',{name:'synthetic-created',exact:true})});
  await createdRow.getByRole('button',{name:'Reissue password',exact:true}).click();await idle();
  await page.locator('#admin-credential-result[open]').waitFor();
  assert.equal(counts.get('/api/v1/admin/users/'+uid(12)+'/temporary-password'),1);
  assert.equal(await page.getByText('Copied',{exact:true}).count(),0,'copy state cannot leak between generated results');
  assert.ok(await page.locator('#admin-generated-password').evaluate(e=>/^[A-Za-z0-9_-]{24}$/.test(e.textContent)));
  await page.keyboard.press('Escape');assert.equal(await page.locator('#admin-generated-password').count(),0);
- const otherRow=page.locator('.setting-row').filter({has:page.getByRole('heading',{name:other.username,exact:true})});
+ const otherRow=page.getByRole('row').filter({has:page.getByRole('rowheader',{name:other.username,exact:true})});
  await otherRow.getByRole('button',{name:'Re-enable',exact:true}).click();await idle();
  await otherRow.getByRole('button',{name:'Delete user',exact:true}).click();
  const deletion=page.locator('#admin-delete-'+other.id);
@@ -472,7 +521,8 @@ try{
  await page.getByText(/server logout is unconfirmed/).waitFor();
  assert.equal(await page.locator('#game-panel-genshin').count(),0);
  assert.ok((await context.cookies()).some(c=>c.name==='attos_session'&&c.value==='synthetic-a'));
- await page.reload();await dashboard();
+ await page.reload();await page.getByRole('heading',{name:'Admin settings',exact:true}).waitFor();await idle();
+ await page.locator('a.wordmark').click();await dashboard();
  await menu('Sign out');await button('Retry server logout').waitFor();failLogout=false;
  await button('Retry server logout').click();await button('Sign in').waitFor();
  assert.equal((await context.cookies()).filter(c=>c.name==='attos_session').length,0);

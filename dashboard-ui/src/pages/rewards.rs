@@ -26,6 +26,7 @@ pub(super) fn RewardsPage(state: Signal<AppState>) -> Element {
                     RewardSettingCard { key: "{setting.id}", state, setting }
                 }
             }
+            hr { class: "divider" }
             RewardHistory { state }
         }
     }
@@ -229,7 +230,6 @@ fn reward_label(value: &str, preferences: crate::app::preferences::Preferences) 
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn schedule_parser_accepts_each_minute_and_rejects_invalid_data() {
         for hour in 0..24 {

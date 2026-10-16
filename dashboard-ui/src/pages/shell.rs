@@ -113,7 +113,8 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
     rsx! {
         header { class: "topbar",
             div { class: "topbar-inner",
-                span { class: "wordmark",
+                a { class: "wordmark", href: "#dashboard", "aria-label": ui.text("shell.dashboard"),
+                    onclick: move |event| { event.prevent_default(); set_page(state, Page::Dashboard); },
                     img { src: asset!("/assets/dashboard-icon.png"), width: "36", height: "36", alt: "" }
                     span { {ui.text("app.title")} }
                 }
@@ -137,12 +138,12 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
                     button { class: "icon-button", r#type: "button", "aria-label": ui.text("shell.close_menu"), onclick: move |_| open.set(false), Icon { name: "close" } }
                 }
                 nav { "aria-label": ui.text("shell.account_menu"),
-                    button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Link); }, Icon { name: "link" } {ui.text("shell.hoyolab_link")} }
+                    a { href: "https://www.hoyolab.com/home", target: "_blank", rel: "noopener noreferrer", Icon { name: "link" } "HoYoLAB" }
                     button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Uids); }, Icon { name: "settings" } {ui.text("shell.settings")} }
                     if me.as_ref().is_some_and(|me| me.is_admin) {
                         button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Admin); }, Icon { name: "user" } {ui.text("shell.administration")} }
                     }
-                    button { r#type: "button", onclick: move |_| { open.set(false); spawn_action(state, move |generation| async move { logout(state, generation).await; }); }, Icon { name: "logout" } {ui.text("shell.sign_out")} }
+                    button { class: "menu-logout", r#type: "button", onclick: move |_| { open.set(false); spawn_action(state, move |generation| async move { logout(state, generation).await; }); }, Icon { name: "logout" } {ui.text("shell.sign_out")} }
                 }
                 div { class: "menu-preferences",
                     button { class: "mode-switch", r#type: "button", role: "switch", "aria-label": ui.text("shell.dark_mode"),
@@ -151,10 +152,12 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
                         },
                         span { {ui.text("shell.dark_mode")} } span { class: "mode-track", span { class: "mode-thumb" } }
                     }
-                    fieldset { class: "language-options", legend { {ui.text("shell.language")} }
-                        div {
-                            button { r#type: "button", lang: "ja", "aria-pressed": (ui.language == Language::Japanese).to_string(), onclick: move |_| preferences.write().language = Language::Japanese, {ui.text("language.japanese")} }
-                            button { r#type: "button", lang: "en", "aria-pressed": (ui.language == Language::English).to_string(), onclick: move |_| preferences.write().language = Language::English, {ui.text("language.english")} }
+                    div { class: "language-options",
+                        label { r#for: "menu-language", {ui.text("shell.language")} }
+                        select { id: "menu-language", value: if ui.language == Language::Japanese { "ja" } else { "en" },
+                            onchange: move |event| preferences.write().language = if event.value() == "en" { Language::English } else { Language::Japanese },
+                            option { value: "ja", lang: "ja", {ui.text("language.japanese")} }
+                            option { value: "en", lang: "en", {ui.text("language.english")} }
                         }
                     }
                 }

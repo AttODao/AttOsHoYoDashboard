@@ -2,6 +2,7 @@ mod actions;
 mod credentials;
 mod data;
 mod display;
+mod navigation;
 mod preferences;
 mod session;
 mod state;
@@ -36,6 +37,7 @@ pub fn App() -> Element {
     let preferences = use_context_provider(|| Signal::new(preferences::Preferences::load()));
     use_effect(move || preferences.read().apply());
     let state = use_signal(|| AppState::new(initial_page()));
+    navigation::use_browser_history(state);
 
     use_future(move || async move {
         bootstrap(state).await;
