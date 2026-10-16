@@ -75,7 +75,8 @@ fi
 # Version-pinned user cache, filled by the download below or by `impeccable update`.
 version=""
 [ -f "$dir/VERSION" ] && version=$(tr -d '[:space:]' < "$dir/VERSION")
-cache_root="${IMPECCABLE_HOME:-${HOME:-/nonexistent}/.impeccable}"
+# This checked-in skill keeps downloaded engines inside this project, not HOME.
+cache_root="${IMPECCABLE_HOME:-$dir/../../../../.impeccable/cache}"
 cached="$cache_root/bin/$version/impeccable$exe"
 if [ -n "$version" ] && [ -x "$cached" ]; then
   exec "$cached" "$@"
@@ -93,10 +94,20 @@ setup_help() {
   echo "Alternatively, set IMPECCABLE_HOME to a writable cache location, or IMPECCABLE_BIN to a preinstalled engine binary." >&2
 }
 fetch_url() {
+  destination=${2:-$tmp}
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --retry 2 -o "$tmp" "$1" 2>/dev/null
+    curl -fsSL --retry 2 -o "$destination" "$1" 2>/dev/null
   elif command -v wget >/dev/null 2>&1; then
-    wget -q -O "$tmp" "$1" 2>/dev/null
+    wget -q -O "$destination" "$1" 2>/dev/null
+  elif command -v node >/dev/null 2>&1; then
+    node --input-type=module -e '
+      import {writeFile} from "node:fs/promises";
+      try {
+        const response = await fetch(process.argv[1], {signal: AbortSignal.timeout(60000)});
+        if (!response.ok) process.exit(1);
+        await writeFile(process.argv[2], Buffer.from(await response.arrayBuffer()), {mode: 0o600});
+      } catch { process.exit(1); }
+    ' "$1" "$destination"
   else
     return 1
   fi
@@ -152,11 +163,7 @@ if [ -n "$version" ] && [ "$os" != unknown ] && [ "$arch" != unknown ]; then
     # an unverified binary. (A binary already on PATH or in the cache that
     # passes engine-probe is unaffected.)
     sidecar_ok=0
-    if command -v curl >/dev/null 2>&1; then
-      curl -fsSL --retry 2 -o "$tmp.sha256" "$url.sha256" 2>/dev/null && sidecar_ok=1
-    elif command -v wget >/dev/null 2>&1; then
-      wget -q -O "$tmp.sha256" "$url.sha256" 2>/dev/null && sidecar_ok=1
-    fi
+    fetch_url "$url.sha256" "$tmp.sha256" && sidecar_ok=1
     check_download
     expected=""
     [ "$sidecar_ok" = 1 ] && expected=$(cut -d' ' -f1 < "$tmp.sha256")

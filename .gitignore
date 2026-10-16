@@ -13,3 +13,6 @@
 /.agents/skills/**/*.pyc
 /.pi/skills/**/__pycache__/
 /.pi/skills/**/*.pyc
+/.impeccable/cache/
+/.impeccable/config.local.json
+/.impeccable/review/
