@@ -6,3 +6,7 @@
 /devenv.local.nix
 /devenv.local.yaml
 /.direnv/
+
+# Project skills are materialized by devenv from locked distributions.
+/.agents/skills/
+/.pi/skills/

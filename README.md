@@ -142,7 +142,31 @@ devenv shell -- build-ui
 devenv shell -- test-ui
 ```
 
-`.env`は自動読込せず、共用PostgreSQL serviceも起動しません。`test-rust`は`DATABASE_URL`を除外し、テスト自身が専用clusterを作成・破棄します。実HoYoLAB GETテストは既定のignoreを維持し、実行には別途承認が必要です。Nix定義やlockへ秘密値を入れないでください。アプリケーションを手動起動する際の設定は後述の運用手順に従います。
+通常のshell／testでは`.env`を自動読込せず、共用PostgreSQL serviceも起動しません。`test-rust`は`DATABASE_URL`を除外し、テスト自身が専用clusterを作成・破棄します。実HoYoLAB GETテストは既定のignoreを維持し、実行には別途承認が必要です。Nix定義やlockへ秘密値を入れないでください。アプリケーションを手動起動する際の設定は後述の運用手順に従います。
+
+### プロジェクト専用skills
+
+`nix/project-skills.nix`が配布元（`devenv.yaml`の`skill-rust`・`skill-ui`・`skill-impeccable`・`impeccable-cli`）から取得し、`devenv.lock`のrevisionで固定します。skill本文はリポジトリ内に複製せず、`devenv shell`でこのcheckoutの`.agents/skills/`と`.pi/skills/`へ参照リンクを配置します。ユーザー全体のskillsは変更しません。Piを起動済みなら`/reload`で再読込できます。
+
+既存ローカル版は`.devenv/state/skills-before-devenv/`へ退避しています。`.impeccable/`のプロジェクト状態は別扱いで維持します。生成リンクではなく配布元・inputの固定版を管理してください。
+
+### SSH越しのテスト用サーバー
+
+**devcon側**のプロジェクトrootで実行します。
+
+```console
+devenv shell -- test-server
+```
+
+UIとAPIをbuildし、devenv標準のプロセス管理でテスト専用PostgreSQLとHTTPサーバーを起動します。HTTP待受開始後に表示される次のコマンドを**ローカルPC**で実行し、`http://localhost:8080`を開きます。
+
+```console
+ssh -N -T -o ExitOnForwardFailure=yes -L 127.0.0.1:8080:127.0.0.1:8080 devcon
+```
+
+devcon側の起動コマンドを**Ctrl+C**で終了すると、HTTPとPostgreSQLの両方を停止します。ローカル側のCtrl+CはSSH転送だけを停止します。テストDBは`.devenv/`以下に保持されます。初回ログインは公開テスト用の`test-admin`／`public-test-only-password`（変更必須）。変更後はそのパスワードを使います。
+
+`test-server` profileのDBは専用Unix socketだけ、HTTPは`127.0.0.1:8080`だけで待ち受けます。実DBの接続先・Cookie鍵は引き継がず、空の`.env`を置いた専用作業directoryから起動します。HoYoLAB連携・報酬受け取りは利用不可で、初期設定ゲートも迂回しません。
 
 ### 手動セットアップ（devenvを使わない場合）
 

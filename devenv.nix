@@ -9,6 +9,8 @@ let
   };
 in
 {
+  imports = [ ./nix/project-skills.nix ./nix/test-server.nix ];
+
   # Never load account credentials or a production DATABASE_URL on shell entry.
   dotenv.enable = false;
 

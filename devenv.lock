@@ -17,6 +17,19 @@
         "type": "github"
       }
     },
+    "impeccable-cli": {
+      "flake": false,
+      "locked": {
+        "lastModified": 499162500,
+        "narHash": "sha256-gUjM4aC6mnIgwCm1WQVnn2J9dhE5ldMBQIufctiGlTE=",
+        "type": "tarball",
+        "url": "https://registry.npmjs.org/@impeccable/cli-linux-x64/-/cli-linux-x64-0.1.14.tgz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://registry.npmjs.org/@impeccable/cli-linux-x64/-/cli-linux-x64-0.1.14.tgz"
+      }
+    },
     "nixpkgs": {
       "inputs": {
         "nixpkgs-src": "nixpkgs-src"
@@ -56,8 +69,12 @@
     "root": {
       "inputs": {
         "devenv": "devenv",
+        "impeccable-cli": "impeccable-cli",
         "nixpkgs": "nixpkgs",
         "rust-overlay": "rust-overlay",
+        "skill-impeccable": "skill-impeccable",
+        "skill-rust": "skill-rust",
+        "skill-ui": "skill-ui",
         "wasm-tools": "wasm-tools"
       }
     },
@@ -78,6 +95,55 @@
       "original": {
         "owner": "oxalica",
         "repo": "rust-overlay",
+        "type": "github"
+      }
+    },
+    "skill-impeccable": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1791519578,
+        "narHash": "sha256-0QpNzNnSon34/VVPPaitnSTBjpu9qJGXJzCJctS4gM0=",
+        "owner": "pbakaus",
+        "repo": "impeccable",
+        "rev": "0d10a02edca50becf21465679cedb92e9188576c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "pbakaus",
+        "ref": "skill-v4.5.2",
+        "repo": "impeccable",
+        "type": "github"
+      }
+    },
+    "skill-rust": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1781477469,
+        "narHash": "sha256-B6E8JP78/wDdJYHp1l5cpEgxRuCzAhOhUtst4pueMw0=",
+        "owner": "leonardomso",
+        "repo": "rust-skills",
+        "rev": "fd2a861ab0406a4ac536a55274d14ea6fd1ca9c9",
+        "type": "github"
+      },
+      "original": {
+        "owner": "leonardomso",
+        "repo": "rust-skills",
+        "type": "github"
+      }
+    },
+    "skill-ui": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1792029874,
+        "narHash": "sha256-77NDhLB84fc2HZKYjdFY5LWjd7C9f21vrCjKdj+ceDU=",
+        "owner": "nextlevelbuilder",
+        "repo": "ui-ux-pro-max-skill",
+        "rev": "56ea9cf174ed86786187daa9de0e6247cb0747e4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nextlevelbuilder",
+        "repo": "ui-ux-pro-max-skill",
         "type": "github"
       }
     },
