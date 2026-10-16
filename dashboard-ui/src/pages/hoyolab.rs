@@ -12,7 +12,7 @@ pub(super) fn LinkPage(state: Signal<AppState>) -> Element {
     let preferences = use_preferences();
     rsx! {
         section { class: "panel page-stack",
-            h2 { {preferences.text("HoYoLAB連携", "HoYoLAB link")} }
+            h2 { {preferences.text("shell.hoyolab_link")} }
             CookieCard { state }
         }
     }
@@ -37,33 +37,31 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
         .map(|h| h.status.as_str())
         .or_else(|| onboarding.as_ref().map(|o| o.cookie_status.as_str()));
     let status = match status {
-        Some("verified") => preferences.text("本人確認済み", "Verified"),
-        Some("pending_verification") => preferences.text("本人確認待ち", "Pending verification"),
-        Some("not_configured" | "missing") => preferences.text("未登録", "Not configured"),
-        Some("cookie_invalid" | "invalid") => preferences.text("無効", "Invalid"),
-        Some("unreadable") => preferences.text("読取不可", "Unreadable"),
-        Some("storage_unavailable") => {
-            preferences.text("保存機能が利用不可", "Storage unavailable")
-        }
+        Some("verified") => preferences.text("hoyolab.verified"),
+        Some("pending_verification") => preferences.text("hoyolab.pending_verification"),
+        Some("not_configured" | "missing") => preferences.text("hoyolab.not_configured"),
+        Some("cookie_invalid" | "invalid") => preferences.text("dashboard.invalid"),
+        Some("unreadable") => preferences.text("hoyolab.unreadable"),
+        Some("storage_unavailable") => preferences.text("hoyolab.storage_unavailable"),
         Some(other) => other,
-        None => preferences.text("未読込", "Not loaded"),
+        None => preferences.text("hoyolab.not_loaded"),
     }
     .to_owned();
     rsx! {
         div { class: "form-stack",
-            if !password_ok { p { class: "warning", {preferences.text("パスワードの変更が必要です", "Password change required")} } }
-            if let Some(error) = &state.read().hoyolab_error { p { class: "warning", "{error}" } }
+            if !password_ok { p { class: "warning", {preferences.text("hoyolab.password_change_required")} } }
+            if let Some(error) = &state.read().hoyolab_error { p { class: "warning", {preferences.text(error)} } }
             dl { class: "metric-list",
-                Metric { label: preferences.text("Cookie状態", "Cookie status"), value: status }
-                Metric { label: preferences.text("HoYoLAB UID", "HoYoLAB UID"), value: hoyolab.as_ref().and_then(|h| h.hoyolab_uid.clone()).unwrap_or_else(|| preferences.text("未報告", "Not reported").to_owned()) }
-                Metric { label: preferences.text("保存・本人確認", "Storage / verification"), value: match available {
-                    Some(true) => preferences.text("利用可能", "Available"),
-                    Some(false) => preferences.text("利用不可", "Unavailable"),
-                    None => preferences.text("未読込", "Not loaded"),
+                Metric { label: preferences.text("hoyolab.cookie_status"), value: status }
+                Metric { label: preferences.text("hoyolab.hoyolab_uid"), value: hoyolab.as_ref().and_then(|h| h.hoyolab_uid.clone()).unwrap_or_else(|| preferences.text("hoyolab.not_reported").to_owned()) }
+                Metric { label: preferences.text("hoyolab.storage_verification"), value: match available {
+                    Some(true) => preferences.text("hoyolab.available"),
+                    Some(false) => preferences.text("hoyolab.unavailable"),
+                    None => preferences.text("hoyolab.not_loaded"),
                 }.to_owned() }
-                Metric { label: preferences.text("更新日時", "Updated"), value: hoyolab.as_ref().and_then(|h| h.updated_at.clone()).unwrap_or_else(|| preferences.text("未報告", "Not reported").to_owned()) }
+                Metric { label: preferences.text("hoyolab.updated"), value: hoyolab.as_ref().and_then(|h| h.updated_at.clone()).unwrap_or_else(|| preferences.text("hoyolab.not_reported").to_owned()) }
             }
-            Field { id: "hoyolab-cookie", label: preferences.text("Cookie", "Cookie"),
+            Field { id: "hoyolab-cookie", label: preferences.text("hoyolab.cookie"),
                 textarea { id: "hoyolab-cookie", autocomplete: "off", disabled, value: "{cookie}", oninput: move |event| cookie.set(event.value()) }
             }
             div { class: "button-row",
@@ -73,40 +71,40 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
                     spawn_action(state, move |generation| async move {
                         match crate::api::send("PUT", "/me/hoyolab/cookie", Some(json!({"cookie": secret}))).await {
                             Ok(()) if generation_matches(state, generation) => {
-                                set_status(state, preferences.text("Cookieの保存を受け付けました", "Cookie save accepted."), "success");
+                                set_status(state, "hoyolab.cookie_save_accepted", "success");
                                 bootstrap(state).await;
                             }
                             Ok(()) => {}
                             Err(error) => handle_api_error_for(state, generation, error),
                         }
                     });
-                }, {preferences.text("保存", "Save")} }
+                }, {preferences.text("hoyolab.save")} }
                 Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: disabled || !stored, onclick: move |_| {
                     if disabled || !stored || !state.read().password_ok() { return; }
                     spawn_action(state, move |generation| async move {
                         match crate::api::send("POST", "/me/hoyolab/verify", Some(json!({}))).await {
                             Ok(()) if generation_matches(state, generation) => {
-                                set_status(state, preferences.text("本人確認の応答を受信しました", "Verification response received."), "success");
+                                set_status(state, "hoyolab.verification_response_received", "success");
                                 bootstrap(state).await;
                             }
                             Ok(()) => {}
                             Err(error) => handle_api_error_for(state, generation, error),
                         }
                     });
-                }, {preferences.text("本人確認", "Verify")} }
+                }, {preferences.text("hoyolab.verify")} }
                 Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: disabled || !complete, onclick: move |_| {
                     if disabled || !complete || !state.read().password_ok() { return; }
                     spawn_action(state, move |generation| async move {
                         match crate::api::send("POST", "/me/hoyolab/sync", Some(json!({}))).await {
                             Ok(()) if generation_matches(state, generation) => {
-                                set_status(state, preferences.text("同期の応答を受信しました", "Sync response received."), "success");
+                                set_status(state, "hoyolab.sync_response_received", "success");
                                 bootstrap(state).await;
                             }
                             Ok(()) => {}
                             Err(error) => handle_api_error_for(state, generation, error),
                         }
                     });
-                }, {preferences.text("UIDを同期", "Sync UIDs")} }
+                }, {preferences.text("hoyolab.sync_uids")} }
             }
         }
     }

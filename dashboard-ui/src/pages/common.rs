@@ -58,9 +58,9 @@ pub(super) fn PasswordInput(
     let input_type = if shown() { "text" } else { "password" };
     let icon_name = if shown() { "hide" } else { "eye" };
     let eye_label = if shown() {
-        ui.text("パスワードを隠す", "Hide password")
+        ui.text("common.hide_password")
     } else {
-        ui.text("パスワードを表示", "Show password")
+        ui.text("common.show_password")
     };
     rsx! {
         div { class: "password-control",

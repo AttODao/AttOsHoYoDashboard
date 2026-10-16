@@ -38,7 +38,7 @@ fn is_own_user(state: Signal<AppState>, target: uuid::Uuid) -> bool {
 #[component]
 pub(super) fn AdminPage(state: Signal<AppState>) -> Element {
     let prefs = use_preferences();
-    rsx! { div { class: "page-stack", h1 { {prefs.text("管理者設定", "Admin settings")} } AdminCard { state, compact: false } } }
+    rsx! { div { class: "page-stack", h1 { {prefs.text("admin.admin_settings")} } AdminCard { state, compact: false } } }
 }
 
 #[component]
@@ -55,14 +55,14 @@ pub(super) fn AdminCard(state: Signal<AppState>, compact: bool) -> Element {
     });
     // The existing owner-key boundary unmounts this signal on account changes.
     if !is_admin(state) {
-        return rsx! { p { role: "alert", {prefs.text("管理者権限が必要です", "Administrator access required")} } };
+        return rsx! { p { role: "alert", {prefs.text("admin.administrator_access_required")} } };
     }
     rsx! {
         div { class: "page-stack",
             Card {
-                CardHeader { CardTitle { {if compact { prefs.text("管理者設定", "Admin settings") } else { prefs.text("ユーザー作成", "Create user") }} } }
+                CardHeader { CardTitle { {if compact { prefs.text("admin.admin_settings") } else { prefs.text("admin.create_user") }} } }
                 CardContent { class: "form-stack",
-                    Field { id: "admin-create-username", label: prefs.text("ユーザー名", "Username"),
+                    Field { id: "admin-create-username", label: prefs.text("admin.username"),
                         input { id: "admin-create-username", autocomplete: "off", value: "{username}", oninput: move |event| username.set(event.value()) }
                     }
                     Button { r#type: "button", disabled: state.read().busy || username.read().is_empty(), onclick: move |_| {
@@ -72,7 +72,7 @@ pub(super) fn AdminCard(state: Signal<AppState>, compact: bool) -> Element {
                         spawn_action(state, move |generation| async move {
                             if !current_admin(state, generation) { return; }
                             let Ok(secret) = credentials::generate() else {
-                                set_status(state, prefs.text("安全なパスワードを生成できませんでした。再試行してください。", "Could not generate a secure password. Try again."), "error");
+                                set_status(state, "admin.could_not_generate_a_secure_password_try_again", "error");
                                 return;
                             };
                             let outcome = credentials::create(&user, &secret).await.map(|user| user.username);
@@ -83,25 +83,25 @@ pub(super) fn AdminCard(state: Signal<AppState>, compact: bool) -> Element {
                                     load_admin_users(state).await;
                                 }
                                 Ok(_) => {}
-                                Err(error) => admin_error(state, generation, error, prefs.text("ユーザーを作成できませんでした。", "Could not create user."), prefs.text("再ログインしてください。", "Please sign in again.")),
+                                Err(error) => admin_error(state, generation, error, "admin.could_not_create_user", "admin.please_sign_in_again"),
                             }
                         });
-                    }, {prefs.text("ユーザーを作成", "Create user")} }
+                    }, {prefs.text("admin.create_user_2")} }
                 }
             }
             Card {
-                CardHeader { CardTitle { {prefs.text("ユーザー管理", "Manage users")} } }
+                CardHeader { CardTitle { {prefs.text("admin.manage_users")} } }
                 CardContent { class: "form-stack",
-                    if state.read().admin_error.is_some() { p { class: "warning", role: "alert", {prefs.text("ユーザー一覧を取得できませんでした。", "Could not load users.")} } }
-                    if state.read().admin_users.is_empty() && state.read().admin_error.is_none() { p { {prefs.text("ユーザーがいません", "No users")} } }
+                    if state.read().admin_error.is_some() { p { class: "warning", role: "alert", {prefs.text("admin.could_not_load_users")} } }
+                    if state.read().admin_users.is_empty() && state.read().admin_error.is_none() { p { {prefs.text("admin.no_users")} } }
                     for user in state.read().admin_users.clone() { AdminUserRow { key: "{user.id}", state, user, result } }
                 }
             }
             Card {
-                CardHeader { CardTitle { {prefs.text("ログ", "Logs")} } }
+                CardHeader { CardTitle { {prefs.text("admin.logs")} } }
                 CardContent {
-                    p { class: "muted", {prefs.text("API未提供", "API unavailable")} }
-                    Button { r#type: "button", disabled: true, {prefs.text("ログを取得", "Load logs")} }
+                    p { class: "muted", {prefs.text("admin.api_unavailable")} }
+                    Button { r#type: "button", disabled: true, {prefs.text("admin.load_logs")} }
                 }
             }
             if result.read().as_ref().is_some_and(|value| value.generation == generation) {
@@ -143,8 +143,8 @@ fn AdminUserRow(
         div { class: "setting-row",
             div {
                 h3 { "{user.username}" }
-                span { class: "status", {if user.active { prefs.text("有効", "Active") } else { prefs.text("無効", "Inactive") }} }
-                if user.is_admin { span { class: "role-chip", {prefs.text("管理者", "Admin")} } }
+                span { class: "status", {if user.active { prefs.text("admin.active") } else { prefs.text("admin.inactive") }} }
+                if user.is_admin { span { class: "role-chip", {prefs.text("admin.admin")} } }
             }
             div { class: "actions",
                 Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: state.read().busy || result.read().is_some(), onclick: move |_| {
@@ -158,7 +158,7 @@ fn AdminUserRow(
                     spawn_action(state, move |generation| async move {
                         if !current_admin(state, generation) { return; }
                         let Ok(secret) = credentials::generate() else {
-                            set_status(state, prefs.text("安全なパスワードを生成できませんでした。再試行してください。", "Could not generate a secure password. Try again."), "error");
+                            set_status(state, "admin.could_not_generate_a_secure_password_try_again", "error");
                             return;
                         };
                         let outcome = crate::api::send("PUT", &format!("/admin/users/{id}/temporary-password"), Some(json!({"temporary_password": &secret}))).await.map(|()| name);
@@ -168,10 +168,10 @@ fn AdminUserRow(
                                 if refresh_me(state).await && current_admin(state, generation) { load_admin_users(state).await; }
                             }
                             Ok(_) => {}
-                            Err(error) => admin_error(state, generation, error, prefs.text("パスワードを再発行できませんでした。", "Could not reissue password."), prefs.text("再ログインしてください。", "Please sign in again.")),
+                            Err(error) => admin_error(state, generation, error, "admin.could_not_reissue_password", "admin.please_sign_in_again"),
                         }
                     });
-                }, {if own_account { prefs.text("パスワード変更", "Change password") } else { prefs.text("パスワード再発行", "Reissue password") }} }
+                }, {if own_account { prefs.text("admin.change_password") } else { prefs.text("admin.reissue_password") }} }
                 Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: state.read().busy || last_admin || own_account, onclick: move |_| {
                     if !is_admin(state) || state.read().busy || last_admin || is_own_user(state, user.id) { return; }
                     let id = user.id;
@@ -180,16 +180,16 @@ fn AdminUserRow(
                         if !current_admin(state, generation) { return; }
                         match crate::api::send("PATCH", &format!("/admin/users/{id}"), Some(json!({"active": active}))).await {
                             Ok(()) if current_admin(state, generation) => {
-                                set_status(state, prefs.text("ユーザーを更新しました。", "User updated."), "success");
+                                set_status(state, "admin.user_updated", "success");
                                 if refresh_me(state).await && current_admin(state, generation) { load_admin_users(state).await; }
                             }
                             Ok(()) => {}
-                            Err(error) => admin_error(state, generation, error, prefs.text("ユーザーを更新できませんでした。", "Could not update user."), prefs.text("再ログインしてください。", "Please sign in again.")),
+                            Err(error) => admin_error(state, generation, error, "admin.could_not_update_user", "admin.please_sign_in_again"),
                         }
                     });
-                }, {if user.active { prefs.text("無効化", "Disable") } else { prefs.text("再有効化", "Re-enable") }} }
-                Button { variant: ButtonVariant::Destructive, r#type: "button", disabled: state.read().busy || last_admin || own_account, onclick: move |_| { if is_admin(state) && !state.read().busy && !last_admin && !is_own_user(state, user.id) { deleting.set(true); } }, {prefs.text("ユーザー削除", "Delete user")} }
-                if last_admin { p { class: "warning", {prefs.text("最後の有効な管理者は無効化・削除できません。", "The last active administrator cannot be disabled or deleted.")} } }
+                }, {if user.active { prefs.text("admin.disable") } else { prefs.text("admin.re_enable") }} }
+                Button { variant: ButtonVariant::Destructive, r#type: "button", disabled: state.read().busy || last_admin || own_account, onclick: move |_| { if is_admin(state) && !state.read().busy && !last_admin && !is_own_user(state, user.id) { deleting.set(true); } }, {prefs.text("deletion.delete_user")} }
+                if last_admin { p { class: "warning", {prefs.text("admin.the_last_active_administrator_cannot_be_disabled_or_deleted")} } }
             }
         }
         if deleting() { DeleteUserDialog { state, user, deleting } }
@@ -215,16 +215,16 @@ fn DeleteUserDialog(
     let confirm_id = format!("admin-delete-confirm-{id}");
     let last_admin = protected_last_admin(&user, &state.read().admin_users);
     rsx! {
-        AdminDialog { id: format!("admin-delete-{id}"), title: prefs.text("ユーザー削除", "Delete user"), onclose: move |_| { current.set(String::new()); confirmation.set(String::new()); deleting.set(false); },
+        AdminDialog { id: format!("admin-delete-{id}"), title: prefs.text("deletion.delete_user"), onclose: move |_| { current.set(String::new()); confirmation.set(String::new()); deleting.set(false); },
             p { "{user.username}" }
-            Field { id: password_id.clone(), label: prefs.text("管理者自身の現在のパスワード", "Your current password"),
+            Field { id: password_id.clone(), label: prefs.text("admin.your_current_password"),
                 PasswordInput { id: password_id, value: current, autocomplete: "current-password" }
             }
-            Field { id: confirm_id.clone(), label: prefs.text("対象名を完全一致で入力", "Exact target username"),
+            Field { id: confirm_id.clone(), label: prefs.text("admin.exact_target_username"),
                 input { id: confirm_id, autocomplete: "off", value: "{confirmation}", oninput: move |event| confirmation.set(event.value()) }
             }
             div { class: "actions",
-                Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| { current.set(String::new()); confirmation.set(String::new()); deleting.set(false); }, {prefs.text("キャンセル", "Cancel")} }
+                Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| { current.set(String::new()); confirmation.set(String::new()); deleting.set(false); }, {prefs.text("admin.cancel")} }
                 Button { variant: ButtonVariant::Destructive, r#type: "button", disabled: state.read().busy || last_admin || current.read().is_empty() || *confirmation.read() != user.username, onclick: move |_| {
                     if !is_admin(state) || state.read().busy || last_admin || *confirmation.read() != user.username { return; }
                     let pass = std::mem::take(&mut *current.write());
@@ -234,20 +234,20 @@ fn DeleteUserDialog(
                         match crate::api::send("DELETE", &format!("/admin/users/{id}"), Some(json!({"current_password": pass, "confirmation": confirm}))).await {
                             Ok(()) if current_admin(state, generation) => {
                                 if let Ok(mut deleting) = deleting.try_write() { *deleting = false; }
-                                set_status(state, prefs.text("ユーザー削除を受け付けました。完了は未確認です。", "User deletion accepted; completion is not confirmed."), "success");
+                                set_status(state, "admin.user_deletion_accepted_completion_is_not_confirmed", "success");
                                 if refresh_me(state).await && current_admin(state, generation) { load_admin_users(state).await; }
                             }
                             Ok(()) => {}
                             Err(error) if current_admin(state, generation) && error.is_unauthorized() => {
                                 // A wrong actor password also returns 401; do not destroy a valid session.
                                 if refresh_me(state).await && current_admin(state, generation) {
-                                    set_status(state, prefs.text("現在のパスワードを確認してください。", "Check your current password."), "error");
+                                    set_status(state, "admin.check_your_current_password", "error");
                                 }
                             }
-                            Err(error) => admin_error(state, generation, error, prefs.text("ユーザー削除を受け付けられませんでした。", "User deletion was not accepted."), prefs.text("再ログインしてください。", "Please sign in again.")),
+                            Err(error) => admin_error(state, generation, error, "admin.user_deletion_was_not_accepted", "admin.please_sign_in_again"),
                         }
                     });
-                }, {prefs.text("ユーザー削除", "Delete user")} }
+                }, {prefs.text("deletion.delete_user")} }
             }
         }
     }
@@ -265,18 +265,18 @@ fn CredentialDialog(
         }
     });
     rsx! {
-        AdminDialog { id: "admin-credential-result", title: prefs.text("仮パスワードを発行しました", "Temporary password issued"), onclose: move |_| result.set(None),
+        AdminDialog { id: "admin-credential-result", title: prefs.text("admin.temporary_password_issued"), onclose: move |_| result.set(None),
             if let Some(value) = result.read().as_ref() {
-                dl { class: "metric-list", dt { {prefs.text("ユーザー名", "Username")} } dd { "{value.username}" } }
-                Field { id: "admin-generated-password", label: prefs.text("仮パスワード", "Temporary password"),
+                dl { class: "metric-list", dt { {prefs.text("admin.username")} } dd { "{value.username}" } }
+                Field { id: "admin-generated-password", label: prefs.text("admin.temporary_password"),
                     output { id: "admin-generated-password", class: "generated-password", "{value.secret}" }
                 }
                 p { role: "status", "aria-live": "polite",
                     {match value.copy {
                         CopyState::Ready => "",
-                        CopyState::Pending => prefs.text("コピー中…", "Copying…"),
-                        CopyState::Copied => prefs.text("コピーしました", "Copied"),
-                        CopyState::Failed => prefs.text("コピーできませんでした。再試行してください。", "Could not copy. Try again."),
+                        CopyState::Pending => prefs.text("admin.copying"),
+                        CopyState::Copied => prefs.text("admin.copied"),
+                        CopyState::Failed => prefs.text("admin.could_not_copy_try_again"),
                     }}
                 }
                 div { class: "actions",
@@ -298,8 +298,8 @@ fn CredentialDialog(
                                 value.copy = CopyState::after_write(outcome);
                             }
                         });
-                    }, {prefs.text("コピー", "Copy")} }
-                    Button { r#type: "button", onclick: move |_| result.set(None), {prefs.text("閉じる", "Close")} }
+                    }, {prefs.text("admin.copy")} }
+                    Button { r#type: "button", onclick: move |_| result.set(None), {prefs.text("admin.close")} }
                 }
             }
         }

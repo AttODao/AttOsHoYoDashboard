@@ -13,9 +13,9 @@ pub(super) fn handle_api_error_for(state: Signal<AppState>, generation: u64, err
         return;
     }
     if error.is_unauthorized() {
-        signed_out(state, "Please sign in again.");
+        signed_out(state, "messages.please_sign_in_again");
     } else {
-        set_status(state, error.to_string(), "error");
+        set_status(state, error.message_key(), "error");
     }
 }
 
@@ -36,7 +36,7 @@ pub(super) async fn handle_password_error_for(
     if refresh_me(state).await && generation_matches(state, generation) {
         set_status(
             state,
-            "The current password was not accepted. Please try again.",
+            "messages.the_current_password_was_not_accepted_please_try_again",
             "error",
         );
     }

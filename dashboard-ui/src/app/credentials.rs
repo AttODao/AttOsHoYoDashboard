@@ -78,7 +78,7 @@ pub(super) async fn create(username: &str, secret: &str) -> api::Result<UserView
     {
         let _ = (username, secret);
         Err(api::ApiError::browser(
-            "This action is available only in a browser.",
+            "messages.this_action_is_available_only_in_a_browser",
         ))
     }
 }

@@ -12,9 +12,15 @@
 
 `pages/common.rs`は共通入力・アイコン・native dialogのDOM lifecycle、`app/preferences.rs`は非機密設定、`app/credentials.rs`は生成・clipboard境界、`app/data.rs`はゲーム別取得と設定保存の共有処理を持つ。
 
+## 表示文のi18n分離
+
+本番RSXの対訳・固定表示文を`dashboard-ui/locales/ja.json`／`en.json`へ移した。`src/i18n.rs`が埋め込みカタログの参照・英語fallback・名前付き補間を持ち、`app/preferences.rs`は言語／テーマ選択だけを扱う。API／WebAuthnエラーも安全なキーを保持し、UIで翻訳する。通知・取得エラーは言語変更時に再描画され、パスワード／UID選択／認証境界は維持する。read-only docsの見出し・表ラベルも翻訳対象にし、APIの提供データはそのまま表示する。
+
+検証：devenvで整形、workspace／WASM Clippy、UI unit 38件、release build、通常／reduced-motionのブラウザ回帰を通過。カタログ一致・placeholder・fallback・未知キーの秘匿、言語変更時の通知再翻訳とフォーム／ARIA状態維持を含む。実API・実アカウントにはアクセスしていない。
+
 ## 配信・フォント
 
-既存CSPを維持し、`unsafe-eval`／`unsafe-inline`は追加しない。ブラウザ操作は直接DOM APIを使い、Dioxusの`document::eval`に依存しない。フォントはGoogle Fonts配布のNoto Sans JP／Orbitron WOFF2 subsetを`assets/fonts/`へ同梱し、OFL本文も同梱。外部CDNやinline font stylesheetは使わない。日本語はUIソースの文字集合、Orbitronはwordmark／数字を対象とし、動的な固有名は通常のsans-serif fallbackも使う。
+既存CSPを維持し、`unsafe-eval`／`unsafe-inline`は追加しない。ブラウザ操作は直接DOM APIを使い、Dioxusの`document::eval`に依存しない。フォントはGoogle Fonts配布のNoto Sans JP／Orbitron WOFF2 subsetを`assets/fonts/`へ同梱し、OFL本文も同梱。外部CDNやinline font stylesheetは使わない。日本語subsetは初回UIソースの文字集合、Orbitronはwordmark／数字を対象とする。現在の表示文の正本は`locales/`で、追加文言の未収録字形や動的な固有名には通常のsans-serif fallbackも使う。
 
 ## 検証状況
 

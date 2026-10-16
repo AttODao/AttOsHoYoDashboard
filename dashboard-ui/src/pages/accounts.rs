@@ -10,8 +10,8 @@ pub(super) fn UidsPage(state: Signal<AppState>) -> Element {
     let preferences = use_preferences();
     rsx! {
         section { class: "panel page-stack",
-            h2 { {preferences.text("ゲーム表示", "Game visibility")} }
-            if let Some(error) = &state.read().accounts_error { p { class: "warning", "{error}" } }
+            h2 { {preferences.text("accounts.game_visibility")} }
+            if let Some(error) = &state.read().accounts_error { p { class: "warning", {preferences.text(error)} } }
             AccountTable { state, controls: true }
         }
     }
@@ -27,32 +27,29 @@ pub(super) fn AccountTable(state: Signal<AppState>, controls: bool) -> Element {
     };
     rsx! {
         if accounts.is_empty() && state.read().accounts_error.is_none() {
-            p { {preferences.text("ゲームアカウントはありません", "No game accounts returned.")} }
+            p { {preferences.text("accounts.no_game_accounts_returned")} }
         } else {
             div { class: "account-list",
                 for account in accounts {
                     div { class: "setting-row", key: "{account.id}",
                         div {
                             h3 { {match account.game_kind.as_str() {
-                                "genshin" => preferences.text("原神", "Genshin Impact"),
-                                "starrail" => preferences.text("崩壊：スターレイル", "Honkai: Star Rail"),
+                                "genshin" => preferences.text("dashboard.genshin_impact"),
+                                "starrail" => preferences.text("dashboard.honkai_star_rail"),
                                 _ => &account.game_kind,
                             }} }
-                            p { "UID · "
-                                if account.game_uid.is_empty() { {preferences.text("欠落", "Missing")} } else { "{account.game_uid}" }
-                                " · " {preferences.text("地域", "Region")} " · {account.region}"
-                            }
+                            p { {preferences.format("accounts.identity", &[("uid", if account.game_uid.is_empty() { preferences.text("accounts.missing") } else { &account.game_uid }), ("region", &account.region)])} }
                             p {
-                                {preferences.text("検出", "Detected")} " · "
-                                {if account.detected { preferences.text("あり", "Yes") } else { preferences.text("なし", "No") }}
-                                " · " {preferences.text("最終検出", "Last detected")} " · {account.last_detected_at}"
+                                {preferences.text("accounts.detected")} " · "
+                                {if account.detected { preferences.text("accounts.yes") } else { preferences.text("accounts.no") }}
+                                " · " {preferences.text("accounts.last_detected")} " · {account.last_detected_at}"
                             }
                         }
                         if controls {
                             label { class: "checkbox-row", r#for: "account-visible-{account.id}",
                                 input { id: "account-visible-{account.id}", r#type: "checkbox", checked: account.visible,
                                     disabled: state.read().busy || !state.read().ready(),
-                                    "aria-label": format!("{} {} {}", preferences.text("表示", "Visible"), account.game_kind, account.game_uid),
+                                    "aria-label": preferences.format("accounts.visible_label", &[("game", &account.game_kind), ("uid", &account.game_uid)]),
                                     onchange: move |event| {
                                         let id = account.id;
                                         let visible = event.checked();
@@ -60,7 +57,7 @@ pub(super) fn AccountTable(state: Signal<AppState>, controls: bool) -> Element {
                                         spawn_action(state, move |generation| async move {
                                             match crate::api::send("PATCH", &format!("/game-accounts/{id}"), Some(json!({"visible": visible}))).await {
                                                 Ok(()) if generation_matches(state, generation) => {
-                                                    set_status(state, preferences.text("表示設定を更新しました", "Visibility updated."), "success");
+                                                    set_status(state, "accounts.visibility_updated", "success");
                                                     load_accounts(state).await;
                                                 }
                                                 Ok(()) => {}
@@ -69,10 +66,10 @@ pub(super) fn AccountTable(state: Signal<AppState>, controls: bool) -> Element {
                                         });
                                     }
                                 }
-                                {preferences.text("表示", "Visible")}
+                                {preferences.text("accounts.visible")}
                             }
                         } else {
-                            span { {if account.visible { preferences.text("表示", "Visible") } else { preferences.text("非表示", "Hidden") }} }
+                            span { {if account.visible { preferences.text("accounts.visible") } else { preferences.text("accounts.hidden") }} }
                         }
                     }
                 }

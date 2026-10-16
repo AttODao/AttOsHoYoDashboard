@@ -1,5 +1,6 @@
 use super::shell::{Header, Status};
 use crate::app::data::load_docs;
+use crate::app::preferences::use_preferences;
 use crate::app::state::AppState;
 use crate::components::{Card, CardContent, CardDescription, CardHeader, CardTitle};
 use dioxus::prelude::*;
@@ -7,6 +8,7 @@ use serde_json::Value;
 
 #[component]
 pub(in crate::app) fn DocsPage(mut state: Signal<AppState>) -> Element {
+    let ui = use_preferences();
     use_future(move || async move {
         load_docs(state).await;
     });
@@ -16,13 +18,13 @@ pub(in crate::app) fn DocsPage(mut state: Signal<AppState>) -> Element {
             Header { state }
             Status { state }
             Card {
-                CardHeader { CardTitle { "API documentation" } CardDescription { "Read-only OpenAPI summary. This page has no try-it console and sends no credential-bearing API calls other than fetching /openapi.json." } }
+                CardHeader { CardTitle { {ui.text("docs.title")} } CardDescription { {ui.text("docs.description")} } }
                 CardContent {
-                    if let Some(error) = &state.read().openapi_error { p { class: "warning", "{error}" } }
+                    if let Some(error) = &state.read().openapi_error { p { class: "warning", {ui.text(error)} } }
                     if let Some(doc) = doc {
                         OpenApiSummary { doc }
                     } else {
-                        p { "Loading OpenAPI document…" }
+                        p { {ui.text("docs.loading")} }
                     }
                 }
             }
@@ -32,15 +34,16 @@ pub(in crate::app) fn DocsPage(mut state: Signal<AppState>) -> Element {
 
 #[component]
 fn OpenApiSummary(doc: Value) -> Element {
+    let ui = use_preferences();
     let title = doc
         .pointer("/info/title")
         .and_then(Value::as_str)
-        .unwrap_or("Dashboard API")
+        .unwrap_or(ui.text("docs.default_title"))
         .to_owned();
     let version = doc
         .pointer("/info/version")
         .and_then(Value::as_str)
-        .unwrap_or("unknown")
+        .unwrap_or(ui.text("docs.unknown_version"))
         .to_owned();
     let paths: Vec<(String, Vec<String>)> = doc
         .get("paths")
@@ -63,10 +66,10 @@ fn OpenApiSummary(doc: Value) -> Element {
     rsx! {
         div { class: "docs-summary",
             h2 { "{title}" }
-            p { "Version {version}" }
+            p { {ui.format("docs.version", &[("version", &version)])} }
             div { class: "table-wrap",
                 table {
-                    thead { tr { th { "Path" } th { "Methods" } } }
+                    thead { tr { th { {ui.text("docs.path")} } th { {ui.text("docs.methods")} } } }
                     tbody { for (path, methods) in paths { tr { td { code { "{path}" } } td { {methods.join(", ")} } } } }
                 }
             }

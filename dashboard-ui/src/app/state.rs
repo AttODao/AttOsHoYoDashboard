@@ -40,7 +40,7 @@ pub(super) enum Phase {
 
 #[derive(Clone, PartialEq)]
 pub(super) struct StatusLine {
-    pub(super) text: String,
+    pub(super) message_key: &'static str,
     pub(super) kind: &'static str,
 }
 
@@ -193,11 +193,12 @@ pub(super) fn set_page(mut state: Signal<AppState>, page: Page) {
     });
 }
 
-pub(super) fn set_status(mut state: Signal<AppState>, text: impl Into<String>, kind: &'static str) {
-    state.write().status = Some(StatusLine {
-        text: text.into(),
-        kind,
-    });
+pub(super) fn set_status(
+    mut state: Signal<AppState>,
+    message_key: &'static str,
+    kind: &'static str,
+) {
+    state.write().status = Some(StatusLine { message_key, kind });
 }
 
 pub(super) fn generation_matches(state: Signal<AppState>, generation: u64) -> bool {

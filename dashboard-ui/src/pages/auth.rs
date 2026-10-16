@@ -26,8 +26,8 @@ pub(in crate::app) fn LoadingPage() -> Element {
     rsx! {
         main { class: "auth-layout", "aria-live": "polite",
             section { class: "panel auth-panel",
-                h1 { "AGD" }
-                p { {ui.text("読み込み中…", "Loading…")} }
+                h1 { {ui.text("app.title")} }
+                p { {ui.text("dashboard.loading")} }
             }
         }
     }
@@ -48,13 +48,13 @@ pub(in crate::app) fn LoginPage(mut state: Signal<AppState>) -> Element {
         Header { state }
         main { class: "auth-layout",
             section { class: "panel auth-panel",
-                h1 { {ui.text("ログイン", "Sign in")} }
+                h1 { {ui.text("auth.sign_in")} }
                 Status { state }
                 if state.read().logout_unconfirmed {
                     Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| {
                         password.write().clear();
                         spawn_action(state, move |generation| async move { logout(state, generation).await; });
-                    }, {ui.text("ログアウトを再試行", "Retry server logout")} }
+                    }, {ui.text("auth.retry_server_logout")} }
                 }
                 form { onsubmit: move |event| {
                     event.prevent_default();
@@ -63,7 +63,7 @@ pub(in crate::app) fn LoginPage(mut state: Signal<AppState>) -> Element {
                     let pass = std::mem::take(&mut *password.write());
                     let selected = *method.read();
                     if !login_fields_complete(selected, &user, &pass) {
-                        set_status(state, ui.text("ユーザー名と認証情報を入力してください。", "Enter your username and credentials."), "error");
+                        set_status(state, "auth.enter_your_username_and_credentials", "error");
                         return;
                     }
                     spawn_action(state, move |generation| async move {
@@ -75,38 +75,38 @@ pub(in crate::app) fn LoginPage(mut state: Signal<AppState>) -> Element {
                             Ok(()) if generation_matches(state, generation) => bootstrap(state).await,
                             Ok(()) => {}
                             Err(error) if selected == LoginMethod::Password && error.is_unauthorized() && generation_matches(state, generation) => {
-                                set_status(state, "The username or password is incorrect.", "error");
+                                set_status(state, "messages.the_username_or_password_is_incorrect", "error");
                             }
                             Err(error) => { handle_api_error_for(state, generation, error); }
                         }
                     });
                 },
-                    Field { id: "login-username", label: ui.text("ユーザー名", "Username"),
+                    Field { id: "login-username", label: ui.text("admin.username"),
                         input { id: "login-username", autocomplete: "username webauthn", value: "{username}", oninput: move |event| username.set(event.value()) }
                     }
                     fieldset { class: "auth-method",
-                        legend { {ui.text("ログイン方法", "Sign-in method")} }
+                        legend { {ui.text("auth.sign_in_method")} }
                         label { r#for: "login-method-password",
                             input { id: "login-method-password", r#type: "radio", name: "login-method", value: "password", checked: *method.read() == LoginMethod::Password,
                                 onchange: move |_| { password.write().clear(); method.set(LoginMethod::Password); }
                             }
-                            {ui.text("パスワード", "Password")}
+                            {ui.text("auth.password")}
                         }
                         label { r#for: "login-method-passkey",
                             input { id: "login-method-passkey", r#type: "radio", name: "login-method", value: "passkey", checked: *method.read() == LoginMethod::Passkey,
                                 onchange: move |_| { password.write().clear(); method.set(LoginMethod::Passkey); }
                             }
-                            {ui.text("パスキー", "Passkey")}
+                            {ui.text("auth.passkey")}
                         }
                     }
                     if *method.read() == LoginMethod::Password {
-                        Field { id: "login-password", label: ui.text("パスワード", "Password"),
+                        Field { id: "login-password", label: ui.text("auth.password"),
                             PasswordInput { id: "login-password", value: password, autocomplete: "current-password" }
                         }
                     }
                     div { class: "auth-submit",
                         Button { r#type: "submit", disabled: state.read().busy,
-                            {if *method.read() == LoginMethod::Password { ui.text("ログイン", "Sign in") } else { ui.text("パスキーでログイン", "Use passkey") }}
+                            {if *method.read() == LoginMethod::Password { ui.text("auth.sign_in") } else { ui.text("auth.use_passkey") }}
                         }
                     }
                 }
@@ -126,23 +126,23 @@ pub(in crate::app) fn OnboardingPage(mut state: Signal<AppState>) -> Element {
     rsx! {
         Header { state }
         main { class: "setup-wrap page-stack",
-            h1 { {ui.text("初期設定", "Setup")} }
+            h1 { {ui.text("auth.setup")} }
             Status { state }
             if !cookie_complete {
-                div { class: "setup-progress", "aria-label": ui.text("設定の進行状況", "Setup progress"),
-                    span { class: if password_required { "current" } else { "" }, {ui.text("1. パスワード変更", "1. Change password")} }
-                    span { class: if !password_required { "current" } else { "" }, {ui.text("2. HoYoLAB連携", "2. HoYoLAB link")} }
+                div { class: "setup-progress", "aria-label": ui.text("auth.setup_progress"),
+                    span { class: if password_required { "current" } else { "" }, {ui.text("auth.1_change_password")} }
+                    span { class: if !password_required { "current" } else { "" }, {ui.text("auth.2_hoyolab_link")} }
                 }
             }
             if password_required {
-                PasswordCard { state, title: ui.text("パスワードを変更", "Change password") }
+                PasswordCard { state, title: ui.text("auth.change_password") }
             } else if !cookie_complete {
                 CookieCard { state }
             }
-            if let Some(error) = &state.read().hoyolab_error { p { class: "warning", "{error}" } }
+            if let Some(error) = &state.read().hoyolab_error { p { class: "warning", {ui.text(error)} } }
             Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| {
                 spawn_action(state, move |_| async move { bootstrap(state).await; });
-            }, {ui.text("設定状況を更新", "Refresh setup status")} }
+            }, {ui.text("auth.refresh_setup_status")} }
         }
     }
 }

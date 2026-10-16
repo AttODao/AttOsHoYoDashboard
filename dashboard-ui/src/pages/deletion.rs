@@ -12,7 +12,7 @@ pub(super) fn DeletePage(state: Signal<AppState>) -> Element {
     let preferences = use_preferences();
     rsx! {
         section { class: "panel page-stack danger-zone",
-            h2 { {preferences.text("ユーザー削除", "Delete user")} }
+            h2 { {preferences.text("deletion.delete_user")} }
             DeleteAccountCard { state }
         }
     }
@@ -33,11 +33,11 @@ pub(super) fn DeleteAccountCard(state: Signal<AppState>) -> Element {
         state.read().busy || !deletion_confirmed(&username, &confirmation(), &password());
     rsx! {
         div { class: "form-stack",
-            p { {preferences.text("対象ユーザー", "Target user")} " · {username}" }
-            Field { id: "delete-confirmation", label: preferences.text("ユーザー名（完全一致）", "Username (exact match)"),
+            p { {preferences.text("deletion.target_user")} " · {username}" }
+            Field { id: "delete-confirmation", label: preferences.text("deletion.username_exact_match"),
                 input { id: "delete-confirmation", autocomplete: "off", value: "{confirmation}", oninput: move |event| confirmation.set(event.value()) }
             }
-            Field { id: "delete-password", label: preferences.text("現在のパスワード", "Current password"),
+            Field { id: "delete-password", label: preferences.text("deletion.current_password"),
                 PasswordInput { id: "delete-password", value: password, autocomplete: "current-password" }
             }
             div { class: "button-row",
@@ -48,12 +48,12 @@ pub(super) fn DeleteAccountCard(state: Signal<AppState>) -> Element {
                     let confirm = confirmation();
                     spawn_action(state, move |generation| async move {
                         match crate::api::send("DELETE", "/me", Some(json!({"current_password": pass, "confirmation": confirm}))).await {
-                            Ok(()) if generation_matches(state, generation) => signed_out(state, preferences.text("ユーザー削除を受け付けました（処理待ち）", "User deletion accepted; processing pending.")),
+                            Ok(()) if generation_matches(state, generation) => signed_out(state, "deletion.user_deletion_accepted_processing_pending"),
                             Ok(()) => {}
                             Err(error) => { handle_password_error_for(state, generation, error).await; }
                         }
                     });
-                }, {preferences.text("ユーザー削除", "Delete user")} }
+                }, {preferences.text("deletion.delete_user")} }
             }
         }
     }

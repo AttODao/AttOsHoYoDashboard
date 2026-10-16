@@ -110,13 +110,20 @@ HTTPは輸送と入力型、`auth/`は認証・ユーザーライフサイクル
 - `dashboard-ui/src/app.rs`: App合成・起動・60秒周期のDashboard更新。
 - `dashboard-ui/src/app/state.rs`: AppState、Page/Phase、generation・busy・owner切替・画面アクセス制御と関連テスト。
 - `dashboard-ui/src/app/data.rs`: 画面別のAPIデータ取得、ゲームごとのUID状態更新、ボーナス設定保存の共有処理。
-- `dashboard-ui/src/app/preferences.rs`: 日本語／英語・dark／light。localStorageには非機密の選択だけを保存。
+- `dashboard-ui/src/app/preferences.rs`: 日本語／英語・dark／lightの選択・適用。localStorageには非機密の選択だけを保存。
+- `dashboard-ui/src/i18n.rs` / `dashboard-ui/locales/{ja,en}.json`: 翻訳キーの解決、英語fallback、名前付き変数の補間と日英の表示文。
 - `dashboard-ui/src/app/credentials.rs`: 管理者用仮パスワードのWeb Crypto生成・clipboard境界。生成結果は成功時だけメモリ内表示。
 - `dashboard-ui/src/app/session.rs`: bootstrap、fresh me適用、signed-out・logout失敗時の状態。
 - `dashboard-ui/src/app/actions.rs`: 非同期操作のsingle-flightと完了・エラー制御。
-- `dashboard-ui/src/app/display.rs`: nullableな数値ペアの表示整形。
+- `dashboard-ui/src/app/display.rs`: 既知の数値ペアの表示整形。欠落値の文言は画面側でi18nから取得。
 - `dashboard-ui/src/pages/mod.rs`: モジュール宣言のみ。`auth`、`shell`、`dashboard`、`hoyolab`、`accounts`、`rewards`、`security`、`admin`、`deletion`、`docs`に画面責務を分け、`common`に共通部品を置く。
 - `dashboard-ui/src/api.rs` / `models.rs` / `webauthn.rs`: 共通HTTP・DTO・ブラウザ認証器境界（維持）。
+
+### UIの翻訳
+
+画面本文・ラベル・ARIA名・通知・API／WebAuthnエラーの文言は`dashboard-ui/locales/ja.json`と`en.json`に置きます。RSXは`ui.text("翻訳キー")`、変数を含む文は`ui.format("翻訳キー", &[("名前", 値)])`で取得します。両言語に同じキー・`{名前}`のplaceholderを追加してください。JSONはビルドへ同梱し、外部の翻訳配信や新しい依存ライブラリは使用しません。
+
+通知・取得エラーは翻訳キーを状態に保持し、描画時に現在の言語へ変換します。表示中のエラーも言語変更で再翻訳され、操作を再送信しません。ユーザー名・UID・OpenAPIの提供データなど動的な値は翻訳しません。翻訳不足は英語へfallbackし、未知のキーは固定の安全なメッセージにします。カタログのキー・placeholder一致、参照の存在、状態の再翻訳はUIのunit／ブラウザテストで検査します。
 
 ## ビルド・テスト
 

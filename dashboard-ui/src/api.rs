@@ -16,7 +16,7 @@ pub type Result<T> = std::result::Result<T, ApiError>;
 pub struct ApiError {
     status: Option<u16>,
     code: String,
-    message: &'static str,
+    message_key: &'static str,
 }
 
 impl ApiError {
@@ -24,29 +24,29 @@ impl ApiError {
         self.status == Some(401) || self.code == "unauthorized"
     }
 
-    pub fn message_display(&self) -> &'static str {
-        self.message
+    pub fn message_key(&self) -> &'static str {
+        self.message_key
     }
 
-    pub(crate) fn browser(message: &'static str) -> Self {
+    pub(crate) fn browser(message_key: &'static str) -> Self {
         Self {
             status: None,
             code: "browser_error".to_owned(),
-            message,
+            message_key,
         }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     fn browser_only() -> Self {
-        Self::browser("This action is available only in a browser.")
+        Self::browser("messages.this_action_is_available_only_in_a_browser")
     }
 
     #[cfg(any(target_arch = "wasm32", test))]
-    fn internal(code: &'static str, message: &'static str) -> Self {
+    fn internal(code: &'static str, message_key: &'static str) -> Self {
         Self {
             status: None,
             code: code.to_owned(),
-            message,
+            message_key,
         }
     }
 
@@ -71,18 +71,18 @@ impl ApiError {
         } else {
             "http_error".to_owned()
         };
-        let message = safe_message(status, &code);
+        let message_key = safe_message(status, &code);
         Self {
             status: Some(status),
             code,
-            message,
+            message_key,
         }
     }
 }
 
 impl fmt::Display for ApiError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.message_display())
+        f.write_str(crate::i18n::Language::English.text(self.message_key()))
     }
 }
 
@@ -160,22 +160,29 @@ async fn request_json_at<T: DeserializeOwned>(
             return Err(error_from_response(response).await);
         }
         let text = response.text().await.map_err(|_| {
-            ApiError::internal("network_error", "The server response could not be read.")
+            ApiError::internal(
+                "network_error",
+                "messages.the_server_response_could_not_be_read",
+            )
         })?;
         if text.is_empty() {
             return Err(ApiError::internal(
                 "decode_error",
-                "The server returned no JSON data.",
+                "messages.the_server_returned_no_json_data",
             ));
         }
         if text.len() > JSON_LIMIT {
             return Err(ApiError::internal(
                 "response_too_large",
-                "The server response was too large.",
+                "messages.the_server_response_was_too_large",
             ));
         }
-        serde_json::from_str(&text)
-            .map_err(|_| ApiError::internal("decode_error", "The server returned unreadable JSON."))
+        serde_json::from_str(&text).map_err(|_| {
+            ApiError::internal(
+                "decode_error",
+                "messages.the_server_returned_unreadable_json",
+            )
+        })
     }
 }
 
@@ -191,7 +198,7 @@ fn public_path(path: &str) -> Result<String> {
     } else {
         Err(ApiError::internal(
             "invalid_path",
-            "The request path is not allowed.",
+            "messages.the_request_path_is_not_allowed",
         ))
     }
 }
@@ -203,7 +210,7 @@ fn checked_relative_path(path: &str) -> Result<&str> {
     } else {
         Err(ApiError::internal(
             "invalid_path",
-            "The request path is not allowed.",
+            "messages.the_request_path_is_not_allowed",
         ))
     }
 }
@@ -211,19 +218,19 @@ fn checked_relative_path(path: &str) -> Result<&str> {
 #[cfg(any(target_arch = "wasm32", test))]
 fn safe_message(status: u16, code: &str) -> &'static str {
     match code {
-        "unauthorized" => "Please sign in again.",
-        "forbidden" => "You do not have access to this action.",
-        "password_change_required" => "Please change your password before continuing.",
-        "initial_setup_required" => "Initial setup is required before continuing.",
-        "not_found" => "The requested item was not found.",
-        "conflict" => "The request conflicts with current server state.",
-        "rate_limited" => "Too many attempts. Please try again later.",
-        "busy" => "The server is busy. Please try again shortly.",
-        "unavailable" => "This feature is not available right now.",
-        "invalid_input" => "Please check the form and try again.",
-        "upstream_error" => "The upstream service could not be reached safely.",
-        _ if status >= 500 => "The server could not complete the request.",
-        _ => "The request could not be completed.",
+        "unauthorized" => "messages.please_sign_in_again",
+        "forbidden" => "messages.you_do_not_have_access_to_this_action",
+        "password_change_required" => "messages.please_change_your_password_before_continuing",
+        "initial_setup_required" => "messages.initial_setup_is_required_before_continuing",
+        "not_found" => "messages.the_requested_item_was_not_found",
+        "conflict" => "messages.the_request_conflicts_with_current_server_state",
+        "rate_limited" => "messages.too_many_attempts_please_try_again_later",
+        "busy" => "messages.the_server_is_busy_please_try_again_shortly",
+        "unavailable" => "messages.this_feature_is_not_available_right_now",
+        "invalid_input" => "messages.please_check_the_form_and_try_again",
+        "upstream_error" => "messages.the_upstream_service_could_not_be_reached_safely",
+        _ if status >= 500 => "messages.the_server_could_not_complete_the_request",
+        _ => "messages.the_request_could_not_be_completed",
     }
 }
 
@@ -241,7 +248,7 @@ async fn fetch(method: &str, url: &str, body: Option<Value>) -> Result<gloo_net:
         _ => {
             return Err(ApiError::internal(
                 "invalid_method",
-                "The request method is not allowed.",
+                "messages.the_request_method_is_not_allowed",
             ));
         }
     }
@@ -252,14 +259,17 @@ async fn fetch(method: &str, url: &str, body: Option<Value>) -> Result<gloo_net:
     match body {
         Some(body) => builder
             .json(&body)
-            .map_err(|_| ApiError::internal("encode_error", "The request could not be encoded."))?
+            .map_err(|_| {
+                ApiError::internal("encode_error", "messages.the_request_could_not_be_encoded")
+            })?
             .send()
             .await
-            .map_err(|_| ApiError::internal("network_error", "The server could not be reached.")),
-        None => builder
-            .send()
-            .await
-            .map_err(|_| ApiError::internal("network_error", "The server could not be reached.")),
+            .map_err(|_| {
+                ApiError::internal("network_error", "messages.the_server_could_not_be_reached")
+            }),
+        None => builder.send().await.map_err(|_| {
+            ApiError::internal("network_error", "messages.the_server_could_not_be_reached")
+        }),
     }
 }
 

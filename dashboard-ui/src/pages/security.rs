@@ -14,13 +14,13 @@ pub(super) fn SecurityPage(state: Signal<AppState>) -> Element {
     let server = state.read().server.clone();
     rsx! {
         div { class: "page-stack",
-            h2 { {ui.text("認証・セキュリティ", "Security")} }
-            PasswordCard { state, title: ui.text("パスワードを変更", "Change password") }
+            h2 { {ui.text("security.security")} }
+            PasswordCard { state, title: ui.text("auth.change_password") }
             PasskeyCard { state }
             section { class: "panel",
-                h3 { {ui.text("セッション", "Session")} }
+                h3 { {ui.text("security.session")} }
                 dl { class: "metric-list",
-                    Metric { label: ui.text("セッション有効期間", "Session lifetime"), value: server.as_ref().map(|s| format!("{} {}", s.session_ttl_days, ui.text("日", "days"))).unwrap_or_else(|| ui.text("未取得", "Not loaded").to_owned()) }
+                    Metric { label: ui.text("shell.session_lifetime"), value: server.as_ref().map(|s| ui.format("session.duration_days", &[("count", &s.session_ttl_days.to_string())])).unwrap_or_else(|| ui.text("shell.not_loaded").to_owned()) }
                 }
             }
         }
@@ -68,7 +68,7 @@ pub(super) fn PasswordCard(mut state: Signal<AppState>, title: &'static str) -> 
                 // Read the current server gate at submission, not a captured setup reason.
                 let mandatory = state.read().me.as_ref().is_some_and(|me| me.onboarding.password_change_required);
                 if !valid_password_change(mandatory, &current_password, &next, &confirm) {
-                    set_status(state, ui.text("新しいパスワードは12〜256バイトで確認欄と一致する必要があります。通常の変更には現在のパスワードも必要です。", "Use a matching new password of 12–256 bytes. Ordinary changes also require your current password."), "error");
+                    set_status(state, "security.invalid_password_change", "error");
                     return;
                 }
                 drop(confirm);
@@ -85,7 +85,7 @@ pub(super) fn PasswordCard(mut state: Signal<AppState>, title: &'static str) -> 
                                 let same_owner = state.read().phase == Phase::SignedIn
                                     && state.read().me.as_ref().map(|me| me.id) == owner;
                                 if same_owner && generation_matches(state, expected) {
-                                    set_status(state, ui.text("パスワードを変更しました。", "Password changed."), "success");
+                                    set_status(state, "security.password_changed", "success");
                                 }
                             }
                         }
@@ -97,19 +97,19 @@ pub(super) fn PasswordCard(mut state: Signal<AppState>, title: &'static str) -> 
             },
                 div { class: "form-grid",
                     if !mandatory {
-                        Field { id: "current-password", label: ui.text("現在のパスワード", "Current password"),
+                        Field { id: "current-password", label: ui.text("deletion.current_password"),
                             PasswordInput { id: "current-password", value: current, autocomplete: "current-password" }
                         }
                     }
-                    Field { id: "new-password", label: ui.text("新しいパスワード", "New password"),
+                    Field { id: "new-password", label: ui.text("security.new_password"),
                         PasswordInput { id: "new-password", value: new_password, autocomplete: "new-password" }
                     }
-                    Field { id: "confirm-password", label: ui.text("新しいパスワード（確認）", "Confirm new password"),
+                    Field { id: "confirm-password", label: ui.text("security.confirm_new_password"),
                         PasswordInput { id: "confirm-password", value: confirmation, autocomplete: "new-password" }
                     }
                 }
                 div { class: "auth-submit",
-                    Button { r#type: "submit", disabled: state.read().busy, {ui.text("パスワードを変更", "Change password")} }
+                    Button { r#type: "submit", disabled: state.read().busy, {ui.text("auth.change_password")} }
                 }
             }
         }
@@ -125,28 +125,28 @@ pub(super) fn PasskeyCard(mut state: Signal<AppState>) -> Element {
     });
     rsx! {
         section { class: "panel",
-            h3 { {ui.text("パスキー", "Passkeys")} }
-            if let Some(error) = &state.read().passkeys_error { p { class: "warning", "{error}" } }
+            h3 { {ui.text("security.passkeys")} }
+            if let Some(error) = &state.read().passkeys_error { p { class: "warning", {ui.text(error)} } }
             if state.read().passkeys.is_empty() && state.read().passkeys_error.is_none() {
-                p { {ui.text("登録済みのパスキーはありません。", "No passkeys registered.")} }
+                p { {ui.text("security.no_passkeys_registered")} }
             } else {
                 ul { class: "item-list",
                     for passkey in state.read().passkeys.clone() {
                         li {
-                            span { "{passkey.label} — " {ui.text("登録日時", "Created")} " {passkey.created_at}" }
+                            span { "{passkey.label} — " {ui.text("security.created")} " {passkey.created_at}" }
                             Button { variant: ButtonVariant::Destructive, r#type: "button", onclick: move |_| {
                                 let id = passkey.id;
                                 spawn_action(state, move |generation| async move {
                                     match crate::api::send("DELETE", &format!("/me/passkeys/{id}"), None).await {
                                         Ok(()) if generation_matches(state, generation) => {
-                                            set_status(state, ui.text("パスキーを削除しました。", "Passkey deleted."), "success");
+                                            set_status(state, "security.passkey_deleted", "success");
                                             load_passkeys(state).await;
                                         }
                                         Ok(()) => {}
                                         Err(error) => { handle_api_error_for(state, generation, error); }
                                     }
                                 });
-                            }, {ui.text("削除", "Delete")} }
+                            }, {ui.text("security.delete")} }
                         }
                     }
                 }
@@ -158,7 +158,7 @@ pub(super) fn PasskeyCard(mut state: Signal<AppState>) -> Element {
                 spawn_action(state, move |generation| async move {
                     match crate::webauthn::register(&label_value).await {
                         Ok(()) if generation_matches(state, generation) => {
-                            set_status(state, ui.text("パスキーを登録しました。", "Passkey registered."), "success");
+                            set_status(state, "security.passkey_registered", "success");
                             load_passkeys(state).await;
                         }
                         Ok(()) => {}
@@ -166,11 +166,11 @@ pub(super) fn PasskeyCard(mut state: Signal<AppState>) -> Element {
                     }
                 });
             },
-                Field { id: "passkey-label", label: ui.text("新しいパスキーの名前", "New passkey label"),
+                Field { id: "passkey-label", label: ui.text("security.new_passkey_label"),
                     input { id: "passkey-label", maxlength: "100", autocomplete: "off", value: "{label}", oninput: move |event| label.set(event.value()) }
                 }
                 div { class: "auth-submit",
-                    Button { variant: ButtonVariant::Secondary, r#type: "submit", disabled: state.read().busy, {ui.text("パスキーを登録", "Register passkey")} }
+                    Button { variant: ButtonVariant::Secondary, r#type: "submit", disabled: state.read().busy, {ui.text("security.register_passkey")} }
                 }
             }
         }

@@ -280,10 +280,21 @@ try{
  assert.notEqual(await page.locator('html').evaluate(e=>getComputedStyle(e).getPropertyValue('--canvas')),darkToken);
  await drawer.getByRole('button',{name:'日本語',exact:true}).click();
  await page.waitForFunction(()=>document.documentElement.lang==='ja'&&localStorage.getItem('agd-language')==='ja');
+ await drawer.getByRole('switch',{name:'ダークモード',exact:true}).waitFor();
+ assert.equal(await drawer.getAttribute('aria-label'),'アカウントメニュー');
+ assert.equal(await page.locator('#agd-menu-trigger').getAttribute('aria-label'),'メニューを開く');
+ assert.equal(await drawer.getByRole('button',{name:'日本語',exact:true}).getAttribute('aria-pressed'),'true');
+ await page.locator('h1').getByText('ダッシュボード',{exact:true}).waitFor();
+ assert.equal(await page.locator('#selected-genshin').inputValue(),uid(6),'language change preserves selected UID');
+ assert.equal(await page.locator('#selected-starrail').inputValue(),uid(8));
  await page.reload();await idle();
  assert.equal(await page.locator('html').getAttribute('data-theme'),'light','theme persists across reload (DOM only)');
  assert.equal(await page.locator('html').getAttribute('lang'),'ja');
  await openMenu();await drawer.getByRole('button',{name:'English',exact:true}).click();
+ await drawer.getByRole('switch',{name:'Dark mode',exact:true}).waitFor();
+ assert.equal(await drawer.getAttribute('aria-label'),'Account menu');
+ assert.equal(await page.locator('#agd-menu-trigger').getAttribute('aria-label'),'Open menu');
+ assert.equal(await drawer.getByRole('button',{name:'English',exact:true}).getAttribute('aria-pressed'),'true');
  await drawer.getByRole('switch',{name:'Dark mode',exact:true}).click();
  await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark'&&localStorage.getItem('agd-theme')==='dark');
  await page.keyboard.press('Escape');await dashboard();
@@ -343,6 +354,11 @@ try{
  await change('wrong-synthetic-password');
  await page.getByText('The current password was not accepted. Please try again.',{exact:true}).waitFor();
  assert.equal(await page.locator('#login-username').count(),0);
+ // A client-side failure must be retranslated in place, without retrying the mutation.
+ const passwordRequestsBeforeLanguage=counts.get('/api/v1/me/password');
+ const passwordValidation='Use a matching new password of 12–256 bytes. Ordinary changes also require your current password.';
+ await button('Change password').click();await idle();
+ await page.locator('.status.error').getByText(passwordValidation,{exact:true}).waitFor();
  // Preferences remask every mounted security field; navigation unmount clears them.
  for(const id of ['current-password','new-password','confirm-password']){
   await page.locator('#'+id).fill('synthetic-navigation-secret');
@@ -350,7 +366,18 @@ try{
  }
  await openMenu();await drawer.getByRole('button',{name:'日本語',exact:true}).click();
  await page.waitForFunction(()=>['current-password','new-password','confirm-password'].every(id=>document.getElementById(id)?.type==='password'));
+ await page.locator('.status.error').getByText('新しいパスワードは12〜256バイトで確認欄と一致する必要があります。通常の変更には現在のパスワードも必要です。',{exact:true}).waitFor();
+ assert.equal(await page.locator('.live-region').getAttribute('aria-live'),'polite');
+ assert.equal(await page.locator('#settings-tab-security').getAttribute('aria-label'),'セキュリティ');
+ assert.equal(await page.locator('#settings-tab-security').getAttribute('aria-selected'),'true');
+ assert.equal(await page.locator('#settings-panel').getAttribute('aria-labelledby'),'settings-tab-security');
+ assert.equal(await page.locator('button[aria-controls="current-password"]').getAttribute('aria-label'),'パスワードを表示');
  await drawer.getByRole('button',{name:'English',exact:true}).click();await page.keyboard.press('Escape');
+ await page.locator('.status.error').getByText(passwordValidation,{exact:true}).waitFor();
+ assert.equal(await page.locator('#settings-tab-security').getAttribute('aria-label'),'Security');
+ assert.equal(await page.locator('button[aria-controls="current-password"]').getAttribute('aria-label'),'Show password');
+ assert.equal(counts.get('/api/v1/me/password'),passwordRequestsBeforeLanguage,'validation and language changes never resubmit passwords');
+ for(const id of ['current-password','new-password','confirm-password'])assert.ok(await page.locator('#'+id).evaluate(e=>e.value!==''&&e.type==='password'),'language changes preserve input without revealing it');
  await page.locator('#settings-tab-uids').click();await page.locator('#settings-tab-security').click();await idle();
  for(const id of ['current-password','new-password','confirm-password'])assert.ok(await page.locator('#'+id).evaluate(e=>e.value===''&&e.type==='password'));
  const cdp=await context.newCDPSession(page);await cdp.send('WebAuthn.enable');
@@ -450,6 +477,15 @@ try{
  await page.getByRole('heading',{name:JSON.parse(fs.readFileSync(path.join(root,'docs/dashboard-api.json'),'utf8')).info.title,exact:true}).waitFor();
  assert.equal(await page.locator('#login-username').count(),0);assert.equal(counts.get('/openapi.json'),1);
  assert.deepEqual([...counts].filter(([p])=>p.startsWith('/api/v1/')),apiBefore);
+ stage='docs-i18n';
+ await page.getByRole('columnheader',{name:'Path',exact:true}).waitFor();
+ await page.evaluate(()=>localStorage.setItem('agd-language','ja'));await page.reload();
+ await page.getByText('APIドキュメント',{exact:true}).waitFor();
+ await page.getByRole('columnheader',{name:'パス',exact:true}).waitFor();
+ await page.getByRole('columnheader',{name:'メソッド',exact:true}).waitFor();
+ assert.equal(await page.locator('html').getAttribute('lang'),'ja');
+ assert.equal(counts.get('/openapi.json'),2);
+ assert.deepEqual([...counts].filter(([p])=>p.startsWith('/api/v1/')),apiBefore,'translated public docs still make no authenticated requests');
  assert.deepEqual(await page.evaluate(()=>Object.keys(localStorage).sort()),['agd-language','agd-theme'],'only non-sensitive preferences persist');
  assert.deepEqual(errors,[],'release CSP/Wasm errors');assert.deepEqual(failures,[]);
  console.log('Dioxus production browser regressions passed (synthetic implemented API fixtures; no live identity or backend authorization evidence).');

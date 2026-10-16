@@ -1,11 +1,5 @@
+use crate::i18n::Language;
 use dioxus::prelude::*;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub(super) enum Language {
-    #[default]
-    Japanese,
-    English,
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub(super) enum Theme {
@@ -21,11 +15,12 @@ pub(super) struct Preferences {
 }
 
 impl Preferences {
-    pub(super) fn text(self, japanese: &'static str, english: &'static str) -> &'static str {
-        match self.language {
-            Language::Japanese => japanese,
-            Language::English => english,
-        }
+    pub(super) fn text(self, key: &str) -> &'static str {
+        self.language.text(key)
+    }
+
+    pub(super) fn format(self, key: &str, arguments: &[(&str, &str)]) -> String {
+        self.language.format(key, arguments)
     }
 
     #[cfg(any(target_arch = "wasm32", test))]
@@ -75,7 +70,7 @@ impl Preferences {
         #[cfg(target_arch = "wasm32")]
         if let Some(window) = web_sys::window() {
             if let Some(document) = window.document() {
-                document.set_title("AGD");
+                document.set_title(self.text("app.title"));
             }
             if let Some(root) = window.document().and_then(|d| d.document_element()) {
                 let _ = root.set_attribute("lang", self.language_code());
@@ -87,28 +82,6 @@ impl Preferences {
                 let _ = storage.set_item("agd-theme", self.theme_code());
             }
         }
-    }
-
-    pub(super) fn message(self, message: &str) -> String {
-        if self.language == Language::English {
-            return message.to_owned();
-        }
-        match message {
-            "Please sign in." => "ログインしてください。",
-            "Please sign in again." => "もう一度ログインしてください。",
-            "The username or password is incorrect." => "ユーザー名かパスワードが違います",
-            "Signed out." => "ログアウトしました。",
-            "The dashboard could not load your session." => "セッションを読み込めませんでした。",
-            "Local data cleared, but server logout is unconfirmed. Retry server logout before leaving this browser." => "ローカル情報は消去しましたが、サーバーのログアウトは未確認です。再試行してください。",
-            "Account deletion accepted." => "ユーザー削除を受け付けました。処理の完了は未確認です。",
-            "Manual reward run queued." => "実行要求を受け付けました。受け取り完了ではありません。",
-            "Reward setting saved." => "ログインボーナス設定を保存しました。",
-            "Visibility updated." => "表示設定を保存しました。",
-            "Cookie stored for server verification." => "Cookieを保存しました。本人確認を実行してください。",
-            "Verification requested." => "本人確認を要求しました。",
-            "Sync requested." => "UID同期を要求しました。",
-            _ => message,
-        }.to_owned()
     }
 }
 
@@ -134,43 +107,5 @@ mod tests {
             Preferences::from_saved(Some("en"), Some("light")).theme_code(),
             "light"
         );
-    }
-
-    #[test]
-    fn invalid_credentials_have_specific_localized_copy() {
-        let japanese = Preferences::default();
-        assert_eq!(
-            japanese.message("The username or password is incorrect."),
-            "ユーザー名かパスワードが違います"
-        );
-        let english = Preferences {
-            language: Language::English,
-            ..japanese
-        };
-        assert_eq!(
-            english.message("The username or password is incorrect."),
-            "The username or password is incorrect."
-        );
-        assert_eq!(
-            japanese.message("Please sign in again."),
-            "もう一度ログインしてください。"
-        );
-    }
-
-    #[test]
-    fn both_languages_keep_acceptance_distinct_from_completion() {
-        let japanese = Preferences::default();
-        assert_eq!(japanese.text("保存", "Save"), "保存");
-        assert!(
-            japanese
-                .message("Manual reward run queued.")
-                .contains("完了ではありません")
-        );
-        let english = Preferences {
-            language: Language::English,
-            ..japanese
-        };
-        assert_eq!(english.text("保存", "Save"), "Save");
-        assert_eq!(english.message("unknown"), "unknown");
     }
 }

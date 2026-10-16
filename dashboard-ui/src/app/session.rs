@@ -37,11 +37,11 @@ pub(super) async fn bootstrap(mut state: Signal<AppState>) {
         }
         Ok(_) => {}
         Err(error) if generation_matches(state, generation) && error.is_unauthorized() => {
-            signed_out(state, "Please sign in.");
+            signed_out(state, "messages.please_sign_in");
         }
         Err(error) if generation_matches(state, generation) => {
-            signed_out(state, "The dashboard could not load your session.");
-            set_status(state, error.to_string(), "error");
+            signed_out(state, "messages.the_dashboard_could_not_load_your_session");
+            set_status(state, error.message_key(), "error");
         }
         Err(_) => {}
     }
@@ -95,11 +95,11 @@ pub(super) async fn refresh_me(mut state: Signal<AppState>) -> bool {
         }
         Ok(_) => false,
         Err(error) if current_generation(state, generation) && error.is_unauthorized() => {
-            signed_out(state, "Please sign in again.");
+            signed_out(state, "messages.please_sign_in_again");
             false
         }
         Err(error) if current_generation(state, generation) => {
-            set_status(state, error.to_string(), "error");
+            set_status(state, error.message_key(), "error");
             false
         }
         Err(_) => false,
@@ -119,7 +119,7 @@ fn apply_fresh_me(write: &mut AppState, me: MeView) -> bool {
     changed_owner
 }
 
-pub(super) fn signed_out(mut state: Signal<AppState>, message: &str) {
+pub(super) fn signed_out(mut state: Signal<AppState>, message_key: &'static str) {
     let page = state.read().page;
     let generation = state.read().generation + 1;
     let mut next = AppState::new(if page == Page::Docs {
@@ -130,7 +130,7 @@ pub(super) fn signed_out(mut state: Signal<AppState>, message: &str) {
     next.phase = Phase::SignedOut;
     next.generation = generation;
     next.status = Some(StatusLine {
-        text: message.to_owned(),
+        message_key,
         kind: "info",
     });
     state.set(next);
@@ -142,13 +142,10 @@ pub(super) async fn logout(mut state: Signal<AppState>, generation: u64) {
         return;
     }
     match result {
-        Ok(()) => signed_out(state, "Signed out."),
-        Err(error) if error.is_unauthorized() => signed_out(state, "Signed out."),
+        Ok(()) => signed_out(state, "messages.signed_out"),
+        Err(error) if error.is_unauthorized() => signed_out(state, "messages.signed_out"),
         Err(_) => {
-            signed_out(
-                state,
-                "Local data cleared, but server logout is unconfirmed. Retry server logout before leaving this browser.",
-            );
+            signed_out(state, "messages.logout_unconfirmed");
             state.write().logout_unconfirmed = true;
         }
     }

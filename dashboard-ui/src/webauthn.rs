@@ -18,7 +18,7 @@ pub async fn register(label: &str) -> api::Result<()> {
 async fn login_impl(username: &str) -> api::Result<()> {
     let _ = username;
     Err(api::ApiError::browser(
-        "Passkeys are available only in a browser.",
+        "messages.passkeys_are_available_only_in_a_browser",
     ))
 }
 
@@ -26,7 +26,7 @@ async fn login_impl(username: &str) -> api::Result<()> {
 async fn register_impl(label: &str) -> api::Result<()> {
     let _ = label;
     Err(api::ApiError::browser(
-        "Passkeys are available only in a browser.",
+        "messages.passkeys_are_available_only_in_a_browser",
     ))
 }
 
@@ -77,7 +77,7 @@ fn b64(bytes: &[u8]) -> String {
 fn b64_decode(text: &str) -> api::Result<Vec<u8>> {
     URL_SAFE_NO_PAD
         .decode(text.as_bytes())
-        .map_err(|_| api::ApiError::browser("The passkey challenge was invalid."))
+        .map_err(|_| api::ApiError::browser("messages.the_passkey_challenge_was_invalid"))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -89,7 +89,7 @@ fn credential_creation_options(options: Value) -> api::Result<web_sys::Credentia
         &wasm_bindgen::JsValue::from_str("publicKey"),
         &public_key,
     )
-    .map_err(|_| api::ApiError::browser("The passkey challenge was invalid."))?;
+    .map_err(|_| api::ApiError::browser("messages.the_passkey_challenge_was_invalid"))?;
     Ok(wrapper)
 }
 
@@ -102,7 +102,7 @@ fn credential_request_options(options: Value) -> api::Result<web_sys::Credential
         &wasm_bindgen::JsValue::from_str("publicKey"),
         &public_key,
     )
-    .map_err(|_| api::ApiError::browser("The passkey challenge was invalid."))?;
+    .map_err(|_| api::ApiError::browser("messages.the_passkey_challenge_was_invalid"))?;
     Ok(wrapper)
 }
 
@@ -115,21 +115,23 @@ fn public_key_options(
 
     let js = value_to_js(&options)?;
     let public_key = js_sys::Reflect::get(&js, &JsValue::from_str("publicKey"))
-        .map_err(|_| api::ApiError::browser("The passkey challenge was invalid."))?;
+        .map_err(|_| api::ApiError::browser("messages.the_passkey_challenge_was_invalid"))?;
     if public_key.is_undefined() || public_key.is_null() {
-        return Err(api::ApiError::browser("The passkey challenge was invalid."));
+        return Err(api::ApiError::browser(
+            "messages.the_passkey_challenge_was_invalid",
+        ));
     }
     set_base64_field(&public_key, "challenge")?;
 
     let user = js_sys::Reflect::get(&public_key, &JsValue::from_str("user"))
-        .map_err(|_| api::ApiError::browser("The passkey challenge was invalid."))?;
+        .map_err(|_| api::ApiError::browser("messages.the_passkey_challenge_was_invalid"))?;
     if !user.is_undefined() && !user.is_null() {
         set_base64_field(&user, "id")?;
     }
 
     for list_name in credential_lists {
         let value = js_sys::Reflect::get(&public_key, &JsValue::from_str(list_name))
-            .map_err(|_| api::ApiError::browser("The passkey challenge was invalid."))?;
+            .map_err(|_| api::ApiError::browser("messages.the_passkey_challenge_was_invalid"))?;
         if value.is_undefined() || value.is_null() {
             continue;
         }
@@ -147,20 +149,20 @@ fn set_base64_field(object: &wasm_bindgen::JsValue, field: &str) -> api::Result<
 
     let key = JsValue::from_str(field);
     let text = js_sys::Reflect::get(object, &key)
-        .map_err(|_| api::ApiError::browser("The passkey challenge was invalid."))?
+        .map_err(|_| api::ApiError::browser("messages.the_passkey_challenge_was_invalid"))?
         .as_string()
-        .ok_or_else(|| api::ApiError::browser("The passkey challenge was invalid."))?;
+        .ok_or_else(|| api::ApiError::browser("messages.the_passkey_challenge_was_invalid"))?;
     let bytes = b64_decode(&text)?;
     let array = js_sys::Uint8Array::from(bytes.as_slice());
     js_sys::Reflect::set(object, &key, &array.buffer())
-        .map_err(|_| api::ApiError::browser("The passkey challenge was invalid."))?;
+        .map_err(|_| api::ApiError::browser("messages.the_passkey_challenge_was_invalid"))?;
     Ok(())
 }
 
 #[cfg(target_arch = "wasm32")]
 fn value_to_js(value: &Value) -> api::Result<wasm_bindgen::JsValue> {
     js_sys::JSON::parse(&value.to_string())
-        .map_err(|_| api::ApiError::browser("The passkey challenge was invalid."))
+        .map_err(|_| api::ApiError::browser("messages.the_passkey_challenge_was_invalid"))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -191,8 +193,9 @@ async fn get_credential(
 
 #[cfg(target_arch = "wasm32")]
 fn credentials_container() -> api::Result<web_sys::CredentialsContainer> {
-    let window = web_sys::window()
-        .ok_or_else(|| api::ApiError::browser("Passkeys are unavailable in this browser."))?;
+    let window = web_sys::window().ok_or_else(|| {
+        api::ApiError::browser("messages.passkeys_are_unavailable_in_this_browser")
+    })?;
     Ok(window.navigator().credentials())
 }
 
@@ -202,12 +205,14 @@ fn credential_from_js(value: wasm_bindgen::JsValue) -> api::Result<web_sys::Publ
 
     if value.is_null() || value.is_undefined() {
         return Err(api::ApiError::browser(
-            "Passkey verification was cancelled.",
+            "messages.passkey_verification_was_cancelled",
         ));
     }
     value
         .dyn_into::<web_sys::PublicKeyCredential>()
-        .map_err(|_| api::ApiError::browser("The browser returned an invalid passkey response."))
+        .map_err(|_| {
+            api::ApiError::browser("messages.the_browser_returned_an_invalid_passkey_response")
+        })
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -217,7 +222,9 @@ fn attestation_json(credential: &web_sys::PublicKeyCredential) -> api::Result<Va
     let response = credential
         .response()
         .dyn_into::<web_sys::AuthenticatorAttestationResponse>()
-        .map_err(|_| api::ApiError::browser("The browser returned an invalid passkey response."))?;
+        .map_err(|_| {
+            api::ApiError::browser("messages.the_browser_returned_an_invalid_passkey_response")
+        })?;
     let mut response_json = json!({
         "clientDataJSON": buffer_b64(response.client_data_json()),
         "attestationObject": buffer_b64(response.attestation_object()),
@@ -247,7 +254,9 @@ fn assertion_json(credential: &web_sys::PublicKeyCredential) -> api::Result<Valu
     let response = credential
         .response()
         .dyn_into::<web_sys::AuthenticatorAssertionResponse>()
-        .map_err(|_| api::ApiError::browser("The browser returned an invalid passkey response."))?;
+        .map_err(|_| {
+            api::ApiError::browser("messages.the_browser_returned_an_invalid_passkey_response")
+        })?;
     let user_handle = response
         .user_handle()
         .map(buffer_b64)
@@ -281,19 +290,22 @@ fn client_extension_results(credential: &web_sys::PublicKeyCredential) -> api::R
         credential.as_ref(),
         &wasm_bindgen::JsValue::from_str("getClientExtensionResults"),
     )
-    .map_err(|_| api::ApiError::browser("The browser returned an invalid passkey response."))?;
+    .map_err(|_| {
+        api::ApiError::browser("messages.the_browser_returned_an_invalid_passkey_response")
+    })?;
     let Some(method) = method.dyn_ref::<js_sys::Function>() else {
         return Ok(json!({}));
     };
-    let result = method
-        .call0(credential.as_ref())
-        .map_err(|_| api::ApiError::browser("The browser returned an invalid passkey response."))?;
+    let result = method.call0(credential.as_ref()).map_err(|_| {
+        api::ApiError::browser("messages.the_browser_returned_an_invalid_passkey_response")
+    })?;
     let text = js_sys::JSON::stringify(&result)
         .ok()
         .and_then(|text| text.as_string())
         .unwrap_or_else(|| "{}".to_owned());
-    serde_json::from_str(&text)
-        .map_err(|_| api::ApiError::browser("The browser returned an invalid passkey response."))
+    serde_json::from_str(&text).map_err(|_| {
+        api::ApiError::browser("messages.the_browser_returned_an_invalid_passkey_response")
+    })
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -304,10 +316,12 @@ fn js_error(value: wasm_bindgen::JsValue) -> api::ApiError {
         .unwrap_or_default();
     match name.as_str() {
         "AbortError" | "NotAllowedError" => {
-            api::ApiError::browser("Passkey verification was cancelled.")
+            api::ApiError::browser("messages.passkey_verification_was_cancelled")
         }
-        "SecurityError" => api::ApiError::browser("Passkeys are not allowed for this page."),
-        _ => api::ApiError::browser("Passkeys are unavailable in this browser."),
+        "SecurityError" => {
+            api::ApiError::browser("messages.passkeys_are_not_allowed_for_this_page")
+        }
+        _ => api::ApiError::browser("messages.passkeys_are_unavailable_in_this_browser"),
     }
 }
 

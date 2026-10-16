@@ -66,11 +66,11 @@ pub(super) async fn load_hoyolab(mut state: Signal<AppState>) {
         }
         Ok(_) => {}
         Err(error) if current_generation(state, generation) && error.is_unauthorized() => {
-            signed_out(state, "Please sign in again.");
+            signed_out(state, "messages.please_sign_in_again");
         }
         Err(error) if current_generation(state, generation) => {
             state.write().hoyolab = None;
-            state.write().hoyolab_error = Some(error.to_string());
+            state.write().hoyolab_error = Some(error.message_key().to_owned());
         }
         Err(_) => {}
     }
@@ -91,10 +91,10 @@ pub(super) async fn load_accounts(mut state: Signal<AppState>) {
         }
         Ok(_) => {}
         Err(error) if current_ready_generation(state, generation) && error.is_unauthorized() => {
-            signed_out(state, "Please sign in again.");
+            signed_out(state, "messages.please_sign_in_again");
         }
         Err(error) if current_ready_generation(state, generation) => {
-            state.write().accounts_error = Some(error.to_string());
+            state.write().accounts_error = Some(error.message_key().to_owned());
         }
         Err(_) => {}
     }
@@ -183,7 +183,7 @@ pub(super) async fn load_game_status(mut state: Signal<AppState>, game: &'static
                     .error = Some("identity_mismatch".to_owned());
             }
         }
-        Err(error) if error.is_unauthorized() => signed_out(state, "Please sign in again."),
+        Err(error) if error.is_unauthorized() => signed_out(state, "messages.please_sign_in_again"),
         Err(_) => {
             // Retain the last payload, but show this refresh failure separately.
             state
@@ -197,14 +197,14 @@ pub(super) async fn load_game_status(mut state: Signal<AppState>, game: &'static
 }
 
 // Shared with the settings Save action: preserve its PATCH contract and generation boundary.
-// Call inside spawn_action; the caller supplies localized acknowledgement copy.
+// Call inside spawn_action; the caller supplies an acknowledgement message key.
 pub(super) async fn save_reward_setting(
     state: Signal<AppState>,
     generation: u64,
     id: Uuid,
     enabled: bool,
     local_time: String,
-    saved_message: &'static str,
+    saved_message_key: &'static str,
 ) {
     if !current_ready_generation(state, generation) {
         return;
@@ -212,7 +212,7 @@ pub(super) async fn save_reward_setting(
     let body = json!({"enabled": enabled, "local_time": if local_time.is_empty() { "06:00".to_owned() } else { local_time }});
     match api::send("PATCH", &format!("/reward-settings/{id}"), Some(body)).await {
         Ok(()) if current_ready_generation(state, generation) => {
-            set_status(state, saved_message, "success");
+            set_status(state, saved_message_key, "success");
             load_rewards(state).await;
         }
         Ok(()) => {}
@@ -231,11 +231,11 @@ pub(super) async fn load_rewards(mut state: Signal<AppState>) {
         }
         Ok(_) => {}
         Err(error) if current_ready_generation(state, generation) && error.is_unauthorized() => {
-            signed_out(state, "Please sign in again.");
+            signed_out(state, "messages.please_sign_in_again");
         }
         Err(error) if current_ready_generation(state, generation) => {
             state.write().rewards.clear();
-            state.write().rewards_error = Some(error.to_string());
+            state.write().rewards_error = Some(error.message_key().to_owned());
         }
         Err(_) => {}
     }
@@ -249,11 +249,11 @@ pub(super) async fn load_rewards(mut state: Signal<AppState>) {
         }
         Ok(_) => {}
         Err(error) if current_ready_generation(state, generation) && error.is_unauthorized() => {
-            signed_out(state, "Please sign in again.");
+            signed_out(state, "messages.please_sign_in_again");
         }
         Err(error) if current_ready_generation(state, generation) => {
             state.write().reward_runs.clear();
-            state.write().reward_runs_error = Some(error.to_string());
+            state.write().reward_runs_error = Some(error.message_key().to_owned());
         }
         Err(_) => {}
     }
@@ -270,11 +270,11 @@ pub(super) async fn load_passkeys(mut state: Signal<AppState>) {
         }
         Ok(_) => {}
         Err(error) if current_generation(state, generation) && error.is_unauthorized() => {
-            signed_out(state, "Please sign in again.");
+            signed_out(state, "messages.please_sign_in_again");
         }
         Err(error) if current_generation(state, generation) => {
             state.write().passkeys.clear();
-            state.write().passkeys_error = Some(error.to_string());
+            state.write().passkeys_error = Some(error.message_key().to_owned());
         }
         Err(_) => {}
     }
@@ -290,7 +290,7 @@ pub(super) async fn load_server_settings(mut state: Signal<AppState>) {
         }
         Ok(_) => {}
         Err(error) if current_generation(state, generation) && error.is_unauthorized() => {
-            signed_out(state, "Please sign in again.");
+            signed_out(state, "messages.please_sign_in_again");
         }
         Err(_) => {}
     }
@@ -310,11 +310,11 @@ pub(super) async fn load_admin_users(mut state: Signal<AppState>) {
         }
         Ok(_) => {}
         Err(error) if current_generation(state, generation) && error.is_unauthorized() => {
-            signed_out(state, "Please sign in again.");
+            signed_out(state, "messages.please_sign_in_again");
         }
         Err(error) if current_generation(state, generation) => {
             state.write().admin_users.clear();
-            state.write().admin_error = Some(error.to_string());
+            state.write().admin_error = Some(error.message_key().to_owned());
         }
         Err(_) => {}
     }
@@ -326,7 +326,7 @@ pub(super) async fn load_docs(mut state: Signal<AppState>) {
             state.write().openapi = Some(value);
             state.write().openapi_error = None;
         }
-        Err(error) => state.write().openapi_error = Some(error.to_string()),
+        Err(error) => state.write().openapi_error = Some(error.message_key().to_owned()),
     }
 }
 
