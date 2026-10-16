@@ -108,7 +108,7 @@ const server=http.createServer(async(req,res)=>{
   if(p==='/openapi.json'){assert.equal(req.method,'GET');counts.set(p,(counts.get(p)||0)+1);return json(res,JSON.parse(fs.readFileSync(path.join(root,'docs/dashboard-api.json'),'utf8')));}
   let file;
   if(p==='/'||p==='/docs'){file=path.join(publicDir,'index.html');res.setHeader('Content-Type','text/html');res.setHeader('Content-Security-Policy',csp);}
-  else if(p.startsWith('/assets/')){file=path.resolve(publicDir,'.'+p);assert.ok(file.startsWith(path.join(publicDir,'assets')+path.sep));res.setHeader('Content-Type',({'.wasm':'application/wasm','.js':'text/javascript','.css':'text/css'})[path.extname(file)]||'application/octet-stream');}
+  else if(p.startsWith('/assets/')){file=path.resolve(publicDir,'.'+p);assert.ok(file.startsWith(path.join(publicDir,'assets')+path.sep));res.setHeader('Content-Type',({'.wasm':'application/wasm','.js':'text/javascript','.css':'text/css','.png':'image/png'})[path.extname(file)]||'application/octet-stream');}
   else {res.writeHead(404);return res.end();}
   res.end(fs.readFileSync(file));
  }catch{failures.push(`${req.method} ${new URL(req.url,origin).pathname}: fixture assertion failed`);json(res,{error:'fixture_failure'},500);}
@@ -158,6 +158,29 @@ try{
  await page.goto(origin);
  await page.locator('#login-username').waitFor();
  await page.locator('.wordmark').getByText('AGD',{exact:true}).waitFor();
+ // The supplied central motif is a real transparent asset, not a CSS background/mask.
+ const brandIcon=page.locator('.wordmark img');
+ assert.equal(await brandIcon.getAttribute('alt'),'','adjacent AGD text names the brand once');
+ assert.equal(await page.locator('head link[rel="icon"]').getAttribute('type'),'image/png');
+ assert.equal(await page.locator('head link[rel="icon"]').getAttribute('sizes'),'32x32');
+ const iconPixels=await page.evaluate(async()=>{
+  const sources=[document.querySelector('.wordmark img').src,document.querySelector('head link[rel="icon"]').href];
+  return Promise.all(sources.map(async src=>{
+   const image=new Image();image.src=src;await image.decode();
+   const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
+   const context=canvas.getContext('2d');context.drawImage(image,0,0);
+   const pixels=context.getImageData(0,0,image.width,image.height).data;
+   const alpha=(x,y)=>pixels[(y*image.width+x)*4+3];
+   return {size:[image.width,image.height],corners:[alpha(0,0),alpha(image.width-1,0),alpha(0,image.height-1),alpha(image.width-1,image.height-1)],center:alpha(image.width/2,image.height/2),softEdge:pixels.some((value,index)=>index%4===3&&value>0&&value<255)};
+  }));
+ });
+ for(const [i,size] of [256,32].entries()){
+  assert.deepEqual(iconPixels[i].size,[size,size]);assert.deepEqual(iconPixels[i].corners,[0,0,0,0]);
+  assert.equal(iconPixels[i].center,255);assert.ok(iconPixels[i].softEdge,'antialiased transparency survives production bundling');
+ }
+ const brandBox=await brandIcon.boundingBox(),brandTextBox=await page.locator('.wordmark span').boundingBox();
+ assert.equal(brandBox.width,36);assert.equal(brandBox.height,36);
+ assert.ok(brandBox.x+brandBox.width<brandTextBox.x&&Math.abs(brandBox.y+brandBox.height/2-brandTextBox.y-brandTextBox.height/2)<1,'icon precedes and centers on AGD');
  await page.waitForFunction(()=>document.fonts.size>=2);
  assert.ok(await page.evaluate(async()=>{await document.fonts.ready;return [...document.fonts].filter(f=>f.status==='loaded').length>=2;}),'self-hosted UI and wordmark fonts load');
  assert.equal(await page.getByText('Please sign in.',{exact:true}).count(),0,'no redundant login instructions');
@@ -301,6 +324,8 @@ try{
  // Mobile ARIA tabs: hidden panel, roving focus and keyboard edges.
  await page.setViewportSize({width:390,height:844});
  await page.waitForFunction(()=>document.getElementById('game-panel-genshin')?.getAttribute('role')==='tabpanel');
+ assert.ok(await brandIcon.isVisible());
+ assert.ok(await page.locator('.topbar-inner').evaluate(e=>e.scrollWidth<=e.clientWidth),'mobile header fits with icon');
  assert.ok(await genshin.isVisible());assert.ok(await starrail.isHidden());
  await page.locator('#game-tab-genshin').focus();await page.keyboard.press('ArrowRight');
  await starrail.waitFor();assert.ok(await genshin.isHidden());

@@ -64,6 +64,7 @@ pub fn App() -> Element {
         .map(|me| me.id.to_string())
         .unwrap_or_default();
     rsx! {
+        document::Link { rel: "icon", r#type: "image/png", sizes: "32x32", href: asset!("/assets/favicon.png") }
         document::Link { rel: "license", href: asset!("/assets/fonts/noto-sans-jp-OFL.txt") }
         document::Link { rel: "license", href: asset!("/assets/fonts/orbitron-OFL.txt") }
         document::Stylesheet { href: asset!("/assets/dx-components-theme.css") }

@@ -113,7 +113,10 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
     rsx! {
         header { class: "topbar",
             div { class: "topbar-inner",
-                span { class: "wordmark", {ui.text("app.title")} }
+                span { class: "wordmark",
+                    img { src: asset!("/assets/dashboard-icon.png"), width: "36", height: "36", alt: "" }
+                    span { {ui.text("app.title")} }
+                }
                 div { class: "account",
                     if let Some(me) = me.clone() {
                         span { class: "muted account-name", "{me.username}" }

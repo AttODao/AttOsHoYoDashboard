@@ -118,6 +118,7 @@ HTTPは輸送と入力型、`auth/`は認証・ユーザーライフサイクル
 - `dashboard-ui/src/app/display.rs`: 既知の数値ペアの表示整形。欠落値の文言は画面側でi18nから取得。
 - `dashboard-ui/src/pages/mod.rs`: モジュール宣言のみ。`auth`、`shell`、`dashboard`、`hoyolab`、`accounts`、`rewards`、`security`、`admin`、`deletion`、`docs`に画面責務を分け、`common`に共通部品を置く。
 - `dashboard-ui/src/api.rs` / `models.rs` / `webauthn.rs`: 共通HTTP・DTO・ブラウザ認証器境界（維持）。
+- `dashboard-ui/assets/dashboard-icon.png` / `favicon.png`: ユーザー提供画像の中央を切り抜いた透過PNG。AGD左隣のブランドアイコン／ブラウザのタブアイコン。
 
 ### UIの翻訳
 

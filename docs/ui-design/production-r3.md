@@ -22,6 +22,12 @@
 
 既存CSPを維持し、`unsafe-eval`／`unsafe-inline`は追加しない。ブラウザ操作は直接DOM APIを使い、Dioxusの`document::eval`に依存しない。フォントはGoogle Fonts配布のNoto Sans JP／Orbitron WOFF2 subsetを`assets/fonts/`へ同梱し、OFL本文も同梱。外部CDNやinline font stylesheetは使わない。日本語subsetは初回UIソースの文字集合、Orbitronはwordmark／数字を対象とする。現在の表示文の正本は`locales/`で、追加文言の未収録字形や動的な固有名には通常のsans-serif fallbackも使う。
 
+### ブランドアイコン
+
+ユーザー提供の`image.png`（730×399）の中央360×360（左185・上24）から図柄を抽出し、灰色背景`#333`と輪郭への背景色の混入を除去。透過PNGの`dashboard-ui/assets/dashboard-icon.png`（256×256）と`favicon.png`（32×32）を同梱する。前者は共通HeaderのAGD左隣に36px・間隔10pxで配置し、隣のブランド名と読み上げが重複しないよう`alt=""`にする。後者はAppの`rel="icon"`から参照し、既存CSP・同一Origin配信を維持する。元画像は変更しない。
+
+devenvで整形・native／WASM Clippy・UI unit 38件・release build・通常／reduced-motionのブラウザ回帰に成功。配信された両PNGの寸法、四隅の完全透過、中央の不透明、輪郭の半透明、ブランド名との位置関係とmobile幅の収まりを検証。darkのdesktop／mobile Headerをcapture・目視確認し、切り抜き素材をdark／light背景で確認した。
+
 ## 検証状況
 
 本番release bundleとlocal mockによるブラウザ検証を完了。
