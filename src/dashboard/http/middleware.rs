@@ -17,11 +17,15 @@ pub(super) async fn boundary(State(app): State<App>, request: Request, next: Nex
         *request.method(),
         Method::GET | Method::HEAD | Method::OPTIONS
     );
-    let mut response = if !safe && !valid_origin(request.headers(), &app.config.origin) {
+    let response = if !safe && !valid_origin(request.headers(), &app.config.origin) {
         Error::Forbidden.into_response()
     } else {
         next.run(request).await
     };
+    harden(response)
+}
+
+pub(super) fn harden(mut response: Response) -> Response {
     response
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));

@@ -6,70 +6,20 @@ use crate::dashboard::{
 };
 use sea_orm::EntityTrait;
 #[tokio::test]
-async fn compiled_dioxus_assets_are_public_local_and_hardened() {
-    struct Bundle(std::path::PathBuf);
-    impl Drop for Bundle {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-    // Static-serving fixture, not a substitute for compiling/running the real UI.
-    let bundle = Bundle(std::env::temp_dir().join(format!("attos-ui-{}", Uuid::new_v4())));
-    std::fs::create_dir_all(bundle.0.join("assets")).unwrap();
-    std::fs::write(
-        bundle.0.join("index.html"),
-        "<!doctype html><div id=\"main\"></div><script type=\"module\" src=\"/assets/app.js\"></script>",
-    )
-    .unwrap();
-    std::fs::write(bundle.0.join("assets/app.js"), "export function boot() {}").unwrap();
-    std::fs::write(bundle.0.join("assets/style.css"), "body{color:black}").unwrap();
-    std::fs::write(bundle.0.join("assets/app.wasm"), b"\0asm\x01\0\0\0").unwrap();
-    std::fs::write(bundle.0.join("private.txt"), "synthetic-private-marker").unwrap();
-    let mut app = disconnected_app().await;
-    Arc::get_mut(&mut app).unwrap().config.ui_dir = bundle.0.clone();
-    for (path, content_type) in [
-        ("/", "text/html"),
-        ("/docs", "text/html"),
-        ("/assets/app.js", "text/javascript"),
-        ("/assets/style.css", "text/css"),
-        ("/assets/app.wasm", "application/wasm"),
-        ("/openapi.json", "application/json"),
-    ] {
+async fn api_router_is_independent_of_dashboard_assets() {
+    let app = disconnected_app().await;
+    for path in ["/", "/docs", "/assets/app.js"] {
         let response = call(&app, request("GET", path, None, None)).await;
-        assert_eq!(response.status(), StatusCode::OK);
-        assert!(
-            response.headers()[header::CONTENT_TYPE]
-                .to_str()
-                .unwrap()
-                .starts_with(content_type)
-        );
-        if content_type == "text/html" {
-            let csp = response.headers()["content-security-policy"]
-                .to_str()
-                .unwrap();
-            assert!(csp.contains("script-src 'self' 'wasm-unsafe-eval';"));
-            assert!(csp.contains("frame-ancestors 'none'"));
-            assert!(!csp.contains("'unsafe-eval'"));
-            assert!(!csp.contains("'unsafe-inline'"));
-        }
-        assert!(
-            !to_bytes(response.into_body(), 128 * 1024)
-                .await
-                .unwrap()
-                .is_empty()
-        );
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
-    for path in [
-        "/assets/../private.txt",
-        "/assets/%2e%2e/private.txt",
-        "/private.txt",
-        "/assets/docs.js",
-    ] {
-        let response = call(&app, request("GET", path, None, None)).await;
-        assert!(!response.status().is_success());
-        let bytes = to_bytes(response.into_body(), 128 * 1024).await.unwrap();
-        assert!(!String::from_utf8_lossy(&bytes).contains("synthetic-private-marker"));
-    }
+    let response = call(&app, request("GET", "/openapi.json", None, None)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        response.headers()[header::CONTENT_TYPE]
+            .to_str()
+            .unwrap()
+            .starts_with("application/json")
+    );
 }
 #[tokio::test]
 async fn current_game_reward_verify_routes_require_authentication_and_verified_setup() {

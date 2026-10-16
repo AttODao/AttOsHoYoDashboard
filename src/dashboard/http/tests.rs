@@ -42,7 +42,6 @@ fn config(secure_cookie: bool) -> Config {
         secure_cookie,
         session_ttl: Duration::days(7),
         timezone: FixedOffset::east_opt(9 * 3600).unwrap(),
-        ui_dir: "target/dx/attos-dashboard-ui/release/web/public".into(),
         cookie_key: Some(Arc::new(
             crate::dashboard::hoyolab::credentials::CookieKey::from_hex(&"11".repeat(32)).unwrap(),
         )),

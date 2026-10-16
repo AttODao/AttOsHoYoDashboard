@@ -6,10 +6,11 @@
 
 | 領域 | 状態 |
 |---|---|
-| 基盤 | PostgreSQL migration、CLI `serve`/`migrate`/`bootstrap-admin`。引数なしbootstrapは`INITIAL_ADMIN_USERNAME`／`INITIAL_ADMIN_PASSWORD`を使用し、空DBのみ初期作成 |
+| 基盤 | APIとDashboardを`serve-api`／`serve-dashboard`で独立起動。migrationと初期ユーザー作成はAPI側だけで実行し、既存ユーザーは上書きしない |
 | 開発環境 | `devenv.nix`／`devenv.yaml`／`devenv.lock`でツールを固定。通常shell/testでは`.env`自動読込・DB service起動なし |
 | Project skills | `.agents/skills/`にCodex／共通版8件、`.pi/skills/`にImpeccable Pi版を実ファイルとしてGit管理。devenv・生成Pi設定・Nix storeリンクに非依存 |
-| テストサーバー | `.env.test`から初期管理者・Cookie暗号鍵を読み、通常稼動用`.env`と分離。専用DBの接続先は固定。鍵の自動生成なし。devenvで起動・停止し、待受開始後にSSH転送コマンドを表示 |
+| 起動構成 | `launch-server`／`launch-api`／`launch-dashboard`。`.env.test`のDB名・role・passwordを使用し、SCRAM認証で接続。通常稼動用`.env`と分離 |
+| Compose | `dashboard`・`api`・`db`の3コンテナ。共通Dockerfile、DB用volume、初期化SQLだけの最小構成。実コンテナのbuild/起動はDocker環境で別途確認 |
 | 認証 | password login/logout、固定期限session、password rotation、管理者user管理、passkey login/registration/list/delete |
 | UI | Dioxus 0.7.10 Web/WASM RSX。承認済みAGD R3を本番RSXに実装。検証・残課題は[本番R3記録](../ui-design/production-r3.md)。official Dioxus Components由来Button/Cardをsource同梱 |
 | HoYoLAB Cookie | legacy/v2 parse normalization、AES-GCM保存、pending status、same-UID proof path実装 |

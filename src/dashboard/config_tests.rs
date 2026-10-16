@@ -19,13 +19,9 @@ fn defaults_and_explicit_settings_share_the_production_parser() {
     let config = load(&[]).unwrap();
     assert_eq!(
         config.listen,
-        "127.0.0.1:8080".parse::<SocketAddr>().unwrap()
+        "127.0.0.1:8081".parse::<SocketAddr>().unwrap()
     );
     assert_eq!(config.origin, "http://localhost:8080");
-    assert_eq!(
-        config.ui_dir,
-        PathBuf::from("target/dx/attos-dashboard-ui/release/web/public")
-    );
     assert_eq!(config.rp_id, "localhost");
     assert!(!config.secure_cookie);
     assert_eq!(config.session_ttl, Duration::days(7));
@@ -33,14 +29,14 @@ fn defaults_and_explicit_settings_share_the_production_parser() {
     let config = load(&[
         ("PUBLIC_ORIGIN", "https://app.example.test"),
         ("RP_ID", "example.test"),
-        ("BIND_ADDR", "[::1]:9010"),
+        ("API_BIND_ADDR", "[::1]:9010"),
         ("SESSION_TTL_DAYS", "2"),
         ("TIMEZONE_OFFSET", "-04:30"),
         ("DASHBOARD_UI_DIR", "/srv/attos/public"),
     ])
     .unwrap();
     assert_eq!(config.rp_id, "example.test");
-    assert_eq!(config.ui_dir, PathBuf::from("/srv/attos/public"));
+    assert_eq!(config.listen, "[::1]:9010".parse::<SocketAddr>().unwrap());
     assert!(config.secure_cookie);
     assert_eq!(config.session_ttl, Duration::days(2));
     assert_eq!(config.timezone.local_minus_utc(), -16200);
@@ -49,13 +45,97 @@ fn defaults_and_explicit_settings_share_the_production_parser() {
 #[test]
 fn invalid_ui_directory_is_rejected_without_echoing_path() {
     for directory in ["", " ", "synthetic-private-path\0suffix"] {
-        let error = load(&[("DASHBOARD_UI_DIR", directory)])
-            .err()
-            .expect("invalid UI path");
+        let error = DashboardConfig::load_from(|key| {
+            if key == "DASHBOARD_UI_DIR" {
+                Ok(directory.to_owned())
+            } else {
+                Err(env::VarError::NotPresent)
+            }
+        })
+        .err()
+        .expect("invalid UI path");
         assert_eq!(
             error.to_string(),
             "DASHBOARD_UI_DIR must be a nonempty directory path"
         );
+    }
+}
+
+#[test]
+fn structured_database_settings_escape_credentials_and_override_legacy_url() {
+    let password = "synthetic %2F+&/@'\" 日本語";
+    let config = load(&[
+        ("DB_NAME", "synthetic-db"),
+        ("DB_USER", "synthetic-user"),
+        ("DB_PASSWORD", password),
+        ("DB_HOST", "/tmp/synthetic-pg"),
+        ("DB_PORT", "5544"),
+    ])
+    .unwrap();
+    let url = Url::parse(&config.database_url).unwrap();
+    let values: std::collections::HashMap<_, _> = url.query_pairs().collect();
+    assert!(
+        values
+            .get("password")
+            .is_some_and(|value| value == password)
+    );
+    assert_eq!(values.get("user").unwrap(), "synthetic-user");
+    assert_eq!(values.get("dbname").unwrap(), "synthetic-db");
+    assert_eq!(values.get("host").unwrap(), "/tmp/synthetic-pg");
+    assert_eq!(url.port(), Some(5544));
+}
+
+#[test]
+fn partial_or_invalid_database_fields_fail_without_secret_echoes() {
+    let base = [
+        ("DB_NAME", "test"),
+        ("DB_USER", "test"),
+        ("DB_PASSWORD", "synthetic-private-password"),
+    ];
+    assert!(load(&[("DB_NAME", "test")]).is_err());
+    for pair in [
+        ("DB_PASSWORD", ""),
+        ("DB_PORT", "0"),
+        ("DB_PORT", "65536"),
+        ("DB_HOST", ""),
+    ] {
+        let mut fields = base.to_vec();
+        fields.push(pair);
+        let error = load(&fields)
+            .err()
+            .expect("invalid structured database setting");
+        assert!(!format!("{error:?}").contains("synthetic-private-password"));
+    }
+}
+
+#[test]
+fn dashboard_configuration_is_independent_of_database_and_cookie_key() {
+    let config = DashboardConfig::load_from(|_| Err(env::VarError::NotPresent)).unwrap();
+    assert_eq!(
+        config.listen,
+        "127.0.0.1:8080".parse::<SocketAddr>().unwrap()
+    );
+    assert_eq!(config.api_origin.as_str(), "http://127.0.0.1:8081/");
+    assert_eq!(
+        config.ui_dir,
+        PathBuf::from("target/dx/attos-dashboard-ui/release/web/public")
+    );
+    for upstream in [
+        "file:///tmp/private",
+        "https://user:synthetic-private-password@example.test",
+        "http://localhost/path",
+        "http://localhost/?secret=value",
+    ] {
+        let error = DashboardConfig::load_from(|key| {
+            if key == "API_ORIGIN" {
+                Ok(upstream.to_owned())
+            } else {
+                Err(env::VarError::NotPresent)
+            }
+        })
+        .err()
+        .expect("invalid upstream origin");
+        assert!(!format!("{error:?}").contains("synthetic-private-password"));
     }
 }
 
@@ -86,7 +166,7 @@ fn invalid_database_address_lifetime_and_timezone_fail_closed() {
     for pair in [
         ("DATABASE_URL", "sqlite://secret"),
         ("DATABASE_URL", "garbage"),
-        ("BIND_ADDR", "localhost:8080"),
+        ("API_BIND_ADDR", "localhost:8080"),
         ("SESSION_TTL_DAYS", "0"),
         ("SESSION_TTL_DAYS", "-1"),
         ("SESSION_TTL_DAYS", "9223372036854775807"),
@@ -135,7 +215,7 @@ fn non_unicode_configuration_is_not_silently_defaulted() {
     use std::ffi::OsString;
     let result = Config::load_from(|key| match key {
         "DATABASE_URL" => Ok("postgres://fixture@localhost/test".to_owned()),
-        "BIND_ADDR" => Err(env::VarError::NotUnicode(OsString::from(
+        "API_BIND_ADDR" => Err(env::VarError::NotUnicode(OsString::from(
             "synthetic-unicode-error",
         ))),
         _ => Err(env::VarError::NotPresent),

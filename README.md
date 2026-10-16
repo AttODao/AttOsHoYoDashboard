@@ -55,7 +55,7 @@ let home = client.daily_home(Starrail).await?;
 ```text
 src/dashboard/
 ├── mod.rs                      # モジュール宣言・実行入口
-├── cli.rs                      # serve / migrate / bootstrap-admin
+├── cli.rs                      # serve-api / serve-dashboard / migrate / bootstrap-admin
 ├── config.rs / error.rs        # 設定検証・秘匿された業務エラー
 ├── auth/
 │   ├── accounts.rs             # 作成・復旧・無効化・利用可否・監査
@@ -88,12 +88,12 @@ src/dashboard/
 │   │       └── deletion.rs     # 削除時の未確定報酬GET確認
 │   └── schedule.rs             # fixed-offset next tick
 ├── http/
-│   ├── mod.rs                  # route合成・HTTPサーバー生存期間
+│   ├── mod.rs                  # API route合成・APIサーバー生存期間
 │   ├── auth.rs / users.rs / passkeys.rs
 │   ├── hoyolab.rs / games.rs / rewards.rs
 │   ├── middleware.rs           # Origin境界・session抽出
 │   ├── session.rs              # Cookie・login response
-│   ├── ui.rs                   # compiled Dioxus UI / docs / OpenAPI配信
+│   ├── ui.rs                   # 独立Dashboard配信・同一Origin API proxy
 │   └── response.rs             # safe error DTO
 └── db/
     ├── mod.rs                  # 接続・migration実行
@@ -156,25 +156,47 @@ skillsはdevenvから切り離し、次の実ファイルをGitで直接管理�
 
 以前のローカル版の退避先`.devenv/state/skills-before-devenv/`と`.impeccable/`のプロジェクト状態は維持します。
 
-### SSH越しのテスト用サーバー
+### 開発用サーバーの起動（launch-*）
 
-**devcon側**のプロジェクトrootの`.env.test`に、`INITIAL_ADMIN_USERNAME`・`INITIAL_ADMIN_PASSWORD`・`HOYOLAB_COOKIE_KEY`を設定して実行します。例は`.env.test.example`です。既存のテスト用`.env`は`.env.test`へ移動しています。鍵は64文字の16進数で、自動生成しません。
+起動コマンドは通常のテストと区別して`launch-*`に統一しています。**devcon側**の`.env.test`に`DB_NAME`・`DB_USER`・`DB_PASSWORD`・初期管理者設定・`HOYOLAB_COOKIE_KEY`を記述します（例は`.env.test.example`）。鍵は64文字の16進数で、自動生成しません。
 
 ```console
-devenv shell -- test-server
+# ターミナル1: API + 専用PostgreSQL。UI build不要。
+devenv shell -- launch-api
+# ターミナル2: Dashboardのみ。API/DBの起動を待たない。
+devenv shell -- launch-dashboard
+# または、3プロセスをまとめて起動
+devenv shell -- launch-server
 ```
 
-UIとAPIをbuildし、devenv標準のプロセス管理でテスト専用PostgreSQLとHTTPサーバーを起動します。HTTP待受開始後に表示される次のコマンドを**ローカルPC**で実行し、`http://localhost:8080`を開きます。
+APIは`127.0.0.1:8081`、Dashboardは`127.0.0.1:8080`で別々に待ち受けます。Dashboardが`/api/v1/*`・`/openapi.json`・`/health`をAPIへproxyし、ブラウザのOriginは`http://localhost:8080`のままです。Cookie・Origin・WebAuthnの検証を弱めず、CORSは追加しません。
+
+Dashboard待受開始後に表示される次のコマンドを**ローカルPC**で実行し、`http://localhost:8080`を開きます。
 
 ```console
 ssh -N -T -o ExitOnForwardFailure=yes -L 127.0.0.1:8080:127.0.0.1:8080 devcon
 ```
 
-devcon側の起動コマンドを**Ctrl+C**で終了すると、HTTPとPostgreSQLの両方を停止します。ローカル側のCtrl+CはSSH転送だけを停止します。テストDBは`.devenv/`以下に保持されます。初回ユーザーは`.env.test`の初期管理者設定から作成します（パスワード変更必須）。既存ユーザーのパスワードを設定ファイルで上書きすることはありません。
+**Ctrl+C**はそのコマンドが起動したプロセスを停止します。個別起動ではAPI側のCtrl+CでAPI/DB、Dashboard側でDashboardを停止します。ローカル側のCtrl+CはSSH転送だけを停止します。データは`.devenv/profiles/launch-server/state/postgres`に保持されます。
 
-`test-server` profileのDBは専用Unix socketだけ、HTTPは`127.0.0.1:8080`だけで待ち受けます。`.env.test`の接続先指定よりも、この専用DB・待受設定を優先します。通常サーバー用の`.env`や外部の`DATABASE_URL`は使用しません。Node標準のenv-file読み込みで`.env.test`をプロセス環境へ渡し、Bashとして実行しません。空の`.env`を置いた専用directoryからAPIを起動し、初期ユーザー作成後は初期認証情報をAPIの環境から除外します。Cookie鍵が未設定なら起動に失敗します。再起動時も同じ鍵を使ってください。鍵を変更・紛失すると保存済みCookieを復号できなくなります。
+DB名・アプリ用role・パスワードは設定ファイルから初期化し、実際の接続にはSCRAMパスワード認証を使います。DBのsocket/portはdevenv専用に固定し、通常稼動用`.env`や外部DBへは接続しません。既存DBの所有者が設定と異なる場合は停止し、データや所有者を勝手に変更しません。初期ユーザーは空DBだけに作成し、既存ユーザーのパスワードは変更しません。起動処理は`scripts/launch-server.sh`、DB初期化は`scripts/launch-db.sql`です。
 
-パスワード変更後はCookie入力・保存が可能になります。本人確認などは実HoYoLABへ接続するため、実アカウントを使った動作確認や報酬POSTには別途承認が必要です。初期設定・本人確認ゲートは迂回しません。
+`.env.test`はNode標準のenv-file読み込みで扱い、Bashとして実行しません。初期認証情報はAPI起動前に環境から除外し、DashboardへDBパスワード・Cookie暗号鍵を持たせません。Cookie鍵はDBを保持する間は同じ値を使ってください。実HoYoLABを使う動作確認・報酬POSTの承認条件や本人確認ゲートは変更しません。
+
+### Docker Compose（最小の3コンテナ）
+
+`Dockerfile`はAPIとDashboard共通のイメージをbuildし、`compose.yaml`は`dashboard`・`api`・`db`の3コンテナだけを管理します。通常稼動用`.env`のDB名・アプリ用パスワード・`DB_ADMIN_PASSWORD`・初期管理者情報・Cookie暗号鍵を設定してください。管理者用DBパスワードはアプリ用と分け、API/Dashboardには渡しません。
+
+```console
+docker compose up --build
+# 個別起動も可能（apiはdbも起動）
+docker compose up --build api
+docker compose up --build dashboard
+# 停止。DB volumeは保持。
+docker compose down
+```
+
+Dashboardは`http://localhost:8080`、API healthは`http://localhost:8081/health`です。DB portはホストへ公開せず、API/Dashboardもホストのloopbackだけに公開します。コンテナ内部の経路は`dashboard -> api:8081 -> db:5432`。API起動時にmigrationと空DBへの初期ユーザー作成を行います。DB名・role・パスワードのCompose初期化SQLは空のvolumeにだけ適用され、既存volumeの所有者・認証情報を自動再作成しません。`.env*`などの秘密ファイルはDocker build contextへ含めません。Docker/Composeが未導入の開発環境では、コンテナのbuild・起動検証は別途必要です。
 
 ### 手動セットアップ（devenvを使わない場合）
 
@@ -230,14 +252,19 @@ Web APIの正本は [docs/dashboard-api.json](docs/dashboard-api.json)、運用�
 
 ### 設定と起動
 
-PostgreSQLの専用DBを用意し、通常サーバー用のルート`.env`に設定します。今回作成した`.env`の`DATABASE_URL`・`INITIAL_ADMIN_PASSWORD`・`HOYOLAB_COOKIE_KEY`は空欄なので、ローカルで実値を設定してください。`.env`／`.env.test`は所有者のみ読書き可能（`chmod 600`）にしてGitへ追加しないでください。実値を設定例・文書・チャットへ書かないでください。明示的なprocess environmentは`.env`より優先するため、環境を切り替える際はテスト用のexportを解除してください。
+PostgreSQLの専用DBを用意し、通常サーバー用のルート`.env`に設定します。`.env`に`DB_NAME`・`DB_USER`・`DB_PASSWORD`を設定してください。`DB_PASSWORD`・`INITIAL_ADMIN_PASSWORD`・`HOYOLAB_COOKIE_KEY`、Compose用`DB_ADMIN_PASSWORD`の空欄はローカルで実値を設定してください。`.env`／`.env.test`は所有者のみ読書き可能（`chmod 600`）にしてGitへ追加しないでください。実値を設定例・文書・チャットへ書かないでください。明示的なprocess environmentは`.env`より優先するため、環境を切り替える際はテスト用のexportを解除してください。
 
 | 設定 | 初期値・用途 |
 |---|---|
-| `DATABASE_URL` | 必須。PostgreSQL URL |
+| `DB_HOST` / `DB_PORT` | `127.0.0.1` / `5432`。devenvは専用socket/port、Composeは`db:5432`に固定 |
+| `DB_NAME` / `DB_USER` / `DB_PASSWORD` | DB名・アプリ用role・パスワード。3項目を揃える |
+| `DB_ADMIN_PASSWORD` | Compose DB初期化管理者専用。アプリには渡さない |
+| `DATABASE_URL` | 旧設定の互換入力。上記3項目が指定される場合は使わない |
 | `INITIAL_ADMIN_USERNAME` | 引数なし`bootstrap-admin`用の初期ユーザー名 |
 | `INITIAL_ADMIN_PASSWORD` | 同上の仮パスワード。作成後のログインで変更必須 |
-| `BIND_ADDR` | `127.0.0.1:8080` |
+| `API_BIND_ADDR` | `127.0.0.1:8081`。旧`BIND_ADDR`の代わりに指定 |
+| `DASHBOARD_BIND_ADDR` | `127.0.0.1:8080` |
+| `API_ORIGIN` | Dashboardからの固定proxy先。既定`http://127.0.0.1:8081` |
 | `PUBLIC_ORIGIN` | `http://localhost:8080`。公開時はHTTPS DNS origin。mutationの`Origin`完全一致とWebAuthn originに使用 |
 | `RP_ID` | 既定は`PUBLIC_ORIGIN`のhost。WebAuthn用DNS RP ID |
 | `SESSION_TTL_DAYS` | `7`。固定期限session。アクセスで延長しない |
@@ -252,10 +279,12 @@ dx build --package attos-dashboard-ui --platform web --release
 cargo run -- migrate
 # 初回のみ（users tableが空のとき）
 cargo run -- bootstrap-admin
-cargo run -- serve
+cargo run -- serve-api
+# 別ターミナル（Dashboard配信のみ）
+cargo run -- serve-dashboard
 ```
 
-既定のDioxus public出力は `target/dx/attos-dashboard-ui/release/web/public` です。配備時はこのpublic directoryの中身だけを配置し、bundleや `target/dx` 生成物はcommitしません。サーバーは `DASHBOARD_UI_DIR/index.html` が無ければ起動に失敗します。
+既定のDioxus public出力は `target/dx/attos-dashboard-ui/release/web/public` です。配備時はこのpublic directoryの中身だけを配置し、bundleや `target/dx` 生成物はcommitしません。Dashboardサーバーは `DASHBOARD_UI_DIR/index.html` が無ければ起動に失敗します。APIサーバーはUI bundle不要、DashboardサーバーはDB接続設定不要で起動できます。`serve`は`serve-api`の互換名です。
 
 初期管理者はusers tableが空のときだけ作成できます。作成済みユーザーは`.env`の変更で再設定されません。初期作成後は`.env`の仮パスワードを削除しても構いません。`.env`の初期管理者設定を使う場合：
 

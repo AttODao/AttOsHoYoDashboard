@@ -8,7 +8,7 @@ mod response;
 mod rewards;
 mod runtime;
 mod session;
-mod ui;
+pub(super) mod ui;
 mod users;
 
 #[cfg(test)]
@@ -68,19 +68,11 @@ pub(super) async fn serve(db: DatabaseConnection, config: Config) -> Result<()> 
             attempts: 0,
         }),
     });
-    if !tokio::fs::metadata(app.config.ui_dir.join("index.html"))
-        .await
-        .is_ok_and(|metadata| metadata.is_file())
-    {
-        return Err(Error::Unavailable(
-            "build the Dioxus UI before starting the server",
-        ));
-    }
     let router = router(app.clone());
     let listener = tokio::net::TcpListener::bind(app.config.listen)
         .await
         .map_err(|_| Error::Internal)?;
-    tracing::info!(address = %app.config.listen, timezone = %app.config.timezone, "dashboard listening");
+    tracing::info!(address = %app.config.listen, timezone = %app.config.timezone, "api listening");
     let (stop, stopped) = tokio::sync::watch::channel(false);
     let worker = tokio::spawn(runtime::run(app.clone(), stopped));
     let stopping = app.cookies.clone();
@@ -110,7 +102,7 @@ fn router(app: App) -> Router {
         .route_layer(from_fn_with_state(app.clone(), middleware::authenticate));
     Router::new()
         .route("/health", get(health))
-        .merge(ui::routes(&app))
+        .route("/openapi.json", get(ui::openapi))
         .merge(auth::public_routes())
         .merge(passkeys::public_routes())
         .merge(protected)

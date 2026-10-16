@@ -1,0 +1,55 @@
+x-app: &app
+  build: .
+  image: attos-game-dashboard:local
+
+services:
+  db:
+    image: postgres:18-bookworm
+    environment:
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD:-}
+      POSTGRES_DB: postgres
+      DB_NAME: ${DB_NAME:-attos_dashboard}
+      DB_USER: ${DB_USER:-attos_dashboard}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+    volumes:
+      - db-data:/var/lib/postgresql
+      - ./scripts/launch-db.sql:/docker-entrypoint-initdb.d/01-app.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  api:
+    <<: *app
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:-attos_dashboard}
+      DB_USER: ${DB_USER:-attos_dashboard}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-admin}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
+      HOYOLAB_COOKIE_KEY: ${HOYOLAB_COOKIE_KEY:-}
+      API_BIND_ADDR: 0.0.0.0:8081
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:8080}
+      RP_ID: ${RP_ID:-localhost}
+      SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-7}
+      TIMEZONE_OFFSET: ${TIMEZONE_OFFSET:-+09:00}
+    ports:
+      - "127.0.0.1:8081:8081"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  dashboard:
+    <<: *app
+    command: ["dashboard", "/usr/local/bin/attosgameapi"]
+    environment:
+      DASHBOARD_BIND_ADDR: 0.0.0.0:8080
+      API_ORIGIN: http://api:8081
+    ports:
+      - "127.0.0.1:8080:8080"
+
+volumes:
+  db-data:
