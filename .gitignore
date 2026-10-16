@@ -7,5 +7,8 @@
 /devenv.local.yaml
 /.direnv/
 
-# Project Pi settings reference skills directly from locked Nix inputs.
-/.pi/settings.json
+# Runtime caches from the checked-in skill helpers.
+/.agents/skills/**/__pycache__/
+/.agents/skills/**/*.pyc
+/.pi/skills/**/__pycache__/
+/.pi/skills/**/*.pyc

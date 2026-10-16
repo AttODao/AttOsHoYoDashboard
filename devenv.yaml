@@ -4,18 +4,6 @@ inputs:
     url: github:cachix/devenv-nixpkgs/rolling
   wasm-tools:
     url: github:NixOS/nixpkgs/nixpkgs-unstable
-  skill-rust:
-    url: github:leonardomso/rust-skills
-    flake: false
-  skill-ui:
-    url: github:nextlevelbuilder/ui-ux-pro-max-skill
-    flake: false
-  skill-impeccable:
-    url: github:pbakaus/impeccable/skill-v4.5.2
-    flake: false
-  impeccable-cli:
-    url: https://registry.npmjs.org/@impeccable/cli-linux-x64/-/cli-linux-x64-0.1.14.tgz
-    flake: false
   rust-overlay:
     url: github:oxalica/rust-overlay
     inputs:

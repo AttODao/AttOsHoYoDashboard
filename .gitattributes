@@ -1,0 +1,3 @@
+# Preserve formatting in vendored upstream skill distributions.
+.agents/skills/** linguist-vendored -whitespace
+.pi/skills/** linguist-vendored -whitespace
