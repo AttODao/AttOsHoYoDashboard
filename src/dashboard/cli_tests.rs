@@ -1,6 +1,32 @@
 use super::*;
 
 #[test]
+fn initial_admin_environment_preserves_credentials_without_process_env_changes() {
+    let (username, password) = initial_admin_from_env(|name| match name {
+        "INITIAL_ADMIN_USERNAME" => Ok("synthetic-admin".into()),
+        "INITIAL_ADMIN_PASSWORD" => Ok("  synthetic-password-with-spaces  ".into()),
+        _ => Err(std::env::VarError::NotPresent),
+    })
+    .unwrap();
+    assert_eq!(username, "synthetic-admin");
+    assert!(password == "  synthetic-password-with-spaces  ");
+}
+
+#[test]
+fn initial_admin_environment_errors_do_not_echo_values() {
+    let error = initial_admin_from_env(|_| Err(std::env::VarError::NotPresent)).unwrap_err();
+    assert!(matches!(error, Error::Invalid(_)));
+    let error = initial_admin_from_env(|name| match name {
+        "INITIAL_ADMIN_USERNAME" => Ok("synthetic-admin".into()),
+        _ => Err(std::env::VarError::NotUnicode(
+            "synthetic-private-value".into(),
+        )),
+    })
+    .unwrap_err();
+    assert!(!format!("{error:?}").contains("synthetic-private-value"));
+}
+
+#[test]
 fn stdin_password_only_strips_a_single_terminal_line_ending() {
     for suffix in ["", "\n", "\r\n"] {
         let input = format!("  secret with spaces{suffix}");

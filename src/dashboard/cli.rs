@@ -13,17 +13,17 @@ pub(crate) async fn run() -> Result<()> {
     let command = args.first().map(String::as_str).unwrap_or("serve");
     if command == "help" || command == "--help" {
         println!(
-            "Commands: serve | migrate | bootstrap-admin USERNAME\nbootstrap-admin reads the temporary password from standard input"
+            "Commands: serve | migrate | bootstrap-admin [USERNAME]\nbootstrap-admin USERNAME reads the temporary password from standard input\nbootstrap-admin uses INITIAL_ADMIN_USERNAME and INITIAL_ADMIN_PASSWORD"
         );
         return Ok(());
     }
     let valid = matches!(
         (command, args.len()),
-        ("serve" | "migrate", 0 | 1) | ("bootstrap-admin", 2)
+        ("serve" | "migrate", 0 | 1) | ("bootstrap-admin", 1 | 2)
     );
     if !valid {
         return Err(Error::Invalid(
-            "usage: attosgameapi [serve | migrate | bootstrap-admin USERNAME]",
+            "usage: attosgameapi [serve | migrate | bootstrap-admin [USERNAME]]",
         ));
     }
     let config = Config::load()?;
@@ -35,10 +35,14 @@ pub(crate) async fn run() -> Result<()> {
             println!("Migrations applied");
         }
         "bootstrap-admin" => {
-            let username = args[1].clone();
-            let password = tokio::task::spawn_blocking(read_password)
-                .await
-                .map_err(|_| Error::Internal)??;
+            let (username, password) = if let Some(username) = args.get(1) {
+                let password = tokio::task::spawn_blocking(read_password)
+                    .await
+                    .map_err(|_| Error::Internal)??;
+                (username.clone(), password)
+            } else {
+                initial_admin_from_env(|name| std::env::var(name))?
+            };
             let accounts = Accounts::new(db.clone(), config.session_ttl).await?;
             let user = accounts.bootstrap_admin(username, password).await?;
             println!(
@@ -49,6 +53,16 @@ pub(crate) async fn run() -> Result<()> {
         _ => return Err(Error::Invalid("unknown command")),
     }
     Ok(())
+}
+
+fn initial_admin_from_env(
+    mut read: impl FnMut(&str) -> std::result::Result<String, std::env::VarError>,
+) -> Result<(String, String)> {
+    let username = read("INITIAL_ADMIN_USERNAME")
+        .map_err(|_| Error::Invalid("INITIAL_ADMIN_USERNAME is required and must be UTF-8"))?;
+    let password = read("INITIAL_ADMIN_PASSWORD")
+        .map_err(|_| Error::Invalid("INITIAL_ADMIN_PASSWORD is required and must be UTF-8"))?;
+    Ok((username, password))
 }
 
 fn read_password() -> Result<String> {

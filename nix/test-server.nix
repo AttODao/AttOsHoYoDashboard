@@ -3,7 +3,6 @@
 {
   scripts.test-server.exec = ''
     set -e
-    : "''${HOYOLAB_COOKIE_KEY:?Set HOYOLAB_COOKIE_KEY to a test-only 64-character hexadecimal key}"
     cd "$DEVENV_ROOT"
     build-ui
     cargo build --locked --bin attosgameapi
@@ -26,10 +25,12 @@
       cd "$work"
       exec env -i PATH="$PATH" HOME="$work" \
         DATABASE_URL="postgres://$(id -un)@localhost/attos_test?host=$PGHOST" \
-        HOYOLAB_COOKIE_KEY="''${HOYOLAB_COOKIE_KEY:?Set HOYOLAB_COOKIE_KEY}" \
         BIND_ADDR=127.0.0.1:8080 PUBLIC_ORIGIN=http://localhost:8080 RP_ID=localhost \
         DASHBOARD_UI_DIR="$DEVENV_ROOT/target/dx/attos-dashboard-ui/release/web/public" \
-        bash "$DEVENV_ROOT/scripts/test-server.sh" "$DEVENV_ROOT/target/debug/attosgameapi"
+        node --env-file="$DEVENV_ROOT/.env.test" -e '
+          const [shell, script, binary] = process.argv.slice(1);
+          process.execve(shell, [shell, script, binary], process.env);
+        ' "${pkgs.bash}/bin/bash" "$DEVENV_ROOT/scripts/test-server.sh" "$DEVENV_ROOT/target/debug/attosgameapi"
     '';
   };
 }

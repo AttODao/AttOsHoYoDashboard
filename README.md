@@ -48,7 +48,7 @@ let home = client.daily_home(Starrail).await?;
 - `src/dashboard/`: 非GUIの業務・HTTP・永続化を次の責務で分離します。
 - `src/hoyolab/client/{endpoint_tests,protocol_tests,validation_tests,live_tests}.rs`: 現行エンドポイントのモック・プロトコル・入力検証と明示実行の実APIテスト。
 - `tests/fixtures/hoyolab/*.json`: モック検証用の合成fixture（認証済み実データではありません）。
-- ルートの`.env`・`.env.example`: ローカル認証設定と秘密情報を含まない設定例。
+- ルートの`.env`／`.env.test`: 通常サーバー用／テストサーバー用の非公開設定（Git管理外）。`.env.example`／`.env.test.example`は秘密情報を含まない設定例。
 
 ### Dashboardのモジュール地図
 
@@ -158,12 +158,9 @@ skillsはdevenvから切り離し、次の実ファイルをGitで直接管理�
 
 ### SSH越しのテスト用サーバー
 
-**devcon側**のプロジェクトrootで、テスト専用のCookie暗号鍵を環境変数で与えて実行します。鍵は64文字の16進数です（非表示入力）。
+**devcon側**のプロジェクトrootの`.env.test`に、`INITIAL_ADMIN_USERNAME`・`INITIAL_ADMIN_PASSWORD`・`HOYOLAB_COOKIE_KEY`を設定して実行します。例は`.env.test.example`です。既存のテスト用`.env`は`.env.test`へ移動しています。鍵は64文字の16進数で、自動生成しません。
 
-```bash
-read -rsp 'HOYOLAB_COOKIE_KEY: ' HOYOLAB_COOKIE_KEY
-printf '\n'
-export HOYOLAB_COOKIE_KEY
+```console
 devenv shell -- test-server
 ```
 
@@ -173,9 +170,9 @@ UIとAPIをbuildし、devenv標準のプロセス管理でテスト専用Postgre
 ssh -N -T -o ExitOnForwardFailure=yes -L 127.0.0.1:8080:127.0.0.1:8080 devcon
 ```
 
-devcon側の起動コマンドを**Ctrl+C**で終了すると、HTTPとPostgreSQLの両方を停止します。ローカル側のCtrl+CはSSH転送だけを停止します。テストDBは`.devenv/`以下に保持されます。初回ログインは公開テスト用の`test-admin`／`public-test-only-password`（変更必須）。変更後はそのパスワードを使います。
+devcon側の起動コマンドを**Ctrl+C**で終了すると、HTTPとPostgreSQLの両方を停止します。ローカル側のCtrl+CはSSH転送だけを停止します。テストDBは`.devenv/`以下に保持されます。初回ユーザーは`.env.test`の初期管理者設定から作成します（パスワード変更必須）。既存ユーザーのパスワードを設定ファイルで上書きすることはありません。
 
-`test-server` profileのDBは専用Unix socketだけ、HTTPは`127.0.0.1:8080`だけで待ち受けます。実DBの接続先は引き継がず、空の`.env`を置いた専用作業directoryから起動します。Cookie暗号鍵は明示的にexportされた`HOYOLAB_COOKIE_KEY`だけを渡し、自動生成・ファイル保存はしません。未設定なら起動前にエラーにします。`.env`は読み込みません。再起動時も同じ鍵を渡してください。鍵を変更・紛失すると保存済みCookieを復号できなくなります。鍵をコマンド引数・履歴・Gitへ直接記録したり、チャットへ貼ったりしないでください。
+`test-server` profileのDBは専用Unix socketだけ、HTTPは`127.0.0.1:8080`だけで待ち受けます。`.env.test`の接続先指定よりも、この専用DB・待受設定を優先します。通常サーバー用の`.env`や外部の`DATABASE_URL`は使用しません。Node標準のenv-file読み込みで`.env.test`をプロセス環境へ渡し、Bashとして実行しません。空の`.env`を置いた専用directoryからAPIを起動し、初期ユーザー作成後は初期認証情報をAPIの環境から除外します。Cookie鍵が未設定なら起動に失敗します。再起動時も同じ鍵を使ってください。鍵を変更・紛失すると保存済みCookieを復号できなくなります。
 
 パスワード変更後はCookie入力・保存が可能になります。本人確認などは実HoYoLABへ接続するため、実アカウントを使った動作確認や報酬POSTには別途承認が必要です。初期設定・本人確認ゲートは迂回しません。
 
@@ -233,11 +230,13 @@ Web APIの正本は [docs/dashboard-api.json](docs/dashboard-api.json)、運用�
 
 ### 設定と起動
 
-PostgreSQLの専用DBを用意し、秘密値はprocess environmentまたはprivate secret storeで渡します。実値を`.env.example`や文書例へ書かないでください。
+PostgreSQLの専用DBを用意し、通常サーバー用のルート`.env`に設定します。今回作成した`.env`の`DATABASE_URL`・`INITIAL_ADMIN_PASSWORD`・`HOYOLAB_COOKIE_KEY`は空欄なので、ローカルで実値を設定してください。`.env`／`.env.test`は所有者のみ読書き可能（`chmod 600`）にしてGitへ追加しないでください。実値を設定例・文書・チャットへ書かないでください。明示的なprocess environmentは`.env`より優先するため、環境を切り替える際はテスト用のexportを解除してください。
 
 | 設定 | 初期値・用途 |
 |---|---|
 | `DATABASE_URL` | 必須。PostgreSQL URL |
+| `INITIAL_ADMIN_USERNAME` | 引数なし`bootstrap-admin`用の初期ユーザー名 |
+| `INITIAL_ADMIN_PASSWORD` | 同上の仮パスワード。作成後のログインで変更必須 |
 | `BIND_ADDR` | `127.0.0.1:8080` |
 | `PUBLIC_ORIGIN` | `http://localhost:8080`。公開時はHTTPS DNS origin。mutationの`Origin`完全一致とWebAuthn originに使用 |
 | `RP_ID` | 既定は`PUBLIC_ORIGIN`のhost。WebAuthn用DNS RP ID |
@@ -251,12 +250,20 @@ cargo install dioxus-cli --version 0.7.10 --locked   # または同versionの公
 rustup target add wasm32-unknown-unknown
 dx build --package attos-dashboard-ui --platform web --release
 cargo run -- migrate
+# 初回のみ（users tableが空のとき）
+cargo run -- bootstrap-admin
 cargo run -- serve
 ```
 
 既定のDioxus public出力は `target/dx/attos-dashboard-ui/release/web/public` です。配備時はこのpublic directoryの中身だけを配置し、bundleや `target/dx` 生成物はcommitしません。サーバーは `DASHBOARD_UI_DIR/index.html` が無ければ起動に失敗します。
 
-初期管理者はusers tableが空のときだけ作成できます。仮パスワードは標準入力から渡します。
+初期管理者はusers tableが空のときだけ作成できます。作成済みユーザーは`.env`の変更で再設定されません。初期作成後は`.env`の仮パスワードを削除しても構いません。`.env`の初期管理者設定を使う場合：
+
+```console
+cargo run -- bootstrap-admin
+```
+
+ユーザー名を引数で指定する従来の方法では、仮パスワードを標準入力から渡します。
 
 ```bash
 read -r -s -p 'Temporary password: ' temporary_password

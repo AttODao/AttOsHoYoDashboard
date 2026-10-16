@@ -1,4 +1,5 @@
 /.env
+/.env.test
 /target/
 
 # Local development environment state and private overrides
