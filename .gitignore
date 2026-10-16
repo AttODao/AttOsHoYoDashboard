@@ -7,6 +7,5 @@
 /devenv.local.yaml
 /.direnv/
 
-# Project skills are materialized by devenv from locked distributions.
-/.agents/skills/
-/.pi/skills/
+# Project Pi settings reference skills directly from locked Nix inputs.
+/.pi/settings.json

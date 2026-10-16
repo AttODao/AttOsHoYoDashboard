@@ -146,9 +146,11 @@ devenv shell -- test-ui
 
 ### プロジェクト専用skills
 
-`nix/project-skills.nix`が配布元（`devenv.yaml`の`skill-rust`・`skill-ui`・`skill-impeccable`・`impeccable-cli`）から取得し、`devenv.lock`のrevisionで固定します。skill本文はリポジトリ内に複製せず、`devenv shell`でこのcheckoutの`.agents/skills/`と`.pi/skills/`へ参照リンクを配置します。ユーザー全体のskillsは変更しません。Piを起動済みなら`/reload`で再読込できます。
+`nix/project-skills.nix`が配布元（`devenv.yaml`の`skill-rust`・`skill-ui`・`skill-impeccable`・`impeccable-cli`）を`devenv.lock`のrevisionで固定します。`devenv shell`で生成する`.pi/settings.json`の`skills`に、inputsのNix storeパスを直接指定します。skill本文のコピーや`.agents/skills/`・`.pi/skills/`のリンク生成は行いません。ユーザー全体の設定・skillsは変更せず、Pi標準の設定マージにより個人のskillsも維持します。Piは`devenv shell`内で起動してください。設定の再読込は`/reload`で行えますが、環境外で起動したPiへ新しい環境変数は引き継がれません。
 
-既存ローカル版は`.devenv/state/skills-before-devenv/`へ退避しています。`.impeccable/`のプロジェクト状態は別扱いで維持します。生成リンクではなく配布元・inputの固定版を管理してください。
+ImpeccableのネイティブengineのみNixで用意し、`IMPECCABLE_BIN`で配布元のlauncherへ渡します。Pythonもdevenvで用意します。生成されたPi設定は直接編集せず、プロジェクト設定は`nix/project-skills.nix`へ統合してください。
+
+既存ローカル版の退避先`.devenv/state/skills-before-devenv/`と`.impeccable/`のプロジェクト状態は維持します。
 
 ### SSH越しのテスト用サーバー
 
