@@ -3,6 +3,8 @@ mod service;
 mod summary;
 
 #[cfg(test)]
+mod live_tests;
+#[cfg(test)]
 #[path = "service_tests.rs"]
 mod service_tests;
 #[cfg(test)]
