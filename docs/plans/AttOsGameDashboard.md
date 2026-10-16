@@ -9,7 +9,7 @@
 | 基盤 | PostgreSQL migration、CLI `serve`/`migrate`/`bootstrap-admin`、安全な設定読み込み |
 | 開発環境 | `devenv.nix`／`devenv.yaml`／`devenv.lock`でツールを固定。通常shell/testでは`.env`自動読込・DB service起動なし |
 | Project skills | `.agents/skills/`にCodex／共通版8件、`.pi/skills/`にImpeccable Pi版を実ファイルとしてGit管理。devenv・生成Pi設定・Nix storeリンクに非依存 |
-| テストサーバー | `devenv shell -- test-server`。専用DBとHTTPをdevenvで起動・停止。HTTP待受開始後に`devcon`向けSSH転送コマンドを表示。専用テストファイルなし |
+| テストサーバー | `HOYOLAB_COOKIE_KEY`を環境変数で指定して`devenv shell -- test-server`。鍵の自動生成・保存なし。専用DBとHTTPをdevenvで起動・停止し、待受開始後にSSH転送コマンドを表示。専用テストファイルなし |
 | 認証 | password login/logout、固定期限session、password rotation、管理者user管理、passkey login/registration/list/delete |
 | UI | Dioxus 0.7.10 Web/WASM RSX。承認済みAGD R3を本番RSXに実装。検証・残課題は[本番R3記録](../ui-design/production-r3.md)。official Dioxus Components由来Button/Cardをsource同梱 |
 | HoYoLAB Cookie | legacy/v2 parse normalization、AES-GCM保存、pending status、same-UID proof path実装 |

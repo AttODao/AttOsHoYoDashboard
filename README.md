@@ -158,9 +158,12 @@ skillsはdevenvから切り離し、次の実ファイルをGitで直接管理�
 
 ### SSH越しのテスト用サーバー
 
-**devcon側**のプロジェクトrootで実行します。
+**devcon側**のプロジェクトrootで、テスト専用のCookie暗号鍵を環境変数で与えて実行します。鍵は64文字の16進数です（非表示入力）。
 
-```console
+```bash
+read -rsp 'HOYOLAB_COOKIE_KEY: ' HOYOLAB_COOKIE_KEY
+printf '\n'
+export HOYOLAB_COOKIE_KEY
 devenv shell -- test-server
 ```
 
@@ -172,7 +175,9 @@ ssh -N -T -o ExitOnForwardFailure=yes -L 127.0.0.1:8080:127.0.0.1:8080 devcon
 
 devcon側の起動コマンドを**Ctrl+C**で終了すると、HTTPとPostgreSQLの両方を停止します。ローカル側のCtrl+CはSSH転送だけを停止します。テストDBは`.devenv/`以下に保持されます。初回ログインは公開テスト用の`test-admin`／`public-test-only-password`（変更必須）。変更後はそのパスワードを使います。
 
-`test-server` profileのDBは専用Unix socketだけ、HTTPは`127.0.0.1:8080`だけで待ち受けます。実DBの接続先・Cookie鍵は引き継がず、空の`.env`を置いた専用作業directoryから起動します。HoYoLAB連携・報酬受け取りは利用不可で、初期設定ゲートも迂回しません。
+`test-server` profileのDBは専用Unix socketだけ、HTTPは`127.0.0.1:8080`だけで待ち受けます。実DBの接続先は引き継がず、空の`.env`を置いた専用作業directoryから起動します。Cookie暗号鍵は明示的にexportされた`HOYOLAB_COOKIE_KEY`だけを渡し、自動生成・ファイル保存はしません。未設定なら起動前にエラーにします。`.env`は読み込みません。再起動時も同じ鍵を渡してください。鍵を変更・紛失すると保存済みCookieを復号できなくなります。鍵をコマンド引数・履歴・Gitへ直接記録したり、チャットへ貼ったりしないでください。
+
+パスワード変更後はCookie入力・保存が可能になります。本人確認などは実HoYoLABへ接続するため、実アカウントを使った動作確認や報酬POSTには別途承認が必要です。初期設定・本人確認ゲートは迂回しません。
 
 ### 手動セットアップ（devenvを使わない場合）
 
