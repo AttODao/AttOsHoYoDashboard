@@ -1,400 +1,247 @@
 # AttOsGameAPI
 
-原神・崩壊：スターレイルのHoYoLAB APIを呼ぶ型付きRustクライアントと、身内用Dashboard WebセッションAPIです。DashboardはSeaORM＋PostgreSQL、パスワード／パスキー認証、Dioxus Web/WASM RSX UI、HoYoLAB Cookie保存、ゲーム状態cache、報酬worker、ユーザー削除workflowを持ちます。
+原神・崩壊：スターレイルのHoYoLABアカウントを連携し、ゲームの状態確認とログインボーナスの受け取りを行うセルフホスト型ダッシュボードです。
 
-HoYoLAB連携と手動・定期の報酬受け取りは、ユーザーが実アクセス・受け取りと趣味用途での利用を承認した通常機能です。`HOYOLAB_COOKIE_KEY`による暗号化を設定し、既存の連携検証に成功すると利用できます。自動受け取りは初期OFFで、ユーザーが既存UIから有効にします。この利用承認は、実上流のtoken-to-UID bindingやreward POST契約全体の実証を意味しません。
+- パスワード／パスキーによるログイン
+- HoYoLAB連携とゲームアカウントの表示管理
+- 天然樹脂・開拓力などの状態確認
+- ログインボーナスの手動受け取り・時刻指定の自動受け取り
+- 管理者によるユーザー作成・無効化・復旧・削除
 
-Dashboardの仕様・設計・計画・OpenAPI・運用手順は[ドキュメント一覧](docs/README.md)を参照してください。
+自動受け取りは初期状態では無効です。利用者が連携を完了し、画面から有効にする必要があります。HoYoLABの仕様変更や追加認証により利用できなくなる場合があります。
 
-## 型付きAPIクライアント
+## 1. 導入に必要なもの
 
-```rust,no_run
-use attosgameapi::{
-    game::{Genshin, Starrail},
-    hoyolab::{HoyolabClient, RecordAccount},
-};
+- Docker EngineとDocker Compose v2（`docker compose`）
+- 初回のイメージ作成に必要なインターネット接続
+- PostgreSQLのデータを保存するディスク領域
+- 外部公開する場合：ドメイン、HTTPS証明書、リバースプロキシ
 
-# async fn example() -> Result<(), String> {
-let cookie = std::env::var("HOYOLAB_COOKIE").map_err(|_| "Cookieが未設定です")?;
-let client = HoyolabClient::new(&cookie)?;
-let account = RecordAccount {
-    uid: "123456789".into(),
-    server: "os_asia".into(),
-};
-let index = client.index(Genshin, &account).await?;
-let note = client.daily_note(Genshin, &account).await?;
-let info = client.daily_info(Starrail).await?;
-let home = client.daily_home(Starrail).await?;
-# Ok(())
-# }
+アプリとPostgreSQLの2コンテナで動作します。HTTPSの終端は別途用意してください。アプリは**1インスタンス**で運用し、複数台・複数レプリカでは起動しないでください。
+
+## 2. 設定ファイルを用意する
+
+リポジトリを取得したディレクトリで実行します。
+
+```sh
+cp .env.example .env
+chmod 600 .env
 ```
 
-`index`と`daily_note`には、対象ゲームのUIDとserverが必要です。serverはアカウント一覧から取得した値を渡してください。`daily_info`、`daily_home`、`daily_sign`はCookieのアカウントを対象とします。戻り値は検証済みエンベロープの内側の型付き`data`です。
+既存の `.env` がある場合は上書きせず、[.env.example](.env.example)と比較して必要な項目を設定してください。秘密値をGit・チャット・ログへ貼り付けないでください。
 
-`daily_sign(Genshin)`／`daily_sign(Starrail)`だけは実際に報酬を受け取るPOSTです。自動再試行はしません。成功retcodeでも追加認証が必要な場合があるため、戻り値の`requires_verification()`と認証情報を確認してください。`None`は受取成功を意味せず、受取の確定には`daily_info`の`is_sign`を再確認します。通常のテストはローカルのモックAPIを使用し、明示実行のlive GETテストも受け取りPOSTは行いません。
+### 環境変数
 
-クライアントのエラーは`hoyolab::Error`です。通信・HTTP・retcode・レスポンス形式を型で区別でき、文字列診断には`to_string()`を使います。上流の`message`は秘密情報を含み得るため保持・表示しません。`Result<T, String>`境界の`?`変換は提供しますが、String固有の操作は明示的な変換が必要です。
+`.env` は `compose.yaml` への設定入力です。コンテナにはComposeに記載した項目だけが渡されます。
 
-`GameKind`は`Genshin(Genshin)`／`Starrail(Starrail)`を持ち、JSONでは`"genshin"`／`"starrail"`として読み書きします。実行時にゲームを選ぶ場合は、このenumを`match`して型付きメソッドを呼びます。新しいゲームはstruct、`Game`実装、対応モデル、`GameKind`への追加で対応できます。Dashboardのゲーム状態APIは、この型付きクライアントを所有者scopeの業務処理から呼びます。
+| 変数 | 設定内容 |
+| --- | --- |
+| `DB_NAME` | アプリ用DB名。既定：`attos_dashboard` |
+| `DB_USER` | アプリ用DBユーザー。既定：`attos_dashboard`。`postgres`などの管理者は指定しない |
+| `DB_PASSWORD` | **必須**。アプリ用DBパスワード |
+| `DB_ADMIN_PASSWORD` | **必須**。PostgreSQL管理者用パスワード。`DB_PASSWORD`とは異なる値にする。アプリには渡されない |
+| `INITIAL_ADMIN_USERNAME` | 初期管理者名。既定：`admin` |
+| `INITIAL_ADMIN_PASSWORD` | **初回起動時に必須**。初期管理者の仮パスワード。12〜256 UTF-8バイト |
+| `HOYOLAB_COOKIE_KEY` | **必須**。HoYoLAB Cookie保存用の秘密鍵。暗号学的乱数32バイトを64桁の16進数で指定 |
+| `PUBLIC_ORIGIN` | 利用者がブラウザで開くOrigin。例：`https://agd.example.com`。パス・クエリ・末尾の `/` は付けない |
+| `RP_ID` | パスキー用のドメイン名。例：`agd.example.com`。スキーム・ポート・パスは付けない |
+| `SESSION_TTL_DAYS` | セッション有効日数。正の整数、既定：`7`。アクセスによる延長なし |
+| `TIMEZONE_OFFSET` | 自動受け取りの時刻に使う固定UTCオフセット。既定：`+09:00`。夏時間の自動調整なし |
 
-## 責務別の配置
+パスワードはパスワードマネージャー等で個別に生成してください。暗号鍵は、例えば手元の安全な端末で `openssl rand -hex 32` により生成し、秘密として `.env` と別の安全な保管先に保存します。**保存済みCookieがある間は `HOYOLAB_COOKIE_KEY` を変更しないでください。** 鍵を失うと保存済みCookieを復号できません。
 
-- `src/hoyolab/mod.rs`: HoYoLABクライアントの公開窓口。
-- `src/hoyolab/client/mod.rs`: Cookie認証、DS署名、HTTP通信、エンベロープ検証。
-- `src/hoyolab/game.rs`: ゲームのマーカー型、`Game` trait、エンドポイント定数。
-- `src/hoyolab/models/`: 共通・ゲーム別の型付きレスポンスモデル。
-- `src/lib.rs`: ライブラリの入口。既存の`game`・`models`はルートからも再exportします。
-- `src/main.rs`: 環境設定の読み込みと実行入口。
-- `src/dashboard/`: 非GUIの業務・HTTP・永続化を次の責務で分離します。
-- `src/hoyolab/client/{endpoint_tests,protocol_tests,validation_tests,live_tests}.rs`: 現行エンドポイントのモック・プロトコル・入力検証と明示実行の実APIテスト。
-- `tests/fixtures/hoyolab/*.json`: モック検証用の合成fixture（認証済み実データではありません）。
-- ルートの`.env`／`.env.test`: 通常サーバー用／テストサーバー用の非公開設定（Git管理外）。`.env.example`／`.env.test.example`は秘密情報を含まない設定例。
+Composeは `DB_HOST=db`、`DB_PORT=5432`、コンテナ内の待受 `0.0.0.0:8080` を設定します。これらや `DATABASE_URL`、`BIND_ADDR`、`DASHBOARD_UI_DIR` を `.env` に追加する必要はありません。HoYoLABのCookieも `.env` には書かず、ログイン後の画面から登録します。
 
-### Dashboardのモジュール地図
+### 公開URLを選ぶ
 
-```text
-src/dashboard/
-├── mod.rs                      # モジュール宣言・実行入口
-├── cli.rs                      # serve（API+UI）/ migrate / bootstrap-admin
-├── config.rs / error.rs        # 設定検証・秘匿された業務エラー
-├── auth/
-│   ├── accounts.rs             # 作成・復旧・無効化・利用可否・監査
-│   ├── deletion.rs             # 削除受付・last active admin保護・完了workflow
-│   ├── password.rs             # Argon2idと有界CPU処理
-│   ├── sessions.rs             # 発行・固定期限・認証・失効
-│   └── passkeys/               # WebAuthn登録・認証・challenge・credential codec
-├── hoyolab/
-│   ├── credentials.rs          # Credentials / CookieKeyの窓口
-│   ├── credentials/
-│   │   ├── parser.rs           # legacy/v2 Cookie解析・正規化
-│   │   └── crypto.rs           # v1 AES-256-GCM保存・owner/UID AAD
-│   ├── store.rs                # owner lock・running gate・status/submit
-│   ├── verification.rs         # identity候補・roles sync・same-UID update
-│   ├── operations.rs           # owner単位の非global順序化
-│   └── gateway.rs              # Dashboard用のtyped upstream boundary
-├── games/
-│   ├── service.rs              # UID visibility・status cache
-│   └── summary.rs              # curated daily-note projection
-├── rewards/
-│   ├── service.rs              # settings・manual enqueue・history・共通認可再検査
-│   ├── service/
-│   │   ├── cache.rs            # status cache更新・TTL・payload保持
-│   │   ├── test_support.rs     # service/worker共通の合成gateway・fixture
-│   │   └── worker/
-│   │       ├── mod.rs          # serviceの子workerを構成
-│   │       ├── scheduler.rs    # tick・due schedule・history cleanup
-│   │       ├── attempt.rs      # prepare・POST・GET確認
-│   │       ├── state.rs        # durable送信状態・guard・完了transaction
-│   │       └── deletion.rs     # 削除時の未確定報酬GET確認
-│   └── schedule.rs             # fixed-offset next tick
-├── http/
-│   ├── mod.rs                  # API route合成・APIサーバー生存期間
-│   ├── auth.rs / users.rs / passkeys.rs
-│   ├── hoyolab.rs / games.rs / rewards.rs
-│   ├── middleware.rs           # Origin境界・session抽出
-│   ├── session.rs              # Cookie・login response
-│   ├── ui.rs                   # compiled Dashboard配信・OpenAPI
-│   └── response.rs             # safe error DTO
-└── db/
-    ├── mod.rs                  # 接続・migration実行
-    ├── entities/               # 保存モデル
-    └── migrations/             # スキーマ変更
-```
-
-HTTPは輸送と入力型、`auth/`は認証・ユーザーライフサイクル、`hoyolab/`はCookie保存と連携検証、`games/`と`rewards/`は所有者scopeの業務処理、`db/`は保存モデルとスキーマを担当します。認可や復旧ルールをハンドラーに複製せず、DBトランザクション・userロック・owner operation lockは業務側で一か所に維持します。変更単位ごとの検証・コミット方針は`AGENTS.md`に記載しています。
-
-### Dioxus UIのモジュール地図
-
-承認済みAGD R3の本番RSX・検証と限界は[本番R3記録](docs/ui-design/production-r3.md)を参照。
-
-- `dashboard-ui/src/app.rs`: App合成・起動・60秒周期のDashboard更新。
-- `dashboard-ui/src/app/state.rs`: AppState、Page/Phase、generation・busy・owner切替・画面アクセス制御と関連テスト。
-- `dashboard-ui/src/app/data.rs`: 画面別のAPIデータ取得、ゲームごとのUID状態更新、ボーナス設定保存の共有処理。
-- `dashboard-ui/src/app/preferences.rs`: 日本語／英語・dark／lightの選択・適用。localStorageには非機密の選択だけを保存。
-- `dashboard-ui/src/i18n.rs` / `dashboard-ui/locales/{ja,en}.json`: 翻訳キーの解決、英語fallback、名前付き変数の補間と日英の表示文。
-- `dashboard-ui/src/app/credentials.rs`: 管理者用仮パスワードのWeb Crypto生成・clipboard境界。生成結果は成功時だけメモリ内表示。
-- `dashboard-ui/src/app/session.rs`: bootstrap、fresh me適用、signed-out・logout失敗時の状態。
-- `dashboard-ui/src/app/actions.rs`: 非同期操作のsingle-flightと完了・エラー制御。
-- `dashboard-ui/src/app/display.rs`: 既知の数値ペアの表示整形。欠落値の文言は画面側でi18nから取得。
-- `dashboard-ui/src/pages/mod.rs`: モジュール宣言のみ。`auth`、`shell`、`dashboard`、`hoyolab`、`accounts`、`rewards`、`security`、`admin`、`deletion`、`docs`に画面責務を分け、`common`に共通部品を置く。
-- `dashboard-ui/src/api.rs` / `models.rs` / `webauthn.rs`: 共通HTTP・DTO・ブラウザ認証器境界（維持）。
-- `dashboard-ui/assets/dashboard-icon.png` / `favicon.png`: ユーザー提供画像の中央を切り抜いた透過PNG。AGD左隣のブランドアイコン／ブラウザのタブアイコン。
-
-### UIの翻訳
-
-画面本文・ラベル・ARIA名・通知・API／WebAuthnエラーの文言は`dashboard-ui/locales/ja.json`と`en.json`に置きます。RSXは`ui.text("翻訳キー")`、変数を含む文は`ui.format("翻訳キー", &[("名前", 値)])`で取得します。両言語に同じキー・`{名前}`のplaceholderを追加してください。JSONはビルドへ同梱し、外部の翻訳配信や新しい依存ライブラリは使用しません。
-
-通知・取得エラーは翻訳キーを状態に保持し、描画時に現在の言語へ変換します。表示中のエラーも言語変更で再翻訳され、操作を再送信しません。ユーザー名・UID・OpenAPIの提供データなど動的な値は翻訳しません。翻訳不足は英語へfallbackし、未知のキーは固定の安全なメッセージにします。カタログのキー・placeholder一致、参照の存在、状態の再翻訳はUIのunit／ブラウザテストで検査します。
-
-## ビルド・テスト
-
-### devenv（推奨）
-
-プロジェクトrootで実行します。環境は`devenv.nix`／`devenv.yaml`に定義し、`devenv.lock`をcommitしてツールの組を固定します。
-
-```console
-devenv shell
-devenv test
-```
-
-`devenv shell`にはRust（`rust-toolchain.toml`のversion・rustfmt・Clippy・WASM target）、Dioxus CLI・wasm-bindgen CLI・Binaryen、PostgreSQLのテスト用ツール、OpenSSL／pkg-config、Node.js、対応するPlaywright Core／Chromiumが入ります。ブラウザはNixの実行環境を使い、`/tmp`のツール配置や個人のnpm／ブラウザcacheには依存しません。
-
-Dioxusは0.7.10を使用し、wasm-bindgen CLIはCargo.lockの要求（0.2.129）に合わせています。devenv標準のnixpkgsに同梱される版では古いため、このツールだけ`wasm-tools` inputから供給し、そのrevisionもlockしています。Cargo.lockでwasm-bindgenを更新する際はCLIの一致も確認してください。
-
-`devenv test`はRustの整形・Clippy（native／WASM）、workspace全targetテスト、UI release build、合成APIでのブラウザ回帰（通常／reduced-motion）を実行します。個別実行は以下です。
-
-```console
-devenv shell -- check-rust
-devenv shell -- test-rust
-devenv shell -- build-ui
-devenv shell -- test-ui
-```
-
-通常のshell／testでは`.env`を自動読込せず、共用PostgreSQL serviceも起動しません。`test-rust`は`DATABASE_URL`を除外し、テスト自身が専用clusterを作成・破棄します。実HoYoLAB GETテストは既定のignoreを維持し、実行には別途承認が必要です。Nix定義やlockへ秘密値を入れないでください。アプリケーションを手動起動する際の設定は後述の運用手順に従います。
-
-### プロジェクト専用skills
-
-skillsはdevenvから切り離し、次の実ファイルをGitで直接管理します。Piは標準の探索機能で読み込み、`/reload`で再読込できます。生成した`.pi/settings.json`やNix storeへのリンクは使いません。ユーザー全体の設定・skillsは変更しません。
-
-- `.agents/skills/rust-skills/`: [rust-skills](https://github.com/leonardomso/rust-skills)、共通版（revision `fd2a861ab0406a4ac536a55274d14ea6fd1ca9c9`）。
-- `.agents/skills/`内のUI系7件: [UI UX Pro Max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)、公式`uipro init --ai codex`の生成版（revision `56ea9cf174ed86786187daa9de0e6247cb0747e4`）。ライセンスは`.agents/skills/LICENSES/ui-ux-pro-max.txt`。
-- `.pi/skills/impeccable/`: [Impeccable](https://github.com/pbakaus/impeccable)、Pi版`skill-v4.5.2`（revision `0d10a02edca50becf21465679cedb92e9188576c`）。
-
-更新は配布元のCodex／Pi版を該当directoryへ反映し、差分を確認してcommitします。Python helperにはPython 3が必要です。Impeccableは配布元のlauncherを同梱し、ネイティブengineは初回利用時に取得します（ネット接続が必要。バイナリはGitに含めません）。skillsのためにdevenvへ入る必要はありません。
-
-以前のローカル版の退避先`.devenv/state/skills-before-devenv/`と`.impeccable/`のプロジェクト状態は維持します。
-
-### 開発用サーバーの起動（launch-server）
-
-**devcon側**の`.env.test`に`DB_NAME`・`DB_USER`・`DB_PASSWORD`・初期管理者設定・`HOYOLAB_COOKIE_KEY`を記述します（例は`.env.test.example`）。鍵は64文字の16進数で、自動生成しません。
-
-```console
-devenv shell -- launch-server
-```
-
-UIをbuildし、専用PostgreSQLと、API・Dashboardを同時提供する1つのRustプロセスを起動します。HTTP待受は`127.0.0.1:8080`だけです。ブラウザは同一Originの`/api/v1/...`を利用し、内部HTTP proxyやCORSは不要です。
-
-待受開始後に表示される次のコマンドを**ローカルPC**で実行し、`http://localhost:8080`を開きます。
-
-```console
-ssh -N -T -o ExitOnForwardFailure=yes -L 127.0.0.1:8080:127.0.0.1:8080 devcon
-```
-
-**Ctrl+C**でこのコマンドが起動したapp・DBを停止します。ローカル側のCtrl+CはSSH転送だけを停止します。データは`.devenv/profiles/launch-server/state/postgres`に保持されます。
-
-DB名・アプリ用role・パスワードは設定ファイルから初期化し、実際の接続にはSCRAMパスワード認証を使います。DBのsocket/portはdevenv専用に固定し、通常稼動用`.env`や外部DBへは接続しません。既存DBの所有者が設定と異なる場合は停止し、データや所有者を勝手に変更しません。初期ユーザーは空DBだけに作成し、既存ユーザーのパスワードは変更しません。
-
-`scripts/launch-server.sh`・`scripts/launch-db.sql`は開発・テスト専用です。`.env.test`はNode標準のenv-file読み込みで扱い、Bashとして実行しません。Cookie鍵はDBを保持する間は同じ値を使ってください。実HoYoLABを使う動作確認・報酬POSTの承認条件や本人確認ゲートは変更しません。
-
-### Docker Compose（app + db）
-
-`compose.yaml`は`app`と`db`の2コンテナだけを管理します。Rust builder・app runtime・PostgreSQLはすべてAlpineベースです。appはRustバイナリの`serve`を直接実行し、APIとDashboardを1つのHTTP serverで公開します。**本番Dockerは`scripts/`をコピー・mount・実行せず、build contextからも除外します。** PostgreSQLの初回初期化SQLは本番専用の`docker/init-db.sql`です。
-
-通常稼動用`.env`にDB名・アプリ用パスワード・`DB_ADMIN_PASSWORD`・初期管理者情報・Cookie暗号鍵を設定してください。管理者用DBパスワードはアプリ用と分け、appには渡しません。公開先は次のように指定します（`.env.example`のlocalhost設定を置き換える）。
+**HTTPSで公開する場合**は、`.env` の2項目を実際のドメインへ置き換えます。
 
 ```dotenv
 PUBLIC_ORIGIN="https://agd.example.com"
 RP_ID="agd.example.com"
 ```
 
-```console
-docker compose up --build
-# 停止。DB volumeは保持。
+リバースプロキシで、そのドメインへの全リクエストを `http://127.0.0.1:8080` に**パスを変更せず**転送してください。UI・APIは同じOriginで提供します。`/api` などのサブパスへの設置はしないでください。
+
+別コンテナのプロキシでは `127.0.0.1` はそのプロキシ自身を指します。その場合は `compose.yaml` で共有ネットワークを設定して `app:8080` へ転送するなど、到達経路を用意してください。DBを外部公開する必要はありません。
+
+**同じPCからローカル利用する場合**は、必ず両方を変更します。
+
+```dotenv
+PUBLIC_ORIGIN="http://localhost:8080"
+RP_ID="localhost"
+```
+
+ブラウザでは `http://localhost:8080` を開いてください。IPアドレスによる公開や、localhost以外のHTTP公開は使用できません。
+
+## 3. 起動する
+
+```sh
+docker compose up -d --build
+docker compose ps
+curl --fail http://127.0.0.1:8080/health
+```
+
+正常時、ヘルスチェックは `{"status":"ok"}` を返します。アプリの起動時にDBの更新と、空のDBへの初期管理者作成が行われます。
+
+| URL | 内容 |
+| --- | --- |
+| `/` | ダッシュボード |
+| `/docs` | API仕様の閲覧画面 |
+| `/openapi.json` | OpenAPI形式の詳細仕様 |
+| `/health` | アプリ・DBの疎通確認 |
+
+ホストへ公開するポートは、既定で `127.0.0.1:8080` だけです。DBのポートは公開しません。ポートを変える場合は `compose.yaml` の `app.ports` 左側を変更し、プロキシの転送先も合わせてください。ブラウザが使うURLのポートが変わる場合は `PUBLIC_ORIGIN` も合わせます。
+
+```yaml
+# 例：ホストの8081からコンテナの8080へ転送
+ports:
+  - "127.0.0.1:8081:8080"
+```
+
+### 初回ログインとHoYoLAB連携
+
+1. 設定した初期管理者名・仮パスワードでログインし、パスワードを変更します。
+2. ブラウザで <https://www.hoyolab.com> にログインします。
+3. ブラウザの開発者ツールのApplication／StorageからHoYoLABのCookieを確認します。Cookieを表示・送信するコンソールスクリプトは実行しないでください。
+4. ダッシュボードのHoYoLAB連携画面にCookieを登録し、連携検証を完了します。
+5. 検出された原神・崩壊：スターレイルのアカウントを確認します。自動受け取りを使う場合は、時刻を指定して有効にします。
+
+連携検証にはv2 Cookieの `ltoken_v2` と、UIDを示す `ltuid_v2`／`account_id_v2` が必要です。`ltmid_v2`／`account_mid_v2` がある場合も含めてください。異なるアカウントの値や旧形式のCookieを混在させないでください。Cookie保存だけでは連携完了になりません。
+
+Cookieはパスワードと同様の秘密情報です。他人に渡さず、失効した場合は連携画面から更新してください。ゲームの状態を取得できない場合は、HoYoLAB側の戦績・リアルタイムノートの公開設定も確認してください。
+
+初期管理者はユーザーが1人もいない場合だけ作成されます。既存ユーザーのパスワードは `.env` を変更してもリセットされません。作成後は `INITIAL_ADMIN_PASSWORD` を空にできます。追加ユーザーの作成・復旧は管理画面から行います。
+
+## 4. 停止・更新・バックアップ
+
+### 停止と再起動
+
+```sh
+# 停止（DBデータは保持）
 docker compose down
+
+# 再起動
+docker compose up -d
 ```
 
-既存のHTTPS reverse proxyで`agd.example.com`への全requestを`127.0.0.1:8080`へ**パスを変更せず**転送します。Dashboardは`https://agd.example.com/`、APIは`https://agd.example.com/api/v1/...`、契約は`https://agd.example.com/openapi.json`です。`PUBLIC_ORIGIN`に`/api`を含めないでください。HTTPS originではSecure cookieとWebAuthnのDNS検証を維持します。TLS終端はこの2コンテナ構成の外側で用意します。
+**`docker compose down -v` はDBボリュームも削除します。通常の停止には使わないでください。**
 
-ホスト公開はappのloopback `8080`だけで、DB portは公開しません。経路は`HTTPS proxy -> app:8080 -> db:5432`です。`serve`起動時にmigrationと空DBへの初期管理者作成を行い、既存ユーザーは上書きしません。DB名・role・パスワードの初期化SQLは空のvolumeにだけ適用され、既存volumeの所有者・認証情報を自動変更しません。`.env*`などの秘密ファイルはDocker build contextへ含めません。Debian等で作成した既存DB volumeをAlpineへ直接流用せず、backup・dump/restoreで移行してください。DBを消す`docker compose down -v`は通常の停止手順に含めません。
+DBデータはComposeの名前付きボリューム `db-data` に保存されます。作業ディレクトリ名やComposeのプロジェクト名を変更すると別のボリュームが選ばれる場合があるため、移設時は注意してください。
 
-Docker/Composeが未導入の開発環境では、実コンテナのbuild・起動検証は別途必要です。Alpineでは配布元のGNU/Linux用tool downloadを避け、Alpine版Binaryen/esbuildとインストール済みwasm-bindgenを`NO_DOWNLOADS=1`で使います。これらのAlpine版によるUI buildとnative binaryのstatic linkageは、実際のimage build時に確認してください。
+### 更新
 
-### 手動セットアップ（devenvを使わない場合）
+1. DBと `HOYOLAB_COOKIE_KEY` をバックアップします。
+2. 配布元から新しいバージョンを取得します。
+3. 次を実行し、`/health` と画面を確認します。
 
-Rustのstableツールチェーン（edition 2024対応）を使用します。WebAuthnのビルドには`pkg-config`とOpenSSLの開発ヘッダー／ライブラリが必要です。PostgreSQLは実行時に別途用意します。
-
-```console
-cargo build --locked --bins
-cargo test --locked --all-targets
+```sh
+docker compose up -d --build
 ```
 
-ルートworkspaceは `default-members = ["."]` のため、通常の `cargo check --locked` はバックエンド中心です。Dioxus UI crateも含める確認では、wasm targetを追加してworkspace指定で実行します。
+設定変更も `docker compose up -d` で反映します。`docker compose restart` だけではコンテナの環境変数は更新されません。DBの更新が起動時に行われるため、以前のバージョンへ戻す際はバックアップからの復元が必要になる場合があります。
 
-```console
-rustup target add wasm32-unknown-unknown
-cargo check --locked --workspace --all-targets
-cargo test --locked --workspace --all-targets
-cargo clippy --locked --workspace --all-targets -- -D warnings
-cargo check --locked -p attos-dashboard-ui --target wasm32-unknown-unknown
+### バックアップ
+
+書き込みを止めてDBのバックアップを取る例です。保存先のファイルにも機密情報が含まれるため、安全に保管してください。
+
+```sh
+umask 077
+docker compose stop app
+docker compose exec -T db sh -c 'pg_dump -U "$DB_USER" -d "$DB_NAME" -Fc' > attos-dashboard.dump
+docker compose start app
 ```
 
-Dashboardテストは`initdb`・`pg_ctl`を使い、テストごとに専用PostgreSQLクラスタを作成・破棄します。**非rootユーザー**で実行してください。実環境の`DATABASE_URL`やCookieを使用せず、ツール不足時は明示的に失敗します。ツールをPATHに置けない場合：
+`pg_dump` の終了コードが0であることを確認してください。**DBと、その時点の `HOYOLAB_COOKIE_KEY` の両方**を保管します。`.env` 自体を保管する場合もアクセス制限・暗号化を行ってください。
 
-```console
-ATTOS_TEST_PG_BIN=/path/to/postgresql/bin cargo test --locked --all-targets
+`DB_NAME`・`DB_USER`・DBパスワードは空のボリュームを初期化するときの設定です。既存DBでは `.env` を変更するだけでDB名・ユーザー・パスワードは変更されません。認証情報の変更にはDB側の変更も必要です。PostgreSQLのメジャーバージョンや配布イメージを変える場合は、既存ボリュームの流用を前提にせず、バックアップからの移行手順を用意してください。
+
+## 5. APIの概要
+
+ベースパスは `/api/v1` です。JSONを使用し、ダッシュボードと同じOriginからセッションCookieでアクセスします。APIキー・Bearerトークン・OAuth認証は提供していません。
+
+### 認証とリクエストの共通ルール
+
+- ログインで発行されるCookieを以降のリクエストに付けます。HTTPSでは `__Host-attos_session`、ローカルHTTPでは `attos_session` です。Cookieは `HttpOnly`・`SameSite=Strict`、HTTPSではさらに `Secure` です。
+- POST・PATCH・DELETEなどの状態変更には、**ログインも含めて** `PUBLIC_ORIGIN` と完全一致する `Origin` ヘッダーが必要です。ブラウザは同一Originで利用してください。
+- JSON送信時は `Content-Type: application/json` を指定します。定義にないJSONフィールドは拒否されます。
+- 初回・復旧直後はパスワード変更が必要です。HoYoLAB連携が完了するまで利用できない機能もあります。
+- パスワード変更で他のセッションは失効します。現在のセッションの有効期限は延長されません。
+
+ログインの形式（値は説明用のプレースホルダー）：
+
+```http
+POST /api/v1/auth/login
+Origin: https://agd.example.com
+Content-Type: application/json
+
+{"username":"admin","password":"<password>"}
 ```
 
-テストは設定・CLI・DB制約・アカウント・パスワード・セッション・パスキー・HTTP・HoYoLABプロトコルごとに所有モジュールへ配置しています。アカウントのpassword rotationは`auth/accounts_tests/password_rotation.rs`、削除完了・queueは`auth/deletion_tests/completion.rs`へ分離し、元の親テストにpolicy/requestシナリオと小さな共通fixtureを残します。reward cacheテストは`rewards/service/cache_tests.rs`、reward実行シナリオは`rewards/service/worker/execution_tests.rs`・`tests.rs`に配置し、共通MockGateway/fixtureは`rewards/service/test_support.rs`から参照します。例：`cargo test --locked --bin attosgameapi dashboard::auth::sessions`。APIテストは現在実装済みのエンドポイントだけを対象とし、HoYoLABモックは実際のHTTPSホスト名・パスをループバックへ解決します。実APIテスト1件は外部通信の明示承認を要するため通常実行では`ignored`です。DBテストのツール不足や実APIテストの明示実行時の設定不足は失敗させます。合成UID・ソフトウェア鍵・モックは実APIの本人UID拘束・実認証器の確認の代わりではありません。
+成功時はユーザー情報をJSONで返し、`Set-Cookie` でセッションを発行します。その後 `GET /api/v1/me` でユーザー情報・初期設定の進行状態・利用可能な機能を確認できます。
 
-バックエンドの起動手順は次節を参照してください。Dashboard API契約は手書きのOpenAPI 3.1として管理します。
+### 主なエンドポイント
 
-詳細なリクエスト仕様は [docs/hoyolab-api.md](docs/hoyolab-api.md) を参照してください。
+以下はすべてベースパス `/api/v1` からの相対パスです。`{id}` などの識別子は一覧APIで取得します。通常のユーザーは自分のデータだけを操作でき、管理機能には管理者権限が必要です。
 
-ゲームレコードAPIのエンドポイント一覧とレスポンス構造は [docs/hoyolab-game-record/README.md](docs/hoyolab-game-record/README.md) を参照してください。
-
-## Dashboardバックエンド / UI / API
-
-DashboardはDioxus 0.7.10 Web/WASM RSX UIとWebセッションAPIを同じRustプロセスで提供します。UIはworkspace crate `dashboard-ui` / package `attos-dashboard-ui` で作成し、公式Dioxus Components由来のButton/Card/Card parts（DioxusLabs/components `9a758255ea26e2b20c8cecf4c1c946feb9e71da7`, MIT）をsource templateとして同梱します。SSR/fullstack server、native app、CDN、PAT/Scope、外部クライアント向け認証はありません。
-
-このWeb/REST構成はDioxusで有効な選択ですが、同一RustのUI専用backendではFullstack server functionsも型・transport重複を減らす選択です。現構成の理由、移行時にも必要な安全境界、既存ライブラリによる簡素化は [設計 §1.1–1.2](docs/design/AttOsGameDashboard.md#11-dioxusとapiui境界) を参照してください。
-
-公開route:
-
-| Method | Path | 用途 |
-|---|---|---|
-| GET | `/health` | DB疎通確認 |
-| GET | `/` | compiled Dioxus Dashboard UI index |
-| GET | `/docs` | 同じDioxus index内のread-only OpenAPI viewer（try-itなし） |
-| GET | `/openapi.json` | OpenAPI 3.1 JSON contract |
-
-`/assets/{...}` はDioxus buildが生成したhash付き内部assetだけを `DASHBOARD_UI_DIR/assets` から配信します。`/assets/app.js` や `/assets/style.css` を安定APIとして文書化しません。
-
-Web APIの正本は [docs/dashboard-api.json](docs/dashboard-api.json)、運用手順は [docs/dashboard-operations.md](docs/dashboard-operations.md) です。現在のAPIは `/api/v1/auth/*`、`/api/v1/me*`、passkeys、admin users、HoYoLAB status/cookie/verify/sync、game accounts/status、reward settings/runs です。架空のHoYoLAB proxy routeはありません。
-
-### 設定と起動
-
-PostgreSQLの専用DBを用意し、通常サーバー用のルート`.env`に設定します。`.env`に`DB_NAME`・`DB_USER`・`DB_PASSWORD`を設定してください。`DB_PASSWORD`・`INITIAL_ADMIN_PASSWORD`・`HOYOLAB_COOKIE_KEY`、Compose用`DB_ADMIN_PASSWORD`の空欄はローカルで実値を設定してください。`.env`／`.env.test`は所有者のみ読書き可能（`chmod 600`）にしてGitへ追加しないでください。実値を設定例・文書・チャットへ書かないでください。明示的なprocess environmentは`.env`より優先するため、環境を切り替える際はテスト用のexportを解除してください。
-
-| 設定 | 初期値・用途 |
-|---|---|
-| `DB_HOST` / `DB_PORT` | `127.0.0.1` / `5432`。devenvは専用socket/port、Composeは`db:5432`に固定 |
-| `DB_NAME` / `DB_USER` / `DB_PASSWORD` | DB名・アプリ用role・パスワード。3項目を揃える |
-| `DB_ADMIN_PASSWORD` | Compose DB初期化管理者専用。アプリには渡さない |
-| `DATABASE_URL` | 旧設定の互換入力。上記3項目が指定される場合は使わない |
-| `INITIAL_ADMIN_USERNAME` | `serve`初回起動／引数なし`bootstrap-admin`用の初期ユーザー名 |
-| `INITIAL_ADMIN_PASSWORD` | 同上の仮パスワード。作成後のログインで変更必須 |
-| `BIND_ADDR` | `127.0.0.1:8080`。API・Dashboard共通の待受 |
-| `PUBLIC_ORIGIN` | `http://localhost:8080`。公開時はHTTPS DNS origin。mutationの`Origin`完全一致とWebAuthn originに使用 |
-| `RP_ID` | 既定は`PUBLIC_ORIGIN`のhost。WebAuthn用DNS RP ID |
-| `SESSION_TTL_DAYS` | `7`。固定期限session。アクセスで延長しない |
-| `TIMEZONE_OFFSET` | `+09:00`。報酬scheduler用の固定UTC offset |
-| `HOYOLAB_COOKIE_KEY` | Cookie保存に必要な32-byte/64-hex秘密鍵。DBと別にbackupし、再暗号化toolなしに変更しない |
-| `DASHBOARD_UI_DIR` | compiled Dioxus public directory。既定は `target/dx/attos-dashboard-ui/release/web/public` |
-
-```console
-cargo install dioxus-cli --version 0.7.10 --locked   # または同versionの公式prebuiltをchecksum確認して使用
-rustup target add wasm32-unknown-unknown
-dx build --package attos-dashboard-ui --platform web --release
-cargo run -- serve
-```
-
-既定のDioxus public出力は `target/dx/attos-dashboard-ui/release/web/public` です。配備時はこのpublic directoryの中身だけを配置し、bundleや `target/dx` 生成物はcommitしません。`serve`（引数省略時も同じ）はmigration・空DBの初期管理者作成・API/Dashboardの同時配信を行います。`DASHBOARD_UI_DIR/index.html` が無ければHTTP待受は開始しません。`migrate`・`bootstrap-admin`は個別の保守コマンドとして残します。分離用の`serve-api`・`serve-dashboard`はありません。
-
-初期管理者はusers tableが空のときだけ作成できます。作成済みユーザーは`.env`の変更で再設定されません。初期作成後は`.env`の仮パスワードを削除しても構いません。`.env`の初期管理者設定を使う場合：
-
-```console
-cargo run -- bootstrap-admin
-```
-
-ユーザー名を引数で指定する従来の方法では、仮パスワードを標準入力から渡します。
-
-```bash
-read -r -s -p 'Temporary password: ' temporary_password
-printf '\n'
-printf '%s' "$temporary_password" | cargo run -- bootstrap-admin admin
-unset temporary_password
-```
-
-### セキュリティ境界
-
-- Session cookieはHTTPSで`__Host-attos_session; Secure; HttpOnly; SameSite=Strict`、localhost HTTPでは`attos_session`。
-- 状態変更requestは`PUBLIC_ORIGIN`と完全一致する`Origin`が必要です。Dioxus browser clientはsame-origin credentialsを使い、Cookie/Origin headerを手動で偽装しません。
-- JSON mutation DTOは未知fieldを拒否します。エラーDTOはsafe/static/numeric codeだけで、Cookie・password・token・上流raw messageを返しません。
-- Dioxus HTML shellには、DX 0.7.10が生成するexternal module loaderだけを許可するCSPを付与します。`script-src 'self' 'wasm-unsafe-eval'` のみで、`'unsafe-inline'` や一般の `'unsafe-eval'` は使わず、`style-src 'self'`, `connect-src 'self'`, `object-src 'none'`, `frame-ancestors 'none'`, `base-uri 'none'` を維持します（Chromiumでrelease bundleのCSP・WASM動作を合成fixtureで確認済み）。
-- Password変更は他sessionを失効し、現在sessionの期限は延長しません。Logout・disable・recovery・deleteも該当session/passkeyを失効します。
-
-### HoYoLAB連携の現在地
-
-Cookie受付・暗号化保存、owner lock、account/community identityとCookie claimの整合性検査、roles sync、same-UID update、game UID visibility/cache、手動・定期報酬と削除時確認を提供します。Cookie UIDだけを本人確認の証拠とはせず、verified link、認証・認可・アカウント利用可否の再検査を維持します。報酬POST前のdurable may-have-sent記録とGET確認を維持し、不確定なPOSTは再送しません。ローカルmockや合成UIDは実上流token bindingの証拠ではありません。
-
-削除は本人または管理者が実行でき、actorの現在パスワードと対象usernameの完全一致入力が必要です。最後のactive admin削除は拒否します。受付時に対象をinactive化しsession/passkeyを失効、backgroundで送信済みreward POSTのGET-only確認を有界に行ってから全対象データを削除し、verified UID uniquenessを解放します。
-
-## HoYoLAB認証に必要な情報
-
-海外版HoYoLABの読み取り・ログインボーナスAPIはCookie認証を使います。Dashboardの保存処理はlegacy `ltoken` familyまたはv2 `ltoken_v2` familyを正規化し、UID aliasの矛盾、legacy/v2混在、placeholder、不正文字を拒否します。
-
-v2では `ltuid_v2` / `account_id_v2` と `ltoken_v2` を扱い、`ltmid_v2` / `account_mid_v2` があれば保持します。MIDが不要であることは未実証なので、最小2項目だけで十分とは扱いません。連携検証は現在v2 ltoken credentialを要求し、legacy保存対応は本番owner proofの証拠ではありません。
-
-ゲームレコードにはゲームUID (`game_uid`) とサーバー識別子 (`region`) も必要ですが、これはCookieではありません。検証後のroles syncで取得します。HoYoLAB APIは公式の公開APIではなく、エンドポイント、署名用salt、必要Cookieが予告なく変わる可能性があります。Cookieはパスワード同様の秘密情報として扱ってください。
-
-## 調査したリクエスト仕様
-
-2026-10-12（環境の日時）に`genshin.py` master (`ab289440508ef81a9672a198a53b9a31f9365c4a`) と実エンドポイントへの無効Cookie GETを使って再確認しました。以前の`cf675f3`と比べ、以下の移植対象のURL・Cookie利用・DS署名・ヘッダー値に変更はありません。原神には`GET /gcg/matchList`が追加されていますが、既存の疎通プログラムの範囲には含めません。この再確認時点では有効Cookieでの成功や全レスポンスフィールドの不変性は未確認でした。詳しい結果と根拠は[再確認記録](docs/hoyolab-api.md#以前の仕様との差分と現行値)を参照してください。
-
-アカウント一覧:
-
-- `GET https://api-os-takumi.mihoyo.com/binding/api/getUserGameRolesByCookie`
-- Cookie認証と`DS`ヘッダーを使用する。
-- 戻り値の`game_biz`、`game_uid`、`region`から対象ゲーム・UID・サーバーを特定する。
-
-ログインボーナス:
-
-- 原神: `https://sg-hk4e-api.hoyolab.com/event/sol`
-  - `act_id=e202102251931481`
-  - `x-rpc-signgame: hk4e`
-- 崩壊：スターレイル: `https://sg-public-api.hoyolab.com/event/luna/hkrpg/os`
-  - `act_id=e202303301540311`
-  - `x-rpc-signgame: hkrpg`
-- 共通して`GET /info`が当日の受け取り状態、`GET /home`が月間報酬一覧、`POST /sign`が受け取り操作。
-- 海外版では`lang`、`Referer: https://act.hoyolab.com/`、Cookie、User-Agentを送る。
-
-ゲームレコード:
-
-- 原神: `https://sg-public-api.hoyolab.com/event/game_record/genshin/api`
-  - `GET /index`: 基本戦績
-  - `GET /dailyNote`: 天然樹脂、探索派遣などのリアルタイム状態
-- 崩壊：スターレイル: `https://bbs-api-os.hoyolab.com/game_record/hkrpg/api`
-  - `GET /index`: 基本戦績
-  - `GET /note`: 開拓力、依頼などのリアルタイム状態
-- 共通クエリは`role_id=<game_uid>&server=<region>`。
-- Cookie、User-Agent、`x-rpc-app_version`、`x-rpc-client_type`、言語、`DS`署名を送る。
-
-海外版の`DS`は、現在の参照実装と同じくUnix秒、ランダム英字6文字、固定saltをMD5した値です。これは暗号学的な用途ではなく、HoYoLABクライアント識別用のプロトコル値です。
-
-## Cookieの用意
-
-1. ブラウザで <https://www.hoyolab.com> にログインする。
-2. 開発者ツールの Application（Firefoxでは Storage）から、`https://www.hoyolab.com` のCookiesを開く。
-3. 必要なcredential familyのCookie項目を秘密としてコピーする。コンソールにCookieを表示するスクリプトは実行しない。
-4. Dashboardでは暗号化鍵を設定した上で既存UIからCookieを登録し、連携検証を行う。クライアントのlive GETテストでは、実行プロセスの環境変数へ `HOYOLAB_COOKIE` を設定する。`.env`を読ませる前提にせず、値をshell history・文書・ログ・commitへ残さない。
-
-Cookie保存だけではverified linkになりません。account/community identity・Cookie claim・rolesの既存整合性検査に成功する必要があります。
-
-## 現行エンドポイントのテスト
-
-通常のモック検証（外部通信・実Cookieなし）：
-
-```console
-cargo test --locked --lib hoyolab::client
-```
-
-読み取り専用の実API確認は`src/hoyolab/client/live_tests.rs`へ集約しています。**実通信を承認した場合のみ**、`HOYOLAB_COOKIE`を実行プロセスの環境変数へ設定して次を実行してください。`.env`は読みません。Cookieをコマンド履歴へ残さないよう注意してください。
-
-```console
-cargo test --locked --lib hoyolab::client::live_tests::current_read_only_endpoints -- --ignored --exact
-```
-
-リダイレクトは追跡せず、各リクエスト20秒・全体90秒・レスポンス4MiBに制限します。Cookie値・UID・ニックネーム・生レスポンスは出力せず、JSONのraw出力機能もありません。`client.accounts()`で連携済みアカウント一覧を取得し、両ゲームの`daily_info`・`daily_home`・`index`・`daily_note`を型付きモデルで検証します。設定不足・対象ゲーム未連携・APIエラーは失敗とし、黙ってスキップしません。対象のGETは次の通りです。
-
-| 対象 | 原神 | 崩壊：スターレイル |
+| 分類 | メソッド・パス | 用途 |
 | --- | --- | --- |
-| ログインボーナス状態 | `/event/sol/info` | `/event/luna/hkrpg/os/info` |
-| 月間報酬一覧 | `/event/sol/home` | `/event/luna/hkrpg/os/home` |
-| 基本ゲームレコード | `/event/game_record/genshin/api/index` | `/game_record/hkrpg/api/index` |
-| リアルタイム状態 | `/event/game_record/genshin/api/dailyNote` | `/game_record/hkrpg/api/note` |
+| 認証 | `POST /auth/login`、`POST /auth/logout` | ログイン・ログアウト |
+| 本人情報 | `GET /me`、`PUT /me/password` | 本人情報の取得・パスワード変更 |
+| パスキー | `GET /me/passkeys`、`DELETE /me/passkeys/{id}` | 登録済みパスキーの一覧・削除 |
+| パスキー登録 | `POST /me/passkeys/options`、`POST /me/passkeys/verify` | 登録手続きの開始・完了 |
+| パスキー認証 | `POST /auth/passkey/options`、`POST /auth/passkey/verify` | パスキーでログイン |
+| HoYoLAB | `GET /me/hoyolab`、`PUT /me/hoyolab/cookie` | 連携状態の確認・Cookie登録／更新 |
+| 連携検証 | `POST /me/hoyolab/verify`、`POST /me/hoyolab/sync` | 連携検証・ゲームアカウントの同期 |
+| ゲーム | `GET /game-accounts`、`PATCH /game-accounts/{id}` | 検出されたアカウントの一覧・表示設定 |
+| ゲーム状態 | `GET /game-accounts/{id}/status` | ゲーム状態の取得 |
+| 報酬設定 | `GET /reward-settings`、`PATCH /reward-settings/{id}` | ゲームごとの自動受け取り設定 |
+| 手動受け取り | `POST /reward-settings/{id}/run` | 受け取り処理の受付 |
+| 受け取り履歴 | `GET /reward-runs` | 履歴・実行状態の確認 |
+| ユーザー管理 | `GET /admin/users`、`POST /admin/users`、`PATCH /admin/users/{id}` | ユーザー一覧・作成・権限／有効状態の変更 |
+| パスワード再発行 | `PUT /admin/users/{id}/temporary-password` | 管理者による仮パスワード再発行 |
+| ユーザー削除 | `DELETE /me`、`DELETE /admin/users/{id}` | 自分／管理対象ユーザーの削除受付 |
+| サーバー設定 | `GET /server-settings` | タイムゾーン・セッション有効日数の確認 |
 
-ユーザー提供の実行結果は **1 passed / 0 failed / 0 ignored（3.72s）** でした。利用可能な実アカウントは1個で、このGET suiteの成功はアクセスを確認するものであり、`account_identity` / `community_identity`やtoken-to-UID binding、reward POST契約全体の証明ではありません。実POST結果は報告されていません。
+ゲーム種別 `game_kind` は `genshin` または `starrail` です。ゲーム状態には取得日時や `stale`（古い状態かどうか）が含まれるため、表示値が最新かどうかも確認してください。報酬設定の `{id}` は `GET /reward-settings` で取得する設定のUUIDであり、ゲームUIDやゲームアカウントのUUIDではありません。
 
-これは読み取り専用の確認です。ログインボーナスを実際に受け取る`POST .../sign`や公開設定の変更は行いません。リアルタイム状態が`retcode=10102`になる場合は、HoYoLABの戦績画面でリアルタイムノートの公開設定を確認してください。
+パスワード変更は `{"current_password":"<current password>","new_password":"<new password>"}` を送ります。初回・仮パスワード再発行直後の必須変更時のみ `current_password` を省略できます。連携検証・同期・手動受け取りのPOSTには空のJSON `{}` を送ります。
 
-調査元は[genshin.py](https://github.com/seriaati/genshin.py)の`routes.py`、`daily.py`、原神／スターレイルのBattle Chronicle実装です。
+手動受け取りは非同期です。`202 Accepted` は受け取り完了を意味しません。履歴APIで結果を確認してください。結果が不確定な場合は、重複受け取りを避けるためにむやみに再実行しないでください。追加認証が必要な場合はHoYoLAB側で対応します。
+
+ユーザー削除も非同期で、受付時に利用停止・セッション失効となり、処理完了後に関連データが削除されます。本人確認用の現在パスワードと、削除対象のユーザー名の完全一致入力が必要です。最後の有効な管理者は削除できません。
+
+### エラー
+
+認証・権限・入力・上流通信などのエラーは、原則として次の形式です。
+
+```json
+{"error":"unauthorized","message":"invalid credentials or expired session"}
+```
+
+| HTTPステータス | 主な意味 |
+| --- | --- |
+| `400` | 入力形式・値が不正 |
+| `401` | 未ログイン、セッション失効 |
+| `403` | 権限不足、Origin不一致、パスワード変更／初期設定が必要 |
+| `404` | 対象が見つからない |
+| `409` | 状態の競合、重複など |
+| `429` | リクエスト頻度の制限 |
+| `502` | HoYoLABとの通信・応答のエラー |
+| `503` | 一時的に処理できない、必要な機能が利用できない |
+
+全エンドポイントの入力項目・レスポンス・必要な権限は、起動後の `/docs`・`/openapi.json`、または [OpenAPI仕様](docs/dashboard-api.json)を参照してください。
+
+## 6. 困ったとき
+
+| 症状 | 確認すること |
+| --- | --- |
+| Composeが設定不足で停止する | `.env` の `DB_PASSWORD`・`DB_ADMIN_PASSWORD`・`HOYOLAB_COOKIE_KEY` が空でないか |
+| 初回起動で管理者を作成できない | 初期管理者名・仮パスワードが設定されているか。仮パスワードは12〜256 UTF-8バイト |
+| ログインや更新操作が `403` になる | ブラウザのURLと `PUBLIC_ORIGIN` が一致するか。HTTP／HTTPS・ホスト名・ポートも確認 |
+| パスキーを登録・利用できない | HTTPS（またはlocalhost）か。`RP_ID` が公開ドメインと一致するか |
+| DBへ接続できない | 既存ボリュームの初期化後に `.env` のDB認証情報を変更していないか |
+| 保存済みHoYoLAB連携が使えない | Cookieの失効や公開設定を確認。DB復元後なら元の暗号鍵を使用しているか |
+| 報酬が自動で受け取られない | 連携検証、自動受け取りの有効化、設定時刻と `TIMEZONE_OFFSET`、実行履歴を確認 |
+
+状況確認には `docker compose ps` や `docker compose logs --tail=100 app` を使えます。診断のために `.env` やCookieを表示しないでください。ログを共有する場合も、個人情報・秘密情報が含まれていないことを確認してください。
