@@ -2,6 +2,16 @@
 
 let
   ui = [ "banner-design" "brand" "design" "design-system" "slides" "ui-styling" "ui-ux-pro-max" ];
+  # Use the same renderer as `uipro init --ai codex`, including its six sub-skills.
+  uiCodex = pkgs.runCommand "ui-ux-pro-max-codex" {
+    nativeBuildInputs = [ pkgs.nodejs ];
+  } ''
+    node --input-type=module -e '
+      import { generatePlatformFiles } from "${inputs.skill-ui}/cli/src/utils/template.ts";
+      await generatePlatformFiles(process.env.out, "codex");
+    '
+    install -Dm644 ${inputs.skill-ui}/LICENSE "$out/share/licenses/ui-ux-pro-max/LICENSE"
+  '';
   impeccable = pkgs.runCommand "impeccable-engine" {
     nativeBuildInputs = [ pkgs.autoPatchelfHook ];
     buildInputs = [ pkgs.stdenv.cc.cc.lib ];
@@ -18,5 +28,5 @@ in
   files.".pi/settings.json".json.skills = [
     "${inputs.skill-rust}"
     "${inputs.skill-impeccable}/.pi/skills/impeccable"
-  ] ++ map (name: "${inputs.skill-ui}/.claude/skills/${name}") ui;
+  ] ++ map (name: "${uiCodex}/.agents/skills/${name}") ui;
 }

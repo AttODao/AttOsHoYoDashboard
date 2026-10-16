@@ -8,7 +8,7 @@
 |---|---|
 | 基盤 | PostgreSQL migration、CLI `serve`/`migrate`/`bootstrap-admin`、安全な設定読み込み |
 | 開発環境 | `devenv.nix`／`devenv.yaml`／`devenv.lock`でツールを固定。通常shell/testでは`.env`自動読込・DB service起動なし |
-| Project skills | `nix/project-skills.nix`が`.pi/settings.json`を生成し、lock済みinputsのskillパスをPiへ直接指定。本文コピー・skillディレクトリのリンク生成・ユーザー全体の設定変更なし |
+| Project skills | lock済みinputsからUI系は公式Codex生成版、ImpeccableはPi版、Rustは共通版を選択。`.pi/settings.json`からNix storeを参照。本文のvendor・プロジェクト内skillリンク・ユーザー全体の設定変更なし |
 | テストサーバー | `devenv shell -- test-server`。専用DBとHTTPをdevenvで起動・停止。HTTP待受開始後に`devcon`向けSSH転送コマンドを表示。専用テストファイルなし |
 | 認証 | password login/logout、固定期限session、password rotation、管理者user管理、passkey login/registration/list/delete |
 | UI | Dioxus 0.7.10 Web/WASM RSX。承認済みAGD R3を本番RSXに実装。検証・残課題は[本番R3記録](../ui-design/production-r3.md)。official Dioxus Components由来Button/Cardをsource同梱 |
