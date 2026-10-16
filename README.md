@@ -120,6 +120,32 @@ HTTPは輸送と入力型、`auth/`は認証・ユーザーライフサイクル
 
 ## ビルド・テスト
 
+### devenv（推奨）
+
+プロジェクトrootで実行します。環境は`devenv.nix`／`devenv.yaml`に定義し、`devenv.lock`をcommitしてツールの組を固定します。
+
+```console
+devenv shell
+devenv test
+```
+
+`devenv shell`にはRust（`rust-toolchain.toml`のversion・rustfmt・Clippy・WASM target）、Dioxus CLI・wasm-bindgen CLI・Binaryen、PostgreSQLのテスト用ツール、OpenSSL／pkg-config、Node.js、対応するPlaywright Core／Chromiumが入ります。ブラウザはNixの実行環境を使い、`/tmp`のツール配置や個人のnpm／ブラウザcacheには依存しません。
+
+Dioxusは0.7.10を使用し、wasm-bindgen CLIはCargo.lockの要求（0.2.129）に合わせています。devenv標準のnixpkgsに同梱される版では古いため、このツールだけ`wasm-tools` inputから供給し、そのrevisionもlockしています。Cargo.lockでwasm-bindgenを更新する際はCLIの一致も確認してください。
+
+`devenv test`はRustの整形・Clippy（native／WASM）、workspace全targetテスト、UI release build、合成APIでのブラウザ回帰（通常／reduced-motion）を実行します。個別実行は以下です。
+
+```console
+devenv shell -- check-rust
+devenv shell -- test-rust
+devenv shell -- build-ui
+devenv shell -- test-ui
+```
+
+`.env`は自動読込せず、共用PostgreSQL serviceも起動しません。`test-rust`は`DATABASE_URL`を除外し、テスト自身が専用clusterを作成・破棄します。実HoYoLAB GETテストは既定のignoreを維持し、実行には別途承認が必要です。Nix定義やlockへ秘密値を入れないでください。アプリケーションを手動起動する際の設定は後述の運用手順に従います。
+
+### 手動セットアップ（devenvを使わない場合）
+
 Rustのstableツールチェーン（edition 2024対応）を使用します。WebAuthnのビルドには`pkg-config`とOpenSSLの開発ヘッダー／ライブラリが必要です。PostgreSQLは実行時に別途用意します。
 
 ```console

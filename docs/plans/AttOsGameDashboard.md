@@ -7,6 +7,7 @@
 | 領域 | 状態 |
 |---|---|
 | 基盤 | PostgreSQL migration、CLI `serve`/`migrate`/`bootstrap-admin`、安全な設定読み込み |
+| 開発環境 | `devenv.nix`／`devenv.yaml`／`devenv.lock`でRust・WASM・Dioxus・PostgreSQLツール・ブラウザを固定。`.env`自動読込・共用DB serviceなし。`devenv test --clean`で整形・native/WASM Clippy・非liveテスト・UI build・ブラウザ回帰の成功を確認 |
 | 認証 | password login/logout、固定期限session、password rotation、管理者user管理、passkey login/registration/list/delete |
 | UI | Dioxus 0.7.10 Web/WASM RSX。承認済みAGD R3を本番RSXに実装。検証・残課題は[本番R3記録](../ui-design/production-r3.md)。official Dioxus Components由来Button/Cardをsource同梱 |
 | HoYoLAB Cookie | legacy/v2 parse normalization、AES-GCM保存、pending status、same-UID proof path実装 |

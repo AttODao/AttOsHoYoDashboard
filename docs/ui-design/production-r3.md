@@ -31,13 +31,12 @@
 
 ## 再実行
 
+ツールは[開発環境](../../README.md#devenv推奨)にまとめた。devenv環境でも全体チェックの成功を確認済み。
+
 ```sh
-env -u DATABASE_URL cargo test --locked --workspace --all-targets -- --test-threads=2
-cargo check --locked -p attos-dashboard-ui --target wasm32-unknown-unknown
-dx build --package attos-dashboard-ui --platform web --release
-# Playwright/Chromiumを用意し、必要ならATTOS_TEST_PLAYWRIGHT_MODULEを指定
-BUILD_DIR="$PWD/target/dx/attos-dashboard-ui/release/web/public" node dashboard-ui/tests/browser.mjs
-BUILD_DIR="$PWD/target/dx/attos-dashboard-ui/release/web/public" node dashboard-ui/tests/browser.mjs --normal-motion
+devenv test --clean
+# UIだけ再検証する場合（build＋通常／reduced-motion）
+devenv shell -- test-ui
 ```
 
 このmock検証は上流token-to-UID binding・報酬契約・実認証器の実証ではない。

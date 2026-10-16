@@ -1,2 +1,8 @@
 /.env
 /target/
+
+# Local development environment state and private overrides
+/.devenv*
+/devenv.local.nix
+/devenv.local.yaml
+/.direnv/
