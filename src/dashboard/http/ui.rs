@@ -10,8 +10,9 @@ use axum::{
 use tower_http::services::ServeDir;
 
 const OPENAPI: &str = include_str!("../../../docs/dashboard-api.json");
-// DX 0.7.10 emits an external module loader. Allow Wasm compilation, not JS eval or inline scripts.
-const CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'";
+// DX emits an external loader. Only expedition images may use the official image CDNs;
+// scripts, styles and API connections remain same-origin.
+const CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' https://upload-os-bbs.hoyolab.com https://act-upload.hoyolab.com; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'";
 
 pub(super) fn routes(app: &App) -> Router<App> {
     Router::new()

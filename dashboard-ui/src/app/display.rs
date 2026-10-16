@@ -5,12 +5,8 @@ pub(super) fn count_pair(current: i64, max: Option<i64>) -> String {
     }
 }
 
-/// Format API timestamps in the selected language and the browser's local timezone.
-/// Include the zone so estimates cannot be mistaken for server-local times.
-pub(super) fn localized_datetime(
-    value: Option<&str>,
-    ui: super::preferences::Preferences,
-) -> Option<String> {
+/// Compact month/day and 24-hour browser-local time, with an explicit timezone.
+pub(super) fn compact_datetime(value: Option<&str>) -> Option<String> {
     let value = value.filter(|value| !value.trim().is_empty())?;
     #[cfg(target_arch = "wasm32")]
     {
@@ -19,14 +15,22 @@ pub(super) fn localized_datetime(
             return None;
         }
         let options = js_sys::JSON::parse(
-            r#"{"year":"numeric","month":"short","day":"numeric","hour":"2-digit","minute":"2-digit","timeZoneName":"short"}"#,
-        ).ok()?;
-        Some(date.to_locale_string(ui.language_code(), &options).into())
+            r#"{"hour":"2-digit","minute":"2-digit","hourCycle":"h23","timeZoneName":"short"}"#,
+        )
+        .ok()?;
+        // ja-JP gives the familiar JST label in Japan; other browser zones remain explicit.
+        let clock = date.to_locale_string("ja-JP", &options);
+        Some(format!(
+            "{:02}/{:02} {}",
+            date.get_month() + 1,
+            date.get_date(),
+            String::from(clock)
+        ))
     }
     // The dashboard is browser-only; native tests must not invoke JS bindings.
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let _ = (value, ui);
+        let _ = value;
         None
     }
 }
@@ -37,10 +41,9 @@ mod tests {
 
     #[test]
     fn absent_datetimes_do_not_invent_estimates() {
-        let ui = super::super::preferences::Preferences::default();
-        assert_eq!(localized_datetime(None, ui), None);
-        assert_eq!(localized_datetime(Some(""), ui), None);
-        assert_eq!(localized_datetime(Some("  "), ui), None);
+        assert_eq!(compact_datetime(None), None);
+        assert_eq!(compact_datetime(Some("")), None);
+        assert_eq!(compact_datetime(Some("  ")), None);
     }
 
     #[test]

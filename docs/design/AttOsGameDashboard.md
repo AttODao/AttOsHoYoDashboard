@@ -57,7 +57,7 @@ APIとschedulerは同じDB/業務処理を使う。単一process/instance前提�
 
 - Protected routeはsession cookieをDB上のhashへ照合する。HTTPS時のcookie名は `__Host-attos_session`、localhost非secure時は `attos_session`。
 - Safe method以外は `Origin` headerが `PUBLIC_ORIGIN` と完全一致する必要がある。
-- Responseには `Cache-Control: no-store` と `X-Content-Type-Options: nosniff` を付与する。Dioxus HTML shellにはCSPも付与する。DX 0.7.10のexternal module loaderを許可し、`script-src 'self' 'wasm-unsafe-eval'`、`style-src 'self'`、`connect-src 'self'`、`object-src 'none'`、`frame-ancestors 'none'`、`base-uri 'none'` を使う。`'unsafe-inline'` と一般の `'unsafe-eval'` は使わない。release bundleのCSP・WASM動作はChromiumと合成fixtureで検証済み。
+- Responseには `Cache-Control: no-store` と `X-Content-Type-Options: nosniff` を付与する。Dioxus HTML shellにはCSPも付与する。DX 0.7.10のexternal module loaderを許可し、`script-src 'self' 'wasm-unsafe-eval'`、`style-src 'self'`、`img-src 'self' https://upload-os-bbs.hoyolab.com https://act-upload.hoyolab.com`、`connect-src 'self'`、`object-src 'none'`、`frame-ancestors 'none'`、`base-uri 'none'` を使う。`'unsafe-inline'` と一般の `'unsafe-eval'` は使わない。release bundleのCSP・WASM動作はChromiumと合成fixtureで検証済み。
 - Body limitは16KiB。JSON DTOは `serde(deny_unknown_fields)` を使う。
 - Error DTOは `{ "error": code, "message": sanitized }`。上流message、driver source、秘密値は返さない。
 

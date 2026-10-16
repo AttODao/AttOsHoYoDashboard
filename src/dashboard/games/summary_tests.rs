@@ -34,11 +34,13 @@ fn typed_genshin_note_preserves_explicit_names_and_locations_without_inventing_l
         assert_eq!(summary["expeditions"][index]["name"], "Destination");
     }
     assert!(summary["expeditions"][4].get("name").is_none());
-    assert!(summary["expeditions"][4].get("avatar_side_icon").is_none());
+    for item in summary["expeditions"].as_array().unwrap() {
+        assert_eq!(item["avatar_side_icon"], expedition["avatar_side_icon"]);
+    }
 }
 
 #[test]
-fn typed_starrail_note_reaches_summary_with_assignment_name_status_and_numeric_time() {
+fn typed_starrail_note_reaches_summary_with_assignment_icon_name_status_and_numeric_time() {
     let note: attosgameapi::models::starrail::DailyNote = serde_json::from_str(include_str!(
         "../../../tests/fixtures/hoyolab/starrail-note.json"
     ))
@@ -52,9 +54,38 @@ fn typed_starrail_note_reaches_summary_with_assignment_name_status_and_numeric_t
     assert_eq!(
         summary["expeditions"],
         json!([
-            {"name":"test", "status":"Ongoing", "remaining_time":456}
+            {"name":"test", "status":"Ongoing", "remaining_time":456, "item_url":"item"}
         ])
     );
+}
+
+#[test]
+fn expedition_icons_are_game_specific_nonempty_strings_and_never_invented() {
+    let now = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
+    for (game, icon_key, other_icon_key) in [
+        (GameKind::Genshin(Genshin), "avatar_side_icon", "item_url"),
+        (GameKind::Starrail(Starrail), "item_url", "avatar_side_icon"),
+    ] {
+        for icon in [Value::Null, json!(42), json!({}), json!(""), json!("  ")] {
+            let summary = summarize(
+                game,
+                now,
+                &json!({"expeditions":[{"status":"Ongoing", (icon_key):icon, (other_icon_key):"other-game-icon"}]}),
+            )
+            .unwrap();
+            assert_eq!(summary["expeditions"], json!([{"status":"Ongoing"}]));
+        }
+        let summary = summarize(
+            game,
+            now,
+            &json!({"expeditions":[{(icon_key):"opaque-upstream-icon"}]}),
+        )
+        .unwrap();
+        assert_eq!(
+            summary["expeditions"],
+            json!([{(icon_key):"opaque-upstream-icon"}])
+        );
+    }
 }
 
 #[test]
@@ -118,7 +149,7 @@ fn genshin_summary_curates_current_note_and_projects_confirmed_recovery_seconds(
     assert_eq!(summary["expeditions"][0]["status"], "Ongoing");
     assert_eq!(summary["expeditions"][0]["remained_time"], "1800");
     assert!(summary.get("transformer").is_none());
-    assert!(summary["expeditions"][0].get("avatar_side_icon").is_none());
+    assert_eq!(summary["expeditions"][0]["avatar_side_icon"], "private-url");
 }
 
 #[test]
@@ -166,5 +197,5 @@ fn starrail_summary_keeps_supported_current_fields_without_weekly_or_made_up_res
     assert_eq!(summary["expeditions"][0]["remaining_time"], 0);
     assert!(summary.get("max_reserve_stamina").is_none());
     assert!(summary.get("weekly_cocoon_cnt").is_none());
-    assert!(summary["expeditions"][0].get("item_url").is_none());
+    assert_eq!(summary["expeditions"][0]["item_url"], "private-url");
 }

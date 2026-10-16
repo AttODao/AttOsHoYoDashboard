@@ -3096,6 +3096,14 @@
                     "string",
                     "integer"
                   ]
+                },
+                "avatar_side_icon": {
+                  "type": "string",
+                  "description": "Genshin expedition avatar icon, when provided upstream."
+                },
+                "item_url": {
+                  "type": "string",
+                  "description": "Star Rail assignment item icon, when provided upstream."
                 }
               }
             }

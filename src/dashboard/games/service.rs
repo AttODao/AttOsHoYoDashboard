@@ -17,7 +17,7 @@ use serde_json::Value;
 use std::sync::Arc;
 use uuid::Uuid;
 
-const CACHE_VERSION: i32 = 1;
+const CACHE_VERSION: i32 = 2;
 const FRESH_TTL: Duration = Duration::minutes(5);
 
 pub(in crate::dashboard) struct Games<G: Gateway = LiveGateway> {

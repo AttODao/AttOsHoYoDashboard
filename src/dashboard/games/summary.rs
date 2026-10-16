@@ -48,7 +48,7 @@ fn summarize_genshin(
         "home_coin_recovery_time",
         "home_coin_full_at",
     );
-    copy_expeditions(source, out, "remained_time");
+    copy_expeditions(source, out, "remained_time", "avatar_side_icon");
 }
 
 fn summarize_starrail(
@@ -74,7 +74,7 @@ fn summarize_starrail(
         "stamina_recover_time",
         "stamina_full_at",
     );
-    copy_expeditions(source, out, "remaining_time");
+    copy_expeditions(source, out, "remaining_time", "item_url");
 }
 
 fn copy_keys(source: &Map<String, Value>, out: &mut Map<String, Value>, keys: &[&str]) {
@@ -116,6 +116,7 @@ fn copy_expeditions(
     source: &Map<String, Value>,
     out: &mut Map<String, Value>,
     remaining_key: &str,
+    icon_key: &str,
 ) {
     let Some(items) = source.get("expeditions").and_then(Value::as_array) else {
         return;
@@ -130,6 +131,13 @@ fn copy_expeditions(
             }
             if let Some(remaining) = item.get(remaining_key) {
                 projected.insert(remaining_key.to_owned(), remaining.clone());
+            }
+            if let Some(icon) = item
+                .get(icon_key)
+                .and_then(Value::as_str)
+                .filter(|icon| !icon.trim().is_empty())
+            {
+                projected.insert(icon_key.to_owned(), Value::String(icon.to_owned()));
             }
             // Prefer an explicit assignment name, then an explicit destination label.
             // Do not infer names or locations from avatar/icon asset URLs.

@@ -66,7 +66,7 @@ flowchart TD
 
 ## 6. ゲーム状態
 
-ゲーム状態APIは所有者の verified link と password changed を要求する。状態cacheはゲームUIDごとの最新curated JSON version 1で、TTLは5分。hidden/undetected UIDはnote fetchしない。fetch失敗時は既存payload/fetched_atを保持し、sanitized error_code/error_atを別に記録する。future fetched_atはfresh扱いしない。
+ゲーム状態APIは所有者の verified link と password changed を要求する。状態cacheはゲームUIDごとの最新curated JSON version 2で、TTLは5分。hidden/undetected UIDはnote fetchしない。fetch失敗時は既存payload/fetched_atを保持し、sanitized error_code/error_atを別に記録する。future fetched_atはfresh扱いしない。
 
 初期表示対象:
 
@@ -75,7 +75,9 @@ flowchart TD
 | `current_resin`, `max_resin`, `resin_full_at` | `current_stamina`, `max_stamina`, `stamina_full_at` |
 | `current_home_coin`, `max_home_coin`, `home_coin_full_at` | `current_reserve_stamina` |
 | `finished_task_num`, `total_task_num`, `is_extra_task_reward_received` | `current_train_score`, `max_train_score` |
-| expeditions: `status`, `name`, `remained_time` | expeditions/assignments: `status`, `name`, `remaining_time` |
+| expeditions: `status`, `name`, `remained_time`, `avatar_side_icon` | expeditions/assignments: `status`, `name`, `remaining_time`, `item_url` |
+
+派遣の表示は原神のavatar icon／スターレイルのitem iconを使い、名称は代替テキストに残す。画像は公式画像CDNのみ許可し、Refererを送らない。欠落・読込失敗時は代替アイコンとラベルを保つ。旧cache versionは新しい派遣fieldを持たないため再取得する。上流が空配列を返した場合と派遣field自体がない場合を区別する。
 
 不足fieldから非公開・非対応などを断定しない。変化器・週間項目・推定増加・未確認上限は初期対象外。
 

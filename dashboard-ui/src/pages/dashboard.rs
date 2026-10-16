@@ -1,7 +1,7 @@
-use super::common::{Metric, focus_element};
+use super::common::{Icon, Metric, focus_element};
 use crate::app::actions::{spawn_action, spawn_root};
 use crate::app::data::{load_game_status, save_reward_setting};
-use crate::app::display::{count_pair, localized_datetime};
+use crate::app::display::{compact_datetime, count_pair};
 use crate::app::preferences::{Preferences, use_preferences};
 use crate::app::state::{AppState, DASHBOARD_GAMES, Page, set_page};
 use crate::models::{DailySummary, Expedition, GameStatus};
@@ -283,7 +283,7 @@ fn GameStatusCard(status: GameStatus) -> Element {
                         Metric { label: ui.text("dashboard.daily_training"), value: pair(data.current_train_score, data.max_train_score, ui) }
                     }
                 }
-                ExpeditionList { expeditions: data.expeditions.clone() }
+                ExpeditionList { game: status.game_kind.clone(), expeditions: data.expeditions.clone() }
             }
             if let Some(key) = missing_payload_notice(status.data.as_ref()) {
                 p { {ui.text(key)} }
@@ -338,7 +338,7 @@ fn Estimate(
     #[props(default)] numeric: bool,
 ) -> Element {
     let ui = use_preferences();
-    let formatted = localized_datetime(value.as_deref(), ui);
+    let formatted = compact_datetime(value.as_deref());
     rsx! {
         div { class: "metric",
             dt { "{label}" }
@@ -354,7 +354,7 @@ fn Estimate(
 }
 
 #[component]
-fn ExpeditionList(expeditions: Option<Vec<Expedition>>) -> Element {
+fn ExpeditionList(game: String, expeditions: Option<Vec<Expedition>>) -> Element {
     let ui = use_preferences();
     rsx! {
         div { class: "expeditions",
@@ -364,13 +364,34 @@ fn ExpeditionList(expeditions: Option<Vec<Expedition>>) -> Element {
                 ul {
                     for (index, expedition) in rows.into_iter().enumerate() {
                         li { class: "expedition",
-                            span { {expedition_label(expedition.name.as_deref(), index, ui)} }
+                            ExpeditionIcon {
+                                key: "{game}-{index}-{expedition.avatar_side_icon:?}-{expedition.item_url:?}",
+                                source: if game == "genshin" { expedition.avatar_side_icon.clone() } else { expedition.item_url.clone() },
+                                label: expedition_label(expedition.name.as_deref(), index, ui),
+                            }
                             span { {expedition.status.as_deref().map(|value| model_status(value, ui)).unwrap_or(ui.text("dashboard.unknown"))} }
                             span { {ui.text("dashboard.remaining")} ": " {expedition.remained_time.or(expedition.remaining_time).map(|duration| duration.to_string()).unwrap_or_else(|| ui.text("dashboard.not_reported").to_owned())} }
                         }
                     }
                 }
             } else { p { {ui.text("dashboard.not_reported")} } }
+        }
+    }
+}
+
+#[component]
+fn ExpeditionIcon(source: Option<String>, label: String) -> Element {
+    let mut failed = use_signal(|| false);
+    rsx! {
+        if let Some(source) = source.filter(|source| !source.is_empty() && !failed()) {
+            img { class: "expedition-icon", src: source, alt: label.clone(), title: label,
+                width: "48", height: "48", loading: "lazy", decoding: "async", referrerpolicy: "no-referrer",
+                onerror: move |_| failed.set(true),
+            }
+        } else {
+            span { class: "expedition-icon", role: "img", "aria-label": label.clone(), title: label,
+                Icon { name: "user" }
+            }
         }
     }
 }

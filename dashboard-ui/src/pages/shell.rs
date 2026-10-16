@@ -143,7 +143,9 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
                     if me.as_ref().is_some_and(|me| me.is_admin) {
                         button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Admin); }, Icon { name: "user" } {ui.text("shell.administration")} }
                     }
-                    button { class: "menu-logout", r#type: "button", onclick: move |_| { open.set(false); spawn_action(state, move |generation| async move { logout(state, generation).await; }); }, Icon { name: "logout" } {ui.text("shell.sign_out")} }
+                    div { class: "menu-logout-group",
+                        button { class: "menu-logout", r#type: "button", onclick: move |_| { open.set(false); spawn_action(state, move |generation| async move { logout(state, generation).await; }); }, Icon { name: "logout" } {ui.text("shell.sign_out")} }
+                    }
                 }
                 div { class: "menu-preferences",
                     button { class: "mode-switch", r#type: "button", role: "switch", "aria-label": ui.text("shell.dark_mode"),

@@ -74,7 +74,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 | --- | --- |
 | `dashboard-ui/src/app/navigation.rs` | URLハッシュと戻る／進む・初期ページの対応 |
 | `dashboard-ui/src/app/state.rs` | 画面状態、認証・初期設定ゲートと画面データ取得の起動 |
-| `dashboard-ui/src/app/display.rs` | 数値・ブラウザの言語／ローカル時刻による日時表示 |
+| `dashboard-ui/src/app/display.rs` | 数値・ブラウザのローカル時刻による簡潔な月日／24時間表示 |
 | `dashboard-ui/src/pages/` | 画面、メニュー、設定、ユーザー管理 |
 | `src/dashboard/games/summary.rs` | 上流ゲーム状態から画面用の要約への写像 |
 

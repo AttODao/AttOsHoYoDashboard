@@ -247,7 +247,7 @@ async fn hidden_and_undetected_status_never_fetch_and_never_display_cached_paylo
         hidden.id,
         Some(Utc::now()),
         Some(json!({"private":"old"})),
-        1,
+        2,
     )
     .await;
     cache(
@@ -255,7 +255,7 @@ async fn hidden_and_undetected_status_never_fetch_and_never_display_cached_paylo
         missing.id,
         Some(Utc::now()),
         Some(json!({"private":"old"})),
-        1,
+        2,
     )
     .await;
     let gateway = MockGateway::empty();
@@ -284,7 +284,7 @@ async fn fresh_cache_is_reused_without_fetch_or_credential_leakage() {
         account.id,
         Some(Utc::now()),
         Some(payload.clone()),
-        1,
+        2,
     )
     .await;
     let gateway = MockGateway::empty();
@@ -301,6 +301,50 @@ async fn fresh_cache_is_reused_without_fetch_or_credential_leakage() {
 }
 
 #[tokio::test]
+async fn fresh_legacy_summary_is_refetched_to_populate_starrail_expedition_icons() {
+    let fixture = TestDatabase::new().await;
+    let actor = ready_identity(&fixture.db, "owner").await;
+    let key = key();
+    let link = verified_link(&fixture.db, &key, actor.user.id, "123").await;
+    let account = game(&fixture.db, link.id, "starrail", "900000001", true, true).await;
+    cache(
+        &fixture.db,
+        account.id,
+        Some(Utc::now()),
+        Some(json!({"expeditions":[]})),
+        1,
+    )
+    .await;
+    let raw: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/hoyolab/starrail-note.json"
+    ))
+    .unwrap();
+    let expected = raw["expeditions"][0].clone();
+    let gateway = MockGateway::new([Ok(raw)]);
+    let games = service(fixture.db.clone(), key, gateway.clone());
+
+    let status = games.status(&actor, account.id).await.unwrap();
+
+    assert_eq!(gateway.calls(), 1);
+    assert!(!status.stale);
+    let expedition = &status.payload.as_ref().unwrap()["expeditions"][0];
+    for field in ["name", "status", "remaining_time", "item_url"] {
+        assert_eq!(expedition[field], expected[field]);
+    }
+    let stored = game_status_cache::Entity::find_by_id(account.id)
+        .one(&fixture.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.payload_version, 2);
+    assert_eq!(stored.payload, status.payload);
+
+    let cached = games.status(&actor, account.id).await.unwrap();
+    assert_eq!(cached.payload, status.payload);
+    assert_eq!(gateway.calls(), 1);
+}
+
+#[tokio::test]
 async fn stale_visible_detected_status_fetches_summary_and_updates_cache() {
     let fixture = TestDatabase::new().await;
     let actor = ready_identity(&fixture.db, "owner").await;
@@ -312,7 +356,7 @@ async fn stale_visible_detected_status_fetches_summary_and_updates_cache() {
         account.id,
         Some(Utc::now() - Duration::minutes(10)),
         Some(json!({"current_resin": 1})),
-        1,
+        2,
     )
     .await;
     let gateway = MockGateway::new([Ok(json!({
@@ -359,7 +403,7 @@ async fn upstream_failure_retains_supported_old_payload_and_records_safe_error()
         account.id,
         Some(fetched_at),
         Some(old.clone()),
-        1,
+        2,
     )
     .await;
     let gateway = MockGateway::new([Err(UpstreamError::Network), Ok(json!({}))]);
@@ -383,7 +427,7 @@ async fn upstream_failure_retains_supported_old_payload_and_records_safe_error()
         .unwrap();
     assert_eq!(stored.payload, Some(old));
     assert_eq!(stored.fetched_at, status.fetched_at);
-    assert_eq!(stored.payload_version, 1);
+    assert_eq!(stored.payload_version, 2);
     assert_eq!(stored.error_code.as_deref(), Some("network"));
     assert!(stored.error_at.is_some());
 
@@ -398,7 +442,7 @@ async fn upstream_failure_retains_supported_old_payload_and_records_safe_error()
         .unwrap();
     assert!(stored.payload.is_none());
     assert!(stored.fetched_at.unwrap() > fetched_at);
-    assert_eq!(stored.payload_version, 1);
+    assert_eq!(stored.payload_version, 2);
     assert!(stored.error_code.is_none());
     assert!(stored.error_at.is_none());
 }
@@ -426,7 +470,7 @@ async fn first_failed_fetch_has_no_payload_or_fetched_at() {
         .unwrap();
     assert!(stored.payload.is_none());
     assert!(stored.fetched_at.is_none());
-    assert_eq!(stored.payload_version, 1);
+    assert_eq!(stored.payload_version, 2);
     assert_eq!(stored.error_code.as_deref(), Some("http:500"));
     assert!(stored.error_at.is_some());
 }
@@ -470,7 +514,7 @@ async fn unsupported_cache_version_is_not_displayed_and_is_replaced_by_refresh()
         .unwrap();
     assert!(stored.payload.is_none());
     assert!(stored.fetched_at.is_none());
-    assert_eq!(stored.payload_version, 1);
+    assert_eq!(stored.payload_version, 2);
 
     let status = games.status(&actor, account.id).await.unwrap();
 
@@ -482,7 +526,7 @@ async fn unsupported_cache_version_is_not_displayed_and_is_replaced_by_refresh()
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(stored.payload_version, 1);
+    assert_eq!(stored.payload_version, 2);
 }
 
 #[tokio::test]

@@ -186,7 +186,7 @@ fn AdminUserRow(
                 span { class: status_class, {if user.active { prefs.text("admin.active") } else { prefs.text("admin.inactive") }} }
             }
             td {
-                div { class: "actions",
+                div { class: "actions admin-user-actions",
                 Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: state.read().busy || result.read().is_some(), onclick: move |_| {
                     if !is_admin(state) || state.read().busy { return; }
                     // Self-reissue revokes the session before its generated secret can be delivered.

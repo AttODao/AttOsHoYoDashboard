@@ -52,7 +52,7 @@ async fn compiled_assets_are_public_local_and_hardened() {
         if content_type == "text/html" {
             assert_eq!(
                 response.headers()[header::CONTENT_SECURITY_POLICY],
-                "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+                "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' https://upload-os-bbs.hoyolab.com https://act-upload.hoyolab.com; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'"
             );
         }
         assert!(

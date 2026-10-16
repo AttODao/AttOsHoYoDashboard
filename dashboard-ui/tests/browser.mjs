@@ -23,6 +23,8 @@ const createdUsers=[];
 const secondAdmin={...user,id:uid(14),username:'synthetic-second-admin',must_change_password:false};
 let failCreate=false,adminDeletes=0,loginFailureStatus=0;
 const rewardPatches=[];
+const avatarIcon='https://upload-os-bbs.hoyolab.com/game_record/genshin/character_side_icon/synthetic.png';
+const itemIcon='https://act-upload.hoyolab.com/game_record/hkrpg/item_icon/synthetic.png';
 const validGenerated=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{24}$/.test(value);
 const loginGate=new Promise(resolve=>{allowLogin=resolve;});
 const settingsGate=new Promise(resolve=>{allowSettings=resolve;});
@@ -97,7 +99,7 @@ const server=http.createServer(async(req,res)=>{
    }
    if(p==='/api/v1/game-accounts')return json(res,accounts);
    const account=accounts.find(a=>p===`/api/v1/game-accounts/${a.id}/status`);
-   if(account){assert.ok(account.visible&&account.detected);return json(res,{...account,data:account.game_kind==='genshin'?{current_resin:actor===user?(account.id===uid(5)?0:31):77,max_resin:200,finished_task_num:0,total_task_num:4,resin_full_at:account.id===uid(5)?'2026-10-17T12:38:00Z':'invalid-date',current_home_coin:510,max_home_coin:2400,home_coin_full_at:'2026-10-19T08:38:40Z',expeditions:[{status:'Ongoing',remained_time:'30354'}]}:{current_stamina:account.id===uid(7)?12:24,max_stamina:300,stamina_full_at:account.id===uid(7)?'2026-10-17T16:52:31Z':null,expeditions:[]},fetched_at:new Date().toISOString(),error_code:null,error_at:null,stale:false});}
+   if(account){assert.ok(account.visible&&account.detected);return json(res,{...account,data:account.game_kind==='genshin'?{current_resin:actor===user?(account.id===uid(5)?0:31):77,max_resin:200,finished_task_num:0,total_task_num:4,resin_full_at:account.id===uid(5)?'2026-10-17T12:38:00Z':'invalid-date',current_home_coin:510,max_home_coin:2400,home_coin_full_at:'2026-10-19T08:38:40Z',expeditions:[{status:'Ongoing',remained_time:'30354',avatar_side_icon:avatarIcon}]}:{current_stamina:account.id===uid(7)?12:24,max_stamina:300,stamina_full_at:account.id===uid(7)?'2026-10-17T16:52:31Z':null,expeditions:account.id===uid(7)?[{name:'Synthetic assignment',status:'Ongoing',remaining_time:1200,item_url:itemIcon}]:[]},fetched_at:new Date().toISOString(),error_code:null,error_at:null,stale:false});}
    if(p==='/api/v1/reward-settings'){assert.equal(req.method,'GET');return json(res,rewardSettings);}
    const setting=rewardSettings.find(s=>p===`/api/v1/reward-settings/${s.id}`);
    if(setting){assert.equal(req.method,'PATCH');assert.deepEqual(Object.keys(body).sort(),['enabled','local_time']);rewardPatches.push({id:setting.id,...body});Object.assign(setting,body,{next_run_at:new Date(Date.now()+86400000).toISOString()});res.writeHead(204);return res.end();}
@@ -120,7 +122,11 @@ try{
  const context=await browser.newContext({viewport:{width:1280,height:900},timezoneId:'Asia/Tokyo',reducedMotion:process.argv.includes('--normal-motion')?'no-preference':'reduce'});
  context.setDefaultTimeout(10000);
  await context.addInitScript(()=>{if(!localStorage.getItem('agd-language'))localStorage.setItem('agd-language','en');});
- await context.route('**/*',route=>new URL(route.request().url()).origin===origin?route.continue():route.abort());
+ await context.route('**/*',route=>{
+  const url=route.request().url();
+  if(url===avatarIcon||url===itemIcon)return route.fulfill({status:200,contentType:'image/png',body:fs.readFileSync(path.join(root,'dashboard-ui/assets/favicon.png'))});
+  return new URL(url).origin===origin?route.continue():route.abort();
+ });
  page=await context.newPage();
  page.on('pageerror',()=>errors.push('browser page error'));
  page.on('console',message=>{if(message.type()==='error'&&/Content Security Policy|unsafe-eval|inline style/i.test(message.text()))errors.push('CSP violation');});
@@ -266,14 +272,22 @@ try{
  await starrail.locator('.resource strong').getByText('12',{exact:true}).waitFor();
  assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');
  assert.equal(await genshin.getAttribute('role'),'region');
- const expectedDate=await page.evaluate(()=>new Date('2026-10-17T12:38:00Z').toLocaleString('en',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZoneName:'short'}));
- assert.equal(await genshin.locator('time.recovery-at').innerText(),expectedDate);
+ assert.equal(await genshin.locator('time.recovery-at').innerText(),'10/17 21:38 JST');
+ assert.equal(await starrail.locator('time.recovery-at').innerText(),'10/18 01:52 JST','local date rollover uses 24-hour time');
  assert.match(await genshin.locator('time.recovery-at').evaluate(e=>getComputedStyle(e).fontFamily),/Orbitron/);
  assert.doesNotMatch(await genshin.locator('time.estimate-at').evaluate(e=>getComputedStyle(e).fontFamily),/Orbitron/);
  assert.ok(!(await genshin.locator('time.estimate-at').innerText()).includes('T08:38:40'),'currency estimate is not raw ISO');
- assert.equal(await genshin.locator('.expedition').first().locator('span').first().innerText(),'Expedition 1');
- await starrail.getByText('No expeditions',{exact:true}).waitFor();
+ assert.equal(await genshin.locator('.expedition-icon').getAttribute('src'),avatarIcon);
+ assert.equal(await genshin.locator('.expedition-icon').getAttribute('alt'),'Expedition 1');
+ assert.equal(await genshin.locator('.expedition-icon').getAttribute('referrerpolicy'),'no-referrer');
+ assert.equal(await starrail.locator('.expedition-icon').getAttribute('src'),itemIcon);
+ assert.equal(await starrail.locator('.expedition-icon').getAttribute('alt'),'Synthetic assignment');
+ await page.waitForFunction(()=>[...document.querySelectorAll('.expedition img')].every(image=>image.complete&&image.naturalWidth>0),'official-host icons load under production CSP');
+ assert.equal(await starrail.getByText('Synthetic assignment',{exact:true}).count(),0,'assignment name is an accessible icon label, not visible text');
  await page.screenshot({path:path.join(root,'target/ui-dashboard-desktop.png'),fullPage:true});
+ await genshin.locator('img.expedition-icon').dispatchEvent('error');
+ await genshin.locator('span.expedition-icon[role=img]').waitFor();
+ assert.equal(await genshin.locator('span.expedition-icon').getAttribute('aria-label'),'Expedition 1','failed icon keeps its accessible label');
  const gbox=await genshin.boundingBox(),sbox=await starrail.boundingBox();
  assert.ok(Math.abs(gbox.y-sbox.y)<2&&sbox.x>gbox.x+gbox.width,'desktop dual columns');
  assert.equal(await page.locator('#selected-genshin option').count(),2);
@@ -290,6 +304,7 @@ try{
  await page.locator('#selected-starrail').selectOption(uid(8));
  await starrail.locator('.resource strong').getByText('24',{exact:true}).waitFor();
  assert.equal(await starrail.locator('time.recovery-at').count(),0,'missing estimate is not invented');
+ await starrail.getByText('No expeditions',{exact:true}).waitFor();
  assert.equal(await page.locator('#selected-genshin').inputValue(),uid(6));
  await genshin.getByRole('switch').check();await idle();
  assert.deepEqual(rewardPatches.at(-1),{id:uid(20),enabled:true,local_time:'06:00'});
@@ -308,6 +323,9 @@ try{
  await page.keyboard.press('Tab');await logoutButton.focus();
  const logoutAfter=await logoutButton.boundingBox();
  assert.deepEqual(logoutAfter,logoutBefore,'logout keyboard focus does not move its box');
+ const logoutGroup=await drawer.locator('.menu-logout-group').boundingBox();
+ assert.ok(Math.abs((logoutAfter.y-logoutGroup.y)-(logoutGroup.y+logoutGroup.height-logoutAfter.y-logoutAfter.height))<1,'logout has equal space between its dividers');
+ await page.screenshot({path:path.join(root,'target/ui-menu-desktop.png'),fullPage:true});
  assert.equal(await logoutButton.evaluate(e=>getComputedStyle(e).outlineOffset),'-3px','focus ring stays inside drawer');
  await page.waitForFunction(()=>!['transparent','rgba(0, 0, 0, 0)'].includes(getComputedStyle(document.getElementById('agd-menu'),'::backdrop').backgroundColor));
  assert.ok(Math.abs(box.width-304)<1&&Math.abs(box.x+box.width-1280)<1);
@@ -331,8 +349,7 @@ try{
  assert.equal(await page.locator('#agd-menu-trigger').getAttribute('aria-label'),'メニューを開く');
  assert.equal(await drawer.getByRole('combobox',{name:'言語',exact:true}).inputValue(),'ja');
  await page.locator('h1').getByText('ダッシュボード',{exact:true}).waitFor();
- const japaneseDate=await page.evaluate(()=>new Date('2026-10-19T08:38:40Z').toLocaleString('ja',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZoneName:'short'}));
- assert.equal(await genshin.locator('time.estimate-at').innerText(),japaneseDate);
+ assert.equal(await genshin.locator('time.estimate-at').innerText(),'10/19 17:38 JST','compact dates stay consistent after language changes');
  assert.equal(await page.locator('#selected-genshin').inputValue(),uid(6),'language change preserves selected UID');
  assert.equal(await page.locator('#selected-starrail').inputValue(),uid(8));
  await page.reload();await idle();
@@ -352,6 +369,7 @@ try{
  assert.ok(await brandIcon.isVisible());
  assert.ok(await page.locator('.topbar-inner').evaluate(e=>e.scrollWidth<=e.clientWidth),'mobile header fits with icon');
  assert.ok(await genshin.isVisible());assert.ok(await starrail.isHidden());
+ await page.locator('#agd-menu').evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});
  await page.screenshot({path:path.join(root,'target/ui-dashboard-mobile.png'),fullPage:true});
  await page.locator('#game-tab-genshin').focus();await page.keyboard.press('ArrowRight');
  await starrail.waitFor();assert.ok(await genshin.isHidden());
@@ -452,6 +470,10 @@ try{
  assert.equal(await page.locator('input[autocomplete=new-password]').count(),0,'no administrator-entered temporary password form');
  const ownRow=page.getByRole('row').filter({has:page.getByRole('rowheader',{name:new RegExp('^'+user.username)})});
  assert.equal(await page.getByRole('table',{name:'Manage users',exact:true}).count(),1);
+ const actionColumns=await page.locator('.admin-user-actions').evaluateAll(rows=>rows.map(row=>[...row.querySelectorAll('button')].map(button=>Math.round(button.getBoundingClientRect().x))));
+ assert.deepEqual(actionColumns[0],actionColumns[1],'all lifecycle action columns align despite different password labels');
+ const buttonHeights=await page.locator('.admin-user-actions button').evaluateAll(buttons=>buttons.map(button=>Math.round(button.getBoundingClientRect().height)));
+ assert.equal(new Set(buttonHeights).size,1,'action labels do not wrap and change row button heights');
  assert.equal(await page.getByText('The last active administrator cannot be disabled or deleted.',{exact:true}).count(),0,'protection warning is not permanent UI');
  assert.ok(await ownRow.getByRole('button',{name:'Disable',exact:true}).isDisabled());
  assert.ok(await ownRow.getByRole('button',{name:'Delete user',exact:true}).isDisabled());

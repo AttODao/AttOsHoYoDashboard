@@ -22,6 +22,15 @@
 
 検証：devenv経由の整形・workspace全target／WASM Clippy、UI単体42件、ゲーム要約7件、release buildと通常／reduced-motionのブラウザ回帰を通過。日時の言語／タイムゾーン・フォント、派遣の欠落／空配列、履歴・再読み込み・初期設定ゲート、外部リンク、selectの翻訳／保存、ログアウトのフォーカス位置、table／操作時の管理者保護を検査。Desktop／mobileをcaptureして確認。Impeccableの手動検査で既存タブの3px下線が角丸カードと誤検知されたため、`border-radius:0`の実装を根拠にCSSファイルだけの例外を`.impeccable/config.json`へ記録した。実アカウント／実HoYoLAB通信は未実施。
 
+## 同日の追加修正：日時・派遣画像・操作位置
+
+- 見込み日時は言語にかかわらず`10/17 21:38 JST`形式。月日・24時間・ブラウザのローカルタイムゾーンを明示し、全回復のOrbitron／宝銭の本文フォントを維持する。
+- 派遣の名前欄を原神の`avatar_side_icon`／Star Railの`item_url`へ変更。名称はalt／titleとして維持し、画像の欠落・失敗時はラベル付き代替アイコンを出す。Refererを送らず、CSPの画像読込先だけを`upload-os-bbs.hoyolab.com`／`act-upload.hoyolab.com`へ限定追加する。script/style/connectの同一Origin制限は維持する。
+- ゲーム要約のcacheをversion 2へ更新し、古い派遣fieldのないcacheを再取得する。Star Railの非空派遣→item icon表示を合成fixtureで確認。実ユーザーの上流応答が空／欠落となる原因は実通信なしでは未確定で、修復済みとは断定しない。
+- ユーザー管理の3ボタンを固定幅の同じ列に配置し、長いラベルの折返しを防止。ログアウトは区切り線を持つgroup内に上下同じpaddingで配置する。
+
+検証：devenv経由で整形・workspace全target／WASM Clippy、UI42件、ゲーム18件、HTTP UI境界3件、release build、通常／reduced-motionのブラウザ回帰を通過。画像読込は公式host URLへのリクエストをローカル画像で応答し、外部通信を禁止したまま本番CSPを検査。JSTの日付繰越・言語切替後の形式・画像失敗時の代替・ボタン列位置／高さ・ログアウト上下余白を確認。Impeccable手動検査は指摘なし。Desktop／mobileの表示もcaptureして確認した。
+
 ## 表示文のi18n分離
 
 本番RSXの対訳・固定表示文を`dashboard-ui/locales/ja.json`／`en.json`へ移した。`src/i18n.rs`が埋め込みカタログの参照・英語fallback・名前付き補間を持ち、`app/preferences.rs`は言語／テーマ選択だけを扱う。API／WebAuthnエラーも安全なキーを保持し、UIで翻訳する。通知・取得エラーは言語変更時に再描画され、パスワード／UID選択／認証境界は維持する。read-only docsの見出し・表ラベルも翻訳対象にし、APIの提供データはそのまま表示する。

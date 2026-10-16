@@ -96,6 +96,8 @@ pub struct DailySummary {
 pub struct Expedition {
     pub status: Option<String>,
     pub name: Option<String>,
+    pub avatar_side_icon: Option<String>,
+    pub item_url: Option<String>,
     pub remained_time: Option<ExpeditionDuration>,
     pub remaining_time: Option<ExpeditionDuration>,
 }
@@ -227,13 +229,23 @@ mod tests {
             "max_train_score": 500,
             "stamina_full_at": "2026-01-03T00:00:00Z",
             "expeditions": [
-                {"status":"Ongoing","name":"A","remained_time":"01:02:03"},
-                {"status":"Finished","name":"B","remaining_time":0}
+                {"status":"Ongoing","name":"A","remained_time":"01:02:03","avatar_side_icon":"https://upload-os-bbs.hoyolab.com/synthetic-avatar.png"},
+                {"status":"Finished","name":"B","remaining_time":0,"item_url":"https://act-upload.hoyolab.com/synthetic-item.png"}
             ]
         });
         let parsed: DailySummary = serde_json::from_value(value).unwrap();
         assert_eq!(parsed.current_reserve_stamina, Some(1000));
         let expeditions = parsed.expeditions.unwrap();
+        assert_eq!(
+            expeditions[0].avatar_side_icon.as_deref(),
+            Some("https://upload-os-bbs.hoyolab.com/synthetic-avatar.png")
+        );
+        assert!(expeditions[0].item_url.is_none());
+        assert_eq!(
+            expeditions[1].item_url.as_deref(),
+            Some("https://act-upload.hoyolab.com/synthetic-item.png")
+        );
+        assert!(expeditions[1].avatar_side_icon.is_none());
         assert_eq!(
             expeditions[0].remained_time.as_ref().unwrap().to_string(),
             "01:02:03"
