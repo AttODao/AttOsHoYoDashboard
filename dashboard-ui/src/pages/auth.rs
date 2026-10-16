@@ -74,6 +74,9 @@ pub(in crate::app) fn LoginPage(mut state: Signal<AppState>) -> Element {
                         match result {
                             Ok(()) if generation_matches(state, generation) => bootstrap(state).await,
                             Ok(()) => {}
+                            Err(error) if selected == LoginMethod::Password && error.is_unauthorized() && generation_matches(state, generation) => {
+                                set_status(state, "The username or password is incorrect.", "error");
+                            }
                             Err(error) => { handle_api_error_for(state, generation, error); }
                         }
                     });

@@ -96,6 +96,7 @@ impl Preferences {
         match message {
             "Please sign in." => "ログインしてください。",
             "Please sign in again." => "もう一度ログインしてください。",
+            "The username or password is incorrect." => "ユーザー名かパスワードが違います",
             "Signed out." => "ログアウトしました。",
             "The dashboard could not load your session." => "セッションを読み込めませんでした。",
             "Local data cleared, but server logout is unconfirmed. Retry server logout before leaving this browser." => "ローカル情報は消去しましたが、サーバーのログアウトは未確認です。再試行してください。",
@@ -132,6 +133,27 @@ mod tests {
         assert_eq!(
             Preferences::from_saved(Some("en"), Some("light")).theme_code(),
             "light"
+        );
+    }
+
+    #[test]
+    fn invalid_credentials_have_specific_localized_copy() {
+        let japanese = Preferences::default();
+        assert_eq!(
+            japanese.message("The username or password is incorrect."),
+            "ユーザー名かパスワードが違います"
+        );
+        let english = Preferences {
+            language: Language::English,
+            ..japanese
+        };
+        assert_eq!(
+            english.message("The username or password is incorrect."),
+            "The username or password is incorrect."
+        );
+        assert_eq!(
+            japanese.message("Please sign in again."),
+            "もう一度ログインしてください。"
         );
     }
 

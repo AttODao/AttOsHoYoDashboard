@@ -21,7 +21,7 @@ const other={...user,id:uid(9),username:'synthetic-other',is_admin:false,active:
 let verified=false,passkeys=[],credentialId,failLogout=false,allowLogin,allowSettings,expirePasswordSession=false,sessionExpired=false;
 const createdUsers=[];
 const secondAdmin={...user,id:uid(14),username:'synthetic-second-admin',must_change_password:false};
-let failCreate=false,adminDeletes=0;
+let failCreate=false,adminDeletes=0,loginFailureStatus=0;
 const rewardPatches=[];
 const validGenerated=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{24}$/.test(value);
 const loginGate=new Promise(resolve=>{allowLogin=resolve;});
@@ -42,7 +42,12 @@ const server=http.createServer(async(req,res)=>{
    const body=raw?JSON.parse(raw):null;
    if(req.method!=='GET')assert.equal(req.headers.origin,origin,'browser emits the real same-origin Origin');
    const actor=req.headers.cookie?.includes('attos_session=synthetic-a')?user:req.headers.cookie?.includes('attos_session=synthetic-b')?other:null;
-   if(p==='/api/v1/auth/login'){const loginUser=body.username===user.username?user:body.username===other.username?other:null;assert.ok(loginUser);await loginGate;sessionExpired=false;res.setHeader('Set-Cookie',`attos_session=synthetic-${loginUser===user?'a':'b'}; HttpOnly; SameSite=Strict; Path=/`);return json(res,loginUser);}
+   if(p==='/api/v1/auth/login'){
+    if(loginFailureStatus)return json(res,{error:loginFailureStatus===403?'forbidden':'unavailable'},loginFailureStatus);
+    const loginUser=body.username===user.username?user:body.username===other.username?other:null;
+    if(!loginUser||body.password!=='synthetic-password-123')return json(res,{error:'unauthorized'},401);
+    await loginGate;sessionExpired=false;res.setHeader('Set-Cookie',`attos_session=synthetic-${loginUser===user?'a':'b'}; HttpOnly; SameSite=Strict; Path=/`);return json(res,loginUser);
+   }
    if(p==='/api/v1/auth/logout'){if(failLogout)return json(res,{error:'unavailable'},503);res.setHeader('Set-Cookie','attos_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');return json(res,{});}
    if(p==='/api/v1/auth/passkey/options'){assert.equal(body.username,user.username);assert.ok(credentialId);return json(res,{challenge_id:uid(13),options:{publicKey:{challenge:Buffer.from('synthetic-assertion-challenge-32-bytes').toString('base64url'),rpId:'localhost',allowCredentials:[{type:'public-key',id:credentialId,transports:['internal']}],userVerification:'required',timeout:60000}}});}
    if(p==='/api/v1/auth/passkey/verify'){
@@ -167,6 +172,29 @@ try{
  assert.equal(await page.locator('#login-password').count(),0);
  await page.locator('#login-method-password').check();
  assert.ok(await page.locator('#login-password').evaluate(e=>e.value===''));
+ // Unknown usernames and wrong passwords share one non-enumerating error.
+ for(const language of ['en','ja']){
+  if(language==='ja'){
+   await page.evaluate(()=>localStorage.setItem('agd-language','ja'));await page.reload();
+   await page.locator('#login-username').waitFor();await idle();
+  }
+  for(const [username,password] of [['synthetic-missing-user','synthetic-password-123'],[user.username,'synthetic-wrong-password']]){
+   await page.locator('#login-username').fill(username);await page.locator('#login-password').fill(password);
+   await button(language==='ja'?'ログイン':'Sign in').click();
+   await page.locator('.status.error').getByText(language==='ja'?'ユーザー名かパスワードが違います':'The username or password is incorrect.',{exact:true}).waitFor();
+   await idle();assert.equal(await page.locator('#login-username').count(),1);
+  }
+ }
+ await page.evaluate(()=>localStorage.setItem('agd-language','en'));await page.reload();
+ await page.locator('#login-username').waitFor();await idle();
+ for(const [status,message] of [[403,'You do not have access to this action.'],[503,'This feature is not available right now.']]){
+  loginFailureStatus=status;await signIn(user);await page.getByText(message,{exact:true}).waitFor();await idle();
+  assert.equal(await page.getByText('The username or password is incorrect.',{exact:true}).count(),0);
+ }
+ loginFailureStatus=0;
+ await page.route(origin+'/api/v1/auth/login',route=>route.abort(),{times:1});
+ await signIn(user);await page.getByText('The server could not be reached.',{exact:true}).waitFor();await idle();
+ const loginAttemptsBefore=counts.get('/api/v1/auth/login'),sessionReadsBefore=counts.get('/api/v1/me');
  await page.locator('#login-username').fill(user.username);
  await page.locator('#login-password').fill('synthetic-password-123');
  const loginRequest=page.waitForRequest(origin+'/api/v1/auth/login');
@@ -179,9 +207,9 @@ try{
  assert.ok(await button('Refresh setup status').isDisabled(),'bootstrap stays busy');
  await button('Refresh setup status').dispatchEvent('click');
  allowSettings();await idle();
- assert.equal(counts.get('/api/v1/auth/login'),1);
+ assert.equal(counts.get('/api/v1/auth/login'),loginAttemptsBefore+1);
  assert.equal(counts.get('/api/v1/auth/passkey/options')||0,0);
- assert.equal(counts.get('/api/v1/me'),2);
+ assert.equal(counts.get('/api/v1/me'),sessionReadsBefore+1);
  assert.equal(await page.locator('#agd-menu-trigger').count(),0,'mandatory setup has no ordinary navigation');
  assert.equal(await button('Sign out').count(),1,'setup permits logout');
  assert.equal(await page.locator('#current-password').count(),0,'mandatory setup never requests a login secret');
