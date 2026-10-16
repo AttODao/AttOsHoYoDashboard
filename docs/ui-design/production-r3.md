@@ -31,6 +31,15 @@
 
 検証：devenv経由で整形・workspace全target／WASM Clippy、UI42件、ゲーム18件、HTTP UI境界3件、release build、通常／reduced-motionのブラウザ回帰を通過。画像読込は公式host URLへのリクエストをローカル画像で応答し、外部通信を禁止したまま本番CSPを検査。JSTの日付繰越・言語切替後の形式・画像失敗時の代替・ボタン列位置／高さ・ログアウト上下余白を確認。Impeccable手動検査は指摘なし。Desktop／mobileの表示もcaptureして確認した。
 
+## 通常パス・認証転送と派遣確認
+
+- URLをハッシュから`/login`／`/dashboard`／`/settings/games`等の通常パスへ移行。ルートはセッション確認後に未ログインなら`/login`、ログイン済みなら`/dashboard`、明示的なログイン成功後は`/dashboard`へreplaceStateする。認証済みの設定deep linkは再読み込み・戻る／進むでも維持。`/settings`はHTTP308で`/settings/games`へ転送する。公開`/docs`は認証APIを呼ばず、API／未知のパスはSPAへfallbackしない。
+- ユーザーの別途承認により、ローカルdevenvの保存済みCookieをメモリ内だけで使用し、各ゲームのnote GETを確認。DBはread-only transactionで読み、Cookie／key／UID／未編集レスポンスは出力しない。確認時、原神は進行中5件、Star RailはAPI自身が`accepted_epedition_num:0`／空配列を返した。本人確認の追加実証や報酬POSTは実施していない。
+- 原神の実応答が使う画像hostは`act-webstatic.hoyoverse.com`だったため、CSPのimg-srcにそのhostだけを追加。合成URLへのローカル画像応答で本番CSP下の読込を再検証した。ユーザー指定によりStar Railの派遣欄は削除し、原神だけ残す。上流の派遣取得／API契約は変更しない。
+- `games/live_tests.rs`は明示ignore・追加承認flag・devenv socket限定・単一verified link・DB read-only・GET限定の検査として残す。既定の全テストでは実行しない。設定不足やAPI失敗はskipせず失敗させる。
+
+検証：devenv経由の整形・workspace全target／WASM Clippy、非live Rustテスト234件成功（live2件は既定ignore）、release build、通常／reduced-motionのブラウザ回帰、Impeccable検査を通過。全体実行は時間上限に達したがRust全件とreduced-motionは完了しており、通常motionを単独再実行して成功を確認した。ルートの認証転送・明示ログイン・private deep link・通常パスでの履歴／再読込・settings308・公開docs・非空データでもStar Railの派遣欄を出さないことを確認した。
+
 ## 表示文のi18n分離
 
 本番RSXの対訳・固定表示文を`dashboard-ui/locales/ja.json`／`en.json`へ移した。`src/i18n.rs`が埋め込みカタログの参照・英語fallback・名前付き補間を持ち、`app/preferences.rs`は言語／テーマ選択だけを扱う。API／WebAuthnエラーも安全なキーを保持し、UIで翻訳する。通知・取得エラーは言語変更時に再描画され、パスワード／UID選択／認証境界は維持する。read-only docsの見出し・表ラベルも翻訳対象にし、APIの提供データはそのまま表示する。

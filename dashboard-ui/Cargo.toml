@@ -20,4 +20,4 @@ gloo-timers = { version = "0.3", features = ["futures"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
-web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlDialogElement", "CssStyleDeclaration", "MediaQueryList", "MouseEvent", "FocusEvent", "Node", "DomRect", "Storage", "Event", "EventTarget", "Crypto", "Clipboard", "Navigator", "Location", "RequestCredentials", "CredentialsContainer", "CredentialCreationOptions", "CredentialRequestOptions", "PublicKeyCredential", "AuthenticatorResponse", "AuthenticatorAttestationResponse", "AuthenticatorAssertionResponse"] }
+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlDialogElement", "CssStyleDeclaration", "MediaQueryList", "MouseEvent", "FocusEvent", "Node", "DomRect", "Storage", "Event", "EventTarget", "Crypto", "Clipboard", "Navigator", "Location", "History", "RequestCredentials", "CredentialsContainer", "CredentialCreationOptions", "CredentialRequestOptions", "PublicKeyCredential", "AuthenticatorResponse", "AuthenticatorAttestationResponse", "AuthenticatorAssertionResponse"] }

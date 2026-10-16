@@ -50,7 +50,11 @@ RP_ID="agd.example.com"
 
 | パス | 内容 |
 | --- | --- |
-| `/` | ダッシュボード |
+| `/` | セッション確認後、未ログインなら `/login`、ログイン済みなら `/dashboard` |
+| `/login` / `/dashboard` | ログイン／ダッシュボード。初期設定未完了時は設定ゲートを表示 |
+| `/settings` | `/settings/games` へ308転送 |
+| `/settings/games` / `/settings/bonus` / `/settings/link` / `/settings/security` / `/settings/delete` | 各設定画面（認証必須） |
+| `/admin` | 管理者画面（管理者権限必須） |
 | `/docs` / `/openapi.json` | API仕様の閲覧／OpenAPI JSON |
 | `/health` | DB疎通確認。正常時 `{"status":"ok"}` |
 
@@ -72,7 +76,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 | パス | 責務 |
 | --- | --- |
-| `dashboard-ui/src/app/navigation.rs` | URLハッシュと戻る／進む・初期ページの対応 |
+| `dashboard-ui/src/app/navigation.rs` | 通常パス・History API・認証状態に応じた転送と戻る／進むの対応 |
 | `dashboard-ui/src/app/state.rs` | 画面状態、認証・初期設定ゲートと画面データ取得の起動 |
 | `dashboard-ui/src/app/display.rs` | 数値・ブラウザのローカル時刻による簡潔な月日／24時間表示 |
 | `dashboard-ui/src/pages/` | 画面、メニュー、設定、ユーザー管理 |

@@ -4,7 +4,7 @@ use axum::{
     Router,
     extract::State,
     http::header,
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Redirect, Response},
     routing::get,
 };
 use tower_http::services::ServeDir;
@@ -12,12 +12,24 @@ use tower_http::services::ServeDir;
 const OPENAPI: &str = include_str!("../../../docs/dashboard-api.json");
 // DX emits an external loader. Only expedition images may use the official image CDNs;
 // scripts, styles and API connections remain same-origin.
-const CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' https://upload-os-bbs.hoyolab.com https://act-upload.hoyolab.com; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'";
+const CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' https://upload-os-bbs.hoyolab.com https://act-upload.hoyolab.com https://act-webstatic.hoyoverse.com; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'";
 
 pub(super) fn routes(app: &App) -> Router<App> {
     Router::new()
         .route("/", get(index))
         .route("/docs", get(index))
+        .route("/login", get(index))
+        .route("/dashboard", get(index))
+        .route(
+            "/settings",
+            get(|| async { Redirect::permanent("/settings/games") }),
+        )
+        .route("/settings/games", get(index))
+        .route("/settings/bonus", get(index))
+        .route("/settings/link", get(index))
+        .route("/settings/security", get(index))
+        .route("/settings/delete", get(index))
+        .route("/admin", get(index))
         .nest_service(
             "/assets",
             ServeDir::new(app.config.ui_dir.join("assets"))

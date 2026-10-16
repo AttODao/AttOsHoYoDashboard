@@ -113,7 +113,7 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
     rsx! {
         header { class: "topbar",
             div { class: "topbar-inner",
-                a { class: "wordmark", href: "#dashboard", "aria-label": ui.text("shell.dashboard"),
+                a { class: "wordmark", href: "/dashboard", "aria-label": ui.text("shell.dashboard"),
                     onclick: move |event| { event.prevent_default(); set_page(state, Page::Dashboard); },
                     img { src: asset!("/assets/dashboard-icon.png"), width: "36", height: "36", alt: "" }
                     span { {ui.text("app.title")} }

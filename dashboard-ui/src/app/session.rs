@@ -9,6 +9,16 @@ use crate::{api, models::MeView};
 use dioxus::prelude::*;
 use serde_json::json;
 
+pub(super) async fn complete_login(mut state: Signal<AppState>, generation: u64) {
+    if !generation_matches(state, generation) {
+        return;
+    }
+    // Explicit authentication starts at Dashboard; ordinary bootstrap/reload
+    // retains the authenticated user's requested settings page.
+    state.write().page = Page::Dashboard;
+    bootstrap(state).await;
+}
+
 pub(super) async fn bootstrap(mut state: Signal<AppState>) {
     if state.read().page == Page::Docs {
         state.write().phase = Phase::SignedOut;
@@ -121,7 +131,7 @@ fn apply_fresh_me(write: &mut AppState, me: MeView) -> bool {
 
 pub(super) fn signed_out(mut state: Signal<AppState>, message_key: &'static str) {
     let page = state.read().page;
-    let generation = state.read().generation + 1;
+    let generation = state.read().generation.saturating_add(1);
     let mut next = AppState::new(if page == Page::Docs {
         Page::Docs
     } else {
@@ -191,6 +201,28 @@ mod tests {
             detected,
             last_detected_at: "2026-01-01T00:00:00Z".to_owned(),
         }
+    }
+
+    #[test]
+    fn stale_login_cannot_change_route_and_sign_out_preserves_public_docs() {
+        fn check() -> Element {
+            let mut state = use_signal(|| AppState::new(Page::Security));
+            state.write().generation = 2;
+            let mut login = std::pin::pin!(complete_login(state, 1));
+            let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+            assert!(login.as_mut().poll(&mut context).is_ready());
+            assert!(state.read().page == Page::Security);
+            assert_eq!(state.read().generation, 2);
+            signed_out(state, "messages.signed_out");
+            assert!(state.read().page == Page::Dashboard);
+            assert!(state.read().phase == Phase::SignedOut);
+            assert_eq!(state.read().generation, 3);
+            state.write().page = Page::Docs;
+            signed_out(state, "messages.signed_out");
+            assert!(state.read().page == Page::Docs);
+            rsx! {}
+        }
+        VirtualDom::new(check).rebuild_in_place();
     }
 
     #[test]

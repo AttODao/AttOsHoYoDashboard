@@ -283,7 +283,9 @@ fn GameStatusCard(status: GameStatus) -> Element {
                         Metric { label: ui.text("dashboard.daily_training"), value: pair(data.current_train_score, data.max_train_score, ui) }
                     }
                 }
-                ExpeditionList { game: status.game_kind.clone(), expeditions: data.expeditions.clone() }
+                if status.game_kind == "genshin" {
+                    ExpeditionList { expeditions: data.expeditions.clone() }
+                }
             }
             if let Some(key) = missing_payload_notice(status.data.as_ref()) {
                 p { {ui.text(key)} }
@@ -354,7 +356,7 @@ fn Estimate(
 }
 
 #[component]
-fn ExpeditionList(game: String, expeditions: Option<Vec<Expedition>>) -> Element {
+fn ExpeditionList(expeditions: Option<Vec<Expedition>>) -> Element {
     let ui = use_preferences();
     rsx! {
         div { class: "expeditions",
@@ -365,8 +367,8 @@ fn ExpeditionList(game: String, expeditions: Option<Vec<Expedition>>) -> Element
                     for (index, expedition) in rows.into_iter().enumerate() {
                         li { class: "expedition",
                             ExpeditionIcon {
-                                key: "{game}-{index}-{expedition.avatar_side_icon:?}-{expedition.item_url:?}",
-                                source: if game == "genshin" { expedition.avatar_side_icon.clone() } else { expedition.item_url.clone() },
+                                key: "{index}-{expedition.avatar_side_icon:?}",
+                                source: expedition.avatar_side_icon.clone(),
                                 label: expedition_label(expedition.name.as_deref(), index, ui),
                             }
                             span { {expedition.status.as_deref().map(|value| model_status(value, ui)).unwrap_or(ui.text("dashboard.unknown"))} }

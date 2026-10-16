@@ -4,7 +4,7 @@ use super::security::PasswordCard;
 use super::shell::{Header, Status};
 use crate::app::actions::{handle_api_error_for, spawn_action};
 use crate::app::preferences::use_preferences;
-use crate::app::session::{bootstrap, logout};
+use crate::app::session::{bootstrap, complete_login, logout};
 use crate::app::state::{AppState, generation_matches, set_status};
 use crate::components::{Button, ButtonVariant};
 use dioxus::prelude::*;
@@ -72,7 +72,7 @@ pub(in crate::app) fn LoginPage(mut state: Signal<AppState>) -> Element {
                             LoginMethod::Passkey => crate::webauthn::login(&user).await,
                         };
                         match result {
-                            Ok(()) if generation_matches(state, generation) => bootstrap(state).await,
+                            Ok(()) if generation_matches(state, generation) => complete_login(state, generation).await,
                             Ok(()) => {}
                             Err(error) if selected == LoginMethod::Password && error.is_unauthorized() && generation_matches(state, generation) => {
                                 set_status(state, "messages.the_username_or_password_is_incorrect", "error");

@@ -186,11 +186,18 @@ pub(super) fn set_page(state: Signal<AppState>, page: Page) {
     if state.read().busy {
         return;
     }
-    super::navigation::push_page(page);
+    if state.read().phase != Phase::SignedOut || page == Page::Docs {
+        super::navigation::push_page(page);
+    }
     restore_page(state, page);
 }
 
 pub(super) fn restore_page(mut state: Signal<AppState>, page: Page) {
+    let page = if state.read().phase == Phase::SignedOut && page != Page::Docs {
+        Page::Dashboard
+    } else {
+        page
+    };
     if state.read().page == page {
         return;
     }
@@ -316,6 +323,30 @@ mod tests {
 
     fn uuid(n: u128) -> Uuid {
         Uuid::from_u128(n)
+    }
+
+    #[test]
+    fn history_restoration_preserves_authenticated_deep_links_not_signed_out_routes() {
+        fn check() -> Element {
+            let mut state = use_signal(|| AppState::new(Page::Dashboard));
+            state.write().phase = Phase::SignedOut;
+            restore_page(state, Page::Security);
+            assert!(state.read().page == Page::Dashboard);
+            restore_page(state, Page::Docs);
+            assert!(state.read().page == Page::Docs);
+            restore_page(state, Page::Admin);
+            assert!(state.read().page == Page::Dashboard);
+            state.write().phase = Phase::Loading;
+            state.write().busy = true;
+            restore_page(state, Page::Security);
+            assert!(state.read().page == Page::Security);
+            state.write().phase = Phase::SignedIn;
+            restore_page(state, Page::Rewards);
+            assert!(state.read().page == Page::Rewards);
+            assert!(state.read().busy);
+            rsx! {}
+        }
+        VirtualDom::new(check).rebuild_in_place();
     }
 
     fn me(password_change_required: bool, cookie_setup_complete: bool) -> MeView {

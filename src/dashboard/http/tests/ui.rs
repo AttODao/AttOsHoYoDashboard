@@ -34,6 +34,14 @@ async fn compiled_assets_are_public_local_and_hardened() {
     for (path, content_type) in [
         ("/", "text/html"),
         ("/docs", "text/html"),
+        ("/login", "text/html"),
+        ("/dashboard", "text/html"),
+        ("/settings/games", "text/html"),
+        ("/settings/bonus", "text/html"),
+        ("/settings/link", "text/html"),
+        ("/settings/security", "text/html"),
+        ("/settings/delete", "text/html"),
+        ("/admin", "text/html"),
         ("/assets/app.js", "text/javascript"),
         ("/assets/style.css", "text/css"),
         ("/assets/app.wasm", "application/wasm"),
@@ -52,7 +60,7 @@ async fn compiled_assets_are_public_local_and_hardened() {
         if content_type == "text/html" {
             assert_eq!(
                 response.headers()[header::CONTENT_SECURITY_POLICY],
-                "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' https://upload-os-bbs.hoyolab.com https://act-upload.hoyolab.com; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+                "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' https://upload-os-bbs.hoyolab.com https://act-upload.hoyolab.com https://act-webstatic.hoyoverse.com; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'"
             );
         }
         assert!(
@@ -70,11 +78,41 @@ async fn compiled_assets_are_public_local_and_hardened() {
         "/index.html",
         "/assets/missing.js",
         "/src/main.rs",
+        "/unknown",
+        "/settings/unknown",
+        "/dashboard/unknown",
+        "/api/v1/unknown",
+        "/api/unknown",
     ] {
         let response = call(&app, request("GET", path, None, None)).await;
         assert!(!response.status().is_success());
         let bytes = to_bytes(response.into_body(), 128 * 1024).await.unwrap();
         assert!(!String::from_utf8_lossy(&bytes).contains("synthetic-private-marker"));
+    }
+}
+
+#[tokio::test]
+async fn settings_redirects_and_api_routes_never_fall_back_to_spa() {
+    let (_bundle, app) = fixture().await;
+    let response = call(&app, request("GET", "/settings", None, None)).await;
+    assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(response.headers()[header::LOCATION], "/settings/games");
+    error(
+        call(&app, request("GET", "/api/v1/me", None, None)).await,
+        StatusCode::UNAUTHORIZED,
+        "unauthorized",
+    )
+    .await;
+    for path in ["/unknown", "/settings/unknown", "/api/v1/unknown"] {
+        let response = call(&app, request("GET", path, None, None)).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_ne!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .map(|v| v.as_bytes()),
+            Some(b"text/html; charset=utf-8".as_slice())
+        );
     }
 }
 
@@ -92,7 +130,14 @@ async fn server_rejects_missing_index_before_binding_or_starting_worker() {
 #[tokio::test]
 async fn missing_bundle_returns_hardened_unavailable_without_breaking_api_routes() {
     let app = disconnected_app().await;
-    for path in ["/", "/docs"] {
+    for path in [
+        "/",
+        "/docs",
+        "/login",
+        "/dashboard",
+        "/settings/security",
+        "/admin",
+    ] {
         error(
             call(&app, request("GET", path, None, None)).await,
             StatusCode::SERVICE_UNAVAILABLE,

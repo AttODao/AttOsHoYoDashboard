@@ -23,7 +23,7 @@ const createdUsers=[];
 const secondAdmin={...user,id:uid(14),username:'synthetic-second-admin',must_change_password:false};
 let failCreate=false,adminDeletes=0,loginFailureStatus=0;
 const rewardPatches=[];
-const avatarIcon='https://upload-os-bbs.hoyolab.com/game_record/genshin/character_side_icon/synthetic.png';
+const avatarIcon='https://act-webstatic.hoyoverse.com/game_record/genshin/character_side_icon/synthetic.png';
 const itemIcon='https://act-upload.hoyolab.com/game_record/hkrpg/item_icon/synthetic.png';
 const validGenerated=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{24}$/.test(value);
 const loginGate=new Promise(resolve=>{allowLogin=resolve;});
@@ -109,7 +109,8 @@ const server=http.createServer(async(req,res)=>{
   }
   if(p==='/openapi.json'){assert.equal(req.method,'GET');counts.set(p,(counts.get(p)||0)+1);return json(res,JSON.parse(fs.readFileSync(path.join(root,'docs/dashboard-api.json'),'utf8')));}
   let file;
-  if(p==='/'||p==='/docs'){file=path.join(publicDir,'index.html');res.setHeader('Content-Type','text/html');res.setHeader('Content-Security-Policy',csp);}
+  if(p==='/settings'){res.writeHead(308,{'Location':'/settings/games'});return res.end();}
+  if(['/','/login','/dashboard','/settings/games','/settings/bonus','/settings/link','/settings/security','/settings/delete','/admin','/docs'].includes(p)){file=path.join(publicDir,'index.html');res.setHeader('Content-Type','text/html');res.setHeader('Content-Security-Policy',csp);}
   else if(p.startsWith('/assets/')){file=path.resolve(publicDir,'.'+p);assert.ok(file.startsWith(path.join(publicDir,'assets')+path.sep));res.setHeader('Content-Type',({'.wasm':'application/wasm','.js':'text/javascript','.css':'text/css','.png':'image/png'})[path.extname(file)]||'application/octet-stream');}
   else {res.writeHead(404);return res.end();}
   res.end(fs.readFileSync(file));
@@ -132,7 +133,7 @@ try{
  page.on('console',message=>{if(message.type()==='error'&&/Content Security Policy|unsafe-eval|inline style/i.test(message.text()))errors.push('CSP violation');});
  const button=name=>page.getByRole('button',{name,exact:true});
  const idle=()=>page.waitForFunction(()=>document.querySelector('fieldset.app-shell')?.disabled===false);
- const dashboard=async()=>{await page.getByRole('heading',{name:'Dashboard',exact:true}).waitFor();await idle();};
+ const dashboard=async()=>{await page.getByRole('heading',{name:'Dashboard',exact:true}).waitFor();await idle();await page.waitForURL(origin+'/dashboard');};
  const openMenu=async()=>{await page.locator('#agd-menu-trigger').click();await page.locator('#agd-menu[open]').waitFor();await page.waitForFunction(()=>Math.abs(document.getElementById('agd-menu').getBoundingClientRect().right-innerWidth)<1);await page.locator('#agd-menu').evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});};
  const menu=async name=>{await openMenu();const dialog=await page.locator('#agd-menu').elementHandle();await page.locator('#agd-menu').getByRole('button',{name,exact:true}).click();await page.locator('#agd-menu[open]').waitFor({state:'hidden'});await dialog.evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});await dialog.dispose();await idle();};
  const settings=async key=>{await menu('Settings');await page.locator('#settings-tab-'+key).click();await idle();};
@@ -163,6 +164,11 @@ try{
  };
  await page.goto(origin);
  await page.locator('#login-username').waitFor();
+ await page.waitForURL(origin+'/login');
+ assert.equal(new URL(page.url()).hash,'','auth routes do not use hashes');
+ await page.goto(origin+'/settings/security');
+ await page.locator('#login-username').waitFor();await page.waitForURL(origin+'/login');
+ assert.equal(await page.locator('#current-password').count(),0,'direct private URL cannot bypass login');
  await page.locator('.wordmark').getByText('AGD',{exact:true}).waitFor();
  // The supplied central motif is a real transparent asset, not a CSS background/mask.
  const brandIcon=page.locator('.wordmark img');
@@ -280,10 +286,9 @@ try{
  assert.equal(await genshin.locator('.expedition-icon').getAttribute('src'),avatarIcon);
  assert.equal(await genshin.locator('.expedition-icon').getAttribute('alt'),'Expedition 1');
  assert.equal(await genshin.locator('.expedition-icon').getAttribute('referrerpolicy'),'no-referrer');
- assert.equal(await starrail.locator('.expedition-icon').getAttribute('src'),itemIcon);
- assert.equal(await starrail.locator('.expedition-icon').getAttribute('alt'),'Synthetic assignment');
+ assert.equal(await starrail.locator('.expeditions').count(),0,'Star Rail hides expeditions even when its payload contains assignments');
  await page.waitForFunction(()=>[...document.querySelectorAll('.expedition img')].every(image=>image.complete&&image.naturalWidth>0),'official-host icons load under production CSP');
- assert.equal(await starrail.getByText('Synthetic assignment',{exact:true}).count(),0,'assignment name is an accessible icon label, not visible text');
+ assert.equal(await starrail.getByRole('heading',{name:'Expeditions',exact:true}).count(),0);
  await page.screenshot({path:path.join(root,'target/ui-dashboard-desktop.png'),fullPage:true});
  await genshin.locator('img.expedition-icon').dispatchEvent('error');
  await genshin.locator('span.expedition-icon[role=img]').waitFor();
@@ -304,7 +309,7 @@ try{
  await page.locator('#selected-starrail').selectOption(uid(8));
  await starrail.locator('.resource strong').getByText('24',{exact:true}).waitFor();
  assert.equal(await starrail.locator('time.recovery-at').count(),0,'missing estimate is not invented');
- await starrail.getByText('No expeditions',{exact:true}).waitFor();
+ assert.equal(await starrail.locator('.expeditions').count(),0,'Star Rail also has no empty expedition section');
  assert.equal(await page.locator('#selected-genshin').inputValue(),uid(6));
  await genshin.getByRole('switch').check();await idle();
  assert.deepEqual(rewardPatches.at(-1),{id:uid(20),enabled:true,local_time:'06:00'});
@@ -381,14 +386,20 @@ try{
  await page.keyboard.press('Home');await genshin.waitFor();
  await page.keyboard.press('End');await starrail.waitFor();
  await page.setViewportSize({width:1280,height:900});
- // Same-document navigation supports back/forward and reload without bypassing auth gates.
+ // Pathname navigation supports back/forward and reload without bypassing auth gates.
  await menu('Settings');
  await page.locator('#settings-tab-security').click();await idle();
  await page.goBack();await page.locator('#settings-tab-uids[aria-selected=true]').waitFor();await idle();
  await page.goForward();await page.locator('#settings-tab-security[aria-selected=true]').waitFor();await idle();
  await page.reload();await page.locator('#settings-tab-security[aria-selected=true]').waitFor();await idle();
  await page.locator('a.wordmark').click();await dashboard();
- assert.equal(new URL(page.url()).hash,'#dashboard');
+ assert.equal(new URL(page.url()).pathname,'/dashboard');
+ assert.equal(new URL(page.url()).hash,'');
+ await page.goto(origin+'/settings');
+ await page.locator('#settings-tab-uids[aria-selected=true]').waitFor();await idle();
+ await page.waitForURL(origin+'/settings/games');
+ await page.locator('a.wordmark').click();await dashboard();
+ await page.goto(origin+'/login');await dashboard();
  stage='settings';
  // Settings replaces the removed nav/schedule checkbox/input[type=time].
  await settings('bonus');
@@ -543,8 +554,8 @@ try{
  await page.getByText(/server logout is unconfirmed/).waitFor();
  assert.equal(await page.locator('#game-panel-genshin').count(),0);
  assert.ok((await context.cookies()).some(c=>c.name==='attos_session'&&c.value==='synthetic-a'));
- await page.reload();await page.getByRole('heading',{name:'Admin settings',exact:true}).waitFor();await idle();
- await page.locator('a.wordmark').click();await dashboard();
+ await page.waitForURL(origin+'/login');
+ await page.reload();await dashboard();
  await menu('Sign out');await button('Retry server logout').waitFor();failLogout=false;
  await button('Retry server logout').click();await button('Sign in').waitFor();
  assert.equal((await context.cookies()).filter(c=>c.name==='attos_session').length,0);
