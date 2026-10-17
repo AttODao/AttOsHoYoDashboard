@@ -11,8 +11,7 @@ mod tests;
 const VERSION: u8 = 1;
 const NONCE_LEN: usize = 12;
 const TAG_LEN: usize = 16;
-// Keeps the pre-rename crate name: changing it would make stored ciphertext undecryptable.
-const AAD_PREFIX: &[u8] = b"attosgameapi:dashboard:hoyolab-cookie:v1";
+const AAD_PREFIX: &[u8] = b"attoshoyodashboard:dashboard:hoyolab-cookie:v1";
 
 impl CookieKey {
     pub(in crate::dashboard) fn from_hex(raw: &str) -> Result<Self> {
