@@ -97,6 +97,15 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 - **DBと対応する `HOYOLAB_COOKIE_KEY` をセットでバックアップ**してください。鍵の変更・再暗号化ツールはありません。保存済みCookieがある状態で鍵を変更すると復号できません。
 - 更新はバックアップ後に `docker compose up -d --build`。起動時のDB更新を伴うため、ロールバックにDB復元が必要になる場合があります。
 
+## リリースイメージ
+
+`v*` タグのpushで `.forgejo/workflows/image.yml` がlinux/amd64イメージをビルドし、Forgejoのコンテナレジストリ（`<Forgejoホスト>/<owner>/<repo>`、小文字）へ公開します。CIではテストを実行しないため、タグ付け前に `devenv test` を通してください。
+
+- `v1.2.3` → `1.2.3`・`1.2`・`latest`。`v1.2.3-rc.1` などはそのタグのみ
+- runnerはラベル `ubuntu-latest`、ジョブから `docker`／`buildx` でDinDへ接続できること
+- リポジトリSecret `REGISTRY_TOKEN`：タグをpushするユーザーの `write:package` 権限付きアクセストークン
+- ビルドキャッシュは同じイメージの `buildcache` タグに保存
+
 ## API概要
 
 ベースパスは `/api/v1`。同一OriginのWebセッションAPIで、APIキー・Bearer・OAuthは提供しません。詳細は [OpenAPI仕様](docs/dashboard-api.json)または稼働中の `/docs` を参照してください。

@@ -1,0 +1,67 @@
+# Publishes the release image to this Forgejo instance's container registry.
+# Tests are not run here; run `devenv test` locally before tagging.
+name: image
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve image name and tags
+        env:
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          registry="${SERVER_URL#*://}"
+          image="$registry/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          version="${TAG#v}"
+          tags="$image:$version"
+          # Only plain X.Y.Z releases move the X.Y and latest tags.
+          if printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            tags="$tags $image:${version%.*} $image:latest"
+          fi
+          {
+            echo "REGISTRY=$registry"
+            echo "IMAGE=$image"
+            echo "IMAGE_TAGS=$tags"
+          } >> "$GITHUB_ENV"
+
+      - name: Log in to registry
+        env:
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$REGISTRY_USER" --password-stdin
+
+      - name: Build and push
+        env:
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+          REVISION: ${{ github.sha }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          # Registry cache export needs a container builder, not the default docker driver.
+          docker buildx create --use --driver docker-container
+          set --
+          for tag in $IMAGE_TAGS; do set -- "$@" --tag "$tag"; done
+          docker buildx build \
+            --platform linux/amd64 \
+            --label "org.opencontainers.image.source=$SERVER_URL/$REPOSITORY" \
+            --label "org.opencontainers.image.revision=$REVISION" \
+            --label "org.opencontainers.image.version=${TAG#v}" \
+            --cache-from "type=registry,ref=$IMAGE:buildcache" \
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max" \
+            "$@" \
+            --push \
+            .
+
+      - name: Log out of registry
+        if: always()
+        run: docker logout "$REGISTRY" || true
