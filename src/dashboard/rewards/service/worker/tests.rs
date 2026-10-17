@@ -11,7 +11,7 @@ use crate::dashboard::{
     hoyolab::gateway::{self, DailyState},
     test_support::TestDatabase,
 };
-use attosgameapi::hoyolab::Error as UpstreamError;
+use attoshoyodashboard::hoyolab::Error as UpstreamError;
 use chrono::{Duration, Utc};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set};
 

@@ -1,15 +1,15 @@
 # ドキュメント
 
-## AttOsGameDashboard
+## AttOsHoYoDashboard
 
 | 文書 | 読む目的 |
 |---|---|
-| [仕様書](spec/AttOsGameDashboard.md) | 利用者から見える機能、権限、利用条件を知る |
-| [実装設計案](design/AttOsGameDashboard.md) | 現在の責務分割、Dioxus Web/RSX UI、データ・API・ジョブ設計、連携検証と送信安全性を確認する |
-| [実装計画・検証課題](plans/AttOsGameDashboard.md) | 実装済み範囲、残る上流実証、検証ギャップを確認する |
+| [仕様書](spec/AttOsHoYoDashboard.md) | 利用者から見える機能、権限、利用条件を知る |
+| [実装設計案](design/AttOsHoYoDashboard.md) | 現在の責務分割、Dioxus Web/RSX UI、データ・API・ジョブ設計、連携検証と送信安全性を確認する |
+| [実装計画・検証課題](plans/AttOsHoYoDashboard.md) | 実装済み範囲、残る上流実証、検証ギャップを確認する |
 | [Dashboard OpenAPI 3.1](dashboard-api.json) | WebセッションAPIの手書き契約を機械可読で確認する |
 | [Dashboard運用手順](dashboard-operations.md) | migration、bootstrap、TLS/Origin、秘密鍵、バックアップ、shutdownを確認する |
-| [UIデザイン案](ui-design/README.md) | AGDのR2ローカルプレビュー、設定集約案、旧Penpot案、反映待ち事項を確認する |
+| [UIデザイン案](ui-design/README.md) | 旧略称AGD時代のR2ローカルプレビュー、設定集約案、旧Penpot案、反映待ち事項を確認する |
 
 ## HoYoLABクライアント
 

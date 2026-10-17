@@ -87,7 +87,7 @@ mod tests {
     #[test]
     fn missing_translation_falls_back_without_exposing_unknown_input() {
         let empty = Catalog::new();
-        assert_eq!(lookup(&empty, &ENGLISH, "app.title"), "AGD");
+        assert_eq!(lookup(&empty, &ENGLISH, "app.title"), "AHD");
         assert_eq!(
             Language::Japanese.text("untrusted-input"),
             ENGLISH["messages.unavailable"]

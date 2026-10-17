@@ -122,7 +122,7 @@ try{
  browser=await chromium.launch({headless:true,args:['--no-sandbox']});
  const context=await browser.newContext({viewport:{width:1280,height:900},timezoneId:'Asia/Tokyo',reducedMotion:process.argv.includes('--normal-motion')?'no-preference':'reduce'});
  context.setDefaultTimeout(10000);
- await context.addInitScript(()=>{if(!localStorage.getItem('agd-language'))localStorage.setItem('agd-language','en');});
+ await context.addInitScript(()=>{if(!localStorage.getItem('ahd-language'))localStorage.setItem('ahd-language','en');});
  await context.route('**/*',route=>{
   const url=route.request().url();
   if(url===avatarIcon||url===itemIcon)return route.fulfill({status:200,contentType:'image/png',body:fs.readFileSync(path.join(root,'dashboard-ui/assets/favicon.png'))});
@@ -134,8 +134,8 @@ try{
  const button=name=>page.getByRole('button',{name,exact:true});
  const idle=()=>page.waitForFunction(()=>document.querySelector('fieldset.app-shell')?.disabled===false);
  const dashboard=async()=>{await page.getByRole('heading',{name:'Dashboard',exact:true}).waitFor();await idle();await page.waitForURL(origin+'/dashboard');};
- const openMenu=async()=>{await page.locator('#agd-menu-trigger').click();await page.locator('#agd-menu[open]').waitFor();await page.waitForFunction(()=>Math.abs(document.getElementById('agd-menu').getBoundingClientRect().right-innerWidth)<1);await page.locator('#agd-menu').evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});};
- const menu=async name=>{await openMenu();const dialog=await page.locator('#agd-menu').elementHandle();await page.locator('#agd-menu').getByRole('button',{name,exact:true}).click();await page.locator('#agd-menu[open]').waitFor({state:'hidden'});await dialog.evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});await dialog.dispose();await idle();};
+ const openMenu=async()=>{await page.locator('#ahd-menu-trigger').click();await page.locator('#ahd-menu[open]').waitFor();await page.waitForFunction(()=>Math.abs(document.getElementById('ahd-menu').getBoundingClientRect().right-innerWidth)<1);await page.locator('#ahd-menu').evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});};
+ const menu=async name=>{await openMenu();const dialog=await page.locator('#ahd-menu').elementHandle();await page.locator('#ahd-menu').getByRole('button',{name,exact:true}).click();await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});await dialog.evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});await dialog.dispose();await idle();};
  const settings=async key=>{await menu('Settings');await page.locator('#settings-tab-'+key).click();await idle();};
  const signIn=async actor=>{await page.locator('#login-username').fill(actor.username);await page.locator('#login-password').fill('synthetic-password-123');await button('Sign in').click();};
  const change=async(current)=>{if(current!==undefined)await page.locator('#current-password').fill(current);for(const id of ['new-password','confirm-password'])await page.locator('#'+id).fill('synthetic-permanent-password-123');await button('Change password').click();await idle();};
@@ -169,10 +169,10 @@ try{
  await page.goto(origin+'/settings/security');
  await page.locator('#login-username').waitFor();await page.waitForURL(origin+'/login');
  assert.equal(await page.locator('#current-password').count(),0,'direct private URL cannot bypass login');
- await page.locator('.wordmark').getByText('AGD',{exact:true}).waitFor();
+ await page.locator('.wordmark').getByText('AHD',{exact:true}).waitFor();
  // The supplied central motif is a real transparent asset, not a CSS background/mask.
  const brandIcon=page.locator('.wordmark img');
- assert.equal(await brandIcon.getAttribute('alt'),'','adjacent AGD text names the brand once');
+ assert.equal(await brandIcon.getAttribute('alt'),'','adjacent AHD text names the brand once');
  assert.equal(await page.locator('head link[rel="icon"]').getAttribute('type'),'image/png');
  assert.equal(await page.locator('head link[rel="icon"]').getAttribute('sizes'),'32x32');
  const iconPixels=await page.evaluate(async()=>{
@@ -192,12 +192,12 @@ try{
  }
  const brandBox=await brandIcon.boundingBox(),brandTextBox=await page.locator('.wordmark span').boundingBox();
  assert.equal(brandBox.width,36);assert.equal(brandBox.height,36);
- assert.ok(brandBox.x+brandBox.width<brandTextBox.x&&Math.abs(brandBox.y+brandBox.height/2-brandTextBox.y-brandTextBox.height/2)<1,'icon precedes and centers on AGD');
+ assert.ok(brandBox.x+brandBox.width<brandTextBox.x&&Math.abs(brandBox.y+brandBox.height/2-brandTextBox.y-brandTextBox.height/2)<1,'icon precedes and centers on AHD');
  await page.waitForFunction(()=>document.fonts.size>=2);
  assert.ok(await page.evaluate(async()=>{await document.fonts.ready;return [...document.fonts].filter(f=>f.status==='loaded').length>=2;}),'self-hosted UI and wordmark fonts load');
  assert.equal(await page.getByText('Please sign in.',{exact:true}).count(),0,'no redundant login instructions');
  const usernameBox=await page.locator('#login-username').boundingBox(),passwordBox=await page.locator('#login-password').boundingBox(),submitBox=await button('Sign in').boundingBox();
- assert.ok(usernameBox.height>=48&&passwordBox.height>=48,'default text and password controls share the AGD size');
+ assert.ok(usernameBox.height>=48&&passwordBox.height>=48,'default text and password controls share the AHD size');
  assert.ok(Math.abs(submitBox.width-passwordBox.width)<1&&submitBox.y-passwordBox.y-passwordBox.height>=24,'full-width submit and password gap');
  assert.ok(await button('Sign in').evaluate(e=>getComputedStyle(e).backgroundImage.includes('linear-gradient')),'stable data attributes style the CSS-module button');
  assert.equal(await page.locator('#login-username').count(),1,'both methods share one username');
@@ -210,7 +210,7 @@ try{
  // Unknown usernames and wrong passwords share one non-enumerating error.
  for(const language of ['en','ja']){
   if(language==='ja'){
-   await page.evaluate(()=>localStorage.setItem('agd-language','ja'));await page.reload();
+   await page.evaluate(()=>localStorage.setItem('ahd-language','ja'));await page.reload();
    await page.locator('#login-username').waitFor();await idle();
   }
   for(const [username,password] of [['synthetic-missing-user','synthetic-password-123'],[user.username,'synthetic-wrong-password']]){
@@ -220,7 +220,7 @@ try{
    await idle();assert.equal(await page.locator('#login-username').count(),1);
   }
  }
- await page.evaluate(()=>localStorage.setItem('agd-language','en'));await page.reload();
+ await page.evaluate(()=>localStorage.setItem('ahd-language','en'));await page.reload();
  await page.locator('#login-username').waitFor();await idle();
  for(const [status,message] of [[403,'You do not have access to this action.'],[503,'This feature is not available right now.']]){
   loginFailureStatus=status;await signIn(user);await page.getByText(message,{exact:true}).waitFor();await idle();
@@ -245,7 +245,7 @@ try{
  assert.equal(counts.get('/api/v1/auth/login'),loginAttemptsBefore+1);
  assert.equal(counts.get('/api/v1/auth/passkey/options')||0,0);
  assert.equal(counts.get('/api/v1/me'),sessionReadsBefore+1);
- assert.equal(await page.locator('#agd-menu-trigger').count(),0,'mandatory setup has no ordinary navigation');
+ assert.equal(await page.locator('#ahd-menu-trigger').count(),0,'mandatory setup has no ordinary navigation');
  assert.equal(await button('Sign out').count(),1,'setup permits logout');
  assert.equal(await page.locator('#current-password').count(),0,'mandatory setup never requests a login secret');
  assert.equal(await page.locator('#hoyolab-cookie').count(),0,'password gate hides Cookie actions');
@@ -318,7 +318,7 @@ try{
  await page.evaluate(()=>scrollTo(0,0));
  const before=await page.locator('main.container').boundingBox();
  await openMenu();
- const drawer=page.locator('#agd-menu'),box=await drawer.boundingBox();
+ const drawer=page.locator('#ahd-menu'),box=await drawer.boundingBox();
  const hoyolabLink=drawer.getByRole('link',{name:'HoYoLAB',exact:true});
  assert.equal(await hoyolabLink.getAttribute('href'),'https://www.hoyolab.com/home');
  assert.equal(await hoyolabLink.getAttribute('target'),'_blank');
@@ -332,26 +332,26 @@ try{
  assert.ok(Math.abs((logoutAfter.y-logoutGroup.y)-(logoutGroup.y+logoutGroup.height-logoutAfter.y-logoutAfter.height))<1,'logout has equal space between its dividers');
  await page.screenshot({path:path.join(root,'target/ui-menu-desktop.png'),fullPage:true});
  assert.equal(await logoutButton.evaluate(e=>getComputedStyle(e).outlineOffset),'-3px','focus ring stays inside drawer');
- await page.waitForFunction(()=>!['transparent','rgba(0, 0, 0, 0)'].includes(getComputedStyle(document.getElementById('agd-menu'),'::backdrop').backgroundColor));
+ await page.waitForFunction(()=>!['transparent','rgba(0, 0, 0, 0)'].includes(getComputedStyle(document.getElementById('ahd-menu'),'::backdrop').backgroundColor));
  assert.ok(Math.abs(box.width-304)<1&&Math.abs(box.x+box.width-1280)<1);
  assert.ok(await drawer.evaluate(e=>e.matches(':modal')&&e.contains(document.activeElement)));
  assert.ok(await drawer.evaluate(e=>!['transparent','rgba(0, 0, 0, 0)'].includes(getComputedStyle(e,'::backdrop').backgroundColor)),'modal backdrop is present');
  const after=await page.locator('main.container').boundingBox();
  assert.deepEqual({x:after.x,y:after.y,width:after.width},{x:before.x,y:before.y,width:before.width},'drawer does not shift or resize page content');
  await page.keyboard.press('Tab');assert.ok(await drawer.evaluate(e=>e.contains(document.activeElement)));
- await page.keyboard.press('Escape');await page.locator('#agd-menu[open]').waitFor({state:'hidden'});
- assert.ok(await page.locator('#agd-menu-trigger').evaluate(e=>e===document.activeElement));
- await openMenu();await page.mouse.click(10,100);await page.locator('#agd-menu[open]').waitFor({state:'hidden'});
+ await page.keyboard.press('Escape');await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});
+ assert.ok(await page.locator('#ahd-menu-trigger').evaluate(e=>e===document.activeElement));
+ await openMenu();await page.mouse.click(10,100);await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});
  await openMenu();
  const darkToken=await page.locator('html').evaluate(e=>getComputedStyle(e).getPropertyValue('--canvas'));
  await drawer.getByRole('switch',{name:'Dark mode',exact:true}).click();
  await page.waitForFunction(()=>document.documentElement.dataset.theme==='light');
  assert.notEqual(await page.locator('html').evaluate(e=>getComputedStyle(e).getPropertyValue('--canvas')),darkToken);
  await drawer.getByRole('combobox',{name:'Language',exact:true}).selectOption('ja');
- await page.waitForFunction(()=>document.documentElement.lang==='ja'&&localStorage.getItem('agd-language')==='ja');
+ await page.waitForFunction(()=>document.documentElement.lang==='ja'&&localStorage.getItem('ahd-language')==='ja');
  await drawer.getByRole('switch',{name:'ダークモード',exact:true}).waitFor();
  assert.equal(await drawer.getAttribute('aria-label'),'アカウントメニュー');
- assert.equal(await page.locator('#agd-menu-trigger').getAttribute('aria-label'),'メニューを開く');
+ assert.equal(await page.locator('#ahd-menu-trigger').getAttribute('aria-label'),'メニューを開く');
  assert.equal(await drawer.getByRole('combobox',{name:'言語',exact:true}).inputValue(),'ja');
  await page.locator('h1').getByText('ダッシュボード',{exact:true}).waitFor();
  assert.equal(await genshin.locator('time.estimate-at').innerText(),'10/19 17:38 JST','compact dates stay consistent after language changes');
@@ -363,10 +363,10 @@ try{
  await openMenu();await drawer.getByRole('combobox',{name:'言語',exact:true}).selectOption('en');
  await drawer.getByRole('switch',{name:'Dark mode',exact:true}).waitFor();
  assert.equal(await drawer.getAttribute('aria-label'),'Account menu');
- assert.equal(await page.locator('#agd-menu-trigger').getAttribute('aria-label'),'Open menu');
+ assert.equal(await page.locator('#ahd-menu-trigger').getAttribute('aria-label'),'Open menu');
  assert.equal(await drawer.getByRole('combobox',{name:'Language',exact:true}).inputValue(),'en');
  await drawer.getByRole('switch',{name:'Dark mode',exact:true}).click();
- await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark'&&localStorage.getItem('agd-theme')==='dark');
+ await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark'&&localStorage.getItem('ahd-theme')==='dark');
  await page.keyboard.press('Escape');await dashboard();
  // Mobile ARIA tabs: hidden panel, roving focus and keyboard edges.
  await page.setViewportSize({width:390,height:844});
@@ -374,7 +374,7 @@ try{
  assert.ok(await brandIcon.isVisible());
  assert.ok(await page.locator('.topbar-inner').evaluate(e=>e.scrollWidth<=e.clientWidth),'mobile header fits with icon');
  assert.ok(await genshin.isVisible());assert.ok(await starrail.isHidden());
- await page.locator('#agd-menu').evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});
+ await page.locator('#ahd-menu').evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});
  await page.screenshot({path:path.join(root,'target/ui-dashboard-mobile.png'),fullPage:true});
  await page.locator('#game-tab-genshin').focus();await page.keyboard.press('ArrowRight');
  await starrail.waitFor();assert.ok(await genshin.isHidden());
@@ -477,7 +477,7 @@ try{
  // Admin generated credentials: entropy failure and API failure never reveal a candidate.
  await menu('Administration');
  assert.ok(await button('Load logs').isDisabled(),'no invented admin log endpoint');
- assert.equal(await page.locator('[data-slot=card]').first().evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(24, 23, 29)','AGD card skin does not depend on hashed module class names');
+ assert.equal(await page.locator('[data-slot=card]').first().evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(24, 23, 29)','AHD card skin does not depend on hashed module class names');
  assert.equal(await page.locator('input[autocomplete=new-password]').count(),0,'no administrator-entered temporary password form');
  const ownRow=page.getByRole('row').filter({has:page.getByRole('rowheader',{name:new RegExp('^'+user.username)})});
  assert.equal(await page.getByRole('table',{name:'Manage users',exact:true}).count(),1);
@@ -587,14 +587,14 @@ try{
  assert.deepEqual([...counts].filter(([p])=>p.startsWith('/api/v1/')),apiBefore);
  stage='docs-i18n';
  await page.getByRole('columnheader',{name:'Path',exact:true}).waitFor();
- await page.evaluate(()=>localStorage.setItem('agd-language','ja'));await page.reload();
+ await page.evaluate(()=>localStorage.setItem('ahd-language','ja'));await page.reload();
  await page.getByText('APIドキュメント',{exact:true}).waitFor();
  await page.getByRole('columnheader',{name:'パス',exact:true}).waitFor();
  await page.getByRole('columnheader',{name:'メソッド',exact:true}).waitFor();
  assert.equal(await page.locator('html').getAttribute('lang'),'ja');
  assert.equal(counts.get('/openapi.json'),2);
  assert.deepEqual([...counts].filter(([p])=>p.startsWith('/api/v1/')),apiBefore,'translated public docs still make no authenticated requests');
- assert.deepEqual(await page.evaluate(()=>Object.keys(localStorage).sort()),['agd-language','agd-theme'],'only non-sensitive preferences persist');
+ assert.deepEqual(await page.evaluate(()=>Object.keys(localStorage).sort()),['ahd-language','ahd-theme'],'only non-sensitive preferences persist');
  assert.deepEqual(errors,[],'release CSP/Wasm errors');assert.deepEqual(failures,[]);
  console.log('Dioxus production browser regressions passed (synthetic implemented API fixtures; no live identity or backend authorization evidence).');
 }catch(error){

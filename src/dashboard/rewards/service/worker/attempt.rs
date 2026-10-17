@@ -7,7 +7,7 @@ use crate::dashboard::{
     error::{Error, Result},
     hoyolab::gateway::{self, Gateway, SignState},
 };
-use attosgameapi::game::GameKind;
+use attoshoyodashboard::game::GameKind;
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, QuerySelect, Set, TransactionTrait};
 use uuid::Uuid;
@@ -191,7 +191,7 @@ impl<G: Gateway> Rewards<G> {
     async fn finish_get_error(
         &self,
         prepared: PreparedAttempt,
-        error: attosgameapi::hoyolab::Error,
+        error: attoshoyodashboard::hoyolab::Error,
     ) -> Result<()> {
         let code = gateway::error_code(&error);
         if gateway::cookie_invalid(&error) {
@@ -211,7 +211,7 @@ impl<G: Gateway> Rewards<G> {
     async fn finish_post_error(
         &self,
         prepared: PreparedAttempt,
-        error: attosgameapi::hoyolab::Error,
+        error: attoshoyodashboard::hoyolab::Error,
     ) -> Result<()> {
         let code = gateway::error_code(&error);
         if gateway::cookie_invalid(&error) {

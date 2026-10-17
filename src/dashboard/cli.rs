@@ -23,7 +23,7 @@ pub(crate) async fn run() -> Result<()> {
     );
     if !valid {
         return Err(Error::Invalid(
-            "usage: attosgameapi [serve | migrate | bootstrap-admin [USERNAME]]",
+            "usage: attoshoyodashboard [serve | migrate | bootstrap-admin [USERNAME]]",
         ));
     }
     let config = Config::load()?;

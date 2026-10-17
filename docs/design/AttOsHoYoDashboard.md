@@ -1,4 +1,4 @@
-# AttOsGameDashboard 実装設計案
+# AttOsHoYoDashboard 実装設計案
 
 ## 1. 構成
 
@@ -25,7 +25,7 @@ flowchart TB
 
 - `dashboard-ui/src/app.rs`: App合成・起動・60秒周期のDashboard更新。`app/state.rs`はAppState・Page/Phaseと状態操作、`data.rs`は画面データ取得、`session.rs`はbootstrap・fresh me・logout、`actions.rs`は非同期操作のadmission/完了/エラー、`display.rs`は表示整形、`navigation.rs`は固定の同一Origin通常パスとHistory API・認証状態に応じたcanonical転送を持つ。generationによる古い応答の破棄、busyによる重複抑制、owner切替の初期化・初期設定の画面制限を維持する。
 - `dashboard-ui/src/app/preferences.rs`は言語・テーマだけの永続化、`credentials.rs`はWeb Cryptoによる仮パスワード生成とclipboard境界を持つ。秘密・表示状態は永続化しない。
-- `dashboard-ui/src/pages/`: `auth`・`shell`・`dashboard`・`hoyolab`・`accounts`・`rewards`・`security`・`admin`・`deletion`・`docs`に画面責務を分け、`common`にField/Metric/PasswordInputなどを置く。AGD R3はサイドバーなしの右drawer、5つの設定タブ、desktopの2ゲーム同時表示とmobileのゲームタブを使う。UID選択・status取得はゲームごと、automation変更と時刻保存は`app/data.rs`の共有処理を通す。`api.rs`・`models.rs`・`webauthn.rs`はHTTP・DTO・ブラウザ認証器境界を持ち、localStorage secrets、manual Cookie/Origin header、SSR/fullstack serverは持たない。
+- `dashboard-ui/src/pages/`: `auth`・`shell`・`dashboard`・`hoyolab`・`accounts`・`rewards`・`security`・`admin`・`deletion`・`docs`に画面責務を分け、`common`にField/Metric/PasswordInputなどを置く。AHD R3はサイドバーなしの右drawer、5つの設定タブ、desktopの2ゲーム同時表示とmobileのゲームタブを使う。UID選択・status取得はゲームごと、automation変更と時刻保存は`app/data.rs`の共有処理を通す。`api.rs`・`models.rs`・`webauthn.rs`はHTTP・DTO・ブラウザ認証器境界を持ち、localStorage secrets、manual Cookie/Origin header、SSR/fullstack serverは持たない。
 - `dashboard-ui/src/components/`: official Dioxus Components由来Button/Card/Card partsとMIT/provenance。
 - `src/dashboard/http/mod.rs`: API・static route compositionと単一HTTP listener・worker lifetime。`ui.rs`はcompiled UI・通常パスの`/login`／`/dashboard`／各`/settings/...`／`/admin`・公開`/docs`・`/assets`・`/openapi.json`を提供し、`/settings`を`/settings/games`へ308転送する。未知のパスやAPIをSPAへfallbackしない。CLIの`serve`がmigrationと空DBの初期管理者作成を行い、事前に構築したAccountsをserverへ渡す。
 - `src/dashboard/auth/`: user lifecycle、password/session、passkey registration/authentication、deletion request。
@@ -39,7 +39,7 @@ APIとschedulerは同じDB/業務処理を使う。単一process/instance前提�
 
 ### 1.1. DioxusとAPI/UI境界
 
-現構成はDioxus Webのclient-side rendering + Axum REST APIで、`serve`がUIとAPIを同一process・portで提供する。ブラウザは同一Originの相対`/api/v1/...`を直接使い、内部HTTP proxyやCORSはない。DockerはAlpineベースの`app`と`db`だけで、appはRustバイナリを直接起動する。`scripts/`は開発・テスト専用で、本番Dockerから除外する。DBの本番初期化は`docker/init-db.sql`を使う。公開時は`PUBLIC_ORIGIN=https://agd.example.com`、`RP_ID=agd.example.com`とし、外側のHTTPS reverse proxyからパスを変更せず転送する。
+現構成はDioxus Webのclient-side rendering + Axum REST APIで、`serve`がUIとAPIを同一process・portで提供する。ブラウザは同一Originの相対`/api/v1/...`を直接使い、内部HTTP proxyやCORSはない。DockerはAlpineベースの`app`と`db`だけで、appはRustバイナリを直接起動する。`scripts/`は開発・テスト専用で、本番Dockerから除外する。DBの本番初期化は`docker/init-db.sql`を使う。公開時は`PUBLIC_ORIGIN=https://ahd.example.com`、`RP_ID=ahd.example.com`とし、外側のHTTPS reverse proxyからパスを変更せず転送する。
 
 [Dioxus 0.7 Fullstackのserver functions](https://dioxuslabs.com/learn/0.7/essentials/fullstack/server_functions/)はAxum互換endpointと型付きclient呼び出しを生成する。新規のUI専用Rustアプリなら、手書きURL/JSON transportとDTOの二重管理を減らす有力な選択である。業務serviceやAxumを捨てる必要はない。一方、認証・Origin/Cookie・fresh authorization・mutation single-flight・owner切替・safe error・POST不確実性の処理は自動的には代替されない。
 

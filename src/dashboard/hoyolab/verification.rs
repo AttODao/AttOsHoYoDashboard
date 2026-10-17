@@ -5,7 +5,7 @@ use crate::dashboard::{
     db::entities::{game_account, hoyolab_account, reward_guard, reward_setting},
     error::{Error, Result},
 };
-use attosgameapi::models::account::Account;
+use attoshoyodashboard::models::account::Account;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseTransaction, EntityTrait, IntoActiveModel, QueryFilter,

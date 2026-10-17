@@ -1,4 +1,4 @@
-# AttOsGameAPI
+# AttOsHoYoDashboard
 
 原神・崩壊：スターレイルのHoYoLAB連携、天然樹脂・開拓力などの状態確認、ログインボーナスの手動／定期受け取りを提供するセルフホスト型ダッシュボード。パスワード／パスキー認証と管理者によるユーザー管理に対応します。
 
@@ -30,8 +30,8 @@ curl --fail http://127.0.0.1:8080/health
 | `INITIAL_ADMIN_USERNAME` | 初期管理者名。`admin` |
 | `INITIAL_ADMIN_PASSWORD` | 初回必須の仮パスワード。12〜256 UTF-8バイト |
 | `HOYOLAB_COOKIE_KEY` | 必須。Cookie暗号化鍵。乱数32バイトの64桁hex（`openssl rand -hex 32`） |
-| `PUBLIC_ORIGIN` | 公開Origin。例：`https://agd.example.com`。パスなし |
-| `RP_ID` | パスキー用ドメイン。例：`agd.example.com` |
+| `PUBLIC_ORIGIN` | 公開Origin。例：`https://ahd.example.com`。パスなし |
+| `RP_ID` | パスキー用ドメイン。例：`ahd.example.com` |
 | `SESSION_TTL_DAYS` | 固定有効日数。正の整数、`7`。アクセスによる延長なし |
 | `TIMEZONE_OFFSET` | 自動受け取りの固定UTCオフセット。`+09:00`。夏時間非対応 |
 
@@ -42,8 +42,8 @@ DB接続先・コンテナ内待受・UI配置先はCompose／イメージ側で
 HTTPSリバースプロキシから `http://127.0.0.1:8080` へパスを保持して転送します。UI・APIは同一Originで、サブパス設置は非対応です。
 
 ```dotenv
-PUBLIC_ORIGIN="https://agd.example.com"
-RP_ID="agd.example.com"
+PUBLIC_ORIGIN="https://ahd.example.com"
+RP_ID="ahd.example.com"
 ```
 
 ローカル利用時は `PUBLIC_ORIGIN="http://localhost:8080"`、`RP_ID="localhost"` に変更します。IPリテラルやlocalhost以外のHTTPは使用できません。

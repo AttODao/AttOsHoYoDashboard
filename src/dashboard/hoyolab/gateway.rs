@@ -1,6 +1,6 @@
 //! Typed upstream boundary; the same business workflows are tested with a local mock.
 use super::credentials::Credentials;
-use attosgameapi::{
+use attoshoyodashboard::{
     game::{GameKind, Genshin, Starrail},
     hoyolab::{HoyolabClient, RecordAccount, Result},
     models::account::Account,
@@ -108,8 +108,8 @@ pub(in crate::dashboard) fn game(raw: &str) -> crate::dashboard::error::Result<G
     }
 }
 
-pub(in crate::dashboard) fn error_code(error: &attosgameapi::hoyolab::Error) -> String {
-    use attosgameapi::hoyolab::Error::*;
+pub(in crate::dashboard) fn error_code(error: &attoshoyodashboard::hoyolab::Error) -> String {
+    use attoshoyodashboard::hoyolab::Error::*;
     match error {
         Upstream { code } => format!("upstream:{code}"),
         Http(status) => format!("http:{status}"),
@@ -117,19 +117,19 @@ pub(in crate::dashboard) fn error_code(error: &attosgameapi::hoyolab::Error) -> 
         _ => "upstream_data".into(),
     }
 }
-pub(in crate::dashboard) fn cookie_invalid(error: &attosgameapi::hoyolab::Error) -> bool {
+pub(in crate::dashboard) fn cookie_invalid(error: &attoshoyodashboard::hoyolab::Error) -> bool {
     matches!(
         error,
-        attosgameapi::hoyolab::Error::Upstream {
+        attoshoyodashboard::hoyolab::Error::Upstream {
             code: -100 | 10001 | -1071
         }
     )
 }
-pub(in crate::dashboard) fn transient(error: &attosgameapi::hoyolab::Error) -> bool {
+pub(in crate::dashboard) fn transient(error: &attoshoyodashboard::hoyolab::Error) -> bool {
     matches!(
         error,
-        attosgameapi::hoyolab::Error::Network
-            | attosgameapi::hoyolab::Error::ResponseRead
-            | attosgameapi::hoyolab::Error::Http(500..=599)
+        attoshoyodashboard::hoyolab::Error::Network
+            | attoshoyodashboard::hoyolab::Error::ResponseRead
+            | attoshoyodashboard::hoyolab::Error::Http(500..=599)
     )
 }

@@ -59,8 +59,8 @@ impl Preferences {
         #[cfg(target_arch = "wasm32")]
         if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
             return Self::from_saved(
-                storage.get_item("agd-language").ok().flatten().as_deref(),
-                storage.get_item("agd-theme").ok().flatten().as_deref(),
+                storage.get_item("ahd-language").ok().flatten().as_deref(),
+                storage.get_item("ahd-theme").ok().flatten().as_deref(),
             );
         }
         Self::default()
@@ -78,8 +78,8 @@ impl Preferences {
             }
             if let Ok(Some(storage)) = window.local_storage() {
                 // Only non-sensitive preferences persist; never credentials or reveal state.
-                let _ = storage.set_item("agd-language", self.language_code());
-                let _ = storage.set_item("agd-theme", self.theme_code());
+                let _ = storage.set_item("ahd-language", self.language_code());
+                let _ = storage.set_item("ahd-theme", self.theme_code());
             }
         }
     }

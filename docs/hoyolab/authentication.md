@@ -19,7 +19,7 @@ HOYOLAB_COOKIE="ltuid_v2=<HoYoLAB UID>; ltoken_v2=<認証トークン>"
 
 `.env` はGit管理しない。Cookieの実値を出力・共有しないこと。
 
-この2項目の案内は既存ゲームAPIクライアントの入力形式であり、Dashboardの所有UID証明やaccount identity APIの最小条件を実証したものではない。`getUserAccountInfoByLToken`の公開参照実装は`ltmid_v2`を含む3項目を送るが、MIDの必須性・tokenと返却UIDの拘束は未確認。[通常利用の承認と実証の限界](../plans/AttOsGameDashboard.md#2-通常利用の承認と実証の限界)を参照し、Cookie内の`ltuid_v2`だけを本人確認に使わない。
+この2項目の案内は既存ゲームAPIクライアントの入力形式であり、Dashboardの所有UID証明やaccount identity APIの最小条件を実証したものではない。`getUserAccountInfoByLToken`の公開参照実装は`ltmid_v2`を含む3項目を送るが、MIDの必須性・tokenと返却UIDの拘束は未確認。[通常利用の承認と実証の限界](../plans/AttOsHoYoDashboard.md#2-通常利用の承認と実証の限界)を参照し、Cookie内の`ltuid_v2`だけを本人確認に使わない。
 
 ### 互換Cookieと任意Cookie
 

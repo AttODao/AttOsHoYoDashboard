@@ -11,7 +11,7 @@ use crate::dashboard::{
         store::CookieStore,
     },
 };
-use attosgameapi::{
+use attoshoyodashboard::{
     game::GameKind,
     hoyolab::{RecordAccount, Result as UpstreamResult},
     models::account::Account,

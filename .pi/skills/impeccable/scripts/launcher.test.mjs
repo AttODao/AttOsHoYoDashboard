@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {spawn, execFileSync} from 'node:child_process';
 
-const root=await mkdtemp(path.join(os.tmpdir(),'agd-impeccable-'));
+const root=await mkdtemp(path.join(os.tmpdir(),'ahd-impeccable-'));
 const scripts=path.join(root,'.pi/skills/impeccable/scripts');
 const bin=path.join(root,'bin');
 const engine='#!/bin/sh\nprintf "impeccable-engine synthetic\\n"\n';

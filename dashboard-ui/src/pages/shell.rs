@@ -106,7 +106,7 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
     let me = state.read().me.clone();
     let ready = state.read().ready();
     use_modal(
-        "agd-menu".to_owned(),
+        "ahd-menu".to_owned(),
         open() && ready,
         EventHandler::new(move |_| open.set(false)),
     );
@@ -122,8 +122,8 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
                     if let Some(me) = me.clone() {
                         span { class: "muted account-name", "{me.username}" }
                         if ready {
-                            button { id: "agd-menu-trigger", class: "menu", r#type: "button", "aria-label": ui.text("shell.open_menu"),
-                                "aria-controls": "agd-menu", "aria-expanded": open().to_string(), onclick: move |_| open.set(true), Icon { name: "menu" }
+                            button { id: "ahd-menu-trigger", class: "menu", r#type: "button", "aria-label": ui.text("shell.open_menu"),
+                                "aria-controls": "ahd-menu", "aria-expanded": open().to_string(), onclick: move |_| open.set(true), Icon { name: "menu" }
                             }
                         } else {
                             button { r#type: "button", onclick: move |_| { spawn_action(state, move |generation| async move { logout(state, generation).await; }); }, {ui.text("shell.sign_out")} }
@@ -133,7 +133,7 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
             }
         }
         if ready {
-            dialog { id: "agd-menu", class: "menu-drawer", "aria-label": ui.text("shell.account_menu"),
+            dialog { id: "ahd-menu", class: "menu-drawer", "aria-label": ui.text("shell.account_menu"),
                 div { class: "drawer-heading", h2 { {ui.text("shell.menu")} }
                     button { class: "icon-button", r#type: "button", "aria-label": ui.text("shell.close_menu"), onclick: move |_| open.set(false), Icon { name: "close" } }
                 }

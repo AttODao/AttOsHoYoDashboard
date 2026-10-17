@@ -13,7 +13,7 @@ pub(crate) enum Error {
     #[error("initial password and Cookie setup required")]
     InitialSetupRequired,
     #[error("HoYoLAB request failed")]
-    Upstream(#[from] attosgameapi::hoyolab::Error),
+    Upstream(#[from] attoshoyodashboard::hoyolab::Error),
     #[error("resource not found")]
     NotFound,
     #[error("username already exists")]

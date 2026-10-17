@@ -1,9 +1,9 @@
-# AGD production visual contract
+# AHD production visual contract
 
 Surface mode: **Operate**。現在の実装とユーザー承認済みR3を維持する。実配色・サイズ・レスポンシブの正本は `dashboard-ui/assets/dashboard.css`。元のデザイン意図は `docs/ui-design/DESIGN.md`、実装記録は `docs/ui-design/production-r3.md`。
 
 - 黒いcanvas／surfaceとマゼンタ・シアンの操作色。原神はミント、スターレイルはラベンダー。lightテーマも維持する。
-- AGDロゴと主なリソース数値は自己ホストのOrbitron、日本語本文はNoto Sans JP。全回復の日時もOrbitron、宝銭上限の日時は本文フォント。日時はブラウザのローカル時刻で`10/17 21:38 JST`のような月日・24時間・タイムゾーン表記にする。
+- AHDロゴと主なリソース数値は自己ホストのOrbitron、日本語本文はNoto Sans JP。全回復の日時もOrbitron、宝銭上限の日時は本文フォント。日時はブラウザのローカル時刻で`10/17 21:38 JST`のような月日・24時間・タイムゾーン表記にする。
 - Desktopは2ゲームの等幅カード。900px以下はゲームタブ、600px以下は狭幅レイアウト。長い名前・日時・管理操作が画面幅を壊さないこと。
 - 上部AGDアイコン＋ロゴはDashboardへ戻るリンク。ただし未完了の初期設定ゲートは維持する。
 - 右側native dialogメニュー。設定・管理者設定・ログアウトと外部HoYoLABリンクを置く。アプリ内の連携設定は設定タブに残す。言語はラベル付きnative select、テーマはswitch。フォーカスでレイアウトを動かさず、明示的な閉じる・Escape・フォーカス復帰を保つ。

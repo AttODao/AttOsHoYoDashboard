@@ -3,7 +3,7 @@ name = "attos-dashboard-ui"
 default_platform = "web"
 
 [web.app]
-title = "AGD"
+title = "AHD"
 
 [web.watcher]
 reload_html = true

@@ -8,7 +8,7 @@ use crate::dashboard::{
         gateway::{self, DailyState, Gateway},
     },
 };
-use attosgameapi::game::GameKind;
+use attoshoyodashboard::game::GameKind;
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::{ConnectionTrait, EntityTrait, Set, sea_query::OnConflict};
 use serde_json::{Value, json};

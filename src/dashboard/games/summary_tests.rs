@@ -1,5 +1,5 @@
 use super::summary::summarize;
-use attosgameapi::game::{GameKind, Genshin, Starrail};
+use attoshoyodashboard::game::{GameKind, Genshin, Starrail};
 use chrono::{TimeZone, Utc};
 use serde_json::{Value, json};
 
@@ -22,7 +22,7 @@ fn typed_genshin_note_preserves_explicit_names_and_locations_without_inventing_l
             item[key] = value.clone();
         }
     }
-    let note: attosgameapi::models::genshin::DailyNote = serde_json::from_value(raw).unwrap();
+    let note: attoshoyodashboard::models::genshin::DailyNote = serde_json::from_value(raw).unwrap();
     let summary = summarize(
         GameKind::Genshin(Genshin),
         Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap(),
@@ -41,7 +41,7 @@ fn typed_genshin_note_preserves_explicit_names_and_locations_without_inventing_l
 
 #[test]
 fn typed_starrail_note_reaches_summary_with_assignment_icon_name_status_and_numeric_time() {
-    let note: attosgameapi::models::starrail::DailyNote = serde_json::from_str(include_str!(
+    let note: attoshoyodashboard::models::starrail::DailyNote = serde_json::from_str(include_str!(
         "../../../tests/fixtures/hoyolab/starrail-note.json"
     ))
     .unwrap();

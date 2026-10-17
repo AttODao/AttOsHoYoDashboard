@@ -4,10 +4,10 @@ default-members = ["."]
 resolver = "3"
 
 [package]
-name = "attosgameapi"
+name = "attoshoyodashboard"
 version = "0.1.0"
 edition = "2024"
-default-run = "attosgameapi"
+default-run = "attoshoyodashboard"
 
 [dependencies]
 argon2 = "0.5"

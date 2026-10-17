@@ -3,7 +3,7 @@ use super::super::test_support::{
 };
 use super::*;
 use crate::dashboard::{hoyolab::gateway::SignState, test_support::TestDatabase};
-use attosgameapi::hoyolab::{Error as UpstreamError, Result as UpstreamResult};
+use attoshoyodashboard::hoyolab::{Error as UpstreamError, Result as UpstreamResult};
 use sea_orm::{ActiveModelTrait, IntoActiveModel, TransactionTrait};
 
 async fn cache(

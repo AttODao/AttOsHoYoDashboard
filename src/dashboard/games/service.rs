@@ -8,7 +8,7 @@ use crate::dashboard::{
         store::CookieStore,
     },
 };
-use attosgameapi::hoyolab::RecordAccount;
+use attoshoyodashboard::hoyolab::RecordAccount;
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::{
     ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set, TransactionTrait, sea_query::OnConflict,
@@ -191,7 +191,7 @@ impl<G: Gateway> Games<G> {
                     self.store.mark_cookie_invalid(actor.user.id).await?;
                 } else if matches!(
                     error,
-                    attosgameapi::hoyolab::Error::Upstream { code: 10102 }
+                    attoshoyodashboard::hoyolab::Error::Upstream { code: 10102 }
                 ) {
                     let tx = self.store.db.begin().await?;
                     self.store.actor_locked(&tx, actor).await?;

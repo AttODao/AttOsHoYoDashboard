@@ -382,7 +382,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "attosgameapi"
+name = "attoshoyodashboard"
 version = "0.1.0"
 dependencies = [
  "argon2",

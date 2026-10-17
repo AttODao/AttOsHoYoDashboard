@@ -32,7 +32,7 @@ impl Drop for Sandbox {
 
 #[test]
 fn dashboard_help_does_not_require_a_database_or_credentials() {
-    let output = Sandbox::new().run(env!("CARGO_BIN_EXE_attosgameapi"), &["--help"]);
+    let output = Sandbox::new().run(env!("CARGO_BIN_EXE_attoshoyodashboard"), &["--help"]);
     assert!(output.status.success());
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.contains("bootstrap-admin USERNAME"));
@@ -42,7 +42,7 @@ fn dashboard_help_does_not_require_a_database_or_credentials() {
 #[test]
 fn invalid_commands_fail_before_database_access_without_echoing_arguments() {
     let output = Sandbox::new().run(
-        env!("CARGO_BIN_EXE_attosgameapi"),
+        env!("CARGO_BIN_EXE_attoshoyodashboard"),
         &["synthetic-sensitive-option"],
     );
     assert!(!output.status.success());

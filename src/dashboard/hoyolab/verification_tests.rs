@@ -13,7 +13,7 @@ use crate::dashboard::{
     error::Error,
     test_support::TestDatabase,
 };
-use attosgameapi::{
+use attoshoyodashboard::{
     game::GameKind,
     hoyolab::{RecordAccount, Result as UpstreamResult},
     models::account::Account,

@@ -18,7 +18,7 @@ services:
 
   app:
     build: .
-    image: attos-game-dashboard:local
+    image: attos-hoyo-dashboard:local
     environment:
       DB_HOST: db
       DB_PORT: "5432"
@@ -29,8 +29,8 @@ services:
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
       HOYOLAB_COOKIE_KEY: ${HOYOLAB_COOKIE_KEY:?Set HOYOLAB_COOKIE_KEY in .env}
       BIND_ADDR: 0.0.0.0:8080
-      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://agd.example.com}
-      RP_ID: ${RP_ID:-agd.example.com}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://ahd.example.com}
+      RP_ID: ${RP_ID:-ahd.example.com}
       SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-7}
       TIMEZONE_OFFSET: ${TIMEZONE_OFFSET:-+09:00}
     ports:

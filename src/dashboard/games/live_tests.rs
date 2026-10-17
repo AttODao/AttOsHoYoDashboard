@@ -6,7 +6,7 @@ use crate::dashboard::{
     db::entities::{game_account, hoyolab_account, user},
     hoyolab::gateway::{self, Gateway, LiveGateway},
 };
-use attosgameapi::hoyolab::RecordAccount;
+use attoshoyodashboard::hoyolab::RecordAccount;
 use chrono::Utc;
 use sea_orm::{
     ColumnTrait, ConnectOptions, ConnectionTrait, Database, EntityTrait, QueryFilter, QuerySelect,

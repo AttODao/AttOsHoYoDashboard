@@ -1,4 +1,4 @@
-use attosgameapi::game::GameKind;
+use attoshoyodashboard::game::GameKind;
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{Map, Value};
 

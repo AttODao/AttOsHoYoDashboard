@@ -14,7 +14,7 @@ let
       node --env-file="$DEVENV_ROOT/.env.test" -e '
         const [shell, script, mode, binary] = process.argv.slice(1);
         process.execve(shell, [shell, script, mode, binary], process.env);
-      ' "${pkgs.bash}/bin/bash" "$DEVENV_ROOT/scripts/launch-server.sh" ${mode} "$DEVENV_ROOT/target/debug/attosgameapi"
+      ' "${pkgs.bash}/bin/bash" "$DEVENV_ROOT/scripts/launch-server.sh" ${mode} "$DEVENV_ROOT/target/debug/attoshoyodashboard"
   '';
 in
 {
@@ -22,7 +22,7 @@ in
     set -e
     cd "$DEVENV_ROOT"
     build-ui
-    cargo build --locked --bin attosgameapi
+    cargo build --locked --bin attoshoyodashboard
     exec ${pkgs.devenv}/bin/devenv --no-tui --profile launch-server up
   '';
 

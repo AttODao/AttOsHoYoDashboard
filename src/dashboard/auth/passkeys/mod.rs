@@ -71,7 +71,7 @@ impl Passkeys {
             tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
                 WebauthnBuilder::new(rp_id, &origin).and_then(|builder| {
                     builder
-                        .rp_name("AttOsGameDashboard")
+                        .rp_name("AttOsHoYoDashboard")
                         .timeout(CHALLENGE_TTL)
                         .build()
                 })
