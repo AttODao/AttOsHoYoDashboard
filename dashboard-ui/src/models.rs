@@ -109,6 +109,16 @@ pub enum ExpeditionDuration {
     Seconds(i64),
 }
 
+impl ExpeditionDuration {
+    /// Whole seconds when upstream reports a number or a decimal string.
+    pub fn seconds(&self) -> Option<i64> {
+        match self {
+            Self::Text(text) => text.trim().parse().ok(),
+            Self::Seconds(seconds) => Some(*seconds),
+        }
+    }
+}
+
 impl std::fmt::Display for ExpeditionDuration {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -262,8 +272,10 @@ mod tests {
                     .or(expedition.remaining_time)
                     .unwrap();
                 assert_eq!(duration.to_string(), expected);
+                assert_eq!(duration.seconds(), Some(120));
             }
         }
+        assert_eq!(ExpeditionDuration::Text("01:02:03".into()).seconds(), None);
     }
 
     #[test]

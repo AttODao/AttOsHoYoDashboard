@@ -87,6 +87,7 @@
   "dashboard.expedition_number": "Expedition {number}",
   "dashboard.unknown": "Unknown",
   "dashboard.remaining": "Remaining",
+  "dashboard.hours_minutes": "{hours}h {minutes}m",
   "dashboard.not_reported": "Not reported",
   "dashboard.genshin_impact": "Genshin Impact",
   "dashboard.honkai_star_rail": "Honkai: Star Rail",

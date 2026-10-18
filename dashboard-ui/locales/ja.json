@@ -87,6 +87,7 @@
   "dashboard.expedition_number": "派遣 {number}",
   "dashboard.unknown": "不明",
   "dashboard.remaining": "残り",
+  "dashboard.hours_minutes": "{hours}時間{minutes}分",
   "dashboard.not_reported": "未取得",
   "dashboard.genshin_impact": "原神",
   "dashboard.honkai_star_rail": "崩壊：スターレイル",

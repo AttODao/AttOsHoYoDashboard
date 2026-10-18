@@ -1,7 +1,7 @@
 use super::common::{Icon, Metric, focus_element};
 use crate::app::actions::{spawn_action, spawn_root};
 use crate::app::data::{load_game_status, save_reward_setting};
-use crate::app::display::{compact_datetime, count_pair};
+use crate::app::display::{compact_datetime, count_pair, hours_minutes};
 use crate::app::preferences::{Preferences, use_preferences};
 use crate::app::state::{AppState, DASHBOARD_GAMES, Page, set_page};
 use crate::models::{DailySummary, Expedition, GameStatus};
@@ -372,7 +372,7 @@ fn ExpeditionList(expeditions: Option<Vec<Expedition>>) -> Element {
                                 label: expedition_label(expedition.name.as_deref(), index, ui),
                             }
                             span { {expedition.status.as_deref().map(|value| model_status(value, ui)).unwrap_or(ui.text("dashboard.unknown"))} }
-                            span { {ui.text("dashboard.remaining")} ": " {expedition.remained_time.or(expedition.remaining_time).map(|duration| duration.to_string()).unwrap_or_else(|| ui.text("dashboard.not_reported").to_owned())} }
+                            span { {ui.text("dashboard.remaining")} ": " {expedition.remained_time.or(expedition.remaining_time).map(|duration| duration.seconds().map(|seconds| hours_minutes(seconds, ui)).unwrap_or_else(|| duration.to_string())).unwrap_or_else(|| ui.text("dashboard.not_reported").to_owned())} }
                         }
                     }
                 }

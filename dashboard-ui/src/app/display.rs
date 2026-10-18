@@ -1,8 +1,22 @@
+use super::preferences::Preferences;
+
 pub(super) fn count_pair(current: i64, max: Option<i64>) -> String {
     match max {
         Some(max) => format!("{current}/{max}"),
         None => current.to_string(),
     }
+}
+
+/// Remaining seconds as hours and minutes, rounding up so unfinished work never shows zero.
+pub(super) fn hours_minutes(seconds: i64, ui: Preferences) -> String {
+    let minutes = seconds.max(0).unsigned_abs().div_ceil(60);
+    ui.format(
+        "dashboard.hours_minutes",
+        &[
+            ("hours", &(minutes / 60).to_string()),
+            ("minutes", &format!("{:02}", minutes % 60)),
+        ],
+    )
 }
 
 /// Compact month/day and 24-hour browser-local time, with an explicit timezone.
@@ -44,6 +58,22 @@ mod tests {
         assert_eq!(compact_datetime(None), None);
         assert_eq!(compact_datetime(Some("")), None);
         assert_eq!(compact_datetime(Some("  ")), None);
+    }
+
+    #[test]
+    fn remaining_seconds_render_as_hours_and_minutes() {
+        let ui = Preferences::default();
+        assert_eq!(hours_minutes(0, ui), "0時間00分");
+        assert_eq!(hours_minutes(-5, ui), "0時間00分");
+        assert_eq!(hours_minutes(1, ui), "0時間01分");
+        assert_eq!(hours_minutes(509, ui), "0時間09分");
+        assert_eq!(hours_minutes(72_000, ui), "20時間00分");
+        assert_eq!(hours_minutes(3_723, ui), "1時間03分");
+        let english = Preferences {
+            language: crate::i18n::Language::English,
+            ..ui
+        };
+        assert_eq!(hours_minutes(3_723, english), "1h 03m");
     }
 
     #[test]
