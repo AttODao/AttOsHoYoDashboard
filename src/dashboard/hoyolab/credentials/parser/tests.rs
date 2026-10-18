@@ -25,7 +25,9 @@ fn parse_enforces_cookie_size_ascii_controls_and_pair_syntax() {
         "ltoken=abc\r\nInjected: yes; ltuid=1",
         "ltoken=abc\u{7f}; ltuid=1",
         "ltoken; ltuid=1",
-        "ltoken=abc; ; ltuid=1",
+        "Cookie:",
+        "Set-Cookie: ltoken=abc; ltuid=1",
+        "ltoken=abc;\nltuid=1",
         "ltoken=abc; bad name=value; ltuid=1",
     ] {
         assert!(
@@ -39,6 +41,8 @@ fn parse_enforces_cookie_size_ascii_controls_and_pair_syntax() {
 fn parse_rejects_duplicates_alias_conflicts_and_primary_family_mixing() {
     for raw in [
         "ltoken=fake; ltuid=1; ltuid=1",
+        "ltoken=fake; ltoken=fake; ltuid=1",
+        "ltoken_v2=fake; ltuid_v2=1; ltmid_v2=mid; ltmid_v2=mid",
         "ltoken=fake; ltuid=1; account_id=2",
         "ltoken_v2=fake; ltuid_v2=1; ltmid_v2=mid; account_mid_v2=other",
         "ltoken=fake; ltoken_v2=fake2; ltuid=1; ltuid_v2=1",
@@ -64,6 +68,22 @@ fn parse_drops_unrelated_and_nonselected_token_cookies() {
         format!("ltoken={LEGACY_TOKEN}; ltuid=123")
     );
     assert_eq!(credentials.claimed_uid(), "123");
+}
+
+#[test]
+fn parse_accepts_pasted_request_header_lines() {
+    let expected = format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}");
+    for raw in [
+        format!("Cookie: ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}"),
+        format!("cookie:ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID};"),
+        format!(
+            "  COOKIE: _ga=GA1; mi18nLang=ja-jp; mi18nLang=en-us; ltoken_v2={V2_TOKEN};; ltuid_v2=42; ltmid_v2={MID}; \r\n"
+        ),
+    ] {
+        let credentials = Credentials::parse(&raw).expect("parse pasted Cookie header");
+        assert_eq!(credentials.as_str(), expected);
+        assert_eq!(credentials.claimed_uid(), "42");
+    }
 }
 
 #[test]

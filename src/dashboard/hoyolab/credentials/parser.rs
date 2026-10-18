@@ -8,6 +8,7 @@ mod tests;
 
 impl Credentials {
     pub(in crate::dashboard) fn parse(raw: &str) -> Result<Self> {
+        let raw = strip_header_name(raw.trim());
         if raw.is_empty() || raw.len() > MAX_COOKIE_LEN {
             return Err(Error::Invalid("Cookie header must contain 1 to 8192 bytes"));
         }
@@ -39,17 +40,46 @@ impl Credentials {
     }
 }
 
+const COOKIE_HEADER_NAME: &str = "cookie:";
+
+/// Accepts a pasted `Cookie: ...` request-header line as well as its bare value.
+fn strip_header_name(raw: &str) -> &str {
+    match raw.split_at_checked(COOKIE_HEADER_NAME.len()) {
+        Some((name, value)) if name.eq_ignore_ascii_case(COOKIE_HEADER_NAME) => value.trim_start(),
+        _ => raw,
+    }
+}
+
+/// Names whose values select or bind credentials; any repetition is ambiguous.
+const CREDENTIAL_NAMES: [&str; 10] = [
+    "ltoken",
+    "ltuid",
+    "account_id",
+    "ltoken_v2",
+    "ltuid_v2",
+    "account_id_v2",
+    "ltmid_v2",
+    "account_mid_v2",
+    "stuid",
+    "stuid_v2",
+];
+
 fn parse_pairs(raw: &str) -> Result<HashMap<&str, &str>> {
     let mut pairs = HashMap::new();
     for part in raw.split(';') {
         let part = part.trim_matches(' ');
+        // Browser header copies may end with `;`; empty segments carry no cookie.
+        if part.is_empty() {
+            continue;
+        }
         let (name, value) = part
             .split_once('=')
             .ok_or(Error::Invalid("Cookie header contains a malformed pair"))?;
         if name.is_empty() || !name.bytes().all(is_cookie_name_byte) {
             return Err(Error::Invalid("Cookie header contains an invalid name"));
         }
-        if pairs.insert(name, value).is_some() {
+        // Browsers may repeat unrelated cookies from different paths or domains.
+        if pairs.insert(name, value).is_some() && CREDENTIAL_NAMES.contains(&name) {
             return Err(Error::Invalid("Cookie header contains duplicate names"));
         }
     }
