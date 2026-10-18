@@ -1,4 +1,4 @@
--- Production-only PostgreSQL initialization; runs once on an empty Compose volume.
+-- Production-only PostgreSQL initialization for the README Compose example; runs once on an empty volume.
 \set ON_ERROR_STOP on
 -- Never put credentials into statement/error logs or command-line arguments.
 SET log_statement = 'none';

@@ -5,7 +5,7 @@ This document is the deployment and recovery contract for the Dashboard web sess
 ## Before serving
 
 1. Provision a dedicated PostgreSQL database.
-2. Generate `HOYOLAB_COOKIE_KEY` outside the repository as 32 random bytes encoded as 64 hex characters. Keep it in secret storage, not in `.env.example`, shell history, logs, or commits.
+2. Generate `HOYOLAB_COOKIE_KEY` outside the repository as 32 random bytes encoded as 64 hex characters. Keep it in secret storage, not in repository files, shell history, logs, or commits.
 3. Configure `DATABASE_URL`, `PUBLIC_ORIGIN`, optional `RP_ID`, `BIND_ADDR`, `SESSION_TTL_DAYS`, `TIMEZONE_OFFSET`, `HOYOLAB_COOKIE_KEY`, and optional `DASHBOARD_UI_DIR` in the process environment or private deployment secret store.
 4. Build the Dioxus Web UI with `wasm32-unknown-unknown` and a compatible `dx` 0.7.10 CLI. Install via `cargo install dioxus-cli --version 0.7.10 --locked` or use an official matching prebuilt verified against upstream checksums.
 5. Run migrations before starting the server:

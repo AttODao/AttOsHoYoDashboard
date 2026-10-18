@@ -4,17 +4,74 @@
 
 ## 導入
 
-Docker Compose v2を使用します。`compose.yaml` はアプリ＋PostgreSQLの構成で、アプリの公開先は `127.0.0.1:8080`、DBは非公開です。**アプリは1インスタンス限定**です。
+Docker Compose v2とリリースイメージ `git.attodao.cc/attodao/attoshoyodashboard:latest` を使用します。構成はアプリ＋PostgreSQLで、アプリの公開先は `127.0.0.1:8080`、DBは非公開です。**アプリは1インスタンス限定**です。
 
-```sh
-cp .env.example .env
-chmod 600 .env
+### Composeの書き方
+
+任意のディレクトリに次の構成を用意します。`init-db.sql` はこのリポジトリの [`docker/init-db.sql`](docker/init-db.sql) をコピーします（空のDBボリュームの初回起動時だけ、非管理者のアプリ用ロールとDBを作成します）。
+
+```text
+.
+├── compose.yaml
+└── init-db.sql
 ```
 
-`.env` を設定して起動します。
+`compose.yaml` の例です。`<...>` の値を置き換えてください。秘密値を直接書くため `chmod 600 compose.yaml` とし、Gitなどには含めないでください。値に `$` を含める場合は `$$` と書きます。
+
+```yaml
+services:
+  db:
+    image: postgres:18-alpine3.23
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: "<DB管理者パスワード>"
+      POSTGRES_DB: postgres
+      DB_NAME: attos_dashboard
+      DB_USER: attos_dashboard
+      DB_PASSWORD: "<アプリ用DBパスワード>"
+    volumes:
+      - db-data:/var/lib/postgresql
+      - ./init-db.sql:/docker-entrypoint-initdb.d/01-app.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  app:
+    image: git.attodao.cc/attodao/attoshoyodashboard:latest
+    restart: unless-stopped
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: attos_dashboard
+      DB_USER: attos_dashboard
+      DB_PASSWORD: "<アプリ用DBパスワード>"
+      INITIAL_ADMIN_USERNAME: admin
+      INITIAL_ADMIN_PASSWORD: "<初期管理者の仮パスワード>"
+      HOYOLAB_COOKIE_KEY: "<openssl rand -hex 32 の出力>"
+      BIND_ADDR: 0.0.0.0:8080
+      PUBLIC_ORIGIN: https://ahd.example.com
+      RP_ID: ahd.example.com
+      SESSION_TTL_DAYS: "7"
+      TIMEZONE_OFFSET: "+09:00"
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:
+```
+
+- `db` と `app` の `DB_NAME`・`DB_USER`・`DB_PASSWORD` は同じ値にします。
+- `DB_HOST`・`DB_PORT`・`BIND_ADDR` はこの構成用の値で、通常は変更しません。UI配置先はイメージ側で設定済みです。
+
+起動します。
 
 ```sh
-docker compose up -d --build
+docker compose up -d
 curl --fail http://127.0.0.1:8080/health
 ```
 
@@ -24,9 +81,9 @@ curl --fail http://127.0.0.1:8080/health
 
 | 変数 | 用途・既定値 |
 | --- | --- |
-| `DB_NAME` / `DB_USER` | アプリ用DB／非管理者ロール。ともに `attos_dashboard` |
+| `DB_NAME` / `DB_USER` | アプリ用DB／非管理者ロール。例では `attos_dashboard` |
 | `DB_PASSWORD` | 必須。アプリ用DBパスワード |
-| `DB_ADMIN_PASSWORD` | 必須。DB管理者用。アプリ用とは別の値。アプリには渡さない |
+| `POSTGRES_PASSWORD`（`db`） | 必須。DB管理者用。アプリ用とは別の強固な値。アプリには渡さない |
 | `INITIAL_ADMIN_USERNAME` | 初期管理者名。`admin` |
 | `INITIAL_ADMIN_PASSWORD` | 初回必須の仮パスワード。12〜256 UTF-8バイト |
 | `HOYOLAB_COOKIE_KEY` | 必須。Cookie暗号化鍵。乱数32バイトの64桁hex（`openssl rand -hex 32`） |
@@ -35,18 +92,13 @@ curl --fail http://127.0.0.1:8080/health
 | `SESSION_TTL_DAYS` | 固定有効日数。正の整数、`7`。アクセスによる延長なし |
 | `TIMEZONE_OFFSET` | 自動受け取りの固定UTCオフセット。`+09:00`。夏時間非対応 |
 
-DB接続先・コンテナ内待受・UI配置先はCompose／イメージ側で設定済みです。HoYoLAB Cookieは `.env` ではなく画面から登録します。
+HoYoLAB Cookieは環境変数ではなく画面から登録します。
 
 ### 公開先
 
 HTTPSリバースプロキシから `http://127.0.0.1:8080` へパスを保持して転送します。UI・APIは同一Originで、サブパス設置は非対応です。
 
-```dotenv
-PUBLIC_ORIGIN="https://ahd.example.com"
-RP_ID="ahd.example.com"
-```
-
-ローカル利用時は `PUBLIC_ORIGIN="http://localhost:8080"`、`RP_ID="localhost"` に変更します。IPリテラルやlocalhost以外のHTTPは使用できません。
+ローカル利用時は `PUBLIC_ORIGIN: http://localhost:8080`、`RP_ID: localhost` に変更します。IPリテラルやlocalhost以外のHTTPは使用できません。
 
 | パス | 内容 |
 | --- | --- |
@@ -93,9 +145,9 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 ## 運用上の制約
 
-- 永続データは `db-data` ボリュームに保存します。`DB_NAME`・`DB_USER`・DBパスワードは初回初期化用で、既存DBには `.env` の変更だけでは反映されません。
+- 永続データは `db-data` ボリュームに保存します。`DB_NAME`・`DB_USER`・DBパスワードは初回初期化用で、既存DBには `compose.yaml` の変更だけでは反映されません。
 - **DBと対応する `HOYOLAB_COOKIE_KEY` をセットでバックアップ**してください。鍵の変更・再暗号化ツールはありません。保存済みCookieがある状態で鍵を変更すると復号できません。
-- 更新はバックアップ後に `docker compose up -d --build`。起動時のDB更新を伴うため、ロールバックにDB復元が必要になる場合があります。
+- 更新はバックアップ後に `docker compose pull && docker compose up -d`。起動時のDB更新を伴うため、ロールバックにDB復元が必要になる場合があります。
 
 ## リリースイメージ
 
