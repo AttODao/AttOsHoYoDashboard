@@ -45,7 +45,7 @@ flowchart TD
 - 1 Dashboardユーザーにつき HoYoLABアカウントは1個。追加連携、別UIDへの置換、独立unlinkは提供しない。
 - verified HoYoLAB UID は全ユーザーで一意。同一UIDのCookie更新だけが設定・履歴・game visibilityを維持して許可される。
 - Cookie claimやrolesのgame UIDだけを本人HoYoLAB UIDの証明にしない。候補の `account_identity()` と `community_identity()` は実装済みだが、token-to-UID binding とroles principal一致の本番証拠ではない。
-- Cookie parserはlegacy/v2の正規化保存に対応する。ブラウザからコピーした `Cookie: ...` ヘッダー行、末尾や連続の `;`、認証に関係しないCookie名の重複も受け付ける（認証系Cookie名の重複は拒否）。draft verification pathは現在 v2 ltoken credential だけを受け入れる。MIDが本当に不要かは未実証で、`ltuid`+`ltoken`だけで十分とは書かない。
+- Cookie parserはlegacy/v2の正規化保存に対応する。ブラウザからコピーした `Cookie: ...` ヘッダー行を受け付け、空・値なし・不正な名前の要素は無視する。有効な `ltoken_v2` と `ltuid_v2` が各1つあれば、旧形式Cookieや他のUID/MID aliasの重複・不一致に関係なく受け付ける（MIDは使えるものがあれば保存）。draft verification pathは現在 v2 ltoken credential だけを受け入れる。MIDが本当に不要かは未実証で、`ltuid`+`ltoken`だけで十分とは書かない。
 - Cookie平文はAPIで返さず、ownerと検証済みUID contextに束縛してAES-256-GCMで保存する。key/AAD mismatchや改竄はfail closed。ブラウザUIもlocalStorageに秘密を保存せず、same-origin credentialsでAPIを呼ぶ。
 - roles syncで見つかった新ゲームUIDはhidden by default。未検出UIDは管理用に保持し、取得・表示しない。再検出時は以前のvisibilityを復元する。
 

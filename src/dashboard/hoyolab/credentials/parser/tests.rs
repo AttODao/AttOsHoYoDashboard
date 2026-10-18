@@ -28,7 +28,6 @@ fn parse_enforces_cookie_size_ascii_controls_and_pair_syntax() {
         "Cookie:",
         "Set-Cookie: ltoken=abc; ltuid=1",
         "ltoken=abc;\nltuid=1",
-        "ltoken=abc; bad name=value; ltuid=1",
     ] {
         assert!(
             matches!(Credentials::parse(raw), Err(Error::Invalid(_))),
@@ -42,10 +41,11 @@ fn parse_rejects_duplicates_alias_conflicts_and_primary_family_mixing() {
     for raw in [
         "ltoken=fake; ltuid=1; ltuid=1",
         "ltoken=fake; ltoken=fake; ltuid=1",
-        "ltoken_v2=fake; ltuid_v2=1; ltmid_v2=mid; ltmid_v2=mid",
+        "ltoken_v2=fake; ltoken_v2=fake2; ltuid_v2=1",
+        "ltoken_v2=fake; ltuid_v2=1; ltuid_v2=2",
         "ltoken=fake; ltuid=1; account_id=2",
-        "ltoken_v2=fake; ltuid_v2=1; ltmid_v2=mid; account_mid_v2=other",
-        "ltoken=fake; ltoken_v2=fake2; ltuid=1; ltuid_v2=1",
+        "ltoken=fake; ltoken_v2=fake2; ltuid=1",
+        "ltoken_v2=fake; account_id_v2=1; ltuid=2",
         "ltoken=fake; ltuid=1; account_id_v2=2",
         "ltoken=fake; ltuid_v2=1",
         "ltoken_v2=fake; ltuid=1",
@@ -82,6 +82,42 @@ fn parse_accepts_pasted_request_header_lines() {
     ] {
         let credentials = Credentials::parse(&raw).expect("parse pasted Cookie header");
         assert_eq!(credentials.as_str(), expected);
+        assert_eq!(credentials.claimed_uid(), "42");
+    }
+}
+
+#[test]
+fn parse_accepts_v2_pair_despite_empty_malformed_or_conflicting_extras() {
+    for (raw, expected) in [
+        (
+            format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2=; account_mid_v2=; _ga="),
+            format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42"),
+        ),
+        (
+            format!("valueless; bad name=x; =x; ltoken_v2={V2_TOKEN}; ltuid_v2=42"),
+            format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42"),
+        ),
+        (
+            format!(
+                "ltoken=legacy; ltuid=7; account_id=8; account_id_v2=9; account_id_v2=10; ltoken_v2={V2_TOKEN}; ltuid_v2=42"
+            ),
+            format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42"),
+        ),
+        (
+            format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2=bad token; account_mid_v2={MID}"),
+            format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}"),
+        ),
+        (
+            format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2=a; ltmid_v2=b"),
+            format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42"),
+        ),
+        (
+            format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}; account_mid_v2=other"),
+            format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}"),
+        ),
+    ] {
+        let credentials = Credentials::parse(&raw).expect("complete v2 pair parses");
+        assert_eq!(credentials.as_str(), expected, "{raw:?}");
         assert_eq!(credentials.claimed_uid(), "42");
     }
 }
@@ -127,8 +163,6 @@ fn parse_rejects_placeholders_bad_uids_and_bad_credential_tokens() {
         "ltoken=bad\"token; ltuid=1",
         "ltoken=bad,token; ltuid=1",
         "ltoken=bad\\token; ltuid=1",
-        "ltoken_v2=fake; ltuid_v2=1; ltmid_v2=",
-        "ltoken_v2=fake; ltuid_v2=1; ltmid_v2=bad token",
     ] {
         assert!(
             matches!(Credentials::parse(raw), Err(Error::Invalid(_))),

@@ -1,7 +1,7 @@
 //! Cookie parsing and normalization, without ownership verification.
 use super::{Credentials, MAX_COOKIE_LEN};
 use crate::dashboard::error::{Error, Result};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[cfg(test)]
 mod tests;
@@ -20,9 +20,13 @@ impl Credentials {
             return Err(Error::Invalid("Cookie header must be printable ASCII"));
         }
 
-        let pairs = parse_pairs(raw)?;
-        let has_legacy_token = pairs.contains_key("ltoken");
-        let has_v2_token = pairs.contains_key("ltoken_v2");
+        let pairs = Pairs::parse(raw);
+        // A complete v2 pair is sufficient; every other cookie is optional context.
+        if pairs.contains("ltoken_v2") && pairs.contains("ltuid_v2") {
+            return build_v2(&pairs);
+        }
+        let has_legacy_token = pairs.contains("ltoken");
+        let has_v2_token = pairs.contains("ltoken_v2");
         if has_legacy_token && has_v2_token {
             return Err(Error::Invalid(
                 "Cookie header mixes HoYoLAB credential families",
@@ -50,44 +54,48 @@ fn strip_header_name(raw: &str) -> &str {
     }
 }
 
-/// Names whose values select or bind credentials; any repetition is ambiguous.
-const CREDENTIAL_NAMES: [&str; 10] = [
-    "ltoken",
-    "ltuid",
-    "account_id",
-    "ltoken_v2",
-    "ltuid_v2",
-    "account_id_v2",
-    "ltmid_v2",
-    "account_mid_v2",
-    "stuid",
-    "stuid_v2",
-];
-
-fn parse_pairs(raw: &str) -> Result<HashMap<&str, &str>> {
-    let mut pairs = HashMap::new();
-    for part in raw.split(';') {
-        let part = part.trim_matches(' ');
-        // Browser header copies may end with `;`; empty segments carry no cookie.
-        if part.is_empty() {
-            continue;
-        }
-        let (name, value) = part
-            .split_once('=')
-            .ok_or(Error::Invalid("Cookie header contains a malformed pair"))?;
-        if name.is_empty() || !name.bytes().all(is_cookie_name_byte) {
-            return Err(Error::Invalid("Cookie header contains an invalid name"));
-        }
-        // Browsers may repeat unrelated cookies from different paths or domains.
-        if pairs.insert(name, value).is_some() && CREDENTIAL_NAMES.contains(&name) {
-            return Err(Error::Invalid("Cookie header contains duplicate names"));
-        }
-    }
-    Ok(pairs)
+/// Non-empty cookies by name. Repeated names are kept aside and fail only when read.
+struct Pairs<'a> {
+    values: HashMap<&'a str, &'a str>,
+    duplicates: HashSet<&'a str>,
 }
 
-fn build_legacy(pairs: &HashMap<&str, &str>) -> Result<Credentials> {
-    let token = parse_cookie_token(pairs.get("ltoken").copied().ok_or(Error::Invalid(
+impl<'a> Pairs<'a> {
+    /// Browser header copies may contain empty, valueless, or unrelated malformed elements;
+    /// none of them can carry credentials, so they are skipped.
+    fn parse(raw: &'a str) -> Self {
+        let mut pairs = Self {
+            values: HashMap::new(),
+            duplicates: HashSet::new(),
+        };
+        for part in raw.split(';') {
+            let Some((name, value)) = part.trim_matches(' ').split_once('=') else {
+                continue;
+            };
+            if value.is_empty() || name.is_empty() || !name.bytes().all(is_cookie_name_byte) {
+                continue;
+            }
+            if pairs.values.insert(name, value).is_some() {
+                pairs.duplicates.insert(name);
+            }
+        }
+        pairs
+    }
+
+    fn contains(&self, name: &str) -> bool {
+        self.values.contains_key(name)
+    }
+
+    fn get(&self, name: &str) -> Result<Option<&'a str>> {
+        if self.duplicates.contains(name) {
+            return Err(Error::Invalid("Cookie header contains duplicate names"));
+        }
+        Ok(self.values.get(name).copied())
+    }
+}
+
+fn build_legacy(pairs: &Pairs) -> Result<Credentials> {
+    let token = parse_cookie_token(pairs.get("ltoken")?.ok_or(Error::Invalid(
         "Cookie header is missing HoYoLAB credentials",
     ))?)?;
     let claimed_uid = resolve_uid_aliases(pairs, &["ltuid", "account_id"])?;
@@ -99,13 +107,19 @@ fn build_legacy(pairs: &HashMap<&str, &str>) -> Result<Credentials> {
     })
 }
 
-fn build_v2(pairs: &HashMap<&str, &str>) -> Result<Credentials> {
-    let token = parse_cookie_token(pairs.get("ltoken_v2").copied().ok_or(Error::Invalid(
+fn build_v2(pairs: &Pairs) -> Result<Credentials> {
+    let token = parse_cookie_token(pairs.get("ltoken_v2")?.ok_or(Error::Invalid(
         "Cookie header is missing HoYoLAB credentials",
     ))?)?;
-    let claimed_uid = resolve_uid_aliases(pairs, &["ltuid_v2", "account_id_v2"])?;
-    reject_conflicting_uid_aliases(pairs, &claimed_uid, &["ltuid_v2", "account_id_v2"])?;
-    let mid = resolve_optional_token_aliases(pairs, &["ltmid_v2", "account_mid_v2"])?;
+    let claimed_uid = match pairs.get("ltuid_v2")? {
+        Some(uid) => parse_uid(uid)?,
+        None => {
+            let uid = resolve_uid_aliases(pairs, &["account_id_v2"])?;
+            reject_conflicting_uid_aliases(pairs, &uid, &["account_id_v2"])?;
+            uid
+        }
+    };
+    let mid = optional_mid(pairs);
 
     let mut header = format!("ltoken_v2={token}; ltuid_v2={claimed_uid}");
     if let Some(mid) = mid {
@@ -118,10 +132,10 @@ fn build_v2(pairs: &HashMap<&str, &str>) -> Result<Credentials> {
     })
 }
 
-fn resolve_uid_aliases(pairs: &HashMap<&str, &str>, aliases: &[&str]) -> Result<String> {
+fn resolve_uid_aliases(pairs: &Pairs, aliases: &[&str]) -> Result<String> {
     let mut uid = None;
     for alias in aliases {
-        if let Some(value) = pairs.get(alias).copied() {
+        if let Some(value) = pairs.get(alias)? {
             let parsed = parse_uid(value)?;
             if uid.as_deref().is_some_and(|uid| uid != parsed) {
                 return Err(Error::Invalid(
@@ -135,7 +149,7 @@ fn resolve_uid_aliases(pairs: &HashMap<&str, &str>, aliases: &[&str]) -> Result<
 }
 
 fn reject_conflicting_uid_aliases(
-    pairs: &HashMap<&str, &str>,
+    pairs: &Pairs,
     selected_uid: &str,
     selected_aliases: &[&str],
 ) -> Result<()> {
@@ -150,7 +164,7 @@ fn reject_conflicting_uid_aliases(
         if selected_aliases.contains(&alias) {
             continue;
         }
-        if let Some(value) = pairs.get(alias).copied() {
+        if let Some(value) = pairs.get(alias)? {
             let parsed = parse_uid(value)?;
             if parsed != selected_uid {
                 return Err(Error::Invalid(
@@ -162,23 +176,15 @@ fn reject_conflicting_uid_aliases(
     Ok(())
 }
 
-fn resolve_optional_token_aliases(
-    pairs: &HashMap<&str, &str>,
-    aliases: &[&str],
-) -> Result<Option<String>> {
-    let mut token = None;
-    for alias in aliases {
-        if let Some(value) = pairs.get(alias).copied() {
-            let parsed = parse_cookie_token(value)?.to_owned();
-            if token.as_deref().is_some_and(|token| token != parsed) {
-                return Err(Error::Invalid(
-                    "Cookie header contains conflicting MID aliases",
-                ));
-            }
-            token = Some(parsed);
-        }
-    }
-    Ok(token)
+/// MID is optional context, so an unusable value is dropped rather than blocking the token.
+fn optional_mid(pairs: &Pairs) -> Option<String> {
+    ["ltmid_v2", "account_mid_v2"]
+        .into_iter()
+        .find_map(|alias| {
+            let value = pairs.get(alias).ok()??;
+            parse_cookie_token(value).ok()
+        })
+        .map(str::to_owned)
 }
 
 fn parse_uid(value: &str) -> Result<String> {
