@@ -39,7 +39,7 @@ APIとschedulerは同じDB/業務処理を使う。単一process/instance前提�
 
 ### 1.1. DioxusとAPI/UI境界
 
-現構成はDioxus Webのclient-side rendering + Axum REST APIで、`serve`がUIとAPIを同一process・portで提供する。ブラウザは同一Originの相対`/api/v1/...`を直接使い、内部HTTP proxyやCORSはない。DockerはAlpineベースの`app`と`db`だけで、appはRustバイナリを直接起動する。`scripts/`は開発・テスト専用で、本番Dockerから除外する。DBの本番初期化は`docker/init-db.sql`を使う。公開時は`PUBLIC_ORIGIN=https://ahd.example.com`、`RP_ID=ahd.example.com`とし、外側のHTTPS reverse proxyからパスを変更せず転送する。
+現構成はDioxus Webのclient-side rendering + Axum REST APIで、`serve`がUIとAPIを同一process・portで提供する。ブラウザは同一Originの相対`/api/v1/...`を直接使い、内部HTTP proxyやCORSはない。DockerはAlpineベースの`app`と`db`だけで、appはRustバイナリを直接起動する。`scripts/`は開発・テスト専用で、本番Dockerから除外する。DBの本番初期化はPostgreSQLイメージの`POSTGRES_USER`・`POSTGRES_PASSWORD`・`POSTGRES_DB`だけで行い、初期化SQLは使わない。アプリ用roleはアプリ専用DBコンテナのsuperuserとなるため、DBポートは公開しない。公開時は`PUBLIC_ORIGIN=https://ahd.example.com`、`RP_ID=ahd.example.com`とし、外側のHTTPS reverse proxyからパスを変更せず転送する。
 
 [Dioxus 0.7 Fullstackのserver functions](https://dioxuslabs.com/learn/0.7/essentials/fullstack/server_functions/)はAxum互換endpointと型付きclient呼び出しを生成する。新規のUI専用Rustアプリなら、手書きURL/JSON transportとDTOの二重管理を減らす有力な選択である。業務serviceやAxumを捨てる必要はない。一方、認証・Origin/Cookie・fresh authorization・mutation single-flight・owner切替・safe error・POST不確実性の処理は自動的には代替されない。
 

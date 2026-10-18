@@ -8,13 +8,7 @@ Docker Compose v2とリリースイメージ `git.attodao.cc/attodao/attoshoyoda
 
 ### Composeの書き方
 
-任意のディレクトリに次の構成を用意します。`init-db.sql` はこのリポジトリの [`docker/init-db.sql`](docker/init-db.sql) をコピーします（空のDBボリュームの初回起動時だけ、非管理者のアプリ用ロールとDBを作成します）。
-
-```text
-.
-├── compose.yaml
-└── init-db.sql
-```
+任意のディレクトリに `compose.yaml` を1つ用意します。空のDBボリュームの初回起動時に、PostgreSQLイメージが `POSTGRES_USER`・`POSTGRES_PASSWORD`・`POSTGRES_DB` からアプリ用ロールとDBを作成します。このロールはDBのスーパーユーザーになります（DBコンテナはこのアプリ専用とし、DBポートは公開しないでください）。
 
 `compose.yaml` の例です。`<...>` の値を置き換えてください。秘密値を直接書くため `chmod 600 compose.yaml` とし、Gitなどには含めないでください。値に `$` を含める場合は `$$` と書きます。
 
@@ -24,16 +18,13 @@ services:
     image: postgres:18-alpine3.23
     restart: unless-stopped
     environment:
-      POSTGRES_PASSWORD: "<DB管理者パスワード>"
-      POSTGRES_DB: postgres
-      DB_NAME: attos_dashboard
-      DB_USER: attos_dashboard
-      DB_PASSWORD: "<アプリ用DBパスワード>"
+      POSTGRES_USER: attos_dashboard
+      POSTGRES_PASSWORD: "<DBパスワード>"
+      POSTGRES_DB: attos_dashboard
     volumes:
       - db-data:/var/lib/postgresql
-      - ./init-db.sql:/docker-entrypoint-initdb.d/01-app.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U attos_dashboard -d attos_dashboard"]
       interval: 2s
       timeout: 5s
       retries: 30
@@ -46,7 +37,7 @@ services:
       DB_PORT: "5432"
       DB_NAME: attos_dashboard
       DB_USER: attos_dashboard
-      DB_PASSWORD: "<アプリ用DBパスワード>"
+      DB_PASSWORD: "<DBパスワード>"
       INITIAL_ADMIN_USERNAME: admin
       INITIAL_ADMIN_PASSWORD: "<初期管理者の仮パスワード>"
       HOYOLAB_COOKIE_KEY: "<openssl rand -hex 32 の出力>"
@@ -65,7 +56,7 @@ volumes:
   db-data:
 ```
 
-- `db` と `app` の `DB_NAME`・`DB_USER`・`DB_PASSWORD` は同じ値にします。
+- `app` の `DB_NAME`・`DB_USER`・`DB_PASSWORD` は、`db` の `POSTGRES_DB`・`POSTGRES_USER`・`POSTGRES_PASSWORD` と同じ値にします。
 - `DB_HOST`・`DB_PORT`・`BIND_ADDR` はこの構成用の値で、通常は変更しません。UI配置先はイメージ側で設定済みです。
 
 起動します。
@@ -81,9 +72,8 @@ curl --fail http://127.0.0.1:8080/health
 
 | 変数 | 用途・既定値 |
 | --- | --- |
-| `DB_NAME` / `DB_USER` | アプリ用DB／非管理者ロール。例では `attos_dashboard` |
-| `DB_PASSWORD` | 必須。アプリ用DBパスワード |
-| `POSTGRES_PASSWORD`（`db`） | 必須。DB管理者用。アプリ用とは別の強固な値。アプリには渡さない |
+| `DB_NAME` / `DB_USER` | DB名／DBロール。`db` の `POSTGRES_DB`／`POSTGRES_USER` と同じ値。例では `attos_dashboard` |
+| `DB_PASSWORD` | 必須。DBパスワード。`db` の `POSTGRES_PASSWORD` と同じ強固な値 |
 | `INITIAL_ADMIN_USERNAME` | 初期管理者名。`admin` |
 | `INITIAL_ADMIN_PASSWORD` | 初回必須の仮パスワード。12〜256 UTF-8バイト |
 | `HOYOLAB_COOKIE_KEY` | 必須。Cookie暗号化鍵。乱数32バイトの64桁hex（`openssl rand -hex 32`） |
@@ -145,7 +135,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 ## 運用上の制約
 
-- 永続データは `db-data` ボリュームに保存します。`DB_NAME`・`DB_USER`・DBパスワードは初回初期化用で、既存DBには `compose.yaml` の変更だけでは反映されません。
+- 永続データは `db-data` ボリュームに保存します。`POSTGRES_DB`・`POSTGRES_USER`・`POSTGRES_PASSWORD` は初回初期化用で、既存DBには `compose.yaml` の変更だけでは反映されません。
 - **DBと対応する `HOYOLAB_COOKIE_KEY` をセットでバックアップ**してください。鍵の変更・再暗号化ツールはありません。保存済みCookieがある状態で鍵を変更すると復号できません。
 - 更新はバックアップ後に `docker compose pull && docker compose up -d`。起動時のDB更新を伴うため、ロールバックにDB復元が必要になる場合があります。
 

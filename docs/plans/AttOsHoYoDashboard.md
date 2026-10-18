@@ -10,7 +10,7 @@
 | 開発環境 | `devenv.nix`／`devenv.yaml`／`devenv.lock`でツールを固定。通常shell/testでは`.env`自動読込・DB service起動なし |
 | Project skills | `.agents/skills/`にCodex／共通版8件、`.pi/skills/`にImpeccable Pi版を実ファイルとしてGit管理。devenv・生成Pi設定・Nix storeリンクに非依存 |
 | 起動構成 | `launch-server`でapp・専用DBを起動。`.env.test`のDB名・role・passwordを使用し、SCRAM認証で接続。通常稼動用`.env`と分離。`scripts/`は開発・テスト専用 |
-| Compose | Alpineの`app`・`db`の2コンテナ。Rustバイナリ直接起動、本番専用`docker/init-db.sql`、DB volumeのみ。`compose.yaml`・`.env.example`は同梱せず、README記載のCompose例でリリースイメージ`git.attodao.cc/attodao/attoshoyodashboard:latest`を使用。`scripts/`は不使用。外側のHTTPS proxyで同一Originの`/api/v1/...`を公開。Alpine image build・static linkage・UI optimizer・container起動・TLSは未検証 |
+| Compose | Alpineの`app`・`db`の2コンテナ。Rustバイナリ直接起動、DB初期化はPostgreSQLイメージの`POSTGRES_USER`/`POSTGRES_DB`のみ（初期化SQLなし、アプリ用roleはDBコンテナ内superuser）、DB volumeのみ。`compose.yaml`・`.env.example`は同梱せず、README記載のCompose例でリリースイメージ`git.attodao.cc/attodao/attoshoyodashboard:latest`を使用。`scripts/`は不使用。外側のHTTPS proxyで同一Originの`/api/v1/...`を公開。Alpine image build・static linkage・UI optimizer・container起動・TLSは未検証 |
 | 認証 | password login/logout、固定期限session、password rotation、管理者user管理、passkey login/registration/list/delete |
 | UI | Dioxus 0.7.10 Web/WASM RSX。承認済みAGD R3を本番RSXに実装。検証・残課題は[本番R3記録](../ui-design/production-r3.md)。official Dioxus Components由来Button/Cardをsource同梱 |
 | HoYoLAB Cookie | legacy/v2 parse normalization、AES-GCM保存、pending status、same-UID proof path実装 |
