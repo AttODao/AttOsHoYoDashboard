@@ -7,20 +7,31 @@ use std::collections::{HashMap, HashSet};
 mod tests;
 
 impl Credentials {
-    pub(in crate::dashboard) fn parse(raw: &str) -> Result<Self> {
-        let raw = strip_header_name(raw.trim());
-        if raw.is_empty() || raw.len() > MAX_COOKIE_LEN {
-            return Err(Error::Invalid("Cookie header must contain 1 to 8192 bytes"));
-        }
-        if !raw.is_ascii()
-            || raw
-                .bytes()
-                .any(|byte| byte.is_ascii_control() || byte == 0x7f)
-        {
-            return Err(Error::Invalid("Cookie header must be printable ASCII"));
-        }
+    /// New user submissions need the full v2 bundle: whether upstream identity checks work
+    /// without MID is unproven, so a Cookie lacking it is never accepted.
+    pub(in crate::dashboard) fn parse_submitted(raw: &str) -> Result<Self> {
+        let pairs = Pairs::parse(checked_header(raw)?);
+        let token = parse_cookie_token(
+            pairs
+                .get("ltoken_v2")?
+                .ok_or(Error::Invalid("Cookie header is missing ltoken_v2"))?,
+        )?;
+        let claimed_uid = parse_uid(
+            pairs
+                .get("ltuid_v2")?
+                .ok_or(Error::Invalid("Cookie header is missing ltuid_v2"))?,
+        )?;
+        let mid = parse_cookie_token(
+            pairs
+                .get("ltmid_v2")?
+                .ok_or(Error::Invalid("Cookie header is missing ltmid_v2"))?,
+        )?;
+        Ok(v2_credentials(token, claimed_uid, Some(mid)))
+    }
 
-        let pairs = Pairs::parse(raw);
+    /// Normalizes any supported family; stored Cookies saved before MID was required still open.
+    pub(in crate::dashboard) fn parse(raw: &str) -> Result<Self> {
+        let pairs = Pairs::parse(checked_header(raw)?);
         // A complete v2 pair is sufficient; every other cookie is optional context.
         if pairs.contains("ltoken_v2") && pairs.contains("ltuid_v2") {
             return build_v2(&pairs);
@@ -42,6 +53,21 @@ impl Credentials {
             "Cookie header is missing HoYoLAB credentials",
         ))
     }
+}
+
+fn checked_header(raw: &str) -> Result<&str> {
+    let raw = strip_header_name(raw.trim());
+    if raw.is_empty() || raw.len() > MAX_COOKIE_LEN {
+        return Err(Error::Invalid("Cookie header must contain 1 to 8192 bytes"));
+    }
+    if !raw.is_ascii()
+        || raw
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || byte == 0x7f)
+    {
+        return Err(Error::Invalid("Cookie header must be printable ASCII"));
+    }
+    Ok(raw)
 }
 
 const COOKIE_HEADER_NAME: &str = "cookie:";
@@ -119,17 +145,19 @@ fn build_v2(pairs: &Pairs) -> Result<Credentials> {
             uid
         }
     };
-    let mid = optional_mid(pairs);
+    Ok(v2_credentials(token, claimed_uid, optional_mid(pairs)))
+}
 
+fn v2_credentials(token: &str, claimed_uid: String, mid: Option<&str>) -> Credentials {
     let mut header = format!("ltoken_v2={token}; ltuid_v2={claimed_uid}");
     if let Some(mid) = mid {
         header.push_str("; ltmid_v2=");
-        header.push_str(&mid);
+        header.push_str(mid);
     }
-    Ok(Credentials {
+    Credentials {
         header,
         claimed_uid,
-    })
+    }
 }
 
 fn resolve_uid_aliases(pairs: &Pairs, aliases: &[&str]) -> Result<String> {
@@ -177,14 +205,13 @@ fn reject_conflicting_uid_aliases(
 }
 
 /// MID is optional context, so an unusable value is dropped rather than blocking the token.
-fn optional_mid(pairs: &Pairs) -> Option<String> {
+fn optional_mid<'a>(pairs: &Pairs<'a>) -> Option<&'a str> {
     ["ltmid_v2", "account_mid_v2"]
         .into_iter()
         .find_map(|alias| {
             let value = pairs.get(alias).ok()??;
             parse_cookie_token(value).ok()
         })
-        .map(str::to_owned)
 }
 
 fn parse_uid(value: &str) -> Result<String> {

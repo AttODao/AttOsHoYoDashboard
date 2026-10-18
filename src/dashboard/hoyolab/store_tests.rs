@@ -5,7 +5,7 @@ use crate::dashboard::{
 };
 use sea_orm::{ConnectionTrait, PaginatorTrait, SqlErr};
 
-const RAW: &str = "ltuid_v2=123; ltoken_v2=synthetic-cookie-token";
+const RAW: &str = "ltuid_v2=123; ltoken_v2=synthetic-cookie-token; ltmid_v2=synthetic-mid";
 fn key() -> Arc<CookieKey> {
     Arc::new(CookieKey::from_hex(&"11".repeat(32)).unwrap())
 }
@@ -37,7 +37,7 @@ async fn pending_setup_is_encrypted_owned_audited_and_never_identity_proof() {
         Credentials::parse(RAW).unwrap().as_str()
     );
     // Pending claims can be corrected, but never populate the verified UID column.
-    let updated = "ltuid_v2=456; ltoken_v2=synthetic-new-token";
+    let updated = "ltuid_v2=456; ltoken_v2=synthetic-new-token; ltmid_v2=synthetic-mid";
     store.submit(&actor, updated).await.unwrap();
     let second = store.status(&actor).await.unwrap().unwrap();
     assert_eq!(second.id, first.id);
@@ -169,9 +169,10 @@ async fn stored_uid_cannot_be_replaced_by_a_cookie_claim_and_ciphertext_is_row_b
     let fixture = TestDatabase::new().await;
     let (_, actor) = fixture.ready_admin().await;
     let store = CookieStore::new(fixture.db.clone(), key());
-    // Legacy syntax is stored but cannot verify: this fixture never calls live identity APIs.
+    store.submit(&actor, RAW).await.unwrap();
+    // Legacy syntax still opens from storage but can no longer be submitted;
+    // this fixture never calls live identity APIs.
     let raw = "ltuid=123; ltoken=synthetic-cookie-token";
-    store.submit(&actor, raw).await.unwrap();
     let pending = store.status(&actor).await.unwrap().unwrap();
     // Synthetic verified row only: this is not upstream evidence.
     let mut verified = pending.clone().into_active_model();
@@ -186,7 +187,9 @@ async fn stored_uid_cannot_be_replaced_by_a_cookie_claim_and_ciphertext_is_row_b
         .unwrap());
     let verified = verified.update(&fixture.db).await.unwrap();
     assert!(matches!(
-        store.submit(&actor, "ltuid_v2=456; ltoken_v2=other").await,
+        store
+            .submit(&actor, "ltuid_v2=456; ltoken_v2=other; ltmid_v2=mid")
+            .await,
         Err(Error::Forbidden)
     ));
     assert!(matches!(

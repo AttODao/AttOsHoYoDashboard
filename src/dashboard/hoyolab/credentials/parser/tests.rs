@@ -71,6 +71,38 @@ fn parse_drops_unrelated_and_nonselected_token_cookies() {
 }
 
 #[test]
+fn submissions_require_the_full_v2_bundle_including_mid() {
+    let expected = format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}");
+    for raw in [
+        format!("Cookie: _ga=GA1; ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID};"),
+        format!(
+            "ltoken=legacy; empty=; valueless; account_id_v2=9; account_mid_v2=other; ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}"
+        ),
+    ] {
+        let credentials = Credentials::parse_submitted(&raw).expect("full v2 bundle submits");
+        assert_eq!(credentials.as_str(), expected, "{raw:?}");
+        assert_eq!(credentials.claimed_uid(), "42");
+    }
+
+    for raw in [
+        format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42"),
+        format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2="),
+        format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42; account_mid_v2={MID}"),
+        format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2=bad\\mid"),
+        format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}; ltmid_v2={MID}"),
+        format!("ltoken_v2={V2_TOKEN}; account_id_v2=42; ltmid_v2={MID}"),
+        format!("ltuid_v2=42; ltmid_v2={MID}"),
+        format!("ltoken={LEGACY_TOKEN}; ltuid=42; ltmid_v2={MID}"),
+        String::new(),
+    ] {
+        assert!(
+            matches!(Credentials::parse_submitted(&raw), Err(Error::Invalid(_))),
+            "{raw:?} should be rejected"
+        );
+    }
+}
+
+#[test]
 fn parse_accepts_pasted_request_header_lines() {
     let expected = format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}");
     for raw in [

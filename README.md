@@ -86,7 +86,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 初回パスワード変更後、連携画面からHoYoLAB Cookieを登録し、検証を完了してください。Cookieは <https://www.hoyolab.com> にログインしたブラウザのApplication／Storageから取得します。
 
-- 検証にはv2の `ltoken_v2` と `ltuid_v2`／`account_id_v2` が必要です。`ltmid_v2`／`account_mid_v2` があれば含めてください。旧形式や別アカウントの値との混在は不可です。
+- 登録には `ltoken_v2`・`ltuid_v2`・`ltmid_v2` の3つが必須です。ブラウザの `Cookie:` ヘッダー行をそのまま貼り付けても構いません（他のCookieや空の要素は無視されます）。旧形式（`ltoken`／`ltuid`）は登録できません。
 - 保存だけでは連携完了になりません。検証後にゲームアカウントを確認してください。
 - **自動受け取りは初期OFF**。画面で時刻を指定して有効にします。
 - 状態取得にはHoYoLAB側の戦績・リアルタイムノートの公開設定も影響します。Cookie失効・追加認証・HoYoLABの仕様変更により利用できなくなる場合があります。

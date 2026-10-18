@@ -187,7 +187,7 @@ impl<G: Gateway> CookieStore<G> {
     }
 
     pub(in crate::dashboard) async fn submit(&self, actor: &Identity, raw: &str) -> Result<()> {
-        let cookie = Credentials::parse(raw)?;
+        let cookie = Credentials::parse_submitted(raw)?;
         let _operation = self.operations.acquire(actor.user.id).await;
         self.require_running()?;
         // Syntactic normalization is not server-authenticated ownership verification.
