@@ -59,7 +59,8 @@ pub(in crate::app) fn LoginPage(mut state: Signal<AppState>) -> Element {
                 form { onsubmit: move |event| {
                     event.prevent_default();
                     if state.read().busy { return; }
-                    let user = std::mem::take(&mut *username.write());
+                    // Keep the username for a retry; only the secret is cleared.
+                    let user = username.read().clone();
                     let pass = std::mem::take(&mut *password.write());
                     let selected = *method.read();
                     if !login_fields_complete(selected, &user, &pass) {

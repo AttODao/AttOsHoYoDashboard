@@ -219,6 +219,8 @@ try{
    await button(language==='ja'?'ログイン':'Sign in').click();
    await page.locator('.status.error').getByText(language==='ja'?'ユーザー名かパスワードが違います':'The username or password is incorrect.',{exact:true}).waitFor();
    await idle();assert.equal(await page.locator('#login-username').count(),1);
+   assert.equal(await page.locator('#login-username').inputValue(),username,'a failed sign-in keeps the username');
+   assert.ok(await page.locator('#login-password').evaluate(e=>e.value===''),'a failed sign-in clears the password');
   }
  }
  await page.evaluate(()=>localStorage.setItem('ahd-language','en'));await page.reload();
