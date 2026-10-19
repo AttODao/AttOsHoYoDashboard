@@ -3,11 +3,8 @@ use super::*;
 
 #[test]
 fn protocol_and_validation() {
-    assert_eq!(
-        validate_cookie("ltuid_v2=123; ltoken_v2=v2_secret"),
-        Ok(false)
-    );
-    assert_eq!(validate_cookie("account_id=123; ltoken=secret"), Ok(true));
+    assert_eq!(validate_cookie("ltuid_v2=123; ltoken_v2=v2_secret"), Ok(()));
+    assert_eq!(validate_cookie("account_id=123; ltoken=secret"), Ok(()));
     for cookie in [
         "",
         "ltuid_v2=123",

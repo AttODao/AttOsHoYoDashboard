@@ -240,7 +240,7 @@ fn sign_secret(timestamp: u64, nonce: &str) -> String {
     format!("{timestamp},{nonce},{hash:x}")
 }
 
-fn validate_cookie(raw: &str) -> Result<bool> {
+fn validate_cookie(raw: &str) -> Result<()> {
     if raw.is_empty() {
         return Err("環境変数または.envに HOYOLAB_COOKIE を設定してください".into());
     }
@@ -262,21 +262,18 @@ fn validate_cookie(raw: &str) -> Result<bool> {
         let token = values.get(token).copied().unwrap_or("");
         (!uid.is_empty() && !token.is_empty()).then_some((uid, token))
     };
-    let (uid, token, legacy) =
-        if let Some((uid, token)) = pair("ltuid_v2", "account_id_v2", "ltoken_v2") {
-            (uid, token, false)
-        } else if let Some((uid, token)) = pair("ltuid", "account_id", "ltoken") {
-            (uid, token, true)
-        } else {
-            return Err("HOYOLAB_COOKIE には少なくとも ltuid_v2 と ltoken_v2 が必要です".into());
-        };
+    let Some((uid, token)) = pair("ltuid_v2", "account_id_v2", "ltoken_v2")
+        .or_else(|| pair("ltuid", "account_id", "ltoken"))
+    else {
+        return Err("HOYOLAB_COOKIE には少なくとも ltuid_v2 と ltoken_v2 が必要です".into());
+    };
     if [uid, token]
         .iter()
         .any(|value| value.contains("...") || value.starts_with("YOUR_"))
     {
         return Err(".env のプレースホルダーを実際のCookie値に置き換えてください".into());
     }
-    Ok(legacy)
+    Ok(())
 }
 
 #[cfg(test)]
