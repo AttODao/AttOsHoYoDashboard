@@ -33,6 +33,8 @@ pub(super) enum Page {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Phase {
+    /// Public docs entry: /me has not been consulted, so leaving Docs must bootstrap.
+    Unchecked,
     Loading,
     SignedOut,
     SignedIn,
@@ -205,10 +207,20 @@ pub(super) fn restore_page(mut state: Signal<AppState>, page: Page) {
     if state.read().page == page {
         return;
     }
-    state.write().page = page;
-    let state_for_task = state;
+    let check_session = state.read().phase == Phase::Unchecked && page != Page::Docs;
+    {
+        let mut write = state.write();
+        write.page = page;
+        if check_session {
+            write.phase = Phase::Loading;
+        }
+    }
     spawn_root(async move {
-        load_page_data(state_for_task, page).await;
+        if check_session {
+            super::session::bootstrap(state).await;
+        } else {
+            load_page_data(state, page).await;
+        }
     });
 }
 
@@ -340,6 +352,12 @@ mod tests {
             assert!(state.read().page == Page::Docs);
             restore_page(state, Page::Admin);
             assert!(state.read().page == Page::Dashboard);
+            // Docs never consulted /me; leaving it checks the session, not the login gate.
+            state.write().page = Page::Docs;
+            state.write().phase = Phase::Unchecked;
+            restore_page(state, Page::Security);
+            assert!(state.read().page == Page::Security);
+            assert!(state.read().phase == Phase::Loading);
             state.write().phase = Phase::Loading;
             state.write().busy = true;
             restore_page(state, Page::Security);

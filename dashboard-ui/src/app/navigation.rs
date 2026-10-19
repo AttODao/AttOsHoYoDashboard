@@ -67,7 +67,7 @@ fn write_path(path: &'static str, replace: bool) {
 fn canonical_path(page: Page, phase: Phase) -> Option<&'static str> {
     match (page, phase) {
         (Page::Docs, _) => Some("/docs"),
-        (_, Phase::Loading) => None,
+        (_, Phase::Unchecked | Phase::Loading) => None,
         (_, Phase::SignedOut) => Some("/login"),
         (_, Phase::SignedIn) => Some(page_path(page)),
     }
@@ -135,11 +135,17 @@ mod tests {
     #[test]
     fn canonical_routes_follow_auth_without_discarding_loading_deep_links() {
         for page in [Page::Dashboard, Page::Security, Page::Admin] {
+            assert_eq!(canonical_path(page, Phase::Unchecked), None);
             assert_eq!(canonical_path(page, Phase::Loading), None);
             assert_eq!(canonical_path(page, Phase::SignedOut), Some("/login"));
             assert_eq!(canonical_path(page, Phase::SignedIn), Some(page_path(page)));
         }
-        for phase in [Phase::Loading, Phase::SignedOut, Phase::SignedIn] {
+        for phase in [
+            Phase::Unchecked,
+            Phase::Loading,
+            Phase::SignedOut,
+            Phase::SignedIn,
+        ] {
             assert_eq!(canonical_path(Page::Docs, phase), Some("/docs"));
         }
         for path in ["/", "/login", "/dashboard"] {

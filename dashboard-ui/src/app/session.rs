@@ -18,8 +18,9 @@ pub(super) async fn complete_login(mut state: Signal<AppState>, generation: u64)
 }
 
 pub(super) async fn bootstrap(mut state: Signal<AppState>) {
+    // Public docs make no authenticated request; restore_page bootstraps on leaving.
     if state.read().page == Page::Docs {
-        state.write().phase = Phase::SignedOut;
+        state.write().phase = Phase::Unchecked;
         return;
     }
     let generation = {

@@ -77,7 +77,7 @@ pub fn App() -> Element {
                 DocsPage { state }
             } else {
                 match state.read().phase {
-                    Phase::Loading => rsx! { LoadingPage {} },
+                    Phase::Unchecked | Phase::Loading => rsx! { LoadingPage {} },
                     Phase::SignedOut => rsx! { LoginPage { state } },
                     Phase::SignedIn => rsx! {
                         if !state.read().ready() {

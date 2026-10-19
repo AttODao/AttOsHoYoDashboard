@@ -408,6 +408,15 @@ try{
  await page.waitForURL(origin+'/settings/games');
  await page.locator('a.wordmark').click();await dashboard();
  await page.goto(origin+'/login');await dashboard();
+ // Public docs skip /me; leaving them checks the session instead of assuming sign-out.
+ const apiTitle=JSON.parse(fs.readFileSync(path.join(root,'docs/dashboard-api.json'),'utf8')).info.title;
+ const meBeforeDocs=counts.get('/api/v1/me');
+ await page.goto(origin+'/docs');await page.getByRole('heading',{name:apiTitle,exact:true}).waitFor();
+ assert.equal(counts.get('/api/v1/me'),meBeforeDocs,'docs entry makes no session request');
+ await page.locator('a.wordmark').click();await dashboard();
+ assert.equal(await page.locator('#login-username').count(),0,'a valid session survives leaving docs');
+ assert.equal(counts.get('/api/v1/me'),meBeforeDocs+1);
+ const docsReads=counts.get('/openapi.json');
  stage='settings';
  await settings('link');
  const syncsBefore=counts.get('/api/v1/me/hoyolab/sync')||0;
@@ -606,8 +615,8 @@ try{
  await page.setViewportSize({width:390,height:844});await context.clearCookies();
  const apiBefore=[...counts].filter(([p])=>p.startsWith('/api/v1/'));
  await page.goto(origin+'/docs');
- await page.getByRole('heading',{name:JSON.parse(fs.readFileSync(path.join(root,'docs/dashboard-api.json'),'utf8')).info.title,exact:true}).waitFor();
- assert.equal(await page.locator('#login-username').count(),0);assert.equal(counts.get('/openapi.json'),1);
+ await page.getByRole('heading',{name:apiTitle,exact:true}).waitFor();
+ assert.equal(await page.locator('#login-username').count(),0);assert.equal(counts.get('/openapi.json'),docsReads+1);
  assert.deepEqual([...counts].filter(([p])=>p.startsWith('/api/v1/')),apiBefore);
  stage='docs-i18n';
  await page.getByRole('columnheader',{name:'Path',exact:true}).waitFor();
@@ -616,7 +625,7 @@ try{
  await page.getByRole('columnheader',{name:'パス',exact:true}).waitFor();
  await page.getByRole('columnheader',{name:'メソッド',exact:true}).waitFor();
  assert.equal(await page.locator('html').getAttribute('lang'),'ja');
- assert.equal(counts.get('/openapi.json'),2);
+ assert.equal(counts.get('/openapi.json'),docsReads+2);
  assert.deepEqual([...counts].filter(([p])=>p.startsWith('/api/v1/')),apiBefore,'translated public docs still make no authenticated requests');
  assert.deepEqual(await page.evaluate(()=>Object.keys(localStorage).sort()),['ahd-language','ahd-theme'],'only non-sensitive preferences persist');
  assert.deepEqual(errors,[],'release CSP/Wasm errors');assert.deepEqual(failures,[]);
