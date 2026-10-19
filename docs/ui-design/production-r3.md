@@ -56,6 +56,18 @@
 
 devenvで整形・native／WASM Clippy・UI unit 38件・release build・通常／reduced-motionのブラウザ回帰に成功。配信された両PNGの寸法、四隅の完全透過、中央の不透明、輪郭の半透明、ブランド名との位置関係とmobile幅の収まりを検証。darkのdesktop／mobile Headerをcapture・目視確認し、切り抜き素材をdark／light背景で確認した。
 
+## 2026-10-19 設定画面の操作性
+
+- 設定の確認・次回・前回実行・実行履歴・HoYoLAB更新・パスキー登録・UID検出の日時を`app/display.rs`の共通形式（`10/17 21:38 JST`）へ統一。不正・欠落は「未取得」で、ISO文字列を出さない。
+- `error_code`（`network`／`http:*`／`upstream:*`／`upstream_data`／`action_required`）と未知の状態・ゲーム種別を翻訳文へ対応付け、未知値は汎用文言。生のコードは折り畳んだ「取得情報」だけに残す。
+- HoYoLAB連携：必要なCookie（`ltoken_v2`／`ltuid_v2`／`ltmid_v2`）・取得場所・ヘッダー行の貼り付け・旧形式不可を入力欄の説明として`aria-describedby`で結ぶ。状態の説明文を置き、保存済み・未確認では本人確認をprimaryにする。UID同期が無効な理由を表示。
+- 手動実行の受付後、カード内に前回実行の状態を表示し、3秒間隔・最大1分のGETで追従。完了・画面離脱・セッション変更・新しい追従で停止し、完了をlive regionで通知する。POSTは再送しない。
+- パスワードの12〜256バイト規則（全角の数え方を含む）を事前に表示し、長さ・確認不一致・現在パスワード未入力を欄の直下に表示。無効な送信は入力を保持し、最初の問題欄へフォーカスする。
+- パスキー削除は共有`ModalDialog`で確認（Cancel／Escape／フォーカス復帰）。自身の削除はdanger-zoneと結果の説明、管理者の削除dialogにも同等の説明を追加。
+- 取得失敗かつデータなしでは失敗だけを表示し、古いデータは「◯分／時間／日前のデータです」と理由を表示。未取得の表記を1キーに統一し、設定タブ「セキュリティ」をmobileでも同じ名前にした。
+
+検証：devenvでUI unit 58件、WASM／native Clippy、release build、通常／reduced-motionのブラウザ回帰（上記をsynthetic fixtureで検査）を通過。Impeccable手動検査は指摘なし。ja／en・dark／light・375／800／1280をcaptureして確認した。既知の差：同梱のNoto Sans JP subsetには既存文言27字・今回の文言26字（例：貼「」旧形式／）が未収録で、OSのsans-serifへfallbackする（CJKフォントのない検証環境では豆腐表示）。subsetの再生成は未実施。
+
 ## 検証状況
 
 本番release bundleとlocal mockによるブラウザ検証を完了。
