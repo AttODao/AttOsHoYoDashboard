@@ -1,4 +1,4 @@
-use super::{CHALLENGE_TTL, credential_fingerprint};
+use super::{AuthenticationChallenge, CHALLENGE_TTL, credential_fingerprint};
 use crate::dashboard::{auth::sessions::Sessions, db::entities::passkey, error::Error};
 use crate::dashboard::{
     auth::{passkeys::test_support::Fixture, password::token_hash},
@@ -9,6 +9,7 @@ use sea_orm::{
     ActiveModelTrait, ConnectionTrait, DbBackend, EntityTrait, IntoActiveModel, Set, Statement,
     TransactionTrait,
 };
+use serde_json::Value;
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -401,13 +402,6 @@ async fn current_temporary_password_policy_blocks_existing_keys_and_pending_logi
     assert!(matches!(
         fixture
             .passkeys
-            .authentication_start(&fixture.accounts, fixture.actor.user.username.clone())
-            .await,
-        Err(Error::Unauthorized)
-    ));
-    assert!(matches!(
-        fixture
-            .passkeys
             .authentication_finish(&fixture.accounts, challenge.challenge_id, response)
             .await,
         Err(Error::Unauthorized)
@@ -429,13 +423,6 @@ async fn current_disabled_policy_blocks_existing_keys_and_pending_login() {
     assert!(matches!(
         fixture
             .passkeys
-            .authentication_start(&fixture.accounts, fixture.actor.user.username.clone())
-            .await,
-        Err(Error::Unauthorized)
-    ));
-    assert!(matches!(
-        fixture
-            .passkeys
             .authentication_finish(&fixture.accounts, challenge.challenge_id, response)
             .await,
         Err(Error::Unauthorized)
@@ -443,9 +430,9 @@ async fn current_disabled_policy_blocks_existing_keys_and_pending_login() {
 }
 
 #[tokio::test]
-async fn malformed_unknown_and_keyless_usernames_share_unauthorized() {
+async fn malformed_usernames_are_unauthorized_without_a_challenge() {
     let fixture = Fixture::new().await;
-    for username in [String::new(), "x".repeat(65), "unknown-synthetic".into()] {
+    for username in [String::new(), "x".repeat(65), "bad name".into()] {
         assert!(matches!(
             fixture
                 .passkeys
@@ -454,18 +441,154 @@ async fn malformed_unknown_and_keyless_usernames_share_unauthorized() {
             Err(Error::Unauthorized)
         ));
     }
-    fixture
+    assert!(fixture.passkeys.pending.lock().unwrap().is_empty());
+}
+
+/// Options with the per-request random challenge and the credential ID blanked.
+fn comparable(challenge: &AuthenticationChallenge) -> Value {
+    let mut options = serde_json::to_value(&challenge.options).unwrap();
+    let public_key = &mut options["publicKey"];
+    assert!(
+        public_key["challenge"]
+            .as_str()
+            .is_some_and(|c| !c.is_empty())
+    );
+    public_key["challenge"] = Value::Null;
+    let allowed = public_key["allowCredentials"].as_array_mut().unwrap();
+    assert_eq!(allowed.len(), 1);
+    assert!(allowed[0]["id"].as_str().is_some_and(|id| !id.is_empty()));
+    allowed[0]["id"] = Value::Null;
+    options
+}
+
+#[tokio::test]
+async fn names_without_a_usable_passkey_get_options_shaped_like_a_real_user() {
+    let fixture = Fixture::new().await;
+    let real = fixture
         .passkeys
-        .delete(&fixture.accounts, &fixture.actor, fixture.key_id)
+        .authentication_start(&fixture.accounts, fixture.actor.user.username.clone())
         .await
         .unwrap();
+    let expected = comparable(&real);
+    let decoy = |username: &str| {
+        let username = username.to_owned();
+        let fixture = &fixture;
+        async move {
+            fixture
+                .passkeys
+                .authentication_start(&fixture.accounts, username)
+                .await
+                .unwrap()
+        }
+    };
+    let unknown = decoy("unknown-synthetic").await;
+    assert_eq!(comparable(&unknown), expected);
+    assert_eq!(
+        serde_json::to_value(&unknown)
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .len(),
+        serde_json::to_value(&real)
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .len()
+    );
+    // Repeated probes of one name list the same credential; another name lists another.
+    let id = |challenge: &AuthenticationChallenge| {
+        serde_json::to_value(&challenge.options).unwrap()["publicKey"]["allowCredentials"][0]["id"]
+            .clone()
+    };
+    assert_eq!(id(&unknown), id(&decoy("unknown-synthetic").await));
+    assert_ne!(id(&unknown), id(&decoy("other-synthetic").await));
+    assert_ne!(id(&unknown), id(&real));
+
+    // A temporary-password user and a disabled user are decoys too.
+    let mut user = fixture.actor.user.clone().into_active_model();
+    user.must_change_password = Set(true);
+    let user = user.update(&fixture.db.db).await.unwrap();
+    assert_eq!(comparable(&decoy(&user.username).await), expected);
+    let mut user = user.into_active_model();
+    user.must_change_password = Set(false);
+    user.active = Set(false);
+    let user = user.update(&fixture.db.db).await.unwrap();
+    assert_eq!(comparable(&decoy(&user.username).await), expected);
+
+    // So is an active user whose last passkey was removed.
+    let mut user = user.into_active_model();
+    user.active = Set(true);
+    user.update(&fixture.db.db).await.unwrap();
+    passkey::Entity::delete_by_id(fixture.key_id)
+        .exec(&fixture.db.db)
+        .await
+        .unwrap();
+    let keyless = decoy(&fixture.actor.user.username).await;
+    assert_eq!(comparable(&keyless), expected);
+}
+
+#[tokio::test]
+async fn decoy_challenges_fail_like_a_wrong_assertion_and_spend_the_budget() {
+    let fixture = Fixture::new().await;
+    let before = session::Entity::find().count(&fixture.db.db).await.unwrap();
+    let challenge = fixture
+        .passkeys
+        .authentication_start(&fixture.accounts, "unknown-synthetic".into())
+        .await
+        .unwrap();
+    assert_eq!(fixture.accounts.login_attempts("unknown-synthetic"), 1);
+    // A valid signature from a real key still cannot complete a decoy.
+    let response = fixture.authenticator.authenticate(&challenge, 2);
     assert!(matches!(
         fixture
             .passkeys
-            .authentication_start(&fixture.accounts, fixture.actor.user.username.clone())
+            .authentication_finish(&fixture.accounts, challenge.challenge_id, response.clone())
             .await,
         Err(Error::Unauthorized)
     ));
+    assert_eq!(fixture.accounts.login_attempts("unknown-synthetic"), 2);
+    // Single use like any challenge.
+    assert!(matches!(
+        fixture
+            .passkeys
+            .authentication_finish(&fixture.accounts, challenge.challenge_id, response)
+            .await,
+        Err(Error::Unauthorized)
+    ));
+    assert_eq!(fixture.accounts.login_attempts("unknown-synthetic"), 2);
+    assert_eq!(
+        session::Entity::find().count(&fixture.db.db).await.unwrap(),
+        before
+    );
+}
+
+#[tokio::test]
+async fn decoy_credentials_are_stable_across_restarts_with_the_cookie_key() {
+    use crate::dashboard::{
+        auth::passkeys::Passkeys,
+        hoyolab::credentials::CookieKey,
+        test_support::webauthn::{ORIGIN, RP_ID},
+    };
+    let fixture = Fixture::new().await;
+    let seed = CookieKey::from_hex(&"22".repeat(32)).unwrap();
+    let mut ids = Vec::new();
+    for passkeys in [
+        Passkeys::new(RP_ID, ORIGIN, Some(&seed)).unwrap(),
+        Passkeys::new(RP_ID, ORIGIN, Some(&seed)).unwrap(),
+        Passkeys::new(RP_ID, ORIGIN, None).unwrap(),
+    ] {
+        let challenge = passkeys
+            .authentication_start(&fixture.accounts, "unknown-synthetic".into())
+            .await
+            .unwrap();
+        ids.push(
+            serde_json::to_value(&challenge.options).unwrap()["publicKey"]["allowCredentials"]
+                [0]["id"]
+                .clone(),
+        );
+    }
+    assert_eq!(ids[0], ids[1]);
+    assert_ne!(ids[0], ids[2]);
 }
 
 #[tokio::test]

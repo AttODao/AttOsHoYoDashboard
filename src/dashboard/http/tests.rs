@@ -58,7 +58,8 @@ fn app(accounts: Accounts) -> App {
     Arc::new(HttpState {
         cookies,
         operations,
-        passkeys: Passkeys::new(&config.rp_id, &config.origin).unwrap(),
+        passkeys: Passkeys::new(&config.rp_id, &config.origin, config.cookie_key.as_deref())
+            .unwrap(),
         accounts,
         config,
     })

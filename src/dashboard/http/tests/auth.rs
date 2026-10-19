@@ -21,23 +21,25 @@ async fn password_and_passkey_logins_share_a_per_username_budget() {
             ),
         ]
     };
+    // Unknown names fail password login but get decoy passkey options, never a 401 there.
+    let attempt = |path: &'static str, input: Value| {
+        let app = app.clone();
+        async move {
+            let response = call(&app, request("POST", path, None, Some(input))).await;
+            if path == "/api/v1/auth/passkey/options" {
+                assert_eq!(response.status(), StatusCode::OK);
+            } else {
+                error(response, StatusCode::UNAUTHORIZED, "unauthorized").await;
+            }
+        }
+    };
     // Eighteen attempts plus one per handler use up "target"'s twenty.
     for _ in 0..18 {
         let (path, input) = inputs("target")[1].clone();
-        error(
-            call(&app, request("POST", path, None, Some(input))).await,
-            StatusCode::UNAUTHORIZED,
-            "unauthorized",
-        )
-        .await;
+        attempt(path, input).await;
     }
     for (path, input) in inputs("target") {
-        error(
-            call(&app, request("POST", path, None, Some(input))).await,
-            StatusCode::UNAUTHORIZED,
-            "unauthorized",
-        )
-        .await;
+        attempt(path, input).await;
     }
     for (path, input) in inputs("target") {
         error(
@@ -50,12 +52,7 @@ async fn password_and_passkey_logins_share_a_per_username_budget() {
     assert_eq!(app.accounts.login_attempts("target"), 20);
     // Another username, including the real administrator, is unaffected.
     for (path, input) in inputs("bystander") {
-        error(
-            call(&app, request("POST", path, None, Some(input))).await,
-            StatusCode::UNAUTHORIZED,
-            "unauthorized",
-        )
-        .await;
+        attempt(path, input).await;
     }
     let admin = call(
         &app,

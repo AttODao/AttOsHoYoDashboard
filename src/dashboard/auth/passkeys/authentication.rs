@@ -6,6 +6,7 @@ use super::{
     AuthenticationChallenge, Passkeys,
     challenge::{CHALLENGE_TTL, Ceremony, Pending},
     credential::{OfferedCredential, credential_fingerprint, decode_credential, load_credentials},
+    decoy,
 };
 use crate::dashboard::{
     auth::{
@@ -25,51 +26,64 @@ use webauthn_rs::prelude::PublicKeyCredential;
 
 impl Passkeys {
     /// Username-first login, not discoverable/username-less credentials.
+    ///
+    /// Names without a usable passkey get decoy options of the same shape and status, so
+    /// this endpoint does not reveal which accounts exist or have passkeys.
     pub(in crate::dashboard) async fn authentication_start(
         &self,
         accounts: &Accounts,
         username: String,
     ) -> Result<AuthenticationChallenge> {
         accounts.admit_login(&username)?;
-        if username.is_empty() || username.len() > 64 {
-            return Err(Error::Unauthorized);
-        }
-        let user = user::Entity::find()
+        // No account can have an invalid name, so rejecting one reveals nothing.
+        accounts::validate_username(&username).map_err(|_| Error::Unauthorized)?;
+        let owner = user::Entity::find()
             .filter(user::Column::Username.eq(&username))
             .one(&accounts.db)
             .await?
-            .ok_or(Error::Unauthorized)?;
-        accounts::require_ready(&user).map_err(|_| Error::Unauthorized)?;
-        let rows = load_credentials(&accounts.db, user.id).await?;
-        if rows.is_empty() {
-            return Err(Error::Unauthorized);
-        }
-        let (options, state, offered) = self
-            .run_cpu(move |webauthn| {
-                let mut keys = Vec::with_capacity(rows.len());
-                let mut offered = Vec::with_capacity(rows.len());
-                for row in rows {
-                    keys.push(decode_credential(&row)?);
-                    offered.push(OfferedCredential {
-                        id: row.id,
-                        credential_id: row.credential_id,
-                        fingerprint: credential_fingerprint(&row.credential)?,
-                    });
-                }
-                let (options, state) = webauthn
-                    .start_passkey_authentication(&keys)
-                    .map_err(|_| Error::Unauthorized)?;
-                Ok((options, state, offered))
-            })
-            .await?;
+            .filter(|user| accounts::require_ready(user).is_ok())
+            .map(|user| user.id);
+        // Every path runs the same queries and one WebAuthn task; a decoy is not a shortcut.
+        let rows = load_credentials(&accounts.db, owner.unwrap_or_else(Uuid::nil)).await?;
+        let (owner, options, ceremony) = match owner.filter(|_| !rows.is_empty()) {
+            Some(owner) => {
+                let (options, state, offered) = self
+                    .run_cpu(move |webauthn| {
+                        let mut keys = Vec::with_capacity(rows.len());
+                        let mut offered = Vec::with_capacity(rows.len());
+                        for row in rows {
+                            keys.push(decode_credential(&row)?);
+                            offered.push(OfferedCredential {
+                                id: row.id,
+                                credential_id: row.credential_id,
+                                fingerprint: credential_fingerprint(&row.credential)?,
+                            });
+                        }
+                        let (options, state) = webauthn
+                            .start_passkey_authentication(&keys)
+                            .map_err(|_| Error::Unauthorized)?;
+                        Ok((options, state, offered))
+                    })
+                    .await?;
+                let ceremony = Ceremony::Authentication {
+                    username,
+                    offered,
+                    state,
+                };
+                (owner, options, ceremony)
+            }
+            None => {
+                let credential_id = self.decoy.credential_id(&username)?;
+                let options = self
+                    .run_cpu(move |webauthn| decoy::options(webauthn, credential_id))
+                    .await?;
+                (Uuid::nil(), options, Ceremony::Decoy { username })
+            }
+        };
         let challenge_id = self.insert_pending(Pending {
-            owner: user.id,
+            owner,
             expires_at: Instant::now() + CHALLENGE_TTL,
-            ceremony: Ceremony::Authentication {
-                username,
-                offered,
-                state,
-            },
+            ceremony,
         })?;
         Ok(AuthenticationChallenge {
             challenge_id,
@@ -84,13 +98,18 @@ impl Passkeys {
         response: PublicKeyCredential,
     ) -> Result<(user::Model, IssuedSession)> {
         let pending = self.take_pending(challenge_id)?;
-        let Ceremony::Authentication {
-            username,
-            offered,
-            state,
-        } = pending.ceremony
-        else {
-            return Err(Error::Unauthorized);
+        let (username, offered, state) = match pending.ceremony {
+            Ceremony::Authentication {
+                username,
+                offered,
+                state,
+            } => (username, offered, state),
+            Ceremony::Decoy { username } => {
+                // Same budget and the same 401 as an assertion that fails verification.
+                accounts.admit_login(&username)?;
+                return Err(Error::Unauthorized);
+            }
+            Ceremony::Registration { .. } => return Err(Error::Unauthorized),
         };
         // An unknown challenge costs no verification work; a known one spends its user's budget.
         accounts.admit_login(&username)?;

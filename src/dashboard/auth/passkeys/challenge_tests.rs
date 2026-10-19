@@ -26,7 +26,7 @@ fn pending(passkeys: &Passkeys, expires_at: Instant) -> Pending {
 
 #[test]
 fn pending_capacity_is_128_and_consumption_frees_a_slot() {
-    let passkeys = Passkeys::new(RP_ID, ORIGIN).unwrap();
+    let passkeys = Passkeys::new(RP_ID, ORIGIN, None).unwrap();
     let mut ids = Vec::new();
     for _ in 0..128 {
         ids.push(
@@ -54,7 +54,7 @@ fn pending_capacity_is_128_and_consumption_frees_a_slot() {
 #[test]
 fn expired_entries_are_cleaned_on_insert_and_take() {
     assert_eq!(CHALLENGE_TTL, Duration::from_secs(300));
-    let passkeys = Passkeys::new(RP_ID, ORIGIN).unwrap();
+    let passkeys = Passkeys::new(RP_ID, ORIGIN, None).unwrap();
     let expired = Uuid::new_v4();
     passkeys.pending.lock().unwrap().insert(
         expired,
@@ -80,11 +80,11 @@ fn expired_entries_are_cleaned_on_insert_and_take() {
 
 #[test]
 fn process_local_challenges_do_not_survive_service_recreation() {
-    let original = Passkeys::new(RP_ID, ORIGIN).unwrap();
+    let original = Passkeys::new(RP_ID, ORIGIN, None).unwrap();
     let id = original
         .insert_pending(pending(&original, Instant::now() + CHALLENGE_TTL))
         .unwrap();
-    let replacement = Passkeys::new(RP_ID, ORIGIN).unwrap();
+    let replacement = Passkeys::new(RP_ID, ORIGIN, None).unwrap();
     assert!(matches!(
         replacement.take_pending(id),
         Err(Error::Unauthorized)

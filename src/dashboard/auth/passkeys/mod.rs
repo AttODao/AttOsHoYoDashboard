@@ -2,6 +2,7 @@
 mod authentication;
 mod challenge;
 mod credential;
+mod decoy;
 mod registration;
 #[cfg(test)]
 mod test_support;
@@ -16,9 +17,11 @@ use super::{
 use crate::dashboard::{
     db::entities::passkey,
     error::{Error, Result},
+    hoyolab::credentials::CookieKey,
 };
 use challenge::{CHALLENGE_TTL, Pending};
 use chrono::{DateTime, Utc};
+use decoy::DecoyKey;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, QueryFilter, QueryOrder,
     QuerySelect, TransactionTrait,
@@ -41,6 +44,7 @@ pub(in crate::dashboard) struct Passkeys {
     webauthn: Arc<Webauthn>,
     cpu: Arc<Semaphore>,
     pending: Mutex<HashMap<Uuid, Pending>>,
+    decoy: DecoyKey,
 }
 
 // These are the only persisted credential fields allowed in an HTTP list response.
@@ -65,7 +69,12 @@ pub(in crate::dashboard) struct AuthenticationChallenge {
 
 impl Passkeys {
     /// Origin and RP relationship checks are delegated to WebAuthn, with no extra origins.
-    pub(in crate::dashboard) fn new(rp_id: &str, origin: &str) -> Result<Self> {
+    /// `decoy_seed` keeps decoy login options stable across restarts when configured.
+    pub(in crate::dashboard) fn new(
+        rp_id: &str,
+        origin: &str,
+        decoy_seed: Option<&CookieKey>,
+    ) -> Result<Self> {
         let origin = Url::parse(origin).map_err(|_| Error::Invalid("invalid passkey origin"))?;
         let webauthn =
             tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
@@ -81,6 +90,7 @@ impl Passkeys {
             webauthn: Arc::new(webauthn),
             cpu: Arc::new(Semaphore::new(4)),
             pending: Mutex::new(HashMap::new()),
+            decoy: DecoyKey::new(decoy_seed)?,
         })
     }
 

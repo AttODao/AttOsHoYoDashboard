@@ -1,7 +1,12 @@
 //! Versioned AES-256-GCM storage bound to owner and verification context.
 use super::{CookieKey, Credentials, KEY_LEN, MAX_COOKIE_LEN};
 use crate::dashboard::error::{Error, Result};
-use openssl::symm::{Cipher, decrypt_aead, encrypt_aead};
+use openssl::{
+    hash::MessageDigest,
+    pkey::PKey,
+    sign::Signer,
+    symm::{Cipher, decrypt_aead, encrypt_aead},
+};
 use rand::TryRngCore;
 use uuid::Uuid;
 
@@ -25,6 +30,19 @@ impl CookieKey {
             key[index] = (hex_value(chunk[0])? << 4) | hex_value(chunk[1])?;
         }
         Ok(Self(key))
+    }
+
+    /// HMAC-SHA256 subkey for another purpose; distinct labels give independent keys,
+    /// and the Cookie encryption key itself never leaves this module.
+    pub(in crate::dashboard) fn derive(&self, purpose: &[u8]) -> Result<[u8; 32]> {
+        let key = PKey::hmac(&self.0).map_err(|_| Error::Internal)?;
+        let mut signer = Signer::new(MessageDigest::sha256(), &key).map_err(|_| Error::Internal)?;
+        signer.update(purpose).map_err(|_| Error::Internal)?;
+        signer
+            .sign_to_vec()
+            .map_err(|_| Error::Internal)?
+            .try_into()
+            .map_err(|_| Error::Internal)
     }
 
     pub(in crate::dashboard) fn seal(

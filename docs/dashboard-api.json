@@ -325,9 +325,10 @@
         ],
         "operationId": "startPasskeyLogin",
         "summary": "Start username-first passkey login.",
+        "description": "Does not reveal whether the account exists, is usable, or has passkeys: a valid username without a usable passkey receives the same 200 response shape with one deterministic decoy credential ID and a challenge that verify always rejects with 401. Invalid usernames return 401.",
         "responses": {
           "200": {
-            "description": "OK.",
+            "description": "Passkey request options, real or decoy.",
             "content": {
               "application/json": {
                 "schema": {

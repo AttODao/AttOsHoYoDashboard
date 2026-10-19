@@ -133,7 +133,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 | パス | 責務 |
 | --- | --- |
-| `src/dashboard/auth/` | ユーザーのライフサイクル、パスワード、セッション、パスキー、削除要求と完了（再試行の待機を含む）、ユーザー名ごとのログイン試行制限、ユーザーごとの現在パスワード確認の試行制限 |
+| `src/dashboard/auth/` | ユーザーのライフサイクル、パスワード、セッション、パスキー（アカウントの有無を明かさないログインoptionsを含む）、削除要求と完了（再試行の待機を含む）、ユーザー名ごとのログイン試行制限、ユーザーごとの現在パスワード確認の試行制限 |
 | `src/dashboard/http/` | ルート、DTO、Cookie、Origin・キャッシュの境界、UI配信、報酬・削除のバックグラウンド処理の起動 |
 | `src/dashboard/db/` | `entities/` に保存モデル、`migrations/` にスキーマ変更 |
 | `src/dashboard/hoyolab/` | Cookieの解析・暗号化保存、連携の検証・同期、ユーザー単位の操作ロック |
@@ -189,4 +189,5 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 - ゲーム種別は `genshin`／`starrail`。状態レスポンスの `stale` と取得日時を確認してください。
 - 報酬操作の `{id}` は報酬設定のUUIDで、ゲームUIDではありません。検証・同期・手動受け取りのPOSTには `{}` を送ります。
 - 手動受け取りは非同期の `202` 受付です。結果は履歴で確認します。不確定な送信結果は再POSTせず、追加認証が必要ならHoYoLAB側で対応してください。
+- `POST /auth/passkey/options` は存在しないユーザーやpasskey未登録のユーザーにも同じ形の応答を返し、ログインは `verify` で401になります（アカウントの有無を明かさないため）。
 - 削除も非同期で、受付時に利用停止・セッション失効となります。操作者の現在パスワードと対象ユーザー名の完全一致入力が必要です。最後の有効な管理者は削除できません。

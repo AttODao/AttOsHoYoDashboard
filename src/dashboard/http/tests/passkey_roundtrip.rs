@@ -30,7 +30,7 @@ async fn registration_public_authentication_metadata_and_delete_roundtrip() {
     state.config.origin = webauthn::ORIGIN.to_owned();
     state.config.rp_id = webauthn::RP_ID.to_owned();
     state.config.secure_cookie = false;
-    state.passkeys = Passkeys::new(webauthn::RP_ID, webauthn::ORIGIN).unwrap();
+    state.passkeys = Passkeys::new(webauthn::RP_ID, webauthn::ORIGIN, None).unwrap();
     let admin = cookie(&app, actor.user.id).await;
     let mut authenticator = TestAuthenticator::new();
     let options = call(
@@ -147,14 +147,42 @@ async fn registration_public_authentication_metadata_and_delete_roundtrip() {
         .await,
         json!([])
     );
+    // Without passkeys the account gets decoy options that cannot complete a login.
+    let decoy = call(
+        &app,
+        local_request(
+            "POST",
+            "/api/v1/auth/passkey/options",
+            None,
+            Some(json!({"username": "admin"})),
+        ),
+    )
+    .await;
+    assert_eq!(decoy.status(), StatusCode::OK);
+    let decoy = body(decoy).await;
+    assert_eq!(
+        decoy["options"]["publicKey"]["allowCredentials"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let challenge_id = decoy["challenge_id"].clone();
+    let challenge = AuthenticationChallenge {
+        challenge_id: serde_json::from_value(challenge_id.clone()).unwrap(),
+        options: serde_json::from_value(decoy["options"].clone()).unwrap(),
+    };
     error(
         call(
             &app,
             local_request(
                 "POST",
-                "/api/v1/auth/passkey/options",
+                "/api/v1/auth/passkey/verify",
                 None,
-                Some(json!({"username": "admin"})),
+                Some(json!({
+                    "challenge_id": challenge_id,
+                    "response": authenticator.authenticate(&challenge, 3),
+                })),
             ),
         )
         .await,

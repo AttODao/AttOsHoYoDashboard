@@ -157,3 +157,17 @@ fn seal_plaintext(
 fn assert_internal<T>(result: Result<T>) {
     assert!(matches!(result, Err(Error::Internal)));
 }
+
+#[test]
+fn derived_subkeys_are_purpose_separated_and_match_hmac_sha256() {
+    let key = test_key(7);
+    let a = key.derive(b"purpose-a").unwrap();
+    // Independently computed HMAC-SHA256(key = [7; 32], "purpose-a").
+    let expected = "43ffd12b83af0078b1ad50cc67500d55f033f7bd8ea33696ee246c36e7a946eb";
+    let hex: String = a.iter().map(|byte| format!("{byte:02x}")).collect();
+    assert_eq!(hex, expected);
+    assert_eq!(a, key.derive(b"purpose-a").unwrap());
+    assert_ne!(a, key.derive(b"purpose-b").unwrap());
+    assert_ne!(a, test_key(8).derive(b"purpose-a").unwrap());
+    assert_ne!(a.as_slice(), key.0.as_slice());
+}

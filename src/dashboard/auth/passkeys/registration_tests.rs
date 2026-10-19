@@ -19,7 +19,7 @@ use uuid::Uuid;
 async fn software_p256_registration_persists_trimmed_label_and_is_single_use() {
     let db = TestDatabase::new().await;
     let (accounts, actor) = db.ready_admin().await;
-    let passkeys = Passkeys::new(RP_ID, ORIGIN).unwrap();
+    let passkeys = Passkeys::new(RP_ID, ORIGIN, None).unwrap();
     let challenge = passkeys
         .registration_start(&accounts, &actor, "  laptop  ".into())
         .await
@@ -63,18 +63,21 @@ async fn temporary_password_blocks_registration_and_passkey_login() {
     let actor = Sessions::authenticate(&db.db, &token_hash(&session.token).unwrap())
         .await
         .unwrap();
-    let passkeys = Passkeys::new(RP_ID, ORIGIN).unwrap();
+    let passkeys = Passkeys::new(RP_ID, ORIGIN, None).unwrap();
     assert!(matches!(
         passkeys
             .registration_start(&accounts, &actor, "key".into())
             .await,
         Err(Error::PasswordChangeRequired)
     ));
+    // Passkey login for a temporary-password user only ever gets a decoy challenge.
+    let login = passkeys
+        .authentication_start(&accounts, "temporary-user".into())
+        .await
+        .unwrap();
     assert!(matches!(
-        passkeys
-            .authentication_start(&accounts, "temporary-user".into())
-            .await,
-        Err(Error::Unauthorized)
+        passkeys.pending.lock().unwrap()[&login.challenge_id].ceremony,
+        crate::dashboard::auth::passkeys::challenge::Ceremony::Decoy { .. }
     ));
 }
 
@@ -247,7 +250,7 @@ async fn lost_or_expired_registration_challenge_is_rejected() {
         .await
         .unwrap();
     let response = TestAuthenticator::new().register(&challenge, 1);
-    let restarted = Passkeys::new(RP_ID, ORIGIN).unwrap();
+    let restarted = Passkeys::new(RP_ID, ORIGIN, None).unwrap();
     assert!(matches!(
         restarted
             .registration_finish(

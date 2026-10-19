@@ -30,6 +30,11 @@ pub(super) enum Ceremony {
         offered: Vec<OfferedCredential>,
         state: PasskeyAuthentication,
     },
+    /// Issued for a name without a usable passkey; finishing it always fails.
+    Decoy {
+        /// Sign-in budget key for the verify step.
+        username: String,
+    },
 }
 
 impl Passkeys {

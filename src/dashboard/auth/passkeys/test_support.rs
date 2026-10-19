@@ -25,7 +25,7 @@ impl Fixture {
     pub async fn new() -> Self {
         let db = TestDatabase::new().await;
         let (accounts, actor) = db.ready_admin().await;
-        let passkeys = Passkeys::new(RP_ID, ORIGIN).unwrap();
+        let passkeys = Passkeys::new(RP_ID, ORIGIN, None).unwrap();
         let mut authenticator = TestAuthenticator::new();
         let challenge = passkeys
             .registration_start(&accounts, &actor, "test key".into())

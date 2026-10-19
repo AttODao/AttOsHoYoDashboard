@@ -17,14 +17,17 @@ use std::time::Duration;
 
 #[test]
 fn webauthn_configuration_accepts_localhost_and_rejects_invalid_rp_relationships() {
-    assert!(Passkeys::new(RP_ID, ORIGIN).is_ok());
-    assert!(Passkeys::new("example.com", "https://dashboard.example.com").is_ok());
+    assert!(Passkeys::new(RP_ID, ORIGIN, None).is_ok());
+    assert!(Passkeys::new("example.com", "https://dashboard.example.com", None).is_ok());
     for (rp, origin) in [
         (RP_ID, "not a URL"),
         ("other.example", ORIGIN),
         ("127.0.0.1", "http://127.0.0.1:8080"),
     ] {
-        assert!(matches!(Passkeys::new(rp, origin), Err(Error::Invalid(_))));
+        assert!(matches!(
+            Passkeys::new(rp, origin, None),
+            Err(Error::Invalid(_))
+        ));
     }
 }
 
@@ -47,7 +50,7 @@ fn labels_are_trimmed_and_bounded_in_utf8_bytes_without_controls() {
 
 #[tokio::test]
 async fn cpu_admission_is_busy_and_cancellation_keeps_the_real_work_permit() {
-    let passkeys = Arc::new(Passkeys::new(RP_ID, ORIGIN).unwrap());
+    let passkeys = Arc::new(Passkeys::new(RP_ID, ORIGIN, None).unwrap());
     let held = passkeys.cpu.clone().acquire_many_owned(3).await.unwrap();
     let (started_tx, started_rx) = tokio::sync::oneshot::channel();
     let (release_tx, release_rx) = std::sync::mpsc::channel();

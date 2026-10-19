@@ -51,7 +51,7 @@ pub(super) async fn serve(accounts: Accounts, config: Config) -> Result<()> {
         store.timezone = config.timezone;
         Arc::new(store)
     });
-    let passkeys = Passkeys::new(&config.rp_id, &config.origin)?;
+    let passkeys = Passkeys::new(&config.rp_id, &config.origin, config.cookie_key.as_deref())?;
     let app = Arc::new(HttpState {
         accounts,
         passkeys,
