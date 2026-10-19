@@ -124,6 +124,18 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 | `dashboard-ui/src/pages/` | 画面、メニュー、設定、ユーザー管理 |
 | `src/dashboard/games/summary.rs` | 上流ゲーム状態から画面用の要約への写像 |
 
+### バックエンドモジュール
+
+| パス | 責務 |
+| --- | --- |
+| `src/dashboard/auth/` | ユーザーのライフサイクル、パスワード、セッション、パスキー、削除要求と完了（再試行の待機を含む）、ユーザー名ごとのログイン試行制限 |
+| `src/dashboard/http/` | ルート、DTO、Cookie、Origin・キャッシュの境界、UI配信、報酬・削除のバックグラウンド処理の起動 |
+| `src/dashboard/db/` | `entities/` に保存モデル、`migrations/` にスキーマ変更 |
+| `src/dashboard/hoyolab/` | Cookieの解析・暗号化保存、連携の検証・同期、ユーザー単位の操作ロック |
+| `src/dashboard/games/` | ゲームUID一覧・表示設定・状態キャッシュ |
+| `src/dashboard/rewards/` | 報酬設定・スケジュール・実行、送信不確定時のガード、ユーザー削除前の報酬確認 |
+| `src/hoyolab/` | HoYoLAB上流APIの型付きクライアント（ダッシュボードの方針は含めない） |
+
 ## HoYoLAB連携
 
 初回パスワード変更後、連携画面からHoYoLAB Cookieを登録し、検証を完了してください。Cookieは <https://www.hoyolab.com> にログインしたブラウザのApplication／Storageから取得します。
@@ -161,7 +173,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 | 機能 | 主なエンドポイント |
 | --- | --- |
 | 認証 | `POST /auth/login`、`POST /auth/logout`、`GET /me`、`PUT /me/password` |
-| パスキー | `GET /me/passkeys`、`POST /me/passkeys/options`・`/me/passkeys/verify`、`POST /auth/passkey/options`・`/auth/passkey/verify` |
+| パスキー | `GET /me/passkeys`、`POST /me/passkeys/options`・`/me/passkeys/verify`、`DELETE /me/passkeys/{id}`、`POST /auth/passkey/options`・`/auth/passkey/verify` |
 | HoYoLAB | `GET /me/hoyolab`、`PUT /me/hoyolab/cookie`、`POST /me/hoyolab/verify`・`/me/hoyolab/sync` |
 | ゲーム | `GET /game-accounts`、`PATCH /game-accounts/{id}`、`GET /game-accounts/{id}/status` |
 | 報酬 | `GET /reward-settings`、`PATCH /reward-settings/{id}`、`POST /reward-settings/{id}/run`、`GET /reward-runs` |
