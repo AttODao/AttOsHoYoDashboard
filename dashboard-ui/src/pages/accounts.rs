@@ -1,3 +1,4 @@
+use super::common::game_name;
 use crate::app::actions::{handle_api_error_for, spawn_action};
 use crate::app::data::load_accounts;
 use crate::app::preferences::use_preferences;
@@ -36,11 +37,7 @@ fn AccountTable(state: Signal<AppState>) -> Element {
                 for account in accounts {
                     div { class: "setting-row", key: "{account.id}",
                         div {
-                            h3 { {match account.game_kind.as_str() {
-                                "genshin" => preferences.text("dashboard.genshin_impact"),
-                                "starrail" => preferences.text("dashboard.honkai_star_rail"),
-                                _ => &account.game_kind,
-                            }} }
+                            h3 { {game_name(&account.game_kind, preferences)} }
                             p { {preferences.format("accounts.identity", &[("uid", if account.game_uid.is_empty() { preferences.text("accounts.missing") } else { &account.game_uid }), ("region", &account.region)])} }
                             p {
                                 {preferences.text("accounts.detected")} " · "

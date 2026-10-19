@@ -1,4 +1,4 @@
-use super::common::{Field, Metric};
+use super::common::{Field, Metric, game_name};
 use crate::app::actions::{handle_api_error_for, spawn_action};
 use crate::app::data::{load_rewards, save_reward_setting};
 use crate::app::preferences::use_preferences;
@@ -58,12 +58,7 @@ fn RewardSettingCard(state: Signal<AppState>, setting: RewardSetting) -> Element
         .server
         .as_ref()
         .map(|server| server.timezone_offset.clone());
-    let game = match setting.game_kind.as_str() {
-        "genshin" => preferences.text("dashboard.genshin_impact"),
-        "starrail" => preferences.text("dashboard.honkai_star_rail"),
-        other => other,
-    }
-    .to_owned();
+    let game = game_name(&setting.game_kind, preferences).to_owned();
     let label = |value: &str| reward_label(value, preferences);
     let missing = preferences.text("hoyolab.not_reported");
     rsx! {
@@ -161,7 +156,7 @@ fn RewardHistory(state: Signal<AppState>) -> Element {
                 for run in rows.unwrap_or_default() {
                     li { key: "{run.id}",
                         div {
-                            strong { {match run.game_kind.as_str() { "genshin" => preferences.text("dashboard.genshin_impact"), "starrail" => preferences.text("dashboard.honkai_star_rail"), _ => &run.game_kind }} }
+                            strong { {game_name(&run.game_kind, preferences)} }
                             " · " {reward_label(&run.state, preferences)}
                             " · " {reward_label(&run.trigger, preferences)}
                         }

@@ -1,4 +1,4 @@
-use super::common::{Icon, Metric, focus_element};
+use super::common::{Icon, Metric, focus_element, game_name};
 use crate::app::actions::{spawn_action, spawn_root};
 use crate::app::data::{load_game_status, save_reward_setting};
 use crate::app::display::{compact_datetime, count_pair, hours_minutes};
@@ -33,7 +33,7 @@ pub(super) fn DashboardPage(state: Signal<AppState>) -> Element {
                                 focus_game_tab(next);
                             }
                         },
-                        {localized_game_name(game, ui)}
+                        {game_name(game, ui)}
                     }
                 }
             }
@@ -156,7 +156,7 @@ fn GamePanel(
             "aria-labelledby": if mobile { format!("game-tab-{game}") } else { format!("game-title-{game}") },
             "data-selected": active, hidden: mobile && !active,
             tabindex: if mobile { "0" } else { "-1" },
-            h2 { class: "game-title", id: "game-title-{game}", {localized_game_name(game, ui)} }
+            h2 { class: "game-title", id: "game-title-{game}", {game_name(game, ui)} }
             div { class: "card-automation",
                 span { {ui.text("dashboard.login_bonus")} }
                 if let Some(setting) = setting.clone() {
@@ -164,7 +164,7 @@ fn GamePanel(
                         input {
                             r#type: "checkbox", role: "switch", checked: setting.enabled,
                             disabled: busy || rewards_error,
-                            "aria-label": ui.format("dashboard.automation_label", &[("game", localized_game_name(game, ui))]),
+                            "aria-label": ui.format("dashboard.automation_label", &[("game", game_name(game, ui))]),
                             onchange: move |event| {
                                 let id = setting.id;
                                 let enabled = event.checked();
@@ -417,14 +417,6 @@ fn expedition_label(name: Option<&str>, index: usize, ui: Preferences) -> String
 fn missing_payload_notice(data: Option<&DailySummary>) -> Option<&'static str> {
     data.is_none()
         .then_some("dashboard.no_daily_summary_payload_returned")
-}
-
-fn localized_game_name(game: &str, ui: Preferences) -> &'static str {
-    if game == "genshin" {
-        ui.text("dashboard.genshin_impact")
-    } else {
-        ui.text("dashboard.honkai_star_rail")
-    }
 }
 
 fn number(value: Option<i64>, ui: Preferences) -> String {

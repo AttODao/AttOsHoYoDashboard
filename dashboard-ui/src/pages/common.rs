@@ -1,6 +1,15 @@
 use crate::app::preferences::{Preferences, use_preferences};
 use dioxus::prelude::*;
 
+/// Localized title for a backend `game_kind`; unknown kinds are shown as sent.
+pub(super) fn game_name(game: &str, ui: Preferences) -> &str {
+    match game {
+        "genshin" => ui.text("dashboard.genshin_impact"),
+        "starrail" => ui.text("dashboard.honkai_star_rail"),
+        other => other,
+    }
+}
+
 #[component]
 pub(super) fn Field(id: String, label: String, children: Element) -> Element {
     rsx! { div { class: "field", label { r#for: "{id}", "{label}" } {children} } }
@@ -338,7 +347,21 @@ fn outside_bounds(x: f64, y: f64, left: f64, top: f64, right: f64, bottom: f64) 
 
 #[cfg(test)]
 mod tests {
-    use super::outside_bounds;
+    use super::{Preferences, game_name, outside_bounds};
+
+    #[test]
+    fn game_names_are_localized_and_unknown_kinds_pass_through() {
+        let ui = Preferences::default();
+        assert_eq!(
+            game_name("genshin", ui),
+            ui.text("dashboard.genshin_impact")
+        );
+        assert_eq!(
+            game_name("starrail", ui),
+            ui.text("dashboard.honkai_star_rail")
+        );
+        assert_eq!(game_name("zzz", ui), "zzz");
+    }
 
     #[test]
     fn backdrop_coordinates_exclude_dialog_and_its_edges() {
