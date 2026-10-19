@@ -23,7 +23,7 @@ use state::{AppState, Page, Phase, current_ready_page, initial_page};
 // External CSS uses these fingerprinted filenames; retain them without a second DX suffix.
 #[used]
 static FONT_JP: Asset = asset!(
-    "/assets/fonts/noto-sans-jp-293812b054e0.woff2",
+    "/assets/fonts/noto-sans-jp-94fb3a1af0eb.woff2",
     AssetOptions::builder().with_hash_suffix(false)
 );
 #[used]

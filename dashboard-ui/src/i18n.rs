@@ -133,6 +133,27 @@ mod tests {
     }
 
     #[test]
+    fn bundled_japanese_font_covers_every_catalog_character() {
+        // Regenerate with scripts/subset-fonts.sh when this fails after a copy change.
+        let manifest = include_str!("../assets/fonts/noto-sans-jp.chars.txt");
+        let covered: BTreeSet<char> = manifest
+            .lines()
+            .filter(|line| !line.starts_with('#'))
+            .map(|line| {
+                let hex = line.strip_prefix("U+").expect("U+XXXX line");
+                char::from_u32(u32::from_str_radix(hex, 16).unwrap()).unwrap()
+            })
+            .collect();
+        let missing: BTreeSet<char> = [&*JAPANESE, &*ENGLISH]
+            .into_iter()
+            .flat_map(|catalog| catalog.values())
+            .flat_map(|text| text.chars())
+            .filter(|ch| !ch.is_control() && !covered.contains(ch))
+            .collect();
+        assert!(missing.is_empty(), "font subset lacks: {missing:?}");
+    }
+
+    #[test]
     fn application_message_keys_exist_and_copy_stays_out_of_rust() {
         fn check_sources(path: &Path, used: &mut BTreeSet<String>) {
             for entry in fs::read_dir(path).unwrap() {

@@ -1,4 +1,4 @@
-@font-face{font-family:'Noto Sans JP';font-style:normal;font-weight:400 700;font-display:swap;src:url('noto-sans-jp-293812b054e0.woff2') format('woff2')}
+@font-face{font-family:'Noto Sans JP';font-style:normal;font-weight:400 700;font-display:swap;src:url('noto-sans-jp-94fb3a1af0eb.woff2') format('woff2')}
 @font-face{font-family:'Orbitron';font-style:normal;font-weight:600 700;font-display:swap;src:url('orbitron-4354932df8f5.woff2') format('woff2')}
 :root{--canvas:#0C0B0E;--surface:#18171D;--elevated:#24222C;--text:#F8F7FC;--muted:#B7B2C4;--line:#7F778E;--decorative:#38333F;--pink:#FF58EC;--cyan:#49EEFF;--mint:#93F5CE;--lavender:#D5B7FF;--warning:#FFD585;--danger:#FFB2BD;--on-accent:#0B0B10;--radius:16px;--control:48px;--gradient:linear-gradient(120deg,#FF58EC,#49EEFF);color-scheme:dark;font-family:'Noto Sans JP',sans-serif;background:var(--canvas);color:var(--text)}
 *{box-sizing:border-box}body{margin:0;background:var(--canvas);min-height:100vh;font-size:16px;line-height:1.6}button,input,select{font:inherit}button,a,summary{touch-action:manipulation}button,select,summary{cursor:pointer}

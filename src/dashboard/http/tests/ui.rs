@@ -24,7 +24,7 @@ pub(super) async fn fixture() -> (Bundle, App) {
             b"export function boot() {}",
         ),
         ("assets/app_bg-dxh1ccc56b941a84aa.wasm", b"\0asm\x01\0\0\0"),
-        ("assets/font-293812b054e0.woff2", b"wOF2synthetic"),
+        ("assets/font-94fb3a1af0eb.woff2", b"wOF2synthetic"),
         ("private.txt", b"synthetic-private-marker"),
     ] {
         std::fs::write(bundle.0.join(path), content).unwrap();
@@ -53,7 +53,7 @@ async fn compiled_assets_are_public_local_and_hardened() {
         ("/assets/app.wasm", "application/wasm"),
         ("/assets/app-dxh2bdb9778a3bf3b39.js", "text/javascript"),
         ("/assets/app_bg-dxh1ccc56b941a84aa.wasm", "application/wasm"),
-        ("/assets/font-293812b054e0.woff2", "font/woff2"),
+        ("/assets/font-94fb3a1af0eb.woff2", "font/woff2"),
         ("/openapi.json", "application/json"),
     ] {
         // Public GETs need neither an Origin nor a session cookie.
@@ -69,7 +69,7 @@ async fn compiled_assets_are_public_local_and_hardened() {
         // Only content-fingerprinted asset names are cached for good; others revalidate.
         let cache = if !path.starts_with("/assets/") {
             "no-store"
-        } else if path.contains("-dxh") || path.contains("-293812b054e0") {
+        } else if path.contains("-dxh") || path.contains("-94fb3a1af0eb") {
             "public, max-age=31536000, immutable"
         } else {
             "no-cache"
@@ -181,7 +181,7 @@ fn dx_and_font_fingerprints_are_recognized_from_real_bundle_names() {
         "favicon-dxh35b6a291bc41547.png",
         "LICENSE-MIT-dxh882daef2a2aa2d7a",
         "noto-sans-jp-OFL-dxh9f25b8d1c04b62b2.txt",
-        "noto-sans-jp-293812b054e0.woff2",
+        "noto-sans-jp-94fb3a1af0eb.woff2",
         "orbitron-4354932df8f5.woff2",
     ] {
         assert!(fingerprinted(&format!("/assets/{name}")), "{name}");
