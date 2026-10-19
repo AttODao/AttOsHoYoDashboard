@@ -108,8 +108,10 @@ const server=http.createServer(async(req,res)=>{
    if(visibility){assert.equal(req.method,'PATCH');assert.deepEqual(Object.keys(body),['visible']);if(failPatch)return json(res,{error:'unavailable'},503);visibility.visible=body.visible;res.writeHead(204);return res.end();}
    const account=accounts.find(a=>p===`/api/v1/game-accounts/${a.id}/status`);
    if(account&&statusMode==='failed')return json(res,{...account,data:null,fetched_at:null,error_code:'network',error_at:new Date().toISOString(),stale:true});
+   // 7h 12m minus a few seconds: the countdown rounds up to the displayed minute.
+   if(account&&statusMode==='recovering')return json(res,{...account,data:{current_stamina:150,max_stamina:300,stamina_full_at:new Date(Date.now()+(7*3600+12*60-5)*1000).toISOString()},fetched_at:new Date().toISOString(),error_code:null,error_at:null,stale:false});
    if(account&&statusMode==='stale')return json(res,{...account,data:{current_stamina:5,max_stamina:300},fetched_at:new Date(Date.now()-6*3600e3-60e3).toISOString(),error_code:'http:503',error_at:new Date().toISOString(),stale:true});
-   if(account){assert.ok(account.visible&&account.detected);return json(res,{...account,data:account.game_kind==='genshin'?{current_resin:actor===user?(account.id===uid(5)?0:31):77,max_resin:200,finished_task_num:0,total_task_num:4,resin_full_at:account.id===uid(5)?'2026-10-17T12:38:00Z':'invalid-date',current_home_coin:510,max_home_coin:2400,home_coin_full_at:'2026-10-19T08:38:40Z',expeditions:[{status:'Ongoing',remained_time:'30354',avatar_side_icon:avatarIcon}]}:{current_stamina:account.id===uid(7)?12:24,max_stamina:300,stamina_full_at:account.id===uid(7)?'2026-10-17T16:52:31Z':null,expeditions:account.id===uid(7)?[{name:'Synthetic assignment',status:'Ongoing',remaining_time:1200,item_url:itemIcon}]:[]},fetched_at:new Date().toISOString(),error_code:null,error_at:null,stale:false});}
+   if(account){assert.ok(account.visible&&account.detected);return json(res,{...account,data:account.game_kind==='genshin'?{current_resin:actor===user?(account.id===uid(5)?0:31):77,max_resin:200,finished_task_num:0,total_task_num:4,resin_full_at:account.id===uid(5)?'2026-10-17T12:38:00Z':'invalid-date',current_home_coin:510,max_home_coin:2400,home_coin_full_at:'2026-10-19T08:38:40Z',expeditions:[{status:'Ongoing',remained_time:'30354',avatar_side_icon:avatarIcon},{status:'Finished',remained_time:'0',avatar_side_icon:avatarIcon}]}:{current_stamina:account.id===uid(7)?12:24,max_stamina:300,stamina_full_at:account.id===uid(7)?'2026-10-17T16:52:31Z':null,expeditions:account.id===uid(7)?[{name:'Synthetic assignment',status:'Ongoing',remaining_time:1200,item_url:itemIcon}]:[]},fetched_at:new Date().toISOString(),error_code:null,error_at:null,stale:false});}
    if(p==='/api/v1/reward-settings'){
     assert.equal(req.method,'GET');
     // Each read after an accepted manual run advances it one state, like the worker would.
@@ -264,6 +266,16 @@ try{
  assert.equal(counts.get('/api/v1/auth/passkey/options')||0,0);
  assert.equal(counts.get('/api/v1/me'),sessionReadsBefore+1);
  assert.equal(await page.locator('#ahd-menu-trigger').count(),0,'mandatory setup has no ordinary navigation');
+ // Setup progress is a read-only list, not tabs: no tab roles, buttons or focus stops.
+ const steps=page.locator('ol.setup-steps');
+ assert.equal(await steps.getAttribute('aria-label'),'Setup progress');
+ assert.equal(await page.getByRole('tablist').count(),0,'setup has no tablist');
+ assert.equal(await steps.locator('[role=tab],button,a,[tabindex]').count(),0,'steps are not interactive');
+ assert.deepEqual(await steps.locator('li').evaluateAll(items=>items.map(item=>[item.className,item.getAttribute('aria-current'),item.tabIndex])),[['setup-step current','step',-1],['setup-step upcoming',null,-1]]);
+ assert.equal(await steps.locator('li[aria-current=step] .step-label').innerText(),'Change password');
+ assert.equal(await steps.locator('.visually-hidden').count(),0,'nothing is done yet');
+ assert.equal(await steps.locator('li').first().evaluate(e=>getComputedStyle(e).cursor),'default');
+ assert.equal(await steps.locator('li').first().evaluate(e=>getComputedStyle(e).borderBottomStyle),'none','no tab-like underline');
  assert.equal(await button('Sign out').count(),1,'setup permits logout');
  assert.equal(await page.locator('#current-password').count(),0,'mandatory setup never requests a login secret');
  assert.equal(await page.locator('#hoyolab-cookie').count(),0,'password gate hides Cookie actions');
@@ -293,6 +305,9 @@ try{
  assert.ok(await page.locator('#confirm-password').evaluate(e=>e===document.activeElement),'focus moves to the problem field');
  await change();
  await page.locator('#hoyolab-cookie').waitFor();
+ assert.deepEqual(await steps.locator('li').evaluateAll(items=>items.map(item=>[item.className,item.getAttribute('aria-current')])),[['setup-step done',null],['setup-step current','step']]);
+ assert.equal(await steps.locator('li.done').evaluate(e=>e.textContent),'Change password (done)','done state has accessible text');
+ assert.equal(await steps.locator('li.done .visually-hidden').evaluate(e=>e.getBoundingClientRect().width<=1),true);
  assert.equal(await page.locator('#new-password').count(),0);
  assert.equal(counts.get('/api/v1/me/password'),1);
  assert.equal(counts.get('/api/v1/game-accounts')||0,0,'incomplete real linkage still gates dashboard');
@@ -334,16 +349,29 @@ try{
  assert.equal(await genshin.locator('time.recovery-at').innerText(),'10/17 21:38 JST');
  assert.equal(await starrail.locator('time.recovery-at').innerText(),'10/18 01:52 JST','local date rollover uses 24-hour time');
  assert.match(await genshin.locator('time.recovery-at').evaluate(e=>getComputedStyle(e).fontFamily),/Orbitron/);
+ assert.equal(await genshin.locator('.recovery-in').innerText(),'Fully recovered','a passed estimate is not a negative countdown');
+ assert.doesNotMatch(await genshin.locator('.recovery-in').evaluate(e=>getComputedStyle(e).fontFamily),/Orbitron/);
+ // Card order: UID, primary resource with full recovery, other stats, then the login bonus.
+ for(const panel of [genshin,starrail]){
+  const order=await panel.evaluate(card=>['.uid-select','.resource','.recovery-at','.metrics','.bonus-section'].map(selector=>card.querySelector(selector)).map((node,i,nodes)=>i===0||Boolean(nodes[i-1].compareDocumentPosition(node)&Node.DOCUMENT_POSITION_FOLLOWING)));
+  assert.deepEqual(order,[true,true,true,true,true],'dashboard card order');
+  assert.ok(await panel.locator('.bonus-section #automation-'+(panel===genshin?'genshin':'starrail')).count(),'bonus toggle lives in the last section');
+ }
+ const expeditionRows=genshin.locator('.expedition');
+ assert.equal(await expeditionRows.count(),2);
+ assert.equal((await expeditionRows.nth(0).innerText()).replace(/\s+/g,' ').trim(),'Ongoing Remaining: 8h 26m');
+ assert.equal((await expeditionRows.nth(1).innerText()).trim(),'Finished','a finished expedition shows no zero remaining time');
  assert.doesNotMatch(await genshin.locator('time.estimate-at').evaluate(e=>getComputedStyle(e).fontFamily),/Orbitron/);
  assert.ok(!(await genshin.locator('time.estimate-at').innerText()).includes('T08:38:40'),'currency estimate is not raw ISO');
- assert.equal(await genshin.locator('.expedition-icon').getAttribute('src'),avatarIcon);
- assert.equal(await genshin.locator('.expedition-icon').getAttribute('alt'),'Expedition 1');
- assert.equal(await genshin.locator('.expedition-icon').getAttribute('referrerpolicy'),'no-referrer');
+ assert.equal(await genshin.locator('.expedition-icon').first().getAttribute('src'),avatarIcon);
+ assert.equal(await genshin.locator('.expedition-icon').first().getAttribute('alt'),'Expedition 1');
+ assert.equal(await genshin.locator('.expedition-icon').nth(1).getAttribute('alt'),'Expedition 2');
+ assert.equal(await genshin.locator('.expedition-icon').first().getAttribute('referrerpolicy'),'no-referrer');
  assert.equal(await starrail.locator('.expeditions').count(),0,'Star Rail hides expeditions even when its payload contains assignments');
  await page.waitForFunction(()=>[...document.querySelectorAll('.expedition img')].every(image=>image.complete&&image.naturalWidth>0),'official-host icons load under production CSP');
  assert.equal(await starrail.getByRole('heading',{name:'Expeditions',exact:true}).count(),0);
  await page.screenshot({path:path.join(root,'target/ui-dashboard-desktop.png'),fullPage:true});
- await genshin.locator('img.expedition-icon').dispatchEvent('error');
+ await genshin.locator('img.expedition-icon').first().dispatchEvent('error');
  await genshin.locator('span.expedition-icon[role=img]').waitFor();
  assert.equal(await genshin.locator('span.expedition-icon').getAttribute('aria-label'),'Expedition 1','failed icon keeps its accessible label');
  const gbox=await genshin.boundingBox(),sbox=await starrail.boundingBox();
@@ -371,6 +399,10 @@ try{
  statusMode='stale';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
  await starrail.getByText('Data from 6 h ago (HoYoLAB is temporarily unavailable)',{exact:true}).waitFor();
  assert.ok(!(await starrail.innerText()).includes('http:503'),'raw codes stay out of the visible card');
+ statusMode='recovering';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
+ await starrail.locator('.resource strong').getByText('150',{exact:true}).waitFor();
+ assert.equal(await starrail.locator('.recovery-in').innerText(),'in 7h 12m','full recovery also states the time left');
+ assert.match(await starrail.locator('time.recovery-at').innerText(),/^\d\d\/\d\d \d\d:\d\d JST$/);
  statusMode=null;await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
  await starrail.locator('.resource strong').getByText('24',{exact:true}).waitFor();
  assert.equal(await starrail.locator('.warning').count(),0);
@@ -637,7 +669,8 @@ try{
  stage='admin';
  // Admin generated credentials: entropy failure and API failure never reveal a candidate.
  await menu('Administration');
- assert.ok(await button('Load logs').isDisabled(),'no invented admin log endpoint');
+ assert.equal(await button('Load logs').count(),0,'no permanently disabled log section without an endpoint');
+ assert.equal(await page.getByRole('heading',{name:'Logs',exact:true}).count(),0);
  assert.equal(await page.locator('[data-slot=card]').first().evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(24, 23, 29)','AHD card skin does not depend on hashed module class names');
  assert.equal(await page.locator('input[autocomplete=new-password]').count(),0,'no administrator-entered temporary password form');
  const ownRow=page.getByRole('row').filter({has:page.getByRole('rowheader',{name:new RegExp('^'+user.username)})});
@@ -649,6 +682,18 @@ try{
  assert.equal(await page.getByText('The last active administrator cannot be disabled or deleted.',{exact:true}).count(),0,'protection warning is not permanent UI');
  assert.ok(await ownRow.getByRole('button',{name:'Disable',exact:true}).isDisabled());
  assert.ok(await ownRow.getByRole('button',{name:'Delete user',exact:true}).isDisabled());
+ // Disabled actions drop the fill and use a dashed outline in both themes.
+ const peerRow=page.getByRole('row').filter({has:page.getByRole('rowheader',{name:new RegExp('^'+other.username)})});
+ const look=locator=>locator.evaluate(e=>{const s=getComputedStyle(e);return {background:s.backgroundColor,border:s.borderTopStyle,color:s.color};});
+ for(const theme of ['dark','light']){
+  await page.evaluate(theme=>document.documentElement.setAttribute('data-theme',theme),theme);
+  const disabled=await look(ownRow.getByRole('button',{name:'Delete user',exact:true})),enabled=await look(peerRow.getByRole('button',{name:'Delete user',exact:true}));
+  assert.deepEqual([disabled.background,disabled.border],['rgba(0, 0, 0, 0)','dashed'],theme+' disabled delete');
+  assert.equal(enabled.border,'solid',theme+' enabled delete');
+  assert.notEqual(enabled.background,'rgba(0, 0, 0, 0)',theme+' enabled delete keeps its fill');
+  assert.notEqual(disabled.color,enabled.color,theme+' disabled text is muted');
+ }
+ await page.evaluate(()=>document.documentElement.setAttribute('data-theme','dark'));
  assert.equal(await ownRow.getByRole('button',{name:'Reissue password',exact:true}).count(),0,'self-reissue would revoke the only session able to receive the generated secret');
  await ownRow.getByRole('button',{name:'Change password',exact:true}).click();await page.locator('#current-password').waitFor();
  assert.equal(counts.get('/api/v1/admin/users/'+user.id+'/temporary-password')||0,0,'own password uses the ordinary confirmation flow');
