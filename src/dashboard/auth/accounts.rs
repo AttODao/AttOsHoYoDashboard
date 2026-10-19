@@ -25,6 +25,7 @@ pub(in crate::dashboard) struct Accounts {
     pub(in crate::dashboard) db: DatabaseConnection,
     pub(in crate::dashboard) sessions: Sessions,
     passwords: Passwords,
+    deletion_retries: deletion::DeletionRetries,
 }
 
 impl Accounts {
@@ -36,6 +37,7 @@ impl Accounts {
             db,
             sessions: Sessions::new(ttl),
             passwords: Passwords::new().await?,
+            deletion_retries: deletion::DeletionRetries::default(),
         })
     }
 

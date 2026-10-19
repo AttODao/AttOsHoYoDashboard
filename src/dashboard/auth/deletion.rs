@@ -14,10 +14,57 @@ use sea_orm::{
     IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
     sea_query::Expr,
 };
+use std::{
+    collections::HashMap,
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 use uuid::Uuid;
 
 const DELETE_LAST_ADMIN: &str = "cannot delete the last active administrator";
 const CONFIRMATION_MISMATCH: &str = "confirmation must exactly match the target username";
+const PENDING_BATCH: u64 = 32;
+const RETRY_FIRST: Duration = Duration::from_secs(10);
+const RETRY_MAX: Duration = Duration::from_secs(3600);
+
+/// Process-local completion backoff; the single instance restarts it from the first delay.
+#[derive(Default)]
+pub(super) struct DeletionRetries(Mutex<HashMap<Uuid, Retry>>);
+
+struct Retry {
+    failures: u32,
+    not_before: Instant,
+}
+
+impl DeletionRetries {
+    fn waiting(&self, now: Instant) -> Result<Vec<Uuid>> {
+        let entries = self.0.lock().map_err(|_| Error::Internal)?;
+        Ok(entries
+            .iter()
+            .filter(|(_, retry)| retry.not_before > now)
+            .map(|(owner, _)| *owner)
+            .collect())
+    }
+
+    fn postpone(&self, owner: Uuid, now: Instant) -> Result<Duration> {
+        let mut entries = self.0.lock().map_err(|_| Error::Internal)?;
+        let retry = entries.entry(owner).or_insert(Retry {
+            failures: 0,
+            not_before: now,
+        });
+        retry.failures = retry.failures.saturating_add(1);
+        let delay = RETRY_FIRST
+            .saturating_mul(1 << (retry.failures - 1).min(16))
+            .min(RETRY_MAX);
+        retry.not_before = now + delay;
+        Ok(delay)
+    }
+
+    fn forget(&self, owner: Uuid) -> Result<()> {
+        self.0.lock().map_err(|_| Error::Internal)?.remove(&owner);
+        Ok(())
+    }
+}
 
 impl Accounts {
     pub(in crate::dashboard) async fn request_deletion(
@@ -103,10 +150,21 @@ impl Accounts {
         Ok(())
     }
 
-    pub(in crate::dashboard) async fn pending_deletions(&self) -> Result<Vec<Uuid>> {
-        Ok(deletion_request::Entity::find()
+    /// Oldest pending owners, skipping `active` ones and those still in retry backoff.
+    pub(in crate::dashboard) async fn pending_deletions(
+        &self,
+        active: &[Uuid],
+        now: Instant,
+    ) -> Result<Vec<Uuid>> {
+        let mut skip = active.to_vec();
+        skip.extend(self.deletion_retries.waiting(now)?);
+        let mut query = deletion_request::Entity::find()
             .order_by_asc(deletion_request::Column::CreatedAt)
-            .limit(32)
+            .limit(PENDING_BATCH);
+        if !skip.is_empty() {
+            query = query.filter(deletion_request::Column::UserId.is_not_in(skip));
+        }
+        Ok(query
             .all(&self.db)
             .await?
             .into_iter()
@@ -114,7 +172,21 @@ impl Accounts {
             .collect())
     }
 
+    /// Records a failed completion and returns how long the owner is skipped.
+    pub(in crate::dashboard) fn postpone_deletion(
+        &self,
+        owner: Uuid,
+        now: Instant,
+    ) -> Result<Duration> {
+        self.deletion_retries.postpone(owner, now)
+    }
+
     pub(in crate::dashboard) async fn finish_deletion(&self, owner: Uuid) -> Result<()> {
+        self.delete_pending_owner(owner).await?;
+        self.deletion_retries.forget(owner)
+    }
+
+    async fn delete_pending_owner(&self, owner: Uuid) -> Result<()> {
         let tx = self.db.begin().await?;
         let user = user::Entity::find_by_id(owner)
             .lock_exclusive()

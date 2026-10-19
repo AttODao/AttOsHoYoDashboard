@@ -207,7 +207,10 @@ async fn self_request_disables_revokes_and_finishes_later() {
         .unwrap();
     assert!(!disabled.active);
     assert_eq!(
-        accounts.pending_deletions().await.unwrap(),
+        accounts
+            .pending_deletions(&[], Instant::now())
+            .await
+            .unwrap(),
         vec![member.user.id]
     );
     assert!(
@@ -249,7 +252,13 @@ async fn self_request_disables_revokes_and_finishes_later() {
             .unwrap()
             .is_none()
     );
-    assert!(accounts.pending_deletions().await.unwrap().is_empty());
+    assert!(
+        accounts
+            .pending_deletions(&[], Instant::now())
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -451,5 +460,12 @@ async fn last_active_admin_is_never_deleted_even_under_concurrent_self_requests(
             .unwrap(),
         1
     );
-    assert_eq!(accounts.pending_deletions().await.unwrap().len(), 1);
+    assert_eq!(
+        accounts
+            .pending_deletions(&[], Instant::now())
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
 }

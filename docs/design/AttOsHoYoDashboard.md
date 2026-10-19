@@ -144,7 +144,7 @@ Worker tick is independent of page views. It first cleans completed 5-day histor
 
 ## 8. Deletion workflow
 
-Deletion request verifies actor password, reauthenticates current session, locks actor/target consistently, rejects last active admin, marks target inactive, revokes sessions/passkeys, persists `deletion_request`, and records audit. Background completion waits for owner operations, confirms settings with an unresolved same-reward-day guard or a `may_have_sent` run by bounded GET-only logic (`rewards/deletion.rs`; without a cookie key such owners stay pending), then deletes target-owned data and user row. Target audit rows are removed; other rows where target was actor may be preserved with actor set null.
+Deletion request verifies actor password, reauthenticates current session, locks actor/target consistently, rejects last active admin, marks target inactive, revokes sessions/passkeys, persists `deletion_request`, and records audit. Background completion waits for owner operations, confirms settings with an unresolved same-reward-day guard or a `may_have_sent` run by bounded GET-only logic (`rewards/deletion.rs`; without a cookie key such owners stay pending), then deletes target-owned data and user row. Target audit rows are removed; other rows where target was actor may be preserved with actor set null. The worker selects up to 32 oldest pending owners per tick, skipping owners already in progress and owners in retry backoff. A failed completion is retried after an in-memory per-owner exponential backoff (10 s doubling up to 1 h; reset by a restart or a successful completion), so a failing owner neither repeats HoYoLAB GETs every second nor starves later owners.
 
 ## 9. API contract
 

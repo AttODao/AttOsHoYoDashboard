@@ -12,6 +12,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder, Set,
 };
+use std::time::{Duration as StdDuration, Instant};
 use uuid::Uuid;
 
 async fn insert_owned_tree(db: &DatabaseConnection, owner: Uuid, uid: &str) -> (Uuid, Uuid, Uuid) {
@@ -263,14 +264,88 @@ async fn finish_deletion_cascades_owned_data_releases_uid_and_cleans_audit_refer
 async fn pending_deletions_are_oldest_first_and_capped() {
     let test = TestDatabase::new().await;
     let (accounts, admin) = test.ready_admin().await;
+    let all = queue_deletions(&test, &admin.user, 33).await;
+    let expected = all[..32].to_vec();
+    let pending = accounts
+        .pending_deletions(&[], Instant::now())
+        .await
+        .unwrap();
+    assert_eq!(pending.len(), 32);
+    assert_eq!(pending, expected);
+    // Owners already being completed are skipped, so the batch reaches later owners.
+    let pending = accounts
+        .pending_deletions(&expected[..1], Instant::now())
+        .await
+        .unwrap();
+    assert_eq!(pending, all[1..].to_vec());
+    let rows = deletion_request::Entity::find()
+        .order_by_asc(deletion_request::Column::CreatedAt)
+        .all(&test.db)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 33);
+}
+
+#[tokio::test]
+async fn failing_owners_back_off_without_starving_later_owners() {
+    let test = TestDatabase::new().await;
+    let (accounts, admin) = test.ready_admin().await;
+    let all = queue_deletions(&test, &admin.user, 33).await;
+    let now = Instant::now();
+    for owner in &all[..32] {
+        assert_eq!(
+            accounts.postpone_deletion(*owner, now).unwrap(),
+            StdDuration::from_secs(10)
+        );
+    }
+    // The 32 oldest keep failing; the next owner is still selected.
+    assert_eq!(
+        accounts.pending_deletions(&[], now).await.unwrap(),
+        vec![all[32]]
+    );
+    let before = now + StdDuration::from_secs(9);
+    assert_eq!(
+        accounts.pending_deletions(&[], before).await.unwrap(),
+        vec![all[32]]
+    );
+    let after = now + StdDuration::from_secs(10);
+    assert_eq!(
+        accounts.pending_deletions(&[], after).await.unwrap(),
+        all[..32]
+    );
+
+    // Repeated failures double the delay up to one hour.
+    let owner = all[0];
+    let mut delays = Vec::new();
+    for _ in 0..12 {
+        delays.push(accounts.postpone_deletion(owner, after).unwrap().as_secs());
+    }
+    assert_eq!(&delays[..4], &[20, 40, 80, 160]);
+    assert_eq!(*delays.last().unwrap(), 3600);
+    assert!(
+        !accounts
+            .pending_deletions(&[], after + StdDuration::from_secs(3599))
+            .await
+            .unwrap()
+            .contains(&owner)
+    );
+
+    // Successful completion forgets the backoff state.
+    accounts.finish_deletion(owner).await.unwrap();
+    let retries = accounts.deletion_retries.0.lock().unwrap();
+    assert!(!retries.contains_key(&owner));
+    assert_eq!(retries.len(), 31);
+}
+
+async fn queue_deletions(test: &TestDatabase, admin: &user::Model, count: i64) -> Vec<Uuid> {
     let base = Utc::now();
-    let mut expected = Vec::new();
-    for i in 0..33 {
+    let mut queued = Vec::new();
+    for i in 0..count {
         let id = Uuid::new_v4();
         user::ActiveModel {
             id: Set(id),
             username: Set(format!("queued-{i}")),
-            password_hash: Set(admin.user.password_hash.clone()),
+            password_hash: Set(admin.password_hash.clone()),
             is_admin: Set(false),
             active: Set(false),
             must_change_password: Set(false),
@@ -281,24 +356,13 @@ async fn pending_deletions_are_oldest_first_and_capped() {
         .unwrap();
         deletion_request::ActiveModel {
             user_id: Set(id),
-            requested_by_user_id: Set(Some(admin.user.id)),
+            requested_by_user_id: Set(Some(admin.id)),
             created_at: Set(base + Duration::seconds(i)),
         }
         .insert(&test.db)
         .await
         .unwrap();
-        if i < 32 {
-            expected.push(id);
-        }
+        queued.push(id);
     }
-
-    let pending = accounts.pending_deletions().await.unwrap();
-    assert_eq!(pending.len(), 32);
-    assert_eq!(pending, expected);
-    let rows = deletion_request::Entity::find()
-        .order_by_asc(deletion_request::Column::CreatedAt)
-        .all(&test.db)
-        .await
-        .unwrap();
-    assert_eq!(rows.len(), 33);
+    queued
 }
