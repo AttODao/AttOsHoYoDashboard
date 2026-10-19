@@ -118,6 +118,8 @@ impl<G: Gateway> Rewards<G> {
         enabled: bool,
         time: String,
     ) -> Result<()> {
+        // Serialize with the worker so an in-flight attempt cannot overwrite the stop below.
+        let _operation = self.store.operations.acquire(actor.user.id).await;
         let next = schedule::next_due(Utc::now(), &time, self.store.timezone)?;
         let tx = self.store.db.begin().await?;
         let fresh = self.store.actor_locked(&tx, actor).await?;

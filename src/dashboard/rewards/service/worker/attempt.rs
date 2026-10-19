@@ -6,6 +6,7 @@ use crate::dashboard::{
     db::entities::{hoyolab_account, reward_attempt, reward_guard, reward_run, reward_setting},
     error::{Error, Result},
     hoyolab::gateway::{self, Gateway, SignState},
+    rewards::guard,
 };
 use attoshoyodashboard::game::GameKind;
 use chrono::Utc;
@@ -26,11 +27,9 @@ impl<G: Gateway> Rewards<G> {
         }
         match self.store.gateway.daily(&prepared.cookie, game).await {
             Ok(state) if state.is_sign => {
-                self.finish_attempt(
-                    prepared,
-                    Finish::done("already_claimed", "confirmed", false),
-                )
-                .await
+                // Signed today: any stale uncertainty from an earlier reward day is resolved.
+                let finish = Finish::done("already_claimed", "confirmed", true).observed(state);
+                self.finish_attempt(prepared, finish).await
             }
             Ok(_) => self.post_and_confirm(prepared, game).await,
             Err(error) => self.finish_get_error(prepared, error).await,
@@ -80,8 +79,8 @@ impl<G: Gateway> Rewards<G> {
         let guard = reward_guard::Entity::find_by_id(setting.id)
             .one(&tx)
             .await?;
-        let confirmation_only = run.send_state == "may_have_sent"
-            || guard.as_ref().is_some_and(|g| g.post_may_have_happened);
+        let confirmation_only =
+            run.send_state == "may_have_sent" || guard::post_unresolved(guard.as_ref(), Utc::now());
         if !confirmation_only
             && (run.credential_version != link.credential_version
                 || (run.trigger != "manual" && !setting.enabled)
@@ -89,7 +88,7 @@ impl<G: Gateway> Rewards<G> {
                 || link.auth_status != "verified"
                 || run.attempt_count >= MAX_ATTEMPTS)
         {
-            finish_run_tx(&tx, run.id, None, "stopped", "not_sent", None, true).await?;
+            finish_run_tx(&tx, run.id, "stopped", "not_sent", None, true).await?;
             tx.commit().await?;
             return Ok(None);
         }
@@ -98,7 +97,7 @@ impl<G: Gateway> Rewards<G> {
             Err(
                 Error::Unauthorized | Error::PasswordChangeRequired | Error::InitialSetupRequired,
             ) => {
-                finish_run_tx(&tx, run.id, None, "stopped", "not_sent", None, true).await?;
+                finish_run_tx(&tx, run.id, "stopped", "not_sent", None, true).await?;
                 tx.commit().await?;
                 return Ok(None);
             }
@@ -159,31 +158,29 @@ impl<G: Gateway> Rewards<G> {
                 self.finish_attempt(prepared, Finish::action_required())
                     .await
             }
-            Ok(_) => match self.store.gateway.daily(&prepared.cookie, game).await {
-                Ok(state) if state.is_sign => {
-                    self.finish_attempt(prepared, Finish::done("success", "confirmed", true))
-                        .await
-                }
-                Ok(_) => self.finish_attempt(prepared, Finish::unknown()).await,
-                Err(error) => self.finish_post_error(prepared, error).await,
-            },
+            Ok(_) => self.confirm_only(prepared, game).await,
             Err(error) => match self.store.gateway.daily(&prepared.cookie, game).await {
                 Ok(state) if state.is_sign => {
-                    self.finish_attempt(prepared, Finish::done("success", "may_have_sent", false))
-                        .await
+                    let finish = Finish::done("success", "may_have_sent", true).observed(state);
+                    self.finish_attempt(prepared, finish).await
                 }
                 _ => self.finish_post_error(prepared, error).await,
             },
         }
     }
 
+    /// GET-only confirmation after a POST that may have happened; never sends POST.
     async fn confirm_only(&self, prepared: PreparedAttempt, game: GameKind) -> Result<()> {
         match self.store.gateway.daily(&prepared.cookie, game).await {
             Ok(state) if state.is_sign => {
-                self.finish_attempt(prepared, Finish::done("success", "confirmed", false))
+                // GET shows today's reward is claimed, so no further POST can duplicate it.
+                let finish = Finish::done("success", "confirmed", true).observed(state);
+                self.finish_attempt(prepared, finish).await
+            }
+            Ok(state) => {
+                self.finish_attempt(prepared, Finish::unknown().observed(state))
                     .await
             }
-            Ok(_) => self.finish_attempt(prepared, Finish::unknown()).await,
             Err(error) => self.finish_post_error(prepared, error).await,
         }
     }

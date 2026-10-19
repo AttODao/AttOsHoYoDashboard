@@ -49,7 +49,7 @@
 }
 ```
 
-`GET /info`では少なくとも`data.is_sign`（本日受け取り済みか）と`data.total_sign_day`（当月の累積受け取り日数）を使う。`GET /home`の`data.awards`には月間報酬が入り、要素は`name`、`cnt`、`icon`を持つ。
+`GET /info`では少なくとも`data.is_sign`（本日受け取り済みか。海外版の「本日」はUTC+8の0時で切り替わる）と`data.total_sign_day`（当月の累積受け取り日数）を使う。`GET /home`の`data.awards`には月間報酬が入り、要素は`name`、`cnt`、`icon`を持つ。
 
 受け取りの安全な流れは次の通り。
 

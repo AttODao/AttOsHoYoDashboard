@@ -3,7 +3,7 @@ use super::App;
 use crate::dashboard::{
     db::entities::{hoyolab_account, reward_guard, reward_setting},
     error::{Error, Result},
-    rewards::service::Rewards,
+    rewards::{guard, service::Rewards},
 };
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use std::collections::HashMap;
@@ -92,13 +92,14 @@ async fn finish_owner(app: App, owner: Uuid) -> Result<()> {
             .into_iter()
             .map(|row| row.id)
             .collect::<Vec<_>>();
+        let now = chrono::Utc::now();
         if !ids.is_empty()
             && reward_guard::Entity::find()
                 .filter(reward_guard::Column::SettingId.is_in(ids))
-                .filter(reward_guard::Column::PostMayHaveHappened.eq(true))
-                .one(&app.accounts.db)
+                .all(&app.accounts.db)
                 .await?
-                .is_some()
+                .iter()
+                .any(|row| guard::post_unresolved(Some(row), now))
         {
             return Err(Error::Unavailable(
                 "Cookie key is required to confirm an earlier operation",

@@ -11,7 +11,9 @@ use crate::dashboard::{
     },
     error::{Error, Result},
     hoyolab::gateway::{self, Gateway},
+    rewards::guard,
 };
+use chrono::Utc;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 use uuid::Uuid;
 
@@ -32,9 +34,7 @@ impl<G: Gateway> Rewards<G> {
             let guard = reward_guard::Entity::find_by_id(setting.id)
                 .one(&self.store.db)
                 .await?;
-            let may_have_guard = guard
-                .as_ref()
-                .is_some_and(|guard| guard.post_may_have_happened);
+            let may_have_guard = guard::post_unresolved(guard.as_ref(), Utc::now());
             let runs: Vec<_> = reward_run::Entity::find()
                 .filter(reward_run::Column::SettingId.eq(setting.id))
                 .filter(reward_run::Column::SendState.eq("may_have_sent"))
@@ -76,7 +76,7 @@ impl<G: Gateway> Rewards<G> {
             upsert_cache(&tx, setting.id, write).await?;
             upsert_guard(&tx, setting.id, true).await?;
             for run in runs {
-                finish_run_tx(&tx, run.id, None, state, "may_have_sent", None, true).await?;
+                finish_run_tx(&tx, run.id, state, "may_have_sent", None, true).await?;
             }
             crate::dashboard::auth::accounts::record(&tx, None, owner, "reward_delete_checked")
                 .await?;

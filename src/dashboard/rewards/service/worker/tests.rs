@@ -2,13 +2,16 @@
 use super::super::test_support::{
     MockGateway, inserted_run, key, ready_identity, service, setting, verified_link,
 };
-use super::state::upsert_guard;
+use super::state::{Finish, upsert_guard};
 use crate::dashboard::{
     db::entities::{
         hoyolab_account, reward_attempt, reward_guard, reward_run, reward_setting,
         reward_status_cache,
     },
-    hoyolab::gateway::{self, DailyState},
+    hoyolab::{
+        credentials::CookieKey,
+        gateway::{self, DailyState},
+    },
     test_support::TestDatabase,
 };
 use attoshoyodashboard::hoyolab::Error as UpstreamError;
@@ -340,4 +343,123 @@ async fn shutdown_between_durable_mark_and_send_aborts_known_unsent_reservation(
         .unwrap();
     assert_eq!(run.state, "stopped");
     assert_eq!(run.send_state, "not_sent");
+}
+
+#[tokio::test]
+async fn undecryptable_owner_neither_fails_the_tick_nor_blocks_other_owners() {
+    let fixture = TestDatabase::new().await;
+    let key = key();
+    let broken = ready_identity(&fixture.db, "broken").await;
+    let healthy = ready_identity(&fixture.db, "healthy").await;
+    // Sealed under another key, so opening the cookie fails as an internal error.
+    let other_key = CookieKey::from_hex(&"22".repeat(32)).unwrap();
+    let broken_link = verified_link(&fixture.db, &other_key, broken.user.id, "123").await;
+    let healthy_link = verified_link(&fixture.db, &key, healthy.user.id, "124").await;
+    let mut settings = vec![];
+    for link in [&broken_link, &healthy_link] {
+        let setting = setting(&fixture.db, link.id, "genshin", true).await;
+        let mut row = setting.into_active_model();
+        row.next_run_at = Set(Some(Utc::now() - Duration::hours(1)));
+        settings.push(row.update(&fixture.db).await.unwrap());
+    }
+    let broken_run = inserted_run(
+        &fixture.db,
+        settings[0].id,
+        "pending",
+        "not_sent",
+        Utc::now() - Duration::minutes(1),
+    )
+    .await;
+    let gateway = MockGateway::new(
+        [Ok(DailyState {
+            is_sign: true,
+            total_sign_day: 1,
+        })],
+        [],
+    );
+    let rewards = service(fixture.db.clone(), key, gateway.clone());
+
+    rewards.tick().await.unwrap();
+
+    assert_eq!(gateway.daily_calls(), 1);
+    assert_eq!(gateway.sign_calls(), 0);
+    assert_eq!(
+        reward_run::Entity::find()
+            .filter(reward_run::Column::SettingId.eq(settings[1].id))
+            .one(&fixture.db)
+            .await
+            .unwrap()
+            .unwrap()
+            .state,
+        "already_claimed"
+    );
+    // The failing run is left untouched for a later tick, and its schedule backs off.
+    let broken_run = reward_run::Entity::find_by_id(broken_run.id)
+        .one(&fixture.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(broken_run.state, "pending");
+    assert_eq!(broken_run.attempt_count, 0);
+    let deferred = reward_setting::Entity::find_by_id(settings[0].id)
+        .one(&fixture.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(deferred.enabled);
+    assert!(deferred.next_run_at.unwrap() > Utc::now());
+}
+
+#[tokio::test]
+async fn schedule_update_waits_for_in_flight_attempt_and_its_stop_is_final() {
+    let fixture = TestDatabase::new().await;
+    let actor = ready_identity(&fixture.db, "owner").await;
+    let key = key();
+    let link = verified_link(&fixture.db, &key, actor.user.id, "123").await;
+    let setting = setting(&fixture.db, link.id, "genshin", true).await;
+    let run = inserted_run(&fixture.db, setting.id, "pending", "not_sent", Utc::now()).await;
+    let mut row = run.into_active_model();
+    row.trigger = Set("catchup".into());
+    let run = row.update(&fixture.db).await.unwrap();
+    let gateway = MockGateway::new([], []);
+    let rewards = service(fixture.db.clone(), key, gateway.clone());
+    let operation = rewards.store.operations.acquire(actor.user.id).await;
+    let prepared = rewards.prepare_attempt(run.id).await.unwrap().unwrap();
+
+    let update = tokio::spawn({
+        let rewards = rewards.clone();
+        async move {
+            rewards
+                .update(&actor, setting.id, true, "07:00".into())
+                .await
+        }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert!(!update.is_finished());
+    // The in-flight attempt schedules a retry before releasing the owner lock.
+    rewards
+        .finish_attempt(prepared, Finish::retry("network".into()))
+        .await
+        .unwrap();
+    drop(operation);
+    update.await.unwrap().unwrap();
+
+    let run = reward_run::Entity::find_by_id(run.id)
+        .one(&fixture.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(run.state, "stopped");
+    rewards.tick().await.unwrap();
+    assert_eq!(
+        reward_run::Entity::find_by_id(run.id)
+            .one(&fixture.db)
+            .await
+            .unwrap()
+            .unwrap()
+            .state,
+        "stopped"
+    );
+    assert_eq!(gateway.daily_calls(), 0);
+    assert_eq!(gateway.sign_calls(), 0);
 }

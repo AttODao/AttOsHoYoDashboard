@@ -1,8 +1,14 @@
-use super::super::Rewards;
+use super::super::{
+    Rewards,
+    cache::{CacheWrite, upsert_cache},
+};
 use crate::dashboard::{
     db::entities::{reward_attempt, reward_guard, reward_run, reward_setting},
     error::{Error, Result},
-    hoyolab::{credentials::Credentials, gateway::Gateway},
+    hoyolab::{
+        credentials::Credentials,
+        gateway::{DailyState, Gateway},
+    },
 };
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::{
@@ -70,7 +76,7 @@ impl<G: Gateway> Rewards<G> {
     pub(super) async fn finish_attempt(
         &self,
         prepared: PreparedAttempt,
-        finish: Finish,
+        mut finish: Finish,
     ) -> Result<()> {
         let tx = self.store.db.begin().await?;
         if finish.setting_action_required {
@@ -87,6 +93,10 @@ impl<G: Gateway> Rewards<G> {
         if finish.clear_guard {
             upsert_guard(&tx, prepared.setting.id, false).await?;
         }
+        if let Some(state) = finish.observed.take() {
+            // Keep the dashboard status in step with the worker's confirming GET.
+            upsert_cache(&tx, prepared.setting.id, CacheWrite::success(state)).await?;
+        }
         let mut attempt = reward_attempt::Entity::find_by_id(prepared.attempt.id)
             .one(&tx)
             .await?
@@ -100,7 +110,6 @@ impl<G: Gateway> Rewards<G> {
         finish_run_tx(
             &tx,
             prepared.run.id,
-            Some(finish.state.as_str()),
             &finish.state,
             &finish.send_state,
             finish.next_retry_at,
@@ -127,6 +136,7 @@ pub(super) struct Finish {
     next_retry_at: Option<DateTime<Utc>>,
     pub(super) clear_guard: bool,
     setting_action_required: bool,
+    observed: Option<DailyState>,
 }
 
 impl Finish {
@@ -138,6 +148,7 @@ impl Finish {
             next_retry_at: None,
             clear_guard,
             setting_action_required: false,
+            observed: None,
         }
     }
     pub(super) fn retry(code: String) -> Self {
@@ -148,6 +159,7 @@ impl Finish {
             next_retry_at: Some(Utc::now() + Duration::seconds(10)),
             clear_guard: false,
             setting_action_required: false,
+            observed: None,
         }
     }
     pub(super) fn failed(code: String) -> Self {
@@ -158,6 +170,7 @@ impl Finish {
             next_retry_at: None,
             clear_guard: false,
             setting_action_required: false,
+            observed: None,
         }
     }
     pub(super) fn stopped(code: Option<String>) -> Self {
@@ -168,6 +181,7 @@ impl Finish {
             next_retry_at: None,
             clear_guard: false,
             setting_action_required: false,
+            observed: None,
         }
     }
     pub(super) fn unknown() -> Self {
@@ -181,6 +195,7 @@ impl Finish {
             next_retry_at: None,
             clear_guard: false,
             setting_action_required: false,
+            observed: None,
         }
     }
     pub(super) fn action_required() -> Self {
@@ -191,7 +206,13 @@ impl Finish {
             next_retry_at: None,
             clear_guard: false,
             setting_action_required: true,
+            observed: None,
         }
+    }
+    /// Records the daily state a successful GET returned for the status cache.
+    pub(super) fn observed(mut self, state: DailyState) -> Self {
+        self.observed = Some(state);
+        self
     }
     fn is_retry(&self) -> bool {
         self.state == "retry_wait"
@@ -201,7 +222,6 @@ impl Finish {
 pub(super) async fn finish_run_tx(
     db: &impl ConnectionTrait,
     run_id: Uuid,
-    _attempt_outcome: Option<&str>,
     state: &str,
     send_state: &str,
     next_retry_at: Option<DateTime<Utc>>,

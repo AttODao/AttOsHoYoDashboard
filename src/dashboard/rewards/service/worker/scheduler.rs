@@ -3,14 +3,17 @@ use crate::dashboard::{
     db::entities::{hoyolab_account, reward_guard, reward_run, reward_setting},
     error::{Error, Result},
     hoyolab::gateway::Gateway,
-    rewards::schedule,
+    rewards::{guard, schedule},
 };
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
     QuerySelect, Set, TransactionTrait,
 };
 use tokio::task::JoinSet;
+use uuid::Uuid;
+
+const SCHEDULE_RETRY: Duration = Duration::minutes(1);
 
 impl<G: Gateway> Rewards<G> {
     pub(in crate::dashboard) async fn tick(&self) -> Result<()> {
@@ -30,10 +33,17 @@ impl<G: Gateway> Rewards<G> {
         let mut set = JoinSet::new();
         for run in runs {
             let rewards = self.clone();
-            set.spawn(async move { rewards.process_run(run.id).await });
+            set.spawn(async move { (run.id, rewards.process_run(run.id).await) });
         }
+        // Drain every task: dropping the set would abort sibling runs, possibly mid-POST.
         while let Some(result) = set.join_next().await {
-            result.map_err(|_| Error::Internal)??;
+            match result {
+                Ok((_, Ok(()))) => {}
+                Ok((run_id, Err(error))) => {
+                    tracing::error!(%run_id, error = %error, "reward run failed");
+                }
+                Err(_) => tracing::error!("reward run task failed"),
+            }
         }
         Ok(())
     }
@@ -44,56 +54,84 @@ impl<G: Gateway> Rewards<G> {
             .filter(reward_setting::Column::Enabled.eq(true))
             .filter(reward_setting::Column::AuthStatus.eq("ready"))
             .filter(reward_setting::Column::NextRunAt.lte(now))
+            .order_by_asc(reward_setting::Column::NextRunAt)
             .limit(RUN_LIMIT)
             .all(&self.store.db)
             .await?;
         for setting in due {
-            let Some(link_snapshot) =
-                hoyolab_account::Entity::find_by_id(setting.hoyolab_account_id)
-                    .one(&self.store.db)
-                    .await?
-            else {
-                continue;
-            };
-            let tx = self.store.db.begin().await?;
-            let ready = match self
-                .store
-                .owner_link_in(&tx, link_snapshot.owner_user_id)
-                .await
-            {
-                Ok((link, _)) => Some(link),
-                Err(
-                    Error::Unauthorized
-                    | Error::PasswordChangeRequired
-                    | Error::InitialSetupRequired,
-                ) => None,
-                Err(error) => return Err(error),
-            };
-            let setting = reward_setting::Entity::find_by_id(setting.id)
-                .lock_exclusive()
-                .one(&tx)
-                .await?
-                .ok_or(Error::NotFound)?;
-            if !setting.enabled
-                || setting.auth_status != "ready"
-                || setting.next_run_at.is_none_or(|due| due > now)
-            {
-                tx.commit().await?;
-                continue;
+            if let Err(error) = self.enqueue_due_setting(&setting, now).await {
+                tracing::error!(setting_id = %setting.id, error = %error, "reward schedule failed");
+                // Back off a failing setting so it neither repeats every second nor keeps
+                // filling the due batch; it is retried later within the same schedule.
+                if let Err(error) = self.defer_due_setting(setting.id, now).await {
+                    tracing::error!(setting_id = %setting.id, error = %error, "reward schedule deferral failed");
+                }
             }
-            let next = schedule::next_due(now, &setting.local_time, self.store.timezone)?;
-            let guard = reward_guard::Entity::find_by_id(setting.id)
-                .one(&tx)
-                .await?;
-            let unresolved = guard.is_some_and(|guard| guard.post_may_have_happened);
-            let mut row = setting.clone().into_active_model();
-            row.next_run_at = Set(ready.as_ref().map(|_| next));
-            row.update(&tx).await?;
-            if let Some(link) = ready.filter(|_| !unresolved) {
-                let _ = enqueue_in(&tx, &setting, link.credential_version, "catchup").await?;
-            }
-            tx.commit().await?;
         }
+        Ok(())
+    }
+
+    async fn enqueue_due_setting(
+        &self,
+        setting: &reward_setting::Model,
+        now: DateTime<Utc>,
+    ) -> Result<()> {
+        let Some(link_snapshot) = hoyolab_account::Entity::find_by_id(setting.hoyolab_account_id)
+            .one(&self.store.db)
+            .await?
+        else {
+            return Ok(());
+        };
+        // Any early return drops the transaction, which rolls it back.
+        let tx = self.store.db.begin().await?;
+        let ready = match self
+            .store
+            .owner_link_in(&tx, link_snapshot.owner_user_id)
+            .await
+        {
+            Ok((link, _)) => Some(link),
+            Err(
+                Error::Unauthorized | Error::PasswordChangeRequired | Error::InitialSetupRequired,
+            ) => None,
+            Err(error) => return Err(error),
+        };
+        let setting = reward_setting::Entity::find_by_id(setting.id)
+            .lock_exclusive()
+            .one(&tx)
+            .await?
+            .ok_or(Error::NotFound)?;
+        if !setting.enabled
+            || setting.auth_status != "ready"
+            || setting.next_run_at.is_none_or(|due| due > now)
+        {
+            tx.commit().await?;
+            return Ok(());
+        }
+        let next = schedule::next_due(now, &setting.local_time, self.store.timezone)?;
+        let guard = reward_guard::Entity::find_by_id(setting.id)
+            .one(&tx)
+            .await?;
+        let unresolved = guard::post_unresolved(guard.as_ref(), now);
+        let mut row = setting.clone().into_active_model();
+        row.next_run_at = Set(ready.as_ref().map(|_| next));
+        row.update(&tx).await?;
+        if let Some(link) = ready.filter(|_| !unresolved) {
+            let _ = enqueue_in(&tx, &setting, link.credential_version, "catchup").await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn defer_due_setting(&self, setting_id: Uuid, now: DateTime<Utc>) -> Result<()> {
+        reward_setting::Entity::update_many()
+            .col_expr(
+                reward_setting::Column::NextRunAt,
+                sea_orm::sea_query::Expr::value(now + SCHEDULE_RETRY),
+            )
+            .filter(reward_setting::Column::Id.eq(setting_id))
+            .filter(reward_setting::Column::NextRunAt.lte(now))
+            .exec(&self.store.db)
+            .await?;
         Ok(())
     }
 
