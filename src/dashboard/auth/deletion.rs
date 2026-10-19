@@ -76,6 +76,10 @@ impl Accounts {
     ) -> Result<()> {
         let actor_id = actor.user.id;
         let actor_password_hash = actor.user.password_hash.clone();
+        // Reject another user's deletion before password work; locked checks below stay final.
+        if target != actor_id {
+            require_admin(&actor.user)?;
+        }
         if !self
             .passwords
             .verify(current_password, Some(&actor_password_hash))
@@ -136,15 +140,13 @@ impl Accounts {
         Sessions::revoke_all(&tx, target).await?;
         super::super::passkeys::Passkeys::revoke_all(&tx, target).await?;
 
-        if existing_request.is_none() {
-            deletion_request::ActiveModel {
-                user_id: Set(target),
-                requested_by_user_id: Set(Some(actor_id)),
-                created_at: Set(Utc::now()),
-            }
-            .insert(&tx)
-            .await?;
+        deletion_request::ActiveModel {
+            user_id: Set(target),
+            requested_by_user_id: Set(Some(actor_id)),
+            created_at: Set(Utc::now()),
         }
+        .insert(&tx)
+        .await?;
         record(&tx, Some(actor_id), target, "user_deletion_requested").await?;
         tx.commit().await?;
         Ok(())

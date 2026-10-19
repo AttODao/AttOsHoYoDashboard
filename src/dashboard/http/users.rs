@@ -1,10 +1,6 @@
 //! User view DTO and account-management routes; lifecycle rules remain in Accounts.
 use super::App;
-use crate::dashboard::{
-    auth::sessions::Identity,
-    db::entities::user,
-    error::{Error, Result},
-};
+use crate::dashboard::{auth::sessions::Identity, db::entities::user, error::Result};
 use axum::{
     Json, Router,
     extract::{Extension, Path, State},
@@ -112,9 +108,6 @@ async fn delete_user(
     Path(id): Path<Uuid>,
     Json(input): Json<DeletionInput>,
 ) -> Result<StatusCode> {
-    if !actor.user.is_admin {
-        return Err(Error::Forbidden);
-    }
     app.accounts
         .request_deletion(&actor, id, input.current_password, input.confirmation)
         .await?;

@@ -378,6 +378,24 @@ async fn request_failures_do_not_queue_or_disable_users() {
     ));
     assert_no_request(&test.db, recovered.user.id).await;
 
+    // A non-admin cannot delete another user, whether or not the password is right.
+    let member = ready_user(&accounts, &admin, "member").await;
+    let other = ready_user(&accounts, &admin, "other").await;
+    for password in [PASSWORD, "incorrect-password"] {
+        assert!(matches!(
+            accounts
+                .request_deletion(
+                    &member,
+                    other.user.id,
+                    password.to_owned(),
+                    "other".to_owned()
+                )
+                .await,
+            Err(Error::Forbidden)
+        ));
+    }
+    assert_no_request(&test.db, other.user.id).await;
+
     let disabled = ready_user(&accounts, &admin, "disabled").await;
     accounts
         .set_active(&admin, disabled.user.id, false)

@@ -25,6 +25,11 @@ async fn user_routes_enforce_auth_admin_and_temporary_password_exceptions() {
             format!("/api/v1/admin/users/{missing_id}/temporary-password"),
             Some(json!({"temporary_password": TEMP_PASSWORD})),
         ),
+        (
+            "DELETE",
+            format!("/api/v1/admin/users/{missing_id}"),
+            Some(json!({"current_password": PASSWORD, "confirmation": "missing"})),
+        ),
     ];
     for (method, path, input) in &admin_routes {
         error(
