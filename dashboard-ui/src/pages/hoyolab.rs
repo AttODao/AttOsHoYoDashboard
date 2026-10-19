@@ -1,11 +1,11 @@
 use super::common::{Field, Metric};
 use crate::app::actions::{handle_api_error_for, spawn_action};
 use crate::app::preferences::use_preferences;
-use crate::app::session::bootstrap;
+use crate::app::session::refresh_gate;
 use crate::app::state::{AppState, generation_matches, set_status};
 use crate::components::{Button, ButtonVariant};
 use dioxus::prelude::*;
-use serde_json::json;
+use serde_json::{Value, json};
 
 #[component]
 pub(super) fn LinkPage(state: Signal<AppState>) -> Element {
@@ -68,46 +68,40 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
                 Button { r#type: "button", disabled: disabled || cookie().trim().is_empty(), onclick: move |_| {
                     if disabled || !state.read().password_ok() || cookie().trim().is_empty() { return; }
                     let secret = std::mem::take(&mut *cookie.write());
-                    spawn_action(state, move |generation| async move {
-                        match crate::api::send("PUT", "/me/hoyolab/cookie", Some(json!({"cookie": secret}))).await {
-                            Ok(()) if generation_matches(state, generation) => {
-                                set_status(state, "hoyolab.cookie_save_accepted", "success");
-                                bootstrap(state).await;
-                            }
-                            Ok(()) => {}
-                            Err(error) => handle_api_error_for(state, generation, error),
-                        }
-                    });
+                    spawn_cookie_action(state, "PUT", "/me/hoyolab/cookie", json!({"cookie": secret}), "hoyolab.cookie_save_accepted");
                 }, {preferences.text("hoyolab.save")} }
                 Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: disabled || !stored, onclick: move |_| {
                     if disabled || !stored || !state.read().password_ok() { return; }
-                    spawn_action(state, move |generation| async move {
-                        match crate::api::send("POST", "/me/hoyolab/verify", Some(json!({}))).await {
-                            Ok(()) if generation_matches(state, generation) => {
-                                set_status(state, "hoyolab.verification_response_received", "success");
-                                bootstrap(state).await;
-                            }
-                            Ok(()) => {}
-                            Err(error) => handle_api_error_for(state, generation, error),
-                        }
-                    });
+                    spawn_cookie_action(state, "POST", "/me/hoyolab/verify", json!({}), "hoyolab.verification_response_received");
                 }, {preferences.text("hoyolab.verify")} }
                 Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: disabled || !complete, onclick: move |_| {
                     if disabled || !complete || !state.read().password_ok() { return; }
-                    spawn_action(state, move |generation| async move {
-                        match crate::api::send("POST", "/me/hoyolab/sync", Some(json!({}))).await {
-                            Ok(()) if generation_matches(state, generation) => {
-                                set_status(state, "hoyolab.sync_response_received", "success");
-                                bootstrap(state).await;
-                            }
-                            Ok(()) => {}
-                            Err(error) => handle_api_error_for(state, generation, error),
-                        }
-                    });
+                    spawn_cookie_action(state, "POST", "/me/hoyolab/sync", json!({}), "hoyolab.sync_response_received");
                 }, {preferences.text("hoyolab.sync_uids")} }
             }
         }
     }
+}
+
+// Linkage mutations can move the onboarding gate either way; refresh it in place
+// so the acknowledgement stays visible.
+fn spawn_cookie_action(
+    state: Signal<AppState>,
+    method: &'static str,
+    path: &'static str,
+    body: Value,
+    success: &'static str,
+) {
+    spawn_action(state, move |generation| async move {
+        match crate::api::send(method, path, Some(body)).await {
+            Ok(()) if generation_matches(state, generation) => {
+                set_status(state, success, "success");
+                refresh_gate(state, generation).await;
+            }
+            Ok(()) => {}
+            Err(error) => handle_api_error_for(state, generation, error),
+        }
+    });
 }
 
 fn cookie_action_allowed(password_ok: bool, busy: bool, available: Option<bool>) -> bool {

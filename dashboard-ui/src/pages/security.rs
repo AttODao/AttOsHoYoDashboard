@@ -2,8 +2,8 @@ use super::common::{Field, Metric, PasswordInput};
 use crate::app::actions::{handle_api_error_for, handle_password_error_for, spawn_action};
 use crate::app::data::load_passkeys;
 use crate::app::preferences::use_preferences;
-use crate::app::session::{bootstrap, refresh_me};
-use crate::app::state::{AppState, Phase, generation_matches, set_status};
+use crate::app::session::refresh_gate;
+use crate::app::state::{AppState, generation_matches, set_status};
 use crate::components::{Button, ButtonVariant};
 use dioxus::prelude::*;
 use serde_json::{Value, json};
@@ -73,21 +73,12 @@ pub(super) fn PasswordCard(mut state: Signal<AppState>, title: &'static str) -> 
                 }
                 drop(confirm);
                 let body = password_body(mandatory, current_password, next);
-                let owner = state.read().me.as_ref().map(|me| me.id);
                 spawn_action(state, move |generation| async move {
                     match crate::api::send("PUT", "/me/password", Some(body)).await {
                         Ok(()) if generation_matches(state, generation) => {
-                            if refresh_me(state).await && generation_matches(state, generation) {
-                                // Bootstrap loads the newly available page only after server readiness.
-                                let ready = state.read().ready();
-                                if ready { bootstrap(state).await; }
-                                let expected = if ready { generation.saturating_add(1) } else { generation };
-                                let same_owner = state.read().phase == Phase::SignedIn
-                                    && state.read().me.as_ref().map(|me| me.id) == owner;
-                                if same_owner && generation_matches(state, expected) {
-                                    set_status(state, "security.password_changed", "success");
-                                }
-                            }
+                            // The change may open the setup gate; refresh it in place.
+                            set_status(state, "security.password_changed", "success");
+                            refresh_gate(state, generation).await;
                         }
                         Ok(()) => {}
                         Err(error) if mandatory => { handle_api_error_for(state, generation, error); }

@@ -1,6 +1,4 @@
-use super::data::{
-    load_admin_users, load_hoyolab, load_page_data, load_passkeys, load_server_settings,
-};
+use super::data::{load_hoyolab, load_page_data, load_server_settings};
 use super::state::{
     AppState, Page, Phase, StatusLine, current_generation, current_ready_generation,
     generation_matches, set_status, signed_in_generation,
@@ -43,7 +41,7 @@ pub(super) async fn bootstrap(mut state: Signal<AppState>) {
                 write.generation = generation;
                 write.me = Some(me);
             }
-            load_bootstrap_data(state, generation).await;
+            load_gate_data(state, generation).await;
         }
         Ok(_) => {}
         Err(error) if generation_matches(state, generation) && error.is_unauthorized() => {
@@ -60,33 +58,28 @@ pub(super) async fn bootstrap(mut state: Signal<AppState>) {
     }
 }
 
-async fn load_bootstrap_data(state: Signal<AppState>, generation: u64) {
-    if !current_generation(state, generation) {
+// Load only what the current gate renders: onboarding shows the HoYoLAB linkage;
+// the ready shell needs server settings plus the current page.
+async fn load_gate_data(state: Signal<AppState>, generation: u64) {
+    if !current_generation(state, generation) || state.read().page == Page::Docs {
         return;
     }
-    if state.read().page == Page::Docs {
-        return;
-    }
-    let password_ok = state.read().password_ok();
     if !state.read().ready() {
         load_hoyolab(state).await;
-        if current_generation(state, generation) && password_ok {
-            load_passkeys(state).await;
-            if current_generation(state, generation) {
-                load_server_settings(state).await;
-            }
-            if current_generation(state, generation)
-                && state.read().me.as_ref().is_some_and(|me| me.is_admin)
-            {
-                load_admin_users(state).await;
-            }
-        }
         return;
     }
     load_server_settings(state).await;
     if current_ready_generation(state, generation) {
         let page = state.read().page;
         load_page_data(state, page).await;
+    }
+}
+
+/// Re-read /me after a gate-changing mutation and load what the resulting gate
+/// renders, in place: no Loading screen, and the caller's status message stays.
+pub(super) async fn refresh_gate(state: Signal<AppState>, generation: u64) {
+    if refresh_me(state).await && current_generation(state, generation) {
+        load_gate_data(state, generation).await;
     }
 }
 
@@ -99,7 +92,7 @@ pub(super) async fn refresh_me(mut state: Signal<AppState>) -> bool {
             let changed_owner = apply_fresh_me(&mut state.write(), me);
             if changed_owner {
                 let generation = state.read().generation;
-                load_bootstrap_data(state, generation).await;
+                load_gate_data(state, generation).await;
             }
             true
         }
@@ -220,6 +213,29 @@ mod tests {
             state.write().page = Page::Docs;
             signed_out(state, "messages.signed_out");
             assert!(state.read().page == Page::Docs);
+            rsx! {}
+        }
+        VirtualDom::new(check).rebuild_in_place();
+    }
+
+    #[test]
+    fn gate_refresh_stays_in_place_and_ignores_stale_sessions() {
+        fn check() -> Element {
+            let mut state = use_signal(|| AppState::new(Page::Link));
+            state.write().phase = Phase::SignedIn;
+            state.write().generation = 3;
+            state.write().me = Some(me(false, false));
+            set_status(state, "hoyolab.cookie_save_accepted", "success");
+            let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+            let mut stale = std::pin::pin!(refresh_gate(state, 2));
+            assert!(stale.as_mut().poll(&mut context).is_ready());
+            assert!(
+                state.read().phase == Phase::SignedIn,
+                "never enters Loading"
+            );
+            assert!(state.read().page == Page::Link);
+            assert_eq!(state.read().generation, 3);
+            assert!(state.read().me.is_some());
             rsx! {}
         }
         VirtualDom::new(check).rebuild_in_place();

@@ -4,7 +4,7 @@ use super::security::PasswordCard;
 use super::shell::{Header, Status};
 use crate::app::actions::{handle_api_error_for, spawn_action};
 use crate::app::preferences::use_preferences;
-use crate::app::session::{bootstrap, complete_login, logout};
+use crate::app::session::{complete_login, logout, refresh_gate};
 use crate::app::state::{AppState, generation_matches, set_status};
 use crate::components::{Button, ButtonVariant};
 use dioxus::prelude::*;
@@ -141,7 +141,7 @@ pub(in crate::app) fn OnboardingPage(mut state: Signal<AppState>) -> Element {
             }
             if let Some(error) = &state.read().hoyolab_error { p { class: "warning", {ui.text(error)} } }
             Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| {
-                spawn_action(state, move |_| async move { bootstrap(state).await; });
+                spawn_action(state, move |generation| async move { refresh_gate(state, generation).await; });
             }, {ui.text("auth.refresh_setup_status")} }
         }
     }

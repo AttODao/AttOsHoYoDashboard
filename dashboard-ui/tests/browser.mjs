@@ -76,6 +76,7 @@ const server=http.createServer(async(req,res)=>{
    }
    // Intentionally empty/malformed success bodies exercise client-only acknowledgement policy, not the backend JSON contract.
    if(p==='/api/v1/me/hoyolab/cookie'){assert.equal(actor.must_change_password,false);assert.ok(body.cookie.startsWith('ltuid_v2=123;'));res.writeHead(202,{'Content-Type':'application/json'});return res.end('ignored acknowledgement');}
+   if(p==='/api/v1/me/hoyolab/sync'){assert.equal(req.method,'POST');assert.deepEqual(body,{});assert.ok(verified);res.writeHead(204);return res.end();}
    if(p==='/api/v1/me/hoyolab/verify'){assert.equal(req.method,'POST');assert.deepEqual(body,{});verified=true;res.writeHead(204);return res.end();}
    if(p==='/api/v1/me/passkeys/options')return json(res,{challenge_id:uid(10),options:{publicKey:{challenge:Buffer.from('synthetic-browser-challenge-32-bytes').toString('base64url'),rp:{id:'localhost',name:'Synthetic UI check'},user:{id:Buffer.from('synthetic-user').toString('base64url'),name:user.username,displayName:user.username},pubKeyCredParams:[{type:'public-key',alg:-7}],timeout:60000,authenticatorSelection:{userVerification:'required',residentKey:'preferred'},attestation:'none'}}});
    if(p==='/api/v1/me/passkeys/verify'){
@@ -267,9 +268,16 @@ try{
  assert.equal(counts.get('/api/v1/reward-settings')||0,0);
  assert.ok(await button('Sync UIDs').isDisabled());
  await page.locator('#hoyolab-cookie').fill('ltuid_v2=123; ltoken_v2=synthetic-browser-token');
+ const cookieField=await page.locator('#hoyolab-cookie').elementHandle();
+ const meBeforeSave=counts.get('/api/v1/me');
  await button('Save').click();await idle();
  assert.ok(await page.locator('#hoyolab-cookie').evaluate(e=>e.value===''));
+ await page.locator('.status.success').getByText('Cookie save accepted.',{exact:true}).waitFor();
+ assert.equal(counts.get('/api/v1/me'),meBeforeSave+1,'the setup gate is re-read after saving');
+ assert.ok(await cookieField.evaluate(e=>e.isConnected),'refreshing the gate keeps the setup form mounted (no Loading screen)');
+ await cookieField.dispose();
  await button('Verify').click();await dashboard();
+ await page.locator('.status.success').getByText('Verification response received.',{exact:true}).waitFor();
  assert.equal(counts.get('/api/v1/me/hoyolab/verify'),1);
  stage='dashboard';
  // Dark desktop renders both real game cards, not a screenshot fixture.
@@ -401,6 +409,12 @@ try{
  await page.locator('a.wordmark').click();await dashboard();
  await page.goto(origin+'/login');await dashboard();
  stage='settings';
+ await settings('link');
+ const syncsBefore=counts.get('/api/v1/me/hoyolab/sync')||0;
+ await button('Sync UIDs').click();await idle();
+ await page.locator('.status.success').getByText('Sync response received.',{exact:true}).waitFor();
+ assert.equal(counts.get('/api/v1/me/hoyolab/sync'),syncsBefore+1);
+ await page.locator('#settings-tab-link[aria-selected=true]').waitFor();
  // Settings replaces the removed nav/schedule checkbox/input[type=time].
  await settings('bonus');
  assert.equal(await page.locator('.settings-tabs [role=tab]').count(),5);
