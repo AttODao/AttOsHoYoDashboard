@@ -48,7 +48,7 @@
 
 ## 配信・フォント
 
-既存CSPを維持し、`unsafe-eval`／`unsafe-inline`は追加しない。ブラウザ操作は直接DOM APIを使い、Dioxusの`document::eval`に依存しない。フォントはGoogle Fonts配布のNoto Sans JP／Orbitron WOFF2 subsetを`assets/fonts/`へ同梱し、OFL本文も同梱。外部CDNやinline font stylesheetは使わない。日本語subsetは初回UIソースの文字集合、Orbitronはwordmark／数字を対象とする。現在の表示文の正本は`locales/`で、追加文言の未収録字形や動的な固有名には通常のsans-serif fallbackも使う。
+既存CSPを維持し、`unsafe-eval`／`unsafe-inline`は追加しない。ブラウザ操作は直接DOM APIを使い、Dioxusの`document::eval`に依存しない。フォントはGoogle Fonts配布のNoto Sans JP／Orbitron WOFF2 subsetを`assets/fonts/`へ同梱し、OFL本文も同梱。外部CDNやinline font stylesheetは使わない。日本語subsetは`locales/`の全文字・UIのRustソース・ASCII印字可能文字を対象に`scripts/subset-fonts.sh`で生成し、収録文字を`assets/fonts/noto-sans-jp.chars.txt`に記録する（UI unit testが両カタログの全文字の収録を検査）。Orbitronはwordmark／数字を対象とする。動的な固有名など未収録の文字は通常のsans-serif fallbackを使う。
 
 ### ブランドアイコン
 
@@ -66,7 +66,18 @@ devenvで整形・native／WASM Clippy・UI unit 38件・release build・通常�
 - パスキー削除は共有`ModalDialog`で確認（Cancel／Escape／フォーカス復帰）。自身の削除はdanger-zoneと結果の説明、管理者の削除dialogにも同等の説明を追加。
 - 取得失敗かつデータなしでは失敗だけを表示し、古いデータは「◯分／時間／日前のデータです」と理由を表示。未取得の表記を1キーに統一し、設定タブ「セキュリティ」をmobileでも同じ名前にした。
 
-検証：devenvでUI unit 58件、WASM／native Clippy、release build、通常／reduced-motionのブラウザ回帰（上記をsynthetic fixtureで検査）を通過。Impeccable手動検査は指摘なし。ja／en・dark／light・375／800／1280をcaptureして確認した。既知の差：同梱のNoto Sans JP subsetには既存文言27字・今回の文言26字（例：貼「」旧形式／）が未収録で、OSのsans-serifへfallbackする（CJKフォントのない検証環境では豆腐表示）。subsetの再生成は未実施。
+検証：devenvでUI unit 58件、WASM／native Clippy、release build、通常／reduced-motionのブラウザ回帰（上記をsynthetic fixtureで検査）を通過。Impeccable手動検査は指摘なし。ja／en・dark／light・375／800／1280をcaptureして確認した。既知の差だったNoto Sans JP subsetの未収録字形（例：貼「」旧形式／）は、下記の再生成で解消した。
+
+## 2026-10-19 ダッシュボードの優先順位・初期設定・フォント
+
+- ゲームカードを表示UID→主リソース＋全回復→他の数値・派遣→ログインボーナスの順に変更。375pxでも全回復が最初の画面に入る。全回復はOrbitronの日時に加え「あと7時間12分」／「in 7h 12m」を本文フォントで示し、1分ごとに再描画する。過ぎた見込みは「全回復済み」。完了した派遣は「完了」だけを表示する。`GamePanel`を状態（`GameStatusSection`）とボーナス（`BonusSection`）に分割。
+- 初期設定の段階表示をタブ風の下線から、操作できない番号付きリスト（`ol`、完了はチェックと読み上げ用「（完了）」、現在は`aria-current="step"`、未着手は控えめな表示）に変更。
+- 管理者画面の取得APIがない「ログ」欄と文言キーを削除。
+- 無効なボタンは塗りを外した破線枠と控えめな文字色にし、dark／lightとも有効なボタン（特にlightの淡いピンクの「ユーザー削除」）と区別できるようにした。
+- 操作がセッション世代を変えなくなったため、`app/data.rs`でリソースごとに最新の要求を記録し、古い応答が操作後の再取得を上書きしないようにした。
+- Noto Sans JPをgoogle/fontsの固定commitのOFL可変フォント（SHA-256 `c2f3b4d4…c68f`）からwght 400–700に絞ってsubset化。169,812 bytes（旧、wght 100–900）→107,428 bytes。生成は決定的で、同じ入力から同じファイル名になる。
+
+検証：devenvでUI unit、workspace／WASM Clippy、release build、通常／reduced-motionのブラウザ回帰を通過（カードの順序・残り時間・完了した派遣・段階表示の非操作性とaria-current・ログ欄の不在・無効ボタンのdark／light計算スタイルを追加検査）。HTTP UI境界テストも新しいフォント名で通過。Impeccable手動検査は指摘なし。ja／en・dark／light・375／800／1280をcaptureし、ログインエラー（「違います」）とCookieの説明が豆腐なしで描画されることを確認した。
 
 ## 検証状況
 

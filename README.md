@@ -112,6 +112,8 @@ Impeccableは `.pi/skills/impeccable/` にGit管理したプロジェクト専�
 devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 ```
 
+同梱のNoto Sans JPは表示文の文字だけを含むsubsetです。`dashboard-ui/locales/` の文言に新しい文字を加えると、UI unit testが未収録の文字を示して失敗します。その場合は `scripts/subset-fonts.sh`（取得元URL・SHA-256・実行方法を記載）で再生成し、出力されたファイル名を参照箇所へ反映します。
+
 エンジンは初回に公開releaseからSHA-256を確認して `.impeccable/cache/` へ取得します（未追跡）。curl／wgetがない場合は既存のNodeを使用します。ユーザー共通設定・スキルは変更しません。Pi向け自動detector hookはないため、UI変更の最後にスキルの指示に従い手動検査します。
 
 ### UIモジュール
@@ -122,7 +124,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 | `dashboard-ui/src/app/state.rs` | 画面状態、認証・初期設定ゲートと画面データ取得の起動 |
 | `dashboard-ui/src/app/session.rs` | `/me`による起動・再確認、初期設定ゲートのその場での再読み込み、ログアウト |
 | `dashboard-ui/src/app/actions.rs` | 操作の予約（busy）と完了・APIエラー処理。セッション世代とは独立 |
-| `dashboard-ui/src/app/data.rs` | セッション世代に結び付いた画面データの取得（未取得と空を区別）、手動実行後の報酬状態のGET追従 |
+| `dashboard-ui/src/app/data.rs` | セッション世代に結び付いた画面データの取得（未取得と空を区別、リソースごとに最新の要求の応答だけを反映）、手動実行後の報酬状態のGET追従 |
 | `dashboard-ui/src/app/display.rs` | 数値・ブラウザのローカル時刻による簡潔な月日／24時間表示、データの経過時間、エラーコードの表示文への対応付け |
 | `dashboard-ui/src/pages/` | 画面、メニュー、設定、ユーザー管理 |
 | `src/dashboard/games/summary.rs` | 上流ゲーム状態から画面用の要約への写像 |
