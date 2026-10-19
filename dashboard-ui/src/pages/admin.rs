@@ -121,7 +121,7 @@ fn AdminCard(state: Signal<AppState>) -> Element {
                     else if state.read().admin_users.is_none() { p { role: "status", {prefs.text("admin.loading_users")} } }
                     else if users.is_empty() { p { {prefs.text("admin.no_users")} } }
                     else {
-                        div { class: "table-wrap", role: "region", tabindex: "0", "aria-label": prefs.text("admin.manage_users"),
+                        div { class: "table-wrap admin-users", role: "region", tabindex: "0", "aria-label": prefs.text("admin.manage_users"),
                             table { "aria-label": prefs.text("admin.manage_users"),
                                 thead { tr {
                                     th { scope: "col", {prefs.text("admin.username")} }

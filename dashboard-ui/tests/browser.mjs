@@ -708,6 +708,10 @@ try{
  await page.screenshot({path:path.join(root,'target/ui-admin-desktop.png'),fullPage:true});
  await page.setViewportSize({width:390,height:844});
  assert.ok(await page.locator('main.container').evaluate(e=>e.scrollWidth<=e.clientWidth),'admin table scrolls within its wrapper on mobile');
+ const tableFit=await page.locator('.admin-users').evaluate(wrap=>{const left=wrap.getBoundingClientRect().left;return {scrolls:wrap.scrollWidth>wrap.clientWidth,clipped:[...wrap.querySelectorAll('button')].filter(b=>{const r=b.getBoundingClientRect();return r.left-left<0||r.right-left>wrap.scrollWidth||b.scrollWidth>b.clientWidth;}).length,names:[...wrap.querySelectorAll('tbody th')].map(th=>th.getBoundingClientRect().width/parseFloat(getComputedStyle(th).fontSize))};});
+ assert.ok(tableFit.scrolls,'narrow admin table scrolls horizontally');
+ assert.equal(tableFit.clipped,0,'admin actions lie fully inside the scrollable width');
+ assert.ok(tableFit.names.every(width=>width>=8),'user names keep a readable column instead of one character per line');
  await page.screenshot({path:path.join(root,'target/ui-admin-mobile.png'),fullPage:true});
  await page.setViewportSize({width:1280,height:900});
  await page.locator('#admin-create-username').fill('synthetic-created');
