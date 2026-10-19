@@ -19,6 +19,7 @@ use uuid::Uuid;
 
 const CACHE_VERSION: i32 = 2;
 const FRESH_TTL: Duration = Duration::minutes(5);
+const PRIVATE_RECORD_CODE: &str = "upstream:10102";
 
 pub(in crate::dashboard) struct Games<G: Gateway = LiveGateway> {
     store: Arc<CookieStore<G>>,
@@ -128,6 +129,11 @@ impl<G: Gateway> Games<G> {
             status.error_code = Some("action_required".into());
             return Ok(status);
         }
+        if let Some(cache) = cache.as_ref().filter(|cache| private_recently(cache, now)) {
+            // A private record only affects this game's status; reward settings stay unchanged.
+            let payload = cache.payload.clone();
+            return Ok(status_from_cache(account, Some(cache), payload, true));
+        }
         if let Some(cache) = cache.as_ref().filter(|cache| fresh(cache, now)) {
             return Ok(status_from_cache(
                 account,
@@ -189,26 +195,6 @@ impl<G: Gateway> Games<G> {
                 upsert_cache(&self.store.db, account.id, row).await?;
                 if gateway::cookie_invalid(&error) {
                     self.store.mark_cookie_invalid(actor.user.id).await?;
-                } else if matches!(
-                    error,
-                    attoshoyodashboard::hoyolab::Error::Upstream { code: 10102 }
-                ) {
-                    let tx = self.store.db.begin().await?;
-                    self.store.actor_locked(&tx, actor).await?;
-                    reward_setting::Entity::update_many()
-                        .col_expr(
-                            reward_setting::Column::AuthStatus,
-                            sea_orm::sea_query::Expr::value("action_required"),
-                        )
-                        .col_expr(
-                            reward_setting::Column::NextRunAt,
-                            sea_orm::sea_query::Expr::value(Option::<DateTime<Utc>>::None),
-                        )
-                        .filter(reward_setting::Column::HoyolabAccountId.eq(link.id))
-                        .filter(reward_setting::Column::GameKind.eq(&account.game_kind))
-                        .exec(&tx)
-                        .await?;
-                    tx.commit().await?;
                 }
                 Ok(GameStatus {
                     game_kind: account.game_kind,
@@ -266,6 +252,16 @@ fn fresh(cache: &game_status_cache::Model, now: DateTime<Utc>) -> bool {
         && cache.payload.is_some()
         && cache.fetched_at.is_some_and(|fetched_at| {
             let age = now.signed_duration_since(fetched_at);
+            age >= Duration::zero() && age <= FRESH_TTL
+        })
+}
+
+/// Backs off repeated note fetches after a private-record retcode without a sticky state.
+fn private_recently(cache: &game_status_cache::Model, now: DateTime<Utc>) -> bool {
+    cache.payload_version == CACHE_VERSION
+        && cache.error_code.as_deref() == Some(PRIVATE_RECORD_CODE)
+        && cache.error_at.is_some_and(|error_at| {
+            let age = now.signed_duration_since(error_at);
             age >= Duration::zero() && age <= FRESH_TTL
         })
 }

@@ -116,7 +116,7 @@ Lockはowner単位で、別ユーザーはglobal serializeしない。DB table l
 - hidden/undetectedならfetchせずcache projectionを返す。
 - fresh cache条件は payload version 1、payloadあり、`0 <= now - fetched_at <= 5min`。
 - upstream successではcurated summaryだけを保存する。failureでは旧payload/fetched_atを保持し、error_code/error_atを更新する。
-- retcode 10102相当は該当game reward settingを `action_required` にし、cookie invalid classはlinkを `cookie_invalid` にする。
+- retcode 10102（戦績・リアルタイムノート非公開）はgame statusのerror_codeとしてだけ表示し、reward settingは変更しない（ログインボーナスは戦績の公開設定に依存しない）。直近5分以内の10102はnote再取得を控え、それ以降は再取得して公開設定の変更から自動で回復する。cookie invalid classはlinkを `cookie_invalid` にする。
 
 ## 7. Reward worker
 

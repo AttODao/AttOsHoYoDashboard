@@ -530,12 +530,13 @@ async fn unsupported_cache_version_is_not_displayed_and_is_replaced_by_refresh()
 }
 
 #[tokio::test]
-async fn game_privacy_error_stops_repeat_note_fetches_for_that_game() {
+async fn game_privacy_error_backs_off_note_fetches_without_touching_reward_settings() {
     let fixture = TestDatabase::new().await;
     let actor = ready_identity(&fixture.db, "owner").await;
     let key = key();
     let link = verified_link(&fixture.db, &key, actor.user.id, "123").await;
     let account = game(&fixture.db, link.id, "genshin", "800000001", true, true).await;
+    let next_run_at = Utc::now() + Duration::hours(1);
     let setting = reward_setting::ActiveModel {
         id: Set(Uuid::new_v4()),
         hoyolab_account_id: Set(link.id),
@@ -543,25 +544,48 @@ async fn game_privacy_error_stops_repeat_note_fetches_for_that_game() {
         enabled: Set(true),
         local_time: Set("06:00".into()),
         auth_status: Set("ready".into()),
-        next_run_at: Set(Some(Utc::now())),
+        next_run_at: Set(Some(next_run_at)),
     }
     .insert(&fixture.db)
     .await
     .unwrap();
-    let gateway = MockGateway::new([Err(UpstreamError::Upstream { code: 10102 })]);
+    let gateway = MockGateway::new([
+        Err(UpstreamError::Upstream { code: 10102 }),
+        Ok(json!({
+            "current_resin": 50,
+            "max_resin": 200,
+            "resin_recovery_time": "60",
+            "expeditions": []
+        })),
+    ]);
     let games = service(fixture.db.clone(), key, gateway.clone());
     let status = games.status(&actor, account.id).await.unwrap();
     assert_eq!(status.error_code.as_deref(), Some("upstream:10102"));
     let status = games.status(&actor, account.id).await.unwrap();
-    assert_eq!(status.error_code.as_deref(), Some("action_required"));
+    assert_eq!(status.error_code.as_deref(), Some("upstream:10102"));
+    assert!(status.stale);
     assert_eq!(gateway.calls(), 1);
-    let setting = reward_setting::Entity::find_by_id(setting.id)
+    let stored = reward_setting::Entity::find_by_id(setting.id)
         .one(&fixture.db)
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(setting.auth_status, "action_required");
-    assert_eq!(setting.next_run_at, None);
+    assert_eq!(stored, setting);
+
+    // Once the backoff window passes, the record is fetched again and can recover.
+    let mut cached: game_status_cache::ActiveModel =
+        game_status_cache::Entity::find_by_id(account.id)
+            .one(&fixture.db)
+            .await
+            .unwrap()
+            .unwrap()
+            .into();
+    cached.error_at = Set(Some(Utc::now() - Duration::minutes(6)));
+    cached.update(&fixture.db).await.unwrap();
+    let recovered = games.status(&actor, account.id).await.unwrap();
+    assert_eq!(gateway.calls(), 2);
+    assert!(recovered.error_code.is_none());
+    assert_eq!(recovered.payload.as_ref().unwrap()["current_resin"], 50);
 }
 
 #[tokio::test]
