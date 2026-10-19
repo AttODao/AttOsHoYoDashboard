@@ -13,6 +13,7 @@ use crate::{
     },
 };
 use dioxus::prelude::*;
+use serde::de::DeserializeOwned;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -55,24 +56,47 @@ pub(super) async fn load_dashboard_data(state: Signal<AppState>, include_account
     load_rewards(state).await;
 }
 
+// Session-scoped GET: a reply for an older session (or a lost gate) is dropped
+// and a 401 signs out; otherwise the caller gets the value or a message key.
+async fn fetch_current<T: DeserializeOwned>(
+    state: Signal<AppState>,
+    path: &str,
+    generation: u64,
+    current: fn(Signal<AppState>, u64) -> bool,
+) -> Option<Result<T, &'static str>> {
+    let result = api::get::<T>(path).await;
+    if !current(state, generation) {
+        return None;
+    }
+    match result {
+        Ok(value) => Some(Ok(value)),
+        Err(error) if error.is_unauthorized() => {
+            signed_out(state, "messages.please_sign_in_again");
+            None
+        }
+        Err(error) => Some(Err(error.message_key())),
+    }
+}
+
 pub(super) async fn load_hoyolab(mut state: Signal<AppState>) {
     let Some(generation) = signed_in_generation(state) else {
         return;
     };
-    match api::get::<CookieStatus>("/me/hoyolab").await {
-        Ok(status) if current_generation(state, generation) => {
-            state.write().hoyolab = Some(status);
-            state.write().hoyolab_error = None;
+    let Some(result) =
+        fetch_current::<CookieStatus>(state, "/me/hoyolab", generation, current_generation).await
+    else {
+        return;
+    };
+    let mut write = state.write();
+    match result {
+        Ok(status) => {
+            write.hoyolab = Some(status);
+            write.hoyolab_error = None;
         }
-        Ok(_) => {}
-        Err(error) if current_generation(state, generation) && error.is_unauthorized() => {
-            signed_out(state, "messages.please_sign_in_again");
+        Err(key) => {
+            write.hoyolab = None;
+            write.hoyolab_error = Some(key.to_owned());
         }
-        Err(error) if current_generation(state, generation) => {
-            state.write().hoyolab = None;
-            state.write().hoyolab_error = Some(error.message_key().to_owned());
-        }
-        Err(_) => {}
     }
 }
 
@@ -80,21 +104,25 @@ pub(super) async fn load_accounts(mut state: Signal<AppState>) {
     let Some(generation) = ready_generation(state) else {
         return;
     };
-    match api::get::<Vec<GameAccount>>("/game-accounts").await {
-        Ok(accounts) if current_ready_generation(state, generation) => {
-            let mut write = state.write();
+    let Some(result) = fetch_current::<Vec<GameAccount>>(
+        state,
+        "/game-accounts",
+        generation,
+        current_ready_generation,
+    )
+    .await
+    else {
+        return;
+    };
+    let mut write = state.write();
+    match result {
+        Ok(accounts) => {
             write.accounts = accounts;
             write.accounts_error = None;
             write.reconcile_dashboard_accounts();
         }
-        Ok(_) => {}
-        Err(error) if current_ready_generation(state, generation) && error.is_unauthorized() => {
-            signed_out(state, "messages.please_sign_in_again");
-        }
-        Err(error) if current_ready_generation(state, generation) => {
-            state.write().accounts_error = Some(error.message_key().to_owned());
-        }
-        Err(_) => {}
+        // Keep the last list; the page shows the refresh failure beside it.
+        Err(key) => write.accounts_error = Some(key.to_owned()),
     }
 }
 
@@ -222,38 +250,49 @@ pub(super) async fn load_rewards(mut state: Signal<AppState>) {
     let Some(generation) = ready_generation(state) else {
         return;
     };
-    match api::get::<Vec<RewardSetting>>("/reward-settings").await {
-        Ok(settings) if current_ready_generation(state, generation) => {
-            state.write().rewards = settings;
-            state.write().rewards_error = None;
-        }
-        Ok(_) => {}
-        Err(error) if current_ready_generation(state, generation) && error.is_unauthorized() => {
-            signed_out(state, "messages.please_sign_in_again");
-        }
-        Err(error) if current_ready_generation(state, generation) => {
-            state.write().rewards.clear();
-            state.write().rewards_error = Some(error.message_key().to_owned());
-        }
-        Err(_) => {}
-    }
-    if !current_ready_generation(state, generation) {
+    let Some(result) = fetch_current::<Vec<RewardSetting>>(
+        state,
+        "/reward-settings",
+        generation,
+        current_ready_generation,
+    )
+    .await
+    else {
         return;
+    };
+    {
+        let mut write = state.write();
+        match result {
+            Ok(settings) => {
+                write.rewards = settings;
+                write.rewards_error = None;
+            }
+            Err(key) => {
+                write.rewards.clear();
+                write.rewards_error = Some(key.to_owned());
+            }
+        }
     }
-    match api::get::<Vec<RewardRun>>("/reward-runs?limit=100").await {
-        Ok(runs) if current_ready_generation(state, generation) => {
-            state.write().reward_runs = runs;
-            state.write().reward_runs_error = None;
+    let Some(result) = fetch_current::<Vec<RewardRun>>(
+        state,
+        "/reward-runs?limit=100",
+        generation,
+        current_ready_generation,
+    )
+    .await
+    else {
+        return;
+    };
+    let mut write = state.write();
+    match result {
+        Ok(runs) => {
+            write.reward_runs = runs;
+            write.reward_runs_error = None;
         }
-        Ok(_) => {}
-        Err(error) if current_ready_generation(state, generation) && error.is_unauthorized() => {
-            signed_out(state, "messages.please_sign_in_again");
+        Err(key) => {
+            write.reward_runs.clear();
+            write.reward_runs_error = Some(key.to_owned());
         }
-        Err(error) if current_ready_generation(state, generation) => {
-            state.write().reward_runs.clear();
-            state.write().reward_runs_error = Some(error.message_key().to_owned());
-        }
-        Err(_) => {}
     }
 }
 
@@ -261,20 +300,22 @@ pub(super) async fn load_passkeys(mut state: Signal<AppState>) {
     let Some(generation) = password_generation(state) else {
         return;
     };
-    match api::get::<Vec<PasskeyView>>("/me/passkeys").await {
-        Ok(passkeys) if current_generation(state, generation) => {
-            state.write().passkeys = passkeys;
-            state.write().passkeys_error = None;
+    let Some(result) =
+        fetch_current::<Vec<PasskeyView>>(state, "/me/passkeys", generation, current_generation)
+            .await
+    else {
+        return;
+    };
+    let mut write = state.write();
+    match result {
+        Ok(passkeys) => {
+            write.passkeys = passkeys;
+            write.passkeys_error = None;
         }
-        Ok(_) => {}
-        Err(error) if current_generation(state, generation) && error.is_unauthorized() => {
-            signed_out(state, "messages.please_sign_in_again");
+        Err(key) => {
+            write.passkeys.clear();
+            write.passkeys_error = Some(key.to_owned());
         }
-        Err(error) if current_generation(state, generation) => {
-            state.write().passkeys.clear();
-            state.write().passkeys_error = Some(error.message_key().to_owned());
-        }
-        Err(_) => {}
     }
 }
 
@@ -282,15 +323,12 @@ pub(super) async fn load_server_settings(mut state: Signal<AppState>) {
     let Some(generation) = password_generation(state) else {
         return;
     };
-    match api::get::<ServerSettings>("/server-settings").await {
-        Ok(settings) if current_generation(state, generation) => {
-            state.write().server = Some(settings)
-        }
-        Ok(_) => {}
-        Err(error) if current_generation(state, generation) && error.is_unauthorized() => {
-            signed_out(state, "messages.please_sign_in_again");
-        }
-        Err(_) => {}
+    // Optional context: a failure leaves the "not loaded" placeholders.
+    if let Some(Ok(settings)) =
+        fetch_current::<ServerSettings>(state, "/server-settings", generation, current_generation)
+            .await
+    {
+        state.write().server = Some(settings);
     }
 }
 
@@ -301,20 +339,21 @@ pub(super) async fn load_admin_users(mut state: Signal<AppState>) {
     if !state.read().me.as_ref().is_some_and(|me| me.is_admin) {
         return;
     }
-    match api::get::<Vec<UserView>>("/admin/users").await {
-        Ok(users) if current_generation(state, generation) => {
-            state.write().admin_users = users;
-            state.write().admin_error = None;
+    let Some(result) =
+        fetch_current::<Vec<UserView>>(state, "/admin/users", generation, current_generation).await
+    else {
+        return;
+    };
+    let mut write = state.write();
+    match result {
+        Ok(users) => {
+            write.admin_users = users;
+            write.admin_error = None;
         }
-        Ok(_) => {}
-        Err(error) if current_generation(state, generation) && error.is_unauthorized() => {
-            signed_out(state, "messages.please_sign_in_again");
+        Err(key) => {
+            write.admin_users.clear();
+            write.admin_error = Some(key.to_owned());
         }
-        Err(error) if current_generation(state, generation) => {
-            state.write().admin_users.clear();
-            state.write().admin_error = Some(error.message_key().to_owned());
-        }
-        Err(_) => {}
     }
 }
 
