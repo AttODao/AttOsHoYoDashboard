@@ -83,6 +83,8 @@
   "dashboard.visible": "Visible",
   "dashboard.detected": "Detected",
   "dashboard.full_recovery_at": "Full recovery at",
+  "dashboard.recovers_in": "in {duration}",
+  "dashboard.fully_recovered": "Fully recovered",
   "dashboard.expeditions": "Expeditions",
   "dashboard.no_expeditions": "No expeditions",
   "dashboard.expedition_number": "Expedition {number}",

@@ -83,6 +83,8 @@
   "dashboard.visible": "表示対象",
   "dashboard.detected": "検出済み",
   "dashboard.full_recovery_at": "全回復の目安",
+  "dashboard.recovers_in": "あと{duration}",
+  "dashboard.fully_recovered": "全回復済み",
   "dashboard.expeditions": "派遣",
   "dashboard.no_expeditions": "派遣なし",
   "dashboard.expedition_number": "派遣 {number}",
