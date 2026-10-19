@@ -307,6 +307,10 @@
   "rewards.run_finished_failed": "Manual run failed. Check the run history.",
   "rewards.run_finished_unconfirmed": "The manual run result could not be confirmed. Check the run history.",
   "rewards.run_still_pending": "The run has not finished yet. Use Refresh to check again later.",
+  "security.password_rules": "Use 12–256 bytes. Letters, digits and symbols count as 1 byte each; most Japanese characters count as 3.",
+  "security.password_length_error": "Currently {count} bytes; use 12–256 bytes.",
+  "security.password_mismatch": "The confirmation does not match the new password.",
+  "security.current_password_required": "Enter your current password.",
   "app.title": "AHD",
   "messages.unavailable": "Message unavailable."
 }

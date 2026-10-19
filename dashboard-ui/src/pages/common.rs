@@ -46,6 +46,11 @@ pub(super) fn PasswordInput(
     id: String,
     mut value: Signal<String>,
     autocomplete: String,
+    /// Space-separated IDs of hint and error text for this control.
+    #[props(default)]
+    describedby: Option<String>,
+    #[props(default)] invalid: bool,
+    #[props(default)] onblur: Option<EventHandler<()>>,
 ) -> Element {
     let ui = use_preferences();
     let preferences = use_context::<Signal<Preferences>>();
@@ -74,7 +79,9 @@ pub(super) fn PasswordInput(
     rsx! {
         div { class: "password-control",
             input { id: id.clone(), r#type: input_type, autocomplete: "{autocomplete}",
-                value: "{value}", oninput: move |event| value.set(event.value())
+                "aria-describedby": describedby, "aria-invalid": invalid.then_some("true"),
+                value: "{value}", oninput: move |event| value.set(event.value()),
+                onblur: move |_| if let Some(handler) = &onblur { handler.call(()) },
             }
             button { class: "password-eye", r#type: "button", "aria-controls": id,
                 "aria-label": eye_label,

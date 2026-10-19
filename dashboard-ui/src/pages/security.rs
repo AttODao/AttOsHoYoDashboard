@@ -1,4 +1,4 @@
-use super::common::{Field, Metric, PasswordInput};
+use super::common::{Field, Metric, PasswordInput, focus_element};
 use crate::app::actions::{handle_api_error_for, handle_password_error_for, spawn_action};
 use crate::app::data::load_passkeys;
 use crate::app::display::datetime_text;
@@ -37,8 +37,13 @@ fn password_body(mandatory: bool, current: String, next: String) -> Value {
     }
 }
 
+/// The backend counts UTF-8 bytes (`auth::password`), not characters.
+fn password_length_ok(next: &str) -> bool {
+    (12..=256).contains(&next.len())
+}
+
 fn valid_password_change(mandatory: bool, current: &str, next: &str, confirm: &str) -> bool {
-    (mandatory || !current.is_empty()) && (12..=256).contains(&next.len()) && next == confirm
+    (mandatory || !current.is_empty()) && password_length_ok(next) && next == confirm
 }
 
 #[component]
@@ -47,6 +52,10 @@ pub(super) fn PasswordCard(mut state: Signal<AppState>, title: &'static str) -> 
     let mut current = use_signal(String::new);
     let mut new_password = use_signal(String::new);
     let mut confirmation = use_signal(String::new);
+    // Inline errors appear after leaving a filled field or after a submit attempt.
+    let mut submitted = use_signal(|| false);
+    let mut left_new = use_signal(|| false);
+    let mut left_confirm = use_signal(|| false);
     let mandatory = state
         .read()
         .me
@@ -57,22 +66,42 @@ pub(super) fn PasswordCard(mut state: Signal<AppState>, title: &'static str) -> 
         new_password.write().clear();
         confirmation.write().clear();
     });
+    let next_bytes = new_password.read().len();
+    let length_error = !password_length_ok(&new_password.read())
+        && (submitted() || (left_new() && next_bytes > 0));
+    let mismatch_error = *confirmation.read() != *new_password.read()
+        && (submitted() || (left_confirm() && !confirmation.read().is_empty()));
+    let current_error = !mandatory && submitted() && current.read().is_empty();
+    let new_described = if length_error {
+        "new-password-rules new-password-error"
+    } else {
+        "new-password-rules"
+    }
+    .to_owned();
     rsx! {
         section { class: "panel",
             h3 { "{title}" }
-            form { onsubmit: move |event| {
+            form { novalidate: true, onsubmit: move |event| {
                 event.prevent_default();
                 if state.read().busy { return; }
-                let current_password = std::mem::take(&mut *current.write());
-                let next = std::mem::take(&mut *new_password.write());
-                let confirm = std::mem::take(&mut *confirmation.write());
                 // Read the current server gate at submission, not a captured setup reason.
                 let mandatory = state.read().me.as_ref().is_some_and(|me| me.onboarding.password_change_required);
-                if !valid_password_change(mandatory, &current_password, &next, &confirm) {
+                if !valid_password_change(mandatory, &current.read(), &new_password.read(), &confirmation.read()) {
+                    // Keep the typed values so the inline errors can be fixed in place.
+                    submitted.set(true);
                     set_status(state, "security.invalid_password_change", "error");
+                    let first = if !mandatory && current.read().is_empty() { "current-password" }
+                        else if !password_length_ok(&new_password.read()) { "new-password" }
+                        else { "confirm-password" };
+                    focus_element(first);
                     return;
                 }
-                drop(confirm);
+                let current_password = std::mem::take(&mut *current.write());
+                let next = std::mem::take(&mut *new_password.write());
+                confirmation.write().clear();
+                submitted.set(false);
+                left_new.set(false);
+                left_confirm.set(false);
                 let body = password_body(mandatory, current_password, next);
                 spawn_action(state, move |generation| async move {
                     match crate::api::send("PUT", "/me/password", Some(body)).await {
@@ -90,14 +119,27 @@ pub(super) fn PasswordCard(mut state: Signal<AppState>, title: &'static str) -> 
                 div { class: "form-grid",
                     if !mandatory {
                         Field { id: "current-password", label: ui.text("deletion.current_password"),
-                            PasswordInput { id: "current-password", value: current, autocomplete: "current-password" }
+                            PasswordInput { id: "current-password", value: current, autocomplete: "current-password",
+                                describedby: current_error.then(|| "current-password-error".to_owned()), invalid: current_error }
+                            if current_error { p { id: "current-password-error", class: "field-error", {ui.text("security.current_password_required")} } }
                         }
                     }
                     Field { id: "new-password", label: ui.text("security.new_password"),
-                        PasswordInput { id: "new-password", value: new_password, autocomplete: "new-password" }
+                        PasswordInput { id: "new-password", value: new_password, autocomplete: "new-password",
+                            describedby: new_described,
+                            invalid: length_error, onblur: move |_| left_new.set(true) }
+                        p { id: "new-password-rules", class: "field-hint", {ui.text("security.password_rules")} }
+                        if length_error {
+                            p { id: "new-password-error", class: "field-error",
+                                {ui.format("security.password_length_error", &[("count", &next_bytes.to_string())])}
+                            }
+                        }
                     }
                     Field { id: "confirm-password", label: ui.text("security.confirm_new_password"),
-                        PasswordInput { id: "confirm-password", value: confirmation, autocomplete: "new-password" }
+                        PasswordInput { id: "confirm-password", value: confirmation, autocomplete: "new-password",
+                            describedby: mismatch_error.then(|| "confirm-password-error".to_owned()),
+                            invalid: mismatch_error, onblur: move |_| left_confirm.set(true) }
+                        if mismatch_error { p { id: "confirm-password-error", class: "field-error", {ui.text("security.password_mismatch")} } }
                     }
                 }
                 div { class: "auth-submit",
@@ -212,5 +254,9 @@ mod tests {
         }
         let unicode = "あ".repeat(86);
         assert!(!valid_password_change(true, "", &unicode, &unicode));
+        // Four full-width characters are 12 bytes, so they meet the minimum.
+        assert!(password_length_ok(&"あ".repeat(4)));
+        assert!(password_length_ok(&"あ".repeat(85)));
+        assert!(!password_length_ok("あいう"));
     }
 }
