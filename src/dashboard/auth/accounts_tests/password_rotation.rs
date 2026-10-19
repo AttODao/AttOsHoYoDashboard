@@ -443,3 +443,63 @@ async fn concurrent_password_changes_from_same_authenticated_snapshot_have_one_w
             .is_ok()
     );
 }
+
+/// Spends the whole in-session password budget without paying for Argon2 in debug builds.
+fn exhaust_reauth(accounts: &Accounts, user: uuid::Uuid) {
+    let now = std::time::Instant::now();
+    for _ in 0..1000 {
+        if accounts.reauth_limit.admit(user, now).is_err() {
+            return;
+        }
+    }
+    panic!("current-password budget never ran out");
+}
+
+#[tokio::test]
+async fn current_password_checks_are_limited_per_user_without_touching_sign_in() {
+    let test = TestDatabase::new().await;
+    let (accounts, admin) = test.ready_admin().await;
+    exhaust_reauth(&accounts, admin.user.id);
+    // Even the correct current password is not checked once the budget is spent.
+    assert!(matches!(
+        accounts
+            .change_password(&admin, Some(PASSWORD.into()), "another-password".into())
+            .await,
+        Err(Error::RateLimited)
+    ));
+    let stored = user::Entity::find_by_id(admin.user.id)
+        .one(&test.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.password_hash, admin.user.password_hash);
+    assert!(
+        Sessions::authenticate(&test.db, &admin.token_hash)
+            .await
+            .is_ok()
+    );
+    // Sign-in keeps its own per-username budget.
+    assert_eq!(accounts.login_attempts(&admin.user.username), 1);
+    assert!(
+        accounts
+            .login(admin.user.username.clone(), PASSWORD.into())
+            .await
+            .is_ok()
+    );
+    // Another user's budget is untouched.
+    accounts
+        .create_user(&admin, "other-member".into(), TEMP_PASSWORD.into())
+        .await
+        .unwrap();
+    let (_, issued) = accounts
+        .login("other-member".into(), TEMP_PASSWORD.into())
+        .await
+        .unwrap();
+    let other = identity(&test.db, &issued).await;
+    assert!(
+        accounts
+            .change_password(&other, Some(TEMP_PASSWORD.into()), PASSWORD.into())
+            .await
+            .is_ok()
+    );
+}

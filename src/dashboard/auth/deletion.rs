@@ -82,6 +82,7 @@ impl Accounts {
         if target != actor_id {
             require_admin(&actor.user)?;
         }
+        self.admit_reauth(actor_id)?;
         if !self
             .passwords
             .verify(current_password, Some(&actor_password_hash))

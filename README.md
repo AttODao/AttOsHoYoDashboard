@@ -133,7 +133,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 | パス | 責務 |
 | --- | --- |
-| `src/dashboard/auth/` | ユーザーのライフサイクル、パスワード、セッション、パスキー、削除要求と完了（再試行の待機を含む）、ユーザー名ごとのログイン試行制限 |
+| `src/dashboard/auth/` | ユーザーのライフサイクル、パスワード、セッション、パスキー、削除要求と完了（再試行の待機を含む）、ユーザー名ごとのログイン試行制限、ユーザーごとの現在パスワード確認の試行制限 |
 | `src/dashboard/http/` | ルート、DTO、Cookie、Origin・キャッシュの境界、UI配信、報酬・削除のバックグラウンド処理の起動 |
 | `src/dashboard/db/` | `entities/` に保存モデル、`migrations/` にスキーマ変更 |
 | `src/dashboard/hoyolab/` | Cookieの解析・暗号化保存、連携の検証・同期、ユーザー単位の操作ロック |

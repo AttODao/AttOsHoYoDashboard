@@ -1,8 +1,10 @@
-//! Per-username sign-in budget shared by password and passkey login.
+//! Fixed-window attempt budgets for password and passkey checks.
 //!
 //! Requests arrive through a reverse proxy, so the peer address cannot identify a client.
-//! Keying by the attempted username keeps one user's failures from locking out others;
-//! overall CPU stays bounded by the password and WebAuthn worker limits.
+//! Sign-in is keyed by the attempted username so one user's failures do not lock out others;
+//! in-session current-password checks are keyed by the signed-in user's id in a separate map,
+//! so a stolen session cannot exhaust its owner's sign-in budget (or the reverse).
+//! Overall CPU stays bounded by the password and WebAuthn worker limits.
 #[cfg(test)]
 #[path = "login_limit_tests.rs"]
 mod tests;
@@ -11,6 +13,7 @@ use super::accounts::validate_username;
 use crate::dashboard::error::{Error, Result};
 use std::{
     collections::HashMap,
+    hash::Hash,
     sync::Mutex,
     time::{Duration, Instant},
 };
@@ -26,12 +29,30 @@ struct Bucket {
     attempts: u32,
 }
 
-#[derive(Default)]
-pub(super) struct LoginLimiter(Mutex<HashMap<String, Bucket>>);
+pub(super) struct AttemptLimiter<K>(Mutex<HashMap<K, Bucket>>);
+
+impl<K> Default for AttemptLimiter<K> {
+    fn default() -> Self {
+        Self(Mutex::new(HashMap::new()))
+    }
+}
+
+/// Sign-in attempts per attempted username.
+pub(super) type LoginLimiter = AttemptLimiter<String>;
 
 impl LoginLimiter {
-    pub(super) fn admit(&self, username: &str, now: Instant) -> Result<()> {
-        let key = key(username);
+    pub(super) fn admit_username(&self, username: &str, now: Instant) -> Result<()> {
+        self.admit(key(username), now)
+    }
+
+    #[cfg(test)]
+    pub(super) fn username_attempts(&self, username: &str) -> u32 {
+        self.attempts(&key(username))
+    }
+}
+
+impl<K: Hash + Eq + Clone> AttemptLimiter<K> {
+    pub(super) fn admit(&self, key: K, now: Instant) -> Result<()> {
         let mut buckets = self.0.lock().map_err(|_| Error::Internal)?;
         if !buckets.contains_key(&key) && buckets.len() >= MAX_BUCKETS {
             buckets.retain(|_, bucket| now.duration_since(bucket.started) < WINDOW);
@@ -62,11 +83,11 @@ impl LoginLimiter {
     }
 
     #[cfg(test)]
-    pub(super) fn attempts(&self, username: &str) -> u32 {
+    pub(super) fn attempts(&self, key: &K) -> u32 {
         self.0
             .lock()
             .unwrap()
-            .get(&key(username))
+            .get(key)
             .map_or(0, |bucket| bucket.attempts)
     }
 }

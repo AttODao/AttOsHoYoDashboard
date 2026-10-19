@@ -536,3 +536,36 @@ async fn pending_deletion_rejects_recovery_and_reactivation_without_changes() {
     );
     pending_row(&fixture.db, target.user.id).await;
 }
+
+#[tokio::test]
+async fn deletion_password_checks_spend_the_actor_budget() {
+    let fixture = TestDatabase::new().await;
+    let (accounts, admin) = fixture.ready_admin().await;
+    let target = ready_user(&accounts, &admin, "limited-target").await;
+    let now = std::time::Instant::now();
+    while accounts.reauth_limit.admit(admin.user.id, now).is_ok() {}
+    // Even the correct password is not checked once the actor's budget is spent.
+    assert!(matches!(
+        accounts
+            .request_deletion(
+                &admin,
+                target.user.id,
+                PASSWORD.into(),
+                "limited-target".into(),
+            )
+            .await,
+        Err(Error::RateLimited)
+    ));
+    assert_no_request(&fixture.db, target.user.id).await;
+    // The budget belongs to the actor, not the target.
+    accounts
+        .request_deletion(
+            &target,
+            target.user.id,
+            PASSWORD.into(),
+            "limited-target".into(),
+        )
+        .await
+        .unwrap();
+    pending_row(&fixture.db, target.user.id).await;
+}

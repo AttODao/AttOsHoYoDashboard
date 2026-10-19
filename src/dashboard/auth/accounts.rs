@@ -5,7 +5,7 @@ mod deletion;
 #[path = "accounts_tests.rs"]
 mod tests;
 use super::{
-    login_limit::LoginLimiter,
+    login_limit::{AttemptLimiter, LoginLimiter},
     password::Passwords,
     sessions::{Identity, IssuedSession, Sessions},
 };
@@ -29,6 +29,7 @@ pub(in crate::dashboard) struct Accounts {
     passwords: Passwords,
     deletion_retries: deletion::DeletionRetries,
     login_limit: LoginLimiter,
+    reauth_limit: AttemptLimiter<Uuid>,
 }
 
 impl Accounts {
@@ -42,6 +43,7 @@ impl Accounts {
             passwords: Passwords::new().await?,
             deletion_retries: deletion::DeletionRetries::default(),
             login_limit: LoginLimiter::default(),
+            reauth_limit: AttemptLimiter::default(),
         })
     }
 
@@ -112,12 +114,17 @@ impl Accounts {
 
     /// Spends one attempt from the attempted username's sign-in budget.
     pub(super) fn admit_login(&self, username: &str) -> Result<()> {
-        self.login_limit.admit(username, Instant::now())
+        self.login_limit.admit_username(username, Instant::now())
     }
 
     #[cfg(test)]
     pub(in crate::dashboard) fn login_attempts(&self, username: &str) -> u32 {
-        self.login_limit.attempts(username)
+        self.login_limit.username_attempts(username)
+    }
+
+    /// Spends one attempt from a signed-in user's current-password check budget.
+    fn admit_reauth(&self, user: Uuid) -> Result<()> {
+        self.reauth_limit.admit(user, Instant::now())
     }
 
     pub(in crate::dashboard) async fn change_password(
@@ -126,6 +133,8 @@ impl Accounts {
         current: Option<String>,
         new: String,
     ) -> Result<(user::Model, IssuedSession)> {
+        // Every path below verifies against the stored hash, so each request spends the budget.
+        self.admit_reauth(actor.user.id)?;
         // Do expensive password work before locking, then validate the snapshot below.
         let (current_valid, unchanged) = if let Some(current) = current {
             let unchanged = current == new;
