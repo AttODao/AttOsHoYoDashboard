@@ -11,10 +11,7 @@ fn reward_day(at: DateTime<Utc>) -> NaiveDate {
 }
 
 /// An uncertain POST blocks further POSTs only within the reward day it was recorded in.
-pub(in crate::dashboard) fn post_unresolved(
-    guard: Option<&reward_guard::Model>,
-    now: DateTime<Utc>,
-) -> bool {
+pub(super) fn post_unresolved(guard: Option<&reward_guard::Model>, now: DateTime<Utc>) -> bool {
     guard.is_some_and(|guard| {
         guard.post_may_have_happened && reward_day(guard.updated_at) >= reward_day(now)
     })

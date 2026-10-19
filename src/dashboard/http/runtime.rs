@@ -1,11 +1,9 @@
 //! Independent, bounded reward and deletion work; neither depends on Dashboard visits.
 use super::App;
 use crate::dashboard::{
-    db::entities::{hoyolab_account, reward_guard, reward_setting},
-    error::{Error, Result},
-    rewards::{guard, service::Rewards},
+    error::Result,
+    rewards::{deletion, service::Rewards},
 };
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use std::collections::HashMap;
 use tokio::{
     sync::watch,
@@ -76,35 +74,6 @@ fn complete(
 }
 async fn finish_owner(app: App, owner: Uuid) -> Result<()> {
     let _operation = app.operations.acquire(owner).await;
-    if let Some(cookies) = &app.cookies {
-        Rewards::new(cookies.clone())
-            .confirm_owner_for_deletion(owner)
-            .await?;
-    } else if let Some(link) = hoyolab_account::Entity::find()
-        .filter(hoyolab_account::Column::OwnerUserId.eq(owner))
-        .one(&app.accounts.db)
-        .await?
-    {
-        let ids = reward_setting::Entity::find()
-            .filter(reward_setting::Column::HoyolabAccountId.eq(link.id))
-            .all(&app.accounts.db)
-            .await?
-            .into_iter()
-            .map(|row| row.id)
-            .collect::<Vec<_>>();
-        let now = chrono::Utc::now();
-        if !ids.is_empty()
-            && reward_guard::Entity::find()
-                .filter(reward_guard::Column::SettingId.is_in(ids))
-                .all(&app.accounts.db)
-                .await?
-                .iter()
-                .any(|row| guard::post_unresolved(Some(row), now))
-        {
-            return Err(Error::Unavailable(
-                "Cookie key is required to confirm an earlier operation",
-            ));
-        }
-    }
+    deletion::confirm_owner(&app.accounts.db, app.cookies.as_ref(), owner).await?;
     app.accounts.finish_deletion(owner).await
 }

@@ -32,7 +32,7 @@ flowchart TB
 - `src/dashboard/hoyolab/`: owner operation lock、identity/roles整合性検証・sync。`credentials.rs`がCredentials/CookieKeyの窓口を持ち、`credentials/parser.rs`がCookie解析・正規化、`credentials/crypto.rs`がAES-256-GCM保存を担当する。Cookie claimは本人確認の証拠にせず、暗号化v1のnonce・AAD・保存形式は維持する。
 - `src/dashboard/games/`: owned game UID list、visibility、curated status cache。`live_tests.rs`は既定ignoreの別承認付き派遣GET検査で、ローカルdevenvの保存済みCookieをメモリ内で使用し、DB read-only transactionと件数・状態・公式画像hostだけの非機密出力を要求する。
 - `src/dashboard/rewards/service.rs`: settings・manual enqueue・historyと共通のactor/link/credential version再検査。`service/cache.rs`がrefresh・TTL・cache upsertを持つ。認可再検査はcache専用ではないためserviceに残す。
-- `src/dashboard/rewards/service/worker/`: serviceの子workerを維持し、`scheduler.rs`にtick・due schedule・history cleanup、`attempt.rs`にprepare・POST・GET確認、`state.rs`にdurable may-have-sent・guard・完了transaction、`deletion.rs`に削除時のGET-only確認を置く。owner operation lock、DB transaction/row lock、POST前のdurable記録と不確定時の再送禁止は移動前と同じ境界を保つ。fixed-offset計算は`rewards/schedule.rs`、guardを報酬日（UTC+8の0時区切り）に限定する共通判定は`rewards/guard.rs`。
+- `src/dashboard/rewards/service/worker/`: serviceの子workerを維持し、`scheduler.rs`にtick・due schedule・history cleanup、`attempt.rs`にprepare・POST・GET確認、`state.rs`にdurable may-have-sent・guard・完了transaction、`deletion.rs`に削除時のGET-only確認を置く。owner operation lock、DB transaction/row lock、POST前のdurable記録と不確定時の再送禁止は移動前と同じ境界を保つ。fixed-offset計算は`rewards/schedule.rs`、guardを報酬日（UTC+8の0時区切り）に限定する共通判定は`rewards/guard.rs`。削除完了前の報酬側判定（未解決guard・`may_have_sent` runの抽出、Cookie keyなしでは削除を保留）は`rewards/deletion.rs`が持ち、HTTP runtimeは呼び出すだけにする。
 - `src/hoyolab/client/`: typed upstream protocol client。Dashboard policyをここへ混ぜない。
 
 APIとschedulerは同じDB/業務処理を使う。単一process/instance前提で、Redisや分散queueはない。更新時down timeは許容する。
@@ -144,7 +144,7 @@ Worker tick is independent of page views. It first cleans completed 5-day histor
 
 ## 8. Deletion workflow
 
-Deletion request verifies actor password, reauthenticates current session, locks actor/target consistently, rejects last active admin, marks target inactive, revokes sessions/passkeys, persists `deletion_request`, and records audit. Background completion waits for owner operations, confirms may-have-sent reward runs by bounded GET-only logic, then deletes target-owned data and user row. Target audit rows are removed; other rows where target was actor may be preserved with actor set null.
+Deletion request verifies actor password, reauthenticates current session, locks actor/target consistently, rejects last active admin, marks target inactive, revokes sessions/passkeys, persists `deletion_request`, and records audit. Background completion waits for owner operations, confirms settings with an unresolved same-reward-day guard or a `may_have_sent` run by bounded GET-only logic (`rewards/deletion.rs`; without a cookie key such owners stay pending), then deletes target-owned data and user row. Target audit rows are removed; other rows where target was actor may be preserved with actor set null.
 
 ## 9. API contract
 
