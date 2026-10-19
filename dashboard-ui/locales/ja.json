@@ -311,6 +311,13 @@
   "security.password_length_error": "現在{count}バイトです。12〜256バイトにしてください。",
   "security.password_mismatch": "確認用のパスワードが新しいパスワードと一致しません。",
   "security.current_password_required": "現在のパスワードを入力してください。",
+  "deletion.irreversible": "この操作は元に戻せません",
+  "deletion.own_consequences": "このユーザーのデータ（HoYoLAB連携と保存したCookie、ゲームアカウント、ログインボーナスの設定と履歴、パスキーなど）をすべて削除します。",
+  "deletion.own_sign_out": "受け付けた時点でこのユーザーは利用停止となり、ログアウトします。",
+  "admin.deletion_consequences": "「{username}」のデータ（HoYoLAB連携、ログインボーナスの設定と履歴、パスキーなど）をすべて削除します。受け付けた時点でこのユーザーは利用停止となり、ログイン中のセッションも無効になります。",
+  "security.delete_passkey_label": "パスキー「{label}」を削除",
+  "security.delete_passkey_title": "パスキーを削除",
+  "security.delete_passkey_consequences": "パスキー「{label}」を削除しますか？削除すると、このパスキーではログインできなくなります。",
   "app.title": "AHD",
   "messages.unavailable": "メッセージを表示できません。"
 }

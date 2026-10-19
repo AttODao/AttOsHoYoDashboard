@@ -311,6 +311,13 @@
   "security.password_length_error": "Currently {count} bytes; use 12–256 bytes.",
   "security.password_mismatch": "The confirmation does not match the new password.",
   "security.current_password_required": "Enter your current password.",
+  "deletion.irreversible": "This cannot be undone",
+  "deletion.own_consequences": "All data of this user is deleted, including the HoYoLAB link and saved cookie, game accounts, login bonus settings and history, and passkeys.",
+  "deletion.own_sign_out": "Once accepted, the user is disabled and you are signed out.",
+  "admin.deletion_consequences": "All data of “{username}” is deleted, including the HoYoLAB link, login bonus settings and history, and passkeys. Once accepted, the user is disabled and its sessions end.",
+  "security.delete_passkey_label": "Delete passkey “{label}”",
+  "security.delete_passkey_title": "Delete passkey",
+  "security.delete_passkey_consequences": "Delete the passkey “{label}”? You will no longer be able to sign in with it.",
   "app.title": "AHD",
   "messages.unavailable": "Message unavailable."
 }

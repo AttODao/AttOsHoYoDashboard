@@ -212,6 +212,24 @@ pub(super) fn reset_checked(id: &str, checked: bool) {
     let _ = (id, checked);
 }
 
+/// Native modal dialog with a labelled heading; Escape, backdrop and focus
+/// restoration come from `use_modal`.
+#[component]
+pub(super) fn ModalDialog(
+    id: String,
+    title: &'static str,
+    onclose: EventHandler<()>,
+    children: Element,
+) -> Element {
+    let title_id = format!("{id}-title");
+    use_modal(id.clone(), true, onclose);
+    rsx! {
+        dialog { id, class: "modal-dialog", "aria-labelledby": title_id.clone(),
+            div { class: "form-stack", h2 { id: title_id, "{title}" } {children} }
+        }
+    }
+}
+
 /// Own the native modal, its browser listeners, scroll lock and focus restoration.
 pub(super) fn use_modal(id: String, active: bool, onclose: EventHandler<()>) {
     #[cfg(target_arch = "wasm32")]

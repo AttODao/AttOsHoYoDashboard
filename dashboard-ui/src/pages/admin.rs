@@ -1,4 +1,4 @@
-use super::common::{Field, PasswordInput, use_modal};
+use super::common::{Field, ModalDialog, PasswordInput};
 use crate::app::actions::spawn_action;
 use crate::app::credentials::{self, CopyState, CredentialResult};
 use crate::app::data::load_admin_users;
@@ -262,8 +262,11 @@ fn DeleteUserDialog(
     let password_id = format!("admin-delete-password-{id}");
     let confirm_id = format!("admin-delete-confirm-{id}");
     rsx! {
-        AdminDialog { id: format!("admin-delete-{id}"), title: prefs.text("deletion.delete_user"), onclose: move |_| { current.set(String::new()); confirmation.set(String::new()); deleting.set(false); },
-            p { "{user.username}" }
+        ModalDialog { id: format!("admin-delete-{id}"), title: prefs.text("deletion.delete_user"), onclose: move |_| { current.set(String::new()); confirmation.set(String::new()); deleting.set(false); },
+            div { class: "notice error danger-note",
+                strong { {prefs.text("deletion.irreversible")} }
+                p { {prefs.format("admin.deletion_consequences", &[("username", &user.username)])} }
+            }
             Field { id: password_id.clone(), label: prefs.text("admin.your_current_password"),
                 PasswordInput { id: password_id, value: current, autocomplete: "current-password" }
             }
@@ -312,7 +315,7 @@ fn CredentialDialog(
         }
     });
     rsx! {
-        AdminDialog { id: "admin-credential-result", title: prefs.text("admin.temporary_password_issued"), onclose: move |_| result.set(None),
+        ModalDialog { id: "admin-credential-result", title: prefs.text("admin.temporary_password_issued"), onclose: move |_| result.set(None),
             if let Some(value) = result.read().as_ref() {
                 dl { class: "metric-list", dt { {prefs.text("admin.username")} } dd { "{value.username}" } }
                 Field { id: "admin-generated-password", label: prefs.text("admin.temporary_password"),
@@ -349,22 +352,6 @@ fn CredentialDialog(
                     Button { r#type: "button", onclick: move |_| result.set(None), {prefs.text("admin.close")} }
                 }
             }
-        }
-    }
-}
-
-#[component]
-fn AdminDialog(
-    id: String,
-    title: &'static str,
-    onclose: EventHandler<()>,
-    children: Element,
-) -> Element {
-    let title_id = format!("{id}-title");
-    use_modal(id.clone(), true, onclose);
-    rsx! {
-        dialog { id, class: "admin-dialog", "aria-labelledby": title_id.clone(),
-            div { class: "form-stack", h2 { id: title_id, "{title}" } {children} }
         }
     }
 }

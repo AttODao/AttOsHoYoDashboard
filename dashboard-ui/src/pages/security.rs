@@ -1,4 +1,4 @@
-use super::common::{Field, Metric, PasswordInput, focus_element};
+use super::common::{Field, Metric, ModalDialog, PasswordInput, focus_element};
 use crate::app::actions::{handle_api_error_for, handle_password_error_for, spawn_action};
 use crate::app::data::load_passkeys;
 use crate::app::display::datetime_text;
@@ -6,6 +6,7 @@ use crate::app::preferences::use_preferences;
 use crate::app::session::refresh_gate;
 use crate::app::state::{AppState, generation_matches, set_status};
 use crate::components::{Button, ButtonVariant};
+use crate::models::PasskeyView;
 use dioxus::prelude::*;
 use serde_json::{Value, json};
 
@@ -157,6 +158,7 @@ pub(super) fn PasskeyCard(mut state: Signal<AppState>) -> Element {
     use_drop(move || {
         label.write().clear();
     });
+    let mut confirming = use_signal(|| None::<PasskeyView>);
     let error = state.read().passkeys_error.clone();
     let passkeys = state.read().passkeys.clone();
     rsx! {
@@ -169,24 +171,16 @@ pub(super) fn PasskeyCard(mut state: Signal<AppState>) -> Element {
                     p { {ui.text("security.no_passkeys_registered")} }
                 } else {
                 ul { class: "item-list",
-                    for passkey in passkeys {
-                        li {
+                    for (passkey, target) in passkeys.into_iter().map(|passkey| (passkey.clone(), passkey)) {
+                        li { key: "{passkey.id}",
                             span { "{passkey.label} — " {ui.text("security.created")} " "
                                 time { datetime: "{passkey.created_at}", {datetime_text(Some(&passkey.created_at), ui)} }
                             }
-                            Button { variant: ButtonVariant::Destructive, r#type: "button", onclick: move |_| {
-                                let id = passkey.id;
-                                spawn_action(state, move |generation| async move {
-                                    match crate::api::send("DELETE", &format!("/me/passkeys/{id}"), None).await {
-                                        Ok(()) if generation_matches(state, generation) => {
-                                            set_status(state, "security.passkey_deleted", "success");
-                                            load_passkeys(state).await;
-                                        }
-                                        Ok(()) => {}
-                                        Err(error) => { handle_api_error_for(state, generation, error); }
-                                    }
-                                });
-                            }, {ui.text("security.delete")} }
+                            Button { variant: ButtonVariant::Destructive, r#type: "button", id: "passkey-delete-{passkey.id}",
+                                "aria-label": ui.format("security.delete_passkey_label", &[("label", &passkey.label)]),
+                                onclick: move |_| { if !state.read().busy { confirming.set(Some(target.clone())); } },
+                                {ui.text("security.delete")}
+                            }
                         }
                     }
                 }
@@ -215,6 +209,40 @@ pub(super) fn PasskeyCard(mut state: Signal<AppState>) -> Element {
                 div { class: "auth-submit",
                     Button { variant: ButtonVariant::Secondary, r#type: "submit", disabled: state.read().busy, {ui.text("security.register_passkey")} }
                 }
+            }
+            if let Some(passkey) = confirming() {
+                DeletePasskeyDialog { state, passkey, confirming }
+            }
+        }
+    }
+}
+
+#[component]
+fn DeletePasskeyDialog(
+    state: Signal<AppState>,
+    passkey: PasskeyView,
+    mut confirming: Signal<Option<PasskeyView>>,
+) -> Element {
+    let ui = use_preferences();
+    let id = passkey.id;
+    rsx! {
+        ModalDialog { id: "passkey-delete-dialog", title: ui.text("security.delete_passkey_title"), onclose: move |_| confirming.set(None),
+            p { {ui.format("security.delete_passkey_consequences", &[("label", &passkey.label)])} }
+            div { class: "actions",
+                Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| confirming.set(None), {ui.text("admin.cancel")} }
+                Button { variant: ButtonVariant::Destructive, r#type: "button", disabled: state.read().busy, onclick: move |_| {
+                    confirming.set(None);
+                    spawn_action(state, move |generation| async move {
+                        match crate::api::send("DELETE", &format!("/me/passkeys/{id}"), None).await {
+                            Ok(()) if generation_matches(state, generation) => {
+                                set_status(state, "security.passkey_deleted", "success");
+                                load_passkeys(state).await;
+                            }
+                            Ok(()) => {}
+                            Err(error) => { handle_api_error_for(state, generation, error); }
+                        }
+                    });
+                }, {ui.text("security.delete")} }
             }
         }
     }

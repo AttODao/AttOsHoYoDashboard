@@ -33,6 +33,11 @@ pub(super) fn DeleteAccountCard(state: Signal<AppState>) -> Element {
         state.read().busy || !deletion_confirmed(&username, &confirmation(), &password());
     rsx! {
         div { class: "form-stack",
+            div { class: "notice error danger-note", id: "delete-consequences",
+                strong { {preferences.text("deletion.irreversible")} }
+                p { {preferences.text("deletion.own_consequences")} }
+                p { {preferences.text("deletion.own_sign_out")} }
+            }
             p { {preferences.text("deletion.target_user")} " · {username}" }
             Field { id: "delete-confirmation", label: preferences.text("deletion.username_exact_match"),
                 input { id: "delete-confirmation", autocomplete: "off", value: "{confirmation}", oninput: move |event| confirmation.set(event.value()) }
@@ -41,7 +46,7 @@ pub(super) fn DeleteAccountCard(state: Signal<AppState>) -> Element {
                 PasswordInput { id: "delete-password", value: password, autocomplete: "current-password" }
             }
             div { class: "button-row",
-                Button { variant: ButtonVariant::Destructive, r#type: "button", disabled, onclick: move |_| {
+                Button { variant: ButtonVariant::Destructive, r#type: "button", disabled, aria_describedby: "delete-consequences", onclick: move |_| {
                     let current_username = state.read().me.as_ref().map(|me| me.username.clone()).unwrap_or_default();
                     if !deletion_confirmed(&current_username, &confirmation(), &password()) { return; }
                     let pass = std::mem::take(&mut *password.write());
