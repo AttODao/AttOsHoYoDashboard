@@ -467,3 +467,109 @@ async fn malformed_unknown_and_keyless_usernames_share_unauthorized() {
         Err(Error::Unauthorized)
     ));
 }
+
+#[tokio::test]
+async fn credential_deleted_after_verification_but_before_the_user_lock_is_rejected() {
+    let fixture = Fixture::new().await;
+    let challenge = fixture
+        .passkeys
+        .authentication_start(&fixture.accounts, fixture.actor.user.username.clone())
+        .await
+        .unwrap();
+    let response = fixture.authenticator.authenticate(&challenge, 2);
+    let before = session::Entity::find().count(&fixture.db.db).await.unwrap();
+    // Hold the user lock so the finish verifies and computes its update, then waits.
+    let tx = fixture.accounts.db.begin().await.unwrap();
+    crate::dashboard::auth::accounts::lock_user(&tx, fixture.actor.user.id)
+        .await
+        .unwrap();
+    let fixture = Arc::new(fixture);
+    let task_fixture = fixture.clone();
+    let task = tokio::spawn(async move {
+        task_fixture
+            .passkeys
+            .authentication_finish(&task_fixture.accounts, challenge.challenge_id, response)
+            .await
+    });
+    wait_for_lock_waiters(&fixture, 1).await;
+    passkey::Entity::delete_by_id(fixture.key_id)
+        .exec(&tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap(),
+        Err(Error::Unauthorized)
+    ));
+    assert_eq!(
+        session::Entity::find().count(&fixture.db.db).await.unwrap(),
+        before
+    );
+}
+
+#[tokio::test]
+async fn no_webauthn_cpu_work_runs_after_the_user_lock() {
+    let fixture = Fixture::new().await;
+    let challenge = fixture
+        .passkeys
+        .authentication_start(&fixture.accounts, fixture.actor.user.username.clone())
+        .await
+        .unwrap();
+    let response = fixture.authenticator.authenticate(&challenge, 2);
+    let tx = fixture.accounts.db.begin().await.unwrap();
+    crate::dashboard::auth::accounts::lock_user(&tx, fixture.actor.user.id)
+        .await
+        .unwrap();
+    let fixture = Arc::new(fixture);
+    let task_fixture = fixture.clone();
+    let task = tokio::spawn(async move {
+        task_fixture
+            .passkeys
+            .authentication_finish(&task_fixture.accounts, challenge.challenge_id, response)
+            .await
+    });
+    wait_for_lock_waiters(&fixture, 1).await;
+    // Once waiting on the lock, the finish needs no WebAuthn worker to complete.
+    let permits = fixture
+        .passkeys
+        .cpu
+        .clone()
+        .acquire_many_owned(4)
+        .await
+        .unwrap();
+    tx.rollback().await.unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .is_ok()
+    );
+    drop(permits);
+}
+
+async fn wait_for_lock_waiters(fixture: &Fixture, expected: i64) {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let row = fixture
+                .db
+                .db
+                .query_one_raw(Statement::from_string(
+                    DbBackend::Postgres,
+                    "SELECT count(*) AS blocked FROM pg_stat_activity WHERE datname = current_database() AND backend_type = 'client backend' AND wait_event_type = 'Lock'",
+                ))
+                .await
+                .unwrap()
+                .unwrap();
+            if row.try_get::<i64>("", "blocked").unwrap() == expected {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("authentication must reach the user lock");
+}

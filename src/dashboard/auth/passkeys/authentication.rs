@@ -16,7 +16,8 @@ use crate::dashboard::{
     error::{Error, Result},
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, Set,
+    TransactionTrait,
 };
 use std::time::Instant;
 use uuid::Uuid;
@@ -104,6 +105,29 @@ impl Passkeys {
             .into_iter()
             .find(|key| key.credential_id.as_slice() == result.cred_id().as_ref())
             .ok_or(Error::Unauthorized)?;
+        // Compute the counter/flag update from an unlocked snapshot so no CPU work runs while
+        // the user row is locked. The locked re-check below makes the snapshot authoritative.
+        let snapshot = find_offered(&accounts.db, pending.owner, &offered).await?;
+        let fingerprint = offered.fingerprint;
+        let updated = self
+            .run_cpu(move |_| {
+                // A changed credential means the verification used stale counters/flags.
+                // Conservatively retry concurrent logins rather than accepting a stale assertion.
+                if credential_fingerprint(&snapshot.credential)? != fingerprint {
+                    return Err(Error::Unauthorized);
+                }
+                let mut updated = decode_credential(&snapshot)?;
+                if !updated
+                    .update_credential(&result)
+                    .ok_or(Error::Unauthorized)?
+                {
+                    return Ok(None);
+                }
+                let credential = serde_json::to_value(updated).map_err(|_| Error::Internal)?;
+                credential_fingerprint(&credential)?;
+                Ok(Some(credential))
+            })
+            .await?;
         Sessions::purge_expired(&accounts.db).await?;
         let tx = accounts.db.begin().await?;
         let user = accounts::lock_user(&tx, pending.owner)
@@ -118,41 +142,35 @@ impl Passkeys {
         accounts::require_ready(&user).map_err(|_| Error::Unauthorized)?;
         // All deletion, recovery, and credential updates use this same user lock.
         // Row UUID also rejects deletion followed by re-registration of the same key.
-        let row = passkey::Entity::find_by_id(offered.id)
-            .filter(passkey::Column::UserId.eq(user.id))
-            .filter(passkey::Column::CredentialId.eq(offered.credential_id))
-            .one(&tx)
-            .await?
-            .ok_or(Error::Unauthorized)?;
-        let update = self
-            .run_cpu(move |_| {
-                // A changed credential means the verification used stale counters/flags.
-                // Conservatively retry concurrent logins rather than accepting a stale assertion.
-                if credential_fingerprint(&row.credential)? != offered.fingerprint {
-                    return Err(Error::Unauthorized);
-                }
-                let latest = decode_credential(&row)?;
-                let mut updated = latest.clone();
-                let changed = updated
-                    .update_credential(&result)
-                    .ok_or(Error::Unauthorized)?;
-                let mut update = row.into_active_model();
-                if changed {
-                    let credential = serde_json::to_value(updated).map_err(|_| Error::Internal)?;
-                    credential_fingerprint(&credential)?;
-                    update.credential = Set(credential);
-                }
-                Ok((changed, update))
-            })
-            .await?;
+        let row = find_offered(&tx, user.id, &offered).await?;
+        // Unchanged stored bytes mean the precomputed update applies to the current state;
+        // any concurrent login, deletion, or recovery since the snapshot is rejected here.
+        if credential_fingerprint(&row.credential)? != offered.fingerprint {
+            return Err(Error::Unauthorized);
+        }
         if Instant::now() >= pending.expires_at {
             return Err(Error::Unauthorized);
         }
-        if update.0 {
-            update.1.update(&tx).await?;
+        if let Some(credential) = updated {
+            let mut update = row.into_active_model();
+            update.credential = Set(credential);
+            update.update(&tx).await?;
         }
         let session = accounts.sessions.issue(&tx, user.id).await?;
         tx.commit().await?;
         Ok((user, session))
     }
+}
+
+async fn find_offered(
+    db: &impl ConnectionTrait,
+    owner: Uuid,
+    offered: &OfferedCredential,
+) -> Result<passkey::Model> {
+    passkey::Entity::find_by_id(offered.id)
+        .filter(passkey::Column::UserId.eq(owner))
+        .filter(passkey::Column::CredentialId.eq(offered.credential_id.clone()))
+        .one(db)
+        .await?
+        .ok_or(Error::Unauthorized)
 }

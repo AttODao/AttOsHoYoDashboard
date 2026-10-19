@@ -8,10 +8,14 @@ use sea_orm_migration::MigratorTrait;
 use std::time::Duration;
 use tracing::instrument::WithSubscriber;
 
+/// Covers concurrent requests plus the background workers; every SQL transaction is short
+/// because password and WebAuthn CPU work runs before any transaction or row lock.
+const MAX_CONNECTIONS: u32 = 16;
+
 pub(super) async fn connect(url: &str) -> Result<DatabaseConnection> {
     let mut options = ConnectOptions::new(url);
     options
-        .max_connections(5)
+        .max_connections(MAX_CONNECTIONS)
         .connect_timeout(Duration::from_secs(10))
         .sqlx_logging(false);
     // SeaORM's connection TRACE span captures options, including the database URL.
