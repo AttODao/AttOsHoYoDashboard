@@ -170,11 +170,13 @@ async fn create_credential(
     options: &web_sys::CredentialCreationOptions,
 ) -> api::Result<web_sys::PublicKeyCredential> {
     let credentials = credentials_container()?;
-    let promise = credentials.create_with_options(options).map_err(js_error)?;
+    let promise = credentials
+        .create_with_options(options)
+        .map_err(|error| js_error(error, true))?;
     credential_from_js(
         wasm_bindgen_futures::JsFuture::from(promise)
             .await
-            .map_err(js_error)?,
+            .map_err(|error| js_error(error, true))?,
     )
 }
 
@@ -183,11 +185,13 @@ async fn get_credential(
     options: &web_sys::CredentialRequestOptions,
 ) -> api::Result<web_sys::PublicKeyCredential> {
     let credentials = credentials_container()?;
-    let promise = credentials.get_with_options(options).map_err(js_error)?;
+    let promise = credentials
+        .get_with_options(options)
+        .map_err(|error| js_error(error, false))?;
     credential_from_js(
         wasm_bindgen_futures::JsFuture::from(promise)
             .await
-            .map_err(js_error)?,
+            .map_err(|error| js_error(error, false))?,
     )
 }
 
@@ -309,25 +313,50 @@ fn client_extension_results(credential: &web_sys::PublicKeyCredential) -> api::R
 }
 
 #[cfg(target_arch = "wasm32")]
-fn js_error(value: wasm_bindgen::JsValue) -> api::ApiError {
+fn js_error(value: wasm_bindgen::JsValue, registering: bool) -> api::ApiError {
     let name = js_sys::Reflect::get(&value, &wasm_bindgen::JsValue::from_str("name"))
         .ok()
         .and_then(|value| value.as_string())
         .unwrap_or_default();
-    match name.as_str() {
-        "AbortError" | "NotAllowedError" => {
-            api::ApiError::browser("messages.passkey_verification_was_cancelled")
-        }
-        "SecurityError" => {
-            api::ApiError::browser("messages.passkeys_are_not_allowed_for_this_page")
-        }
-        _ => api::ApiError::browser("messages.passkeys_are_unavailable_in_this_browser"),
+    api::ApiError::browser(passkey_error_key(&name, registering))
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn passkey_error_key(name: &str, registering: bool) -> &'static str {
+    match name {
+        "AbortError" | "NotAllowedError" => "messages.passkey_verification_was_cancelled",
+        "SecurityError" => "messages.passkeys_are_not_allowed_for_this_page",
+        // Registration lists existing credentials; a match means this one is enrolled.
+        "InvalidStateError" if registering => "messages.this_passkey_is_already_registered",
+        _ => "messages.passkeys_are_unavailable_in_this_browser",
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_state_means_already_registered_only_during_registration() {
+        assert_eq!(
+            passkey_error_key("InvalidStateError", true),
+            "messages.this_passkey_is_already_registered"
+        );
+        assert_eq!(
+            passkey_error_key("InvalidStateError", false),
+            "messages.passkeys_are_unavailable_in_this_browser"
+        );
+        for registering in [true, false] {
+            assert_eq!(
+                passkey_error_key("NotAllowedError", registering),
+                "messages.passkey_verification_was_cancelled"
+            );
+            assert_eq!(
+                passkey_error_key("SecurityError", registering),
+                "messages.passkeys_are_not_allowed_for_this_page"
+            );
+        }
+    }
 
     #[test]
     fn base64url_without_padding_roundtrips_binary_fields() {

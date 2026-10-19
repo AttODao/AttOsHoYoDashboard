@@ -206,7 +206,7 @@ pub(super) async fn load_game_status(mut state: Signal<AppState>, game: &'static
                     .selected_accounts
                     .entry(game)
                     .or_default()
-                    .error = Some("identity_mismatch".to_owned());
+                    .error = Some("dashboard.status_identity_mismatch");
             }
         }
         Err(error) if error.is_unauthorized() => signed_out(state, "messages.please_sign_in_again"),
@@ -217,7 +217,7 @@ pub(super) async fn load_game_status(mut state: Signal<AppState>, game: &'static
                 .selected_accounts
                 .entry(game)
                 .or_default()
-                .error = Some("refresh_failed".to_owned());
+                .error = Some("dashboard.refresh_failed");
         }
     }
 }

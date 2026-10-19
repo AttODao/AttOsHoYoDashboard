@@ -16,7 +16,8 @@ pub(super) struct GameSelection {
     pub(super) request: u64,
     pub(super) generation: u64,
     pub(super) loading: bool,
-    pub(super) error: Option<String>,
+    /// Message key of the last refresh problem for this selection.
+    pub(super) error: Option<&'static str>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

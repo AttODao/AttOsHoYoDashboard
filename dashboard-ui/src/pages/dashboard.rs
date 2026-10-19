@@ -236,8 +236,8 @@ fn GamePanel(
                         }
                     }
                 }
-                if selection.error.is_some() {
-                    p { class: "warning", role: "status", {ui.text("dashboard.refresh_failed")} }
+                if let Some(key) = selection.error {
+                    p { class: "warning", role: "status", {ui.text(key)} }
                 }
                 div { "aria-busy": loading,
                     if let Some(status) = status {
