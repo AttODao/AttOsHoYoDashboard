@@ -1,4 +1,4 @@
-use super::common::game_name;
+use super::common::{game_name, reset_checked};
 use crate::app::actions::{handle_api_error_for, spawn_action};
 use crate::app::data::load_accounts;
 use crate::app::preferences::use_preferences;
@@ -62,6 +62,8 @@ fn AccountTable(state: Signal<AppState>) -> Element {
                                             Ok(()) => {}
                                             Err(error) => handle_api_error_for(state, generation, error),
                                         }
+                                        let stored = state.read().account_rows().iter().find(|row| row.id == id).map(|row| row.visible);
+                                        if let Some(stored) = stored { reset_checked(&format!("account-visible-{id}"), stored); }
                                     });
                                 }
                             }

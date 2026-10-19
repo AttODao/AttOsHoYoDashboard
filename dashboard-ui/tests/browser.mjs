@@ -21,7 +21,7 @@ const other={...user,id:uid(9),username:'synthetic-other',is_admin:false,active:
 let verified=false,passkeys=[],credentialId,failLogout=false,allowLogin,allowSettings,expirePasswordSession=false,sessionExpired=false;
 const createdUsers=[];
 const secondAdmin={...user,id:uid(14),username:'synthetic-second-admin',must_change_password:false};
-let failCreate=false,adminDeletes=0,loginFailureStatus=0,passkeyHold=null,releasePasskeys=()=>{};
+let failCreate=false,adminDeletes=0,loginFailureStatus=0,failPatch=false,passkeyHold=null,releasePasskeys=()=>{};
 const rewardPatches=[];
 const avatarIcon='https://act-webstatic.hoyoverse.com/game_record/genshin/character_side_icon/synthetic.png';
 const itemIcon='https://act-upload.hoyolab.com/game_record/hkrpg/item_icon/synthetic.png';
@@ -99,11 +99,13 @@ const server=http.createServer(async(req,res)=>{
     assert.equal(req.method,'DELETE');assert.ok(body.confirmation===other.username);assert.ok(body.current_password==='synthetic-password-123');adminDeletes++;res.writeHead(202);return res.end();
    }
    if(p==='/api/v1/game-accounts')return json(res,accounts);
+   const visibility=accounts.find(a=>p===`/api/v1/game-accounts/${a.id}`);
+   if(visibility){assert.equal(req.method,'PATCH');assert.deepEqual(Object.keys(body),['visible']);if(failPatch)return json(res,{error:'unavailable'},503);visibility.visible=body.visible;res.writeHead(204);return res.end();}
    const account=accounts.find(a=>p===`/api/v1/game-accounts/${a.id}/status`);
    if(account){assert.ok(account.visible&&account.detected);return json(res,{...account,data:account.game_kind==='genshin'?{current_resin:actor===user?(account.id===uid(5)?0:31):77,max_resin:200,finished_task_num:0,total_task_num:4,resin_full_at:account.id===uid(5)?'2026-10-17T12:38:00Z':'invalid-date',current_home_coin:510,max_home_coin:2400,home_coin_full_at:'2026-10-19T08:38:40Z',expeditions:[{status:'Ongoing',remained_time:'30354',avatar_side_icon:avatarIcon}]}:{current_stamina:account.id===uid(7)?12:24,max_stamina:300,stamina_full_at:account.id===uid(7)?'2026-10-17T16:52:31Z':null,expeditions:account.id===uid(7)?[{name:'Synthetic assignment',status:'Ongoing',remaining_time:1200,item_url:itemIcon}]:[]},fetched_at:new Date().toISOString(),error_code:null,error_at:null,stale:false});}
    if(p==='/api/v1/reward-settings'){assert.equal(req.method,'GET');return json(res,rewardSettings);}
    const setting=rewardSettings.find(s=>p===`/api/v1/reward-settings/${s.id}`);
-   if(setting){assert.equal(req.method,'PATCH');assert.deepEqual(Object.keys(body).sort(),['enabled','local_time']);rewardPatches.push({id:setting.id,...body});Object.assign(setting,body,{next_run_at:new Date(Date.now()+86400000).toISOString()});res.writeHead(204);return res.end();}
+   if(setting){assert.equal(req.method,'PATCH');assert.deepEqual(Object.keys(body).sort(),['enabled','local_time']);if(failPatch)return json(res,{error:'unavailable'},503);rewardPatches.push({id:setting.id,...body});Object.assign(setting,body,{next_run_at:new Date(Date.now()+86400000).toISOString()});res.writeHead(204);return res.end();}
    if(p===`/api/v1/reward-settings/${uid(20)}/run`){assert.equal(req.method,'POST');assert.deepEqual(body,{});rewardSettings[0].last_run={id:uid(30),state:'queued',ended_at:null};res.writeHead(202);return res.end();}
    if(p==='/api/v1/reward-runs')return json(res,[]);
    throw new Error('Unexpected implemented-API request: '+req.method+' '+p);
@@ -324,6 +326,13 @@ try{
  await genshin.getByRole('switch').check();await idle();
  assert.deepEqual(rewardPatches.at(-1),{id:uid(20),enabled:true,local_time:'06:00'});
  assert.equal(rewardSettings[1].enabled,false,'automation PATCH cannot change other game');
+ // A rejected PATCH leaves no re-render, so the DOM must be reset to the stored value.
+ failPatch=true;
+ const starrailSwitch=starrail.getByRole('switch');
+ await starrailSwitch.click();await idle();
+ await page.getByText('This feature is not available right now.',{exact:true}).waitFor();
+ assert.equal(await starrailSwitch.isChecked(),false,'failed automation PATCH resets the switch');
+ failPatch=false;
  // Drawer is native modal, right aligned, no content shift, keyboard/focus safe.
  await page.evaluate(()=>scrollTo(0,0));
  const before=await page.locator('main.container').boundingBox();
@@ -426,6 +435,13 @@ try{
  await page.locator('.status.success').getByText('Sync response received.',{exact:true}).waitFor();
  assert.equal(counts.get('/api/v1/me/hoyolab/sync'),syncsBefore+1);
  await page.locator('#settings-tab-link[aria-selected=true]').waitFor();
+ await page.locator('#settings-tab-uids').click();await idle();
+ const visibleBox=page.locator('#account-visible-'+uid(5));
+ assert.ok(await visibleBox.isChecked());
+ failPatch=true;await visibleBox.click();await idle();
+ await page.getByText('This feature is not available right now.',{exact:true}).waitFor();
+ assert.ok(await visibleBox.isChecked(),'failed visibility PATCH resets the checkbox');
+ failPatch=false;
  // Settings replaces the removed nav/schedule checkbox/input[type=time].
  await settings('bonus');
  assert.equal(await page.locator('.settings-tabs [role=tab]').count(),5);

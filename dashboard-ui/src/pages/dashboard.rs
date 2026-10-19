@@ -1,4 +1,4 @@
-use super::common::{Icon, Metric, focus_element, game_name};
+use super::common::{Icon, Metric, focus_element, game_name, reset_checked};
 use crate::app::actions::{spawn_action, spawn_root};
 use crate::app::data::{load_game_status, save_reward_setting};
 use crate::app::display::{compact_datetime, count_pair, hours_minutes};
@@ -162,7 +162,7 @@ fn GamePanel(
                 if let Some(setting) = setting.clone() {
                     label { class: "switch",
                         input {
-                            r#type: "checkbox", role: "switch", checked: setting.enabled,
+                            id: "automation-{game}", r#type: "checkbox", role: "switch", checked: setting.enabled,
                             disabled: busy || rewards_error,
                             "aria-label": ui.format("dashboard.automation_label", &[("game", game_name(game, ui))]),
                             onchange: move |event| {
@@ -171,6 +171,8 @@ fn GamePanel(
                                 let local_time = setting.local_time.clone();
                                 spawn_action(state, move |generation| async move {
                                     save_reward_setting(state, generation, id, enabled, local_time, "dashboard.automation_setting_saved").await;
+                                    let stored = state.read().rewards.iter().find(|row| row.id == id).map(|row| row.enabled);
+                                    if let Some(stored) = stored { reset_checked(&format!("automation-{game}"), stored); }
                                 });
                             }
                         }

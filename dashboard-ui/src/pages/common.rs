@@ -188,6 +188,23 @@ pub(super) fn focus_element(id: &str) {
     let _ = id;
 }
 
+/// A controlled checkbox only re-renders when its stored value changes, so a
+/// rejected toggle would stay flipped in the DOM. Write the stored value back.
+pub(super) fn reset_checked(id: &str, checked: bool) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen::JsCast;
+        if let Some(input) = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.get_element_by_id(id))
+            .and_then(|e| e.dyn_into::<web_sys::HtmlInputElement>().ok())
+        {
+            input.set_checked(checked);
+        }
+    }
+    let _ = (id, checked);
+}
+
 /// Own the native modal, its browser listeners, scroll lock and focus restoration.
 pub(super) fn use_modal(id: String, active: bool, onclose: EventHandler<()>) {
     #[cfg(target_arch = "wasm32")]
