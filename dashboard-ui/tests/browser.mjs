@@ -18,7 +18,8 @@ const csp=fs.readFileSync(path.join(root,'src/dashboard/http/ui.rs'),'utf8').mat
 const uid=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const user={id:uid(1),username:'synthetic-admin',is_admin:true,active:true,must_change_password:true};
 const other={...user,id:uid(9),username:'synthetic-other',is_admin:false,active:false,must_change_password:false};
-let verified=false,passkeys=[],credentialId,failLogout=false,allowLogin,allowSettings,expirePasswordSession=false,sessionExpired=false;
+let runPlan=['queued','running','success'];
+let verified=false,cookieSaved=false,statusMode=null,runProgress=[],passkeyDeletes=0,passkeys=[],credentialId,failLogout=false,allowLogin,allowSettings,expirePasswordSession=false,sessionExpired=false;
 const createdUsers=[];
 const secondAdmin={...user,id:uid(14),username:'synthetic-second-admin',must_change_password:false};
 let failCreate=false,adminDeletes=0,loginFailureStatus=0,failPatch=false,passkeyHold=null,releasePasskeys=()=>{};
@@ -32,6 +33,9 @@ const counts=new Map();const failures=[];
 const accounts=[{id:uid(3),visible:false,detected:true,game_uid:'600000003'},{id:uid(4),visible:true,detected:false,game_uid:'600000004'},{id:uid(5),visible:true,detected:true,game_uid:'600000005'}].map(a=>({...a,hoyolab_account_id:uid(2),game_kind:'genshin',region:'os_usa',last_detected_at:new Date().toISOString()}));
 accounts.push(...[{id:uid(6),game_kind:'genshin',game_uid:'600000006'},{id:uid(7),game_kind:'starrail',game_uid:'700000007'},{id:uid(8),game_kind:'starrail',game_uid:'700000008'}].map(a=>({...accounts[2],...a})));
 const rewardSettings=['genshin','starrail'].map((game_kind,i)=>({id:uid(20+i),game_kind,enabled:false,local_time:'06:00',auth_status:'ready',next_run_at:null,last_run:null,is_sign:!!i,last_checked_at:new Date().toISOString(),error_code:null,error_at:null}));
+const hoursAgo=h=>new Date(Date.now()-h*3600e3).toISOString();
+// Backend error codes (gateway::error_code) must never be rendered raw in settings.
+const rewardRuns=[{id:uid(40),setting_id:uid(20),game_kind:'genshin',trigger:'scheduled',state:'failed',created_at:hoursAgo(20),ended_at:hoursAgo(19.9),attempt_count:1,attempts:[{number:1,outcome:'failed',error_code:'http:503',started_at:hoursAgo(20),finished_at:hoursAgo(19.9)}]}];
 const json=(res,data,status=200)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
 let origin;
 const server=http.createServer(async(req,res)=>{
@@ -60,8 +64,8 @@ const server=http.createServer(async(req,res)=>{
    }
    if(!actor||sessionExpired)return json(res,{error:'unauthorized'},401);
    if(p==='/api/v1/me'&&req.method==='DELETE'){assert.deepEqual(body,{current_password:'wrong-synthetic-password',confirmation:user.username});return json(res,{error:'unauthorized'},401);}
-   if(p==='/api/v1/me')return json(res,{...actor,onboarding:{password_change_required:actor.must_change_password,cookie_setup_complete:verified,cookie_status:verified?'verified':'pending_verification',verification_available:true},capabilities:{reward_posting_available:true}});
-   if(p==='/api/v1/me/hoyolab'){await settingsGate;return json(res,{id:uid(2),hoyolab_uid:verified?'123':null,status:verified?'verified':'pending_verification',setup_complete:verified,updated_at:null,verification_available:true});}
+   if(p==='/api/v1/me')return json(res,{...actor,onboarding:{password_change_required:actor.must_change_password,cookie_setup_complete:verified,cookie_status:verified?'verified':cookieSaved?'pending_verification':'not_configured',verification_available:true},capabilities:{reward_posting_available:true}});
+   if(p==='/api/v1/me/hoyolab'){await settingsGate;return json(res,{id:cookieSaved||verified?uid(2):null,hoyolab_uid:verified?'123':null,status:verified?'verified':cookieSaved?'pending_verification':'not_configured',setup_complete:verified,updated_at:cookieSaved||verified?hoursAgo(1):null,verification_available:true});}
    if(p==='/api/v1/me/password'){
     assert.equal(req.method,'PUT');
     if(expirePasswordSession){sessionExpired=true;return json(res,{error:'unauthorized'},401);}
@@ -75,7 +79,7 @@ const server=http.createServer(async(req,res)=>{
     actor.must_change_password=false;res.writeHead(204);return res.end();
    }
    // Intentionally empty/malformed success bodies exercise client-only acknowledgement policy, not the backend JSON contract.
-   if(p==='/api/v1/me/hoyolab/cookie'){assert.equal(actor.must_change_password,false);assert.ok(body.cookie.startsWith('ltuid_v2=123;'));res.writeHead(202,{'Content-Type':'application/json'});return res.end('ignored acknowledgement');}
+   if(p==='/api/v1/me/hoyolab/cookie'){assert.equal(actor.must_change_password,false);assert.ok(body.cookie.startsWith('ltuid_v2=123;'));cookieSaved=true;res.writeHead(202,{'Content-Type':'application/json'});return res.end('ignored acknowledgement');}
    if(p==='/api/v1/me/hoyolab/sync'){assert.equal(req.method,'POST');assert.deepEqual(body,{});assert.ok(verified);res.writeHead(204);return res.end();}
    if(p==='/api/v1/me/hoyolab/verify'){assert.equal(req.method,'POST');assert.deepEqual(body,{});verified=true;res.writeHead(204);return res.end();}
    if(p==='/api/v1/me/passkeys/options')return json(res,{challenge_id:uid(10),options:{publicKey:{challenge:Buffer.from('synthetic-browser-challenge-32-bytes').toString('base64url'),rp:{id:'localhost',name:'Synthetic UI check'},user:{id:Buffer.from('synthetic-user').toString('base64url'),name:user.username,displayName:user.username},pubKeyCredParams:[{type:'public-key',alg:-7}],timeout:60000,authenticatorSelection:{userVerification:'required',residentKey:'preferred'},attestation:'none'}}});
@@ -86,6 +90,7 @@ const server=http.createServer(async(req,res)=>{
     assert.equal(Buffer.from(body.response.rawId,'base64url').toString('base64url'),body.response.rawId);
     credentialId=body.response.rawId;passkeys=[{id:uid(11),label:'Synthetic browser key',created_at:new Date().toISOString()}];return json(res,{});
    }
+   if(p===`/api/v1/me/passkeys/${uid(11)}`){assert.equal(req.method,'DELETE');passkeyDeletes++;passkeys=[];res.writeHead(204);return res.end();}
    if(p==='/api/v1/me/passkeys'){if(passkeyHold)await passkeyHold;return json(res,passkeys);}
    if(p==='/api/v1/server-settings'){await settingsGate;return json(res,{timezone_offset:'+09:00',session_ttl_days:7});}
    if(p==='/api/v1/admin/users'){
@@ -102,12 +107,20 @@ const server=http.createServer(async(req,res)=>{
    const visibility=accounts.find(a=>p===`/api/v1/game-accounts/${a.id}`);
    if(visibility){assert.equal(req.method,'PATCH');assert.deepEqual(Object.keys(body),['visible']);if(failPatch)return json(res,{error:'unavailable'},503);visibility.visible=body.visible;res.writeHead(204);return res.end();}
    const account=accounts.find(a=>p===`/api/v1/game-accounts/${a.id}/status`);
+   if(account&&statusMode==='failed')return json(res,{...account,data:null,fetched_at:null,error_code:'network',error_at:new Date().toISOString(),stale:true});
+   if(account&&statusMode==='stale')return json(res,{...account,data:{current_stamina:5,max_stamina:300},fetched_at:new Date(Date.now()-6*3600e3-60e3).toISOString(),error_code:'http:503',error_at:new Date().toISOString(),stale:true});
    if(account){assert.ok(account.visible&&account.detected);return json(res,{...account,data:account.game_kind==='genshin'?{current_resin:actor===user?(account.id===uid(5)?0:31):77,max_resin:200,finished_task_num:0,total_task_num:4,resin_full_at:account.id===uid(5)?'2026-10-17T12:38:00Z':'invalid-date',current_home_coin:510,max_home_coin:2400,home_coin_full_at:'2026-10-19T08:38:40Z',expeditions:[{status:'Ongoing',remained_time:'30354',avatar_side_icon:avatarIcon}]}:{current_stamina:account.id===uid(7)?12:24,max_stamina:300,stamina_full_at:account.id===uid(7)?'2026-10-17T16:52:31Z':null,expeditions:account.id===uid(7)?[{name:'Synthetic assignment',status:'Ongoing',remaining_time:1200,item_url:itemIcon}]:[]},fetched_at:new Date().toISOString(),error_code:null,error_at:null,stale:false});}
-   if(p==='/api/v1/reward-settings'){assert.equal(req.method,'GET');return json(res,rewardSettings);}
+   if(p==='/api/v1/reward-settings'){
+    assert.equal(req.method,'GET');
+    // Each read after an accepted manual run advances it one state, like the worker would.
+    const response=JSON.parse(JSON.stringify(rewardSettings));
+    if(runProgress.length>1){runProgress.shift();rewardSettings[0].last_run={id:uid(30),state:runProgress[0],ended_at:runProgress[0]==='success'?new Date().toISOString():null};}
+    return json(res,response);
+   }
    const setting=rewardSettings.find(s=>p===`/api/v1/reward-settings/${s.id}`);
    if(setting){assert.equal(req.method,'PATCH');assert.deepEqual(Object.keys(body).sort(),['enabled','local_time']);if(failPatch)return json(res,{error:'unavailable'},503);rewardPatches.push({id:setting.id,...body});Object.assign(setting,body,{next_run_at:new Date(Date.now()+86400000).toISOString()});res.writeHead(204);return res.end();}
-   if(p===`/api/v1/reward-settings/${uid(20)}/run`){assert.equal(req.method,'POST');assert.deepEqual(body,{});rewardSettings[0].last_run={id:uid(30),state:'queued',ended_at:null};res.writeHead(202);return res.end();}
-   if(p==='/api/v1/reward-runs')return json(res,[]);
+   if(p===`/api/v1/reward-settings/${uid(20)}/run`){assert.equal(req.method,'POST');assert.deepEqual(body,{});rewardSettings[0].last_run={id:uid(30),state:'queued',ended_at:null};runProgress=[...runPlan];res.writeHead(202);return res.end();}
+   if(p==='/api/v1/reward-runs')return json(res,rewardRuns);
    throw new Error('Unexpected implemented-API request: '+req.method+' '+p);
   }
   if(p==='/openapi.json'){assert.equal(req.method,'GET');counts.set(p,(counts.get(p)||0)+1);return json(res,JSON.parse(fs.readFileSync(path.join(root,'docs/dashboard-api.json'),'utf8')));}
@@ -259,11 +272,25 @@ try{
  assert.equal(await page.getByRole('heading',{name:'Dashboard',exact:true}).count(),0);
  assert.equal(counts.get('/api/v1/game-accounts')||0,0);
  await eyes(['new-password','confirm-password']);
- // Confirm mismatch makes no request.
+ // Requirements are visible before typing and linked to the field.
+ assert.match(await page.locator('#new-password-rules').innerText(),/12–256 bytes/);
+ assert.equal(await page.locator('#new-password').getAttribute('aria-describedby'),'new-password-rules');
+ assert.equal(await page.locator('#new-password-error').count(),0,'no error before input');
+ await page.locator('#new-password').fill('short');await page.locator('#new-password').press('Tab');
+ assert.equal(await page.locator('#new-password-error').innerText(),'Currently 5 bytes; use 12–256 bytes.');
+ assert.equal(await page.locator('#new-password').getAttribute('aria-invalid'),'true');
+ assert.equal(await page.locator('#new-password').getAttribute('aria-describedby'),'new-password-rules new-password-error');
+ // Confirm mismatch is reported beside the field and makes no request.
  await page.locator('#new-password').fill('synthetic-permanent-password-123');
  await page.locator('#confirm-password').fill('synthetic-mismatch');
  await button('Change password').click();await idle();
  assert.equal(counts.get('/api/v1/me/password')||0,0);
+ assert.equal(await page.locator('#new-password-error').count(),0,'a valid length clears its error');
+ assert.equal(await page.locator('#confirm-password-error').innerText(),'The confirmation does not match the new password.');
+ assert.equal(await page.locator('#confirm-password').getAttribute('aria-invalid'),'true');
+ assert.equal(await page.locator('#confirm-password').getAttribute('aria-describedby'),'confirm-password-error');
+ assert.equal(await page.locator('#new-password').inputValue(),'synthetic-permanent-password-123','invalid submissions keep the typed values');
+ assert.ok(await page.locator('#confirm-password').evaluate(e=>e===document.activeElement),'focus moves to the problem field');
  await change();
  await page.locator('#hoyolab-cookie').waitFor();
  assert.equal(await page.locator('#new-password').count(),0);
@@ -271,12 +298,26 @@ try{
  assert.equal(counts.get('/api/v1/game-accounts')||0,0,'incomplete real linkage still gates dashboard');
  assert.equal(counts.get('/api/v1/reward-settings')||0,0);
  assert.ok(await button('Sync UIDs').isDisabled());
+ const cookieHelp=await page.locator('#hoyolab-cookie-help').innerText();
+ for(const key of ['ltoken_v2','ltuid_v2','ltmid_v2','hoyolab.com','Cookie header'])assert.ok(cookieHelp.includes(key),'cookie help names '+key);
+ assert.equal(await page.locator('#hoyolab-cookie').getAttribute('aria-describedby'),'hoyolab-cookie-help');
+ assert.equal(await page.locator('#hoyolab-step').innerText(),'Paste your HoYoLAB cookie and save it.');
+ assert.equal(await button('Save').getAttribute('data-style'),'primary');
+ assert.equal(await button('Verify').getAttribute('data-style'),'secondary');
+ assert.ok(await button('Verify').isDisabled(),'nothing to verify before saving');
+ assert.equal(await button('Sync UIDs').getAttribute('aria-describedby'),'hoyolab-sync-hint');
+ assert.equal(await page.locator('#hoyolab-sync-hint').innerText(),'Sync UIDs becomes available after verification.');
+ assert.equal(await page.getByText('Available',{exact:true}).count(),0,'no unexplained availability metric');
  await page.locator('#hoyolab-cookie').fill('ltuid_v2=123; ltoken_v2=synthetic-browser-token');
  const cookieField=await page.locator('#hoyolab-cookie').elementHandle();
  const meBeforeSave=counts.get('/api/v1/me');
  await button('Save').click();await idle();
  assert.ok(await page.locator('#hoyolab-cookie').evaluate(e=>e.value===''));
- await page.locator('.status.success').getByText('Cookie save accepted.',{exact:true}).waitFor();
+ await page.locator('.status.success').getByText('Cookie save accepted. Run Verify next.',{exact:true}).waitFor();
+ assert.equal(await page.locator('#hoyolab-step').innerText(),'Cookie saved but not verified yet. Run Verify next.');
+ assert.equal(await button('Verify').getAttribute('data-style'),'primary','a saved, unverified cookie makes Verify the primary action');
+ assert.equal(await button('Save').getAttribute('data-style'),'secondary');
+ assert.equal(await button('Verify').getAttribute('aria-describedby'),'hoyolab-step');
  assert.equal(counts.get('/api/v1/me'),meBeforeSave+1,'the setup gate is re-read after saving');
  assert.ok(await cookieField.evaluate(e=>e.isConnected),'refreshing the gate keeps the setup form mounted (no Loading screen)');
  await cookieField.dispose();
@@ -323,6 +364,16 @@ try{
  assert.equal(await starrail.locator('time.recovery-at').count(),0,'missing estimate is not invented');
  assert.equal(await starrail.locator('.expeditions').count(),0,'Star Rail also has no empty expedition section');
  assert.equal(await page.locator('#selected-genshin').inputValue(),uid(6));
+ // A failed fetch without data reports only the failure; stale data states its age.
+ statusMode='failed';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
+ await starrail.getByText('Could not fetch the status (Could not reach HoYoLAB)',{exact:true}).waitFor();
+ for(const contradiction of ['not the latest','may be out of date','No daily summary','network'])assert.ok(!(await starrail.innerText()).includes(contradiction),'failed fetch without data: '+contradiction);
+ statusMode='stale';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
+ await starrail.getByText('Data from 6 h ago (HoYoLAB is temporarily unavailable)',{exact:true}).waitFor();
+ assert.ok(!(await starrail.innerText()).includes('http:503'),'raw codes stay out of the visible card');
+ statusMode=null;await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
+ await starrail.locator('.resource strong').getByText('24',{exact:true}).waitFor();
+ assert.equal(await starrail.locator('.warning').count(),0);
  await genshin.getByRole('switch').check();await idle();
  assert.deepEqual(rewardPatches.at(-1),{id:uid(20),enabled:true,local_time:'06:00'});
  assert.equal(rewardSettings[1].enabled,false,'automation PATCH cannot change other game');
@@ -457,16 +508,47 @@ try{
  assert.deepEqual(rewardPatches.at(-1),{id:uid(20),enabled:true,local_time:'07:13'});
  await button('Save').nth(1).click();await idle();
  assert.deepEqual(rewardPatches.at(-1),{id:uid(21),enabled:false,local_time:'06:00'},'schedule preserves OFF too');
+ // Settings show compact local times and localized errors, never raw ISO strings or codes.
+ const iso=/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+ const bonusText=await page.locator('#settings-panel').innerText();
+ assert.doesNotMatch(bonusText,iso);assert.match(bonusText,/\d{2}\/\d{2} \d{2}:\d{2} JST/);
+ assert.ok(bonusText.includes('HoYoLAB is temporarily unavailable')&&!bonusText.includes('http:503'),'run history maps error codes');
+ const runState=page.locator('#reward-run-state-'+uid(20));
+ assert.equal(await runState.innerText(),'Last run: Never');
+ const settingsReads=counts.get('/api/v1/reward-settings');
  await button('Run now').first().click();await idle();
  await page.getByText('Run accepted; queued, not completed.',{exact:true}).waitFor();
  assert.ok(await button('Run now').first().isDisabled());
- assert.equal(counts.get('/api/v1/reward-settings/'+uid(20)+'/run'),1);
+ assert.match(await runState.innerText(),/^Last run: Queued · Checking automatically…$/);
+ // The 202 is followed by GET polling only, until the run settles.
+ await runState.getByText('Running',{exact:true}).waitFor();
+ await runState.getByText('Success',{exact:true}).waitFor();
+ await page.locator('.live-region').getByText('Manual run finished: the login bonus was claimed.',{exact:true}).waitFor();
+ assert.doesNotMatch(await runState.innerText(),/Checking automatically/);
+ assert.match(await runState.innerText(),/^Last run: Success · \d{2}\/\d{2} \d{2}:\d{2} JST$/);
+ assert.equal(counts.get('/api/v1/reward-settings')-settingsReads,3,'one read after the POST, then two polls');
+ assert.equal(counts.get('/api/v1/reward-settings/'+uid(20)+'/run'),1,'polling never re-sends the run');
+ // Leaving the page stops a poll for a run that does not settle.
+ runPlan=['queued'];
+ await button('Run now').first().click();await idle();
+ await runState.getByText('Queued',{exact:true}).waitFor();
+ await page.locator('#settings-tab-link').click();await idle();
+ const readsAfterLeave=counts.get('/api/v1/reward-settings');
+ await page.waitForTimeout(4000);
+ assert.equal(counts.get('/api/v1/reward-settings'),readsAfterLeave,'no polling after leaving the bonus page');
+ assert.doesNotMatch(await page.locator('#settings-panel').innerText(),iso,'HoYoLAB link times are formatted');
+ await page.locator('#settings-tab-uids').click();await idle();
+ assert.doesNotMatch(await page.locator('#settings-panel').innerText(),iso,'UID detection times are formatted');
+ await page.locator('#settings-tab-bonus').click();await idle();
+ assert.equal(counts.get('/api/v1/reward-settings/'+uid(20)+'/run'),2);
  rewardSettings[0].last_run={id:uid(30),state:'unknown',ended_at:null};
  await button('Refresh').click();await idle();
  await page.getByText('Unknown outcome',{exact:true}).waitFor();
  assert.ok(await button('Run now').first().isDisabled(),'unknown acknowledgement is not safe to retry');
  await page.locator('#settings-tab-bonus').focus();await page.keyboard.press('End');
  await page.locator('#delete-password').waitFor();
+ const consequences=await page.locator('#delete-consequences').innerText();
+ assert.ok(consequences.includes('This cannot be undone')&&consequences.includes('signed out'),'deletion explains irreversibility and sign-out');
  await eyes(['delete-password']);
  await page.locator('#delete-confirmation').fill(user.username+' ');
  await page.locator('#delete-password').fill('wrong-synthetic-password');
@@ -489,6 +571,9 @@ try{
  const passwordValidation='Use a matching new password of 12–256 bytes. Ordinary changes also require your current password.';
  await button('Change password').click();await idle();
  await page.locator('.status.error').getByText(passwordValidation,{exact:true}).waitFor();
+ assert.equal(await page.locator('#current-password-error').innerText(),'Enter your current password.');
+ assert.equal(await page.locator('#new-password-error').innerText(),'Enter a new password.');
+ assert.ok(await page.locator('#current-password').evaluate(e=>e===document.activeElement),'focus moves to the first problem');
  // Preferences remask every mounted security field; navigation unmount clears them.
  for(const id of ['current-password','new-password','confirm-password']){
   await page.locator('#'+id).fill('synthetic-navigation-secret');
@@ -499,6 +584,10 @@ try{
  await page.locator('.status.error').getByText('新しいパスワードは12〜256バイトで確認欄と一致する必要があります。通常の変更には現在のパスワードも必要です。',{exact:true}).waitFor();
  assert.equal(await page.locator('.live-region').getAttribute('aria-live'),'polite');
  assert.equal(await page.locator('#settings-tab-security').getAttribute('aria-label'),'セキュリティ');
+ await page.setViewportSize({width:375,height:812});
+ assert.equal(await page.locator('#settings-tab-security').innerText(),'セキュリティ','the tab keeps its name at mobile width');
+ assert.ok(await page.locator('.settings-tabs').evaluate(e=>e.scrollWidth<=e.clientWidth),'mobile settings tabs fit');
+ await page.setViewportSize({width:1280,height:900});
  assert.equal(await page.locator('#settings-tab-security').getAttribute('aria-selected'),'true');
  assert.equal(await page.locator('#settings-panel').getAttribute('aria-labelledby'),'settings-tab-security');
  assert.equal(await page.locator('button[aria-controls="current-password"]').getAttribute('aria-label'),'パスワードを表示');
@@ -526,6 +615,25 @@ try{
  await page.getByText('The current password was not accepted. Please try again.',{exact:true}).waitFor();
  releasePasskeys();passkeyHold=null;
  await page.getByText(/Synthetic browser key — Created/).waitFor();
+ assert.doesNotMatch(await page.locator('#settings-panel').innerText(),/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/,'passkey dates are formatted');
+ // Deleting a passkey needs confirmation; Cancel and Escape keep it and return focus.
+ const deletePasskey=page.getByRole('button',{name:'Delete passkey “Synthetic browser key”',exact:true});
+ const passkeyDialog=page.locator('#passkey-delete-dialog');
+ await deletePasskey.click();await page.locator('#passkey-delete-dialog[open]').waitFor();
+ assert.ok((await passkeyDialog.innerText()).includes('You will no longer be able to sign in with it.'));
+ assert.ok(await passkeyDialog.evaluate(e=>e.matches(':modal')));
+ await passkeyDialog.getByRole('button',{name:'Cancel',exact:true}).click();
+ await page.locator('#passkey-delete-dialog').waitFor({state:'detached'});
+ assert.ok(await deletePasskey.evaluate(e=>e===document.activeElement),'focus returns to the delete button');
+ await deletePasskey.click();await page.locator('#passkey-delete-dialog[open]').waitFor();
+ await page.keyboard.press('Escape');await page.locator('#passkey-delete-dialog').waitFor({state:'detached'});
+ assert.equal(passkeyDeletes,0,'cancelled confirmations send nothing');
+ await page.getByText(/Synthetic browser key — Created/).waitFor();
+ await deletePasskey.click();
+ await passkeyDialog.getByRole('button',{name:'Delete',exact:true}).click();await idle();
+ await page.locator('.status.success').getByText('Passkey deleted.',{exact:true}).waitFor();
+ await page.getByText('No passkeys registered.',{exact:true}).waitFor();
+ assert.equal(passkeyDeletes,1);
  stage='admin';
  // Admin generated credentials: entropy failure and API failure never reveal a candidate.
  await menu('Administration');
