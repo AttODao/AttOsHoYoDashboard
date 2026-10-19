@@ -487,3 +487,52 @@ async fn last_active_admin_is_never_deleted_even_under_concurrent_self_requests(
         1
     );
 }
+
+#[tokio::test]
+async fn pending_deletion_rejects_recovery_and_reactivation_without_changes() {
+    let fixture = TestDatabase::new().await;
+    let (accounts, admin) = fixture.ready_admin().await;
+    let target = ready_user(&accounts, &admin, "pending-recovery").await;
+    accounts
+        .request_deletion(
+            &admin,
+            target.user.id,
+            PASSWORD.into(),
+            "pending-recovery".into(),
+        )
+        .await
+        .unwrap();
+    let before = user::Entity::find_by_id(target.user.id)
+        .one(&fixture.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        accounts
+            .reset_password(&admin, target.user.id, TEMP_PASSWORD.into())
+            .await,
+        Err(Error::Invalid("user deletion is already in progress"))
+    ));
+    assert!(matches!(
+        accounts.set_active(&admin, target.user.id, true).await,
+        Err(Error::Invalid("user deletion is already in progress"))
+    ));
+    let after = user::Entity::find_by_id(target.user.id)
+        .one(&fixture.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.password_hash, before.password_hash);
+    assert_eq!(after.must_change_password, before.must_change_password);
+    assert!(!after.active);
+    assert_eq!(
+        audit::Entity::find()
+            .filter(audit::Column::TargetUserId.eq(target.user.id))
+            .filter(audit::Column::Action.is_in(["password_reset", "user_enabled"]))
+            .count(&fixture.db)
+            .await
+            .unwrap(),
+        0
+    );
+    pending_row(&fixture.db, target.user.id).await;
+}

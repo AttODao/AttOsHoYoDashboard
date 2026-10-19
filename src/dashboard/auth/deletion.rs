@@ -3,7 +3,9 @@
 #[path = "deletion_tests.rs"]
 mod tests;
 
-use super::{Accounts, Identity, Sessions, lock_user, record, require_admin, require_ready};
+use super::{
+    Accounts, Identity, Sessions, lock_membership, lock_user, record, require_admin, require_ready,
+};
 use crate::dashboard::{
     db::entities::{audit, deletion_request, user},
     error::{Error, Result},
@@ -90,8 +92,7 @@ impl Accounts {
 
         let tx = self.db.begin().await?;
         // Serialize administrator membership changes without blocking unrelated password updates.
-        tx.execute_unprepared("SELECT pg_advisory_xact_lock(198642015)")
-            .await?;
+        lock_membership(&tx).await?;
 
         let fresh = Sessions::authenticate(&tx, &actor.token_hash).await?;
         if fresh.user.id != actor_id || fresh.user.password_hash != actor_password_hash {

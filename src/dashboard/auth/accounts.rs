@@ -224,8 +224,11 @@ impl Accounts {
         require_admin(&actor.user)?;
         let password_hash = self.passwords.hash(temporary_password).await?;
         let tx = self.db.begin().await?;
+        // Same lock order as set_active and request_deletion: membership lock, then user rows.
+        lock_membership(&tx).await?;
         authorize_admin(&tx, actor, Some(target)).await?;
         let user = lock_user(&tx, target).await?;
+        reject_pending_deletion(&tx, target).await?;
         let mut update = user.into_active_model();
         update.password_hash = Set(password_hash);
         update.must_change_password = Set(true);
@@ -250,17 +253,10 @@ impl Accounts {
             ));
         }
         let tx = self.db.begin().await?;
-        tx.execute_unprepared("SELECT pg_advisory_xact_lock(198642015)")
-            .await?;
+        lock_membership(&tx).await?;
         authorize_admin(&tx, actor, Some(target)).await?;
         let user = lock_user(&tx, target).await?;
-        if deletion_request::Entity::find_by_id(target)
-            .one(&tx)
-            .await?
-            .is_some()
-        {
-            return Err(Error::Invalid("user deletion is already in progress"));
-        }
+        reject_pending_deletion(&tx, target).await?;
         let mut update = user.into_active_model();
         update.active = Set(active);
         update.update(&tx).await?;
@@ -348,6 +344,25 @@ pub(in crate::dashboard) async fn lock_user(
         .one(db)
         .await?
         .ok_or(Error::NotFound)
+}
+
+/// Serializes administrator membership and lifecycle changes; take it before any user row lock.
+pub(super) async fn lock_membership(tx: &DatabaseTransaction) -> Result<()> {
+    tx.execute_unprepared("SELECT pg_advisory_xact_lock(198642015)")
+        .await?;
+    Ok(())
+}
+
+/// A pending deletion owns the target's lifecycle; admin recovery must not race the completion.
+async fn reject_pending_deletion(tx: &DatabaseTransaction, target: Uuid) -> Result<()> {
+    if deletion_request::Entity::find_by_id(target)
+        .one(tx)
+        .await?
+        .is_some()
+    {
+        return Err(Error::Invalid("user deletion is already in progress"));
+    }
+    Ok(())
 }
 
 async fn authorize_admin(

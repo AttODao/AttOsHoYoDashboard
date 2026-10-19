@@ -108,7 +108,7 @@ sequenceDiagram
     R->>O: release lock
 ```
 
-Lockはowner単位で、別ユーザーはglobal serializeしない。DB table lockはbootstrap empty-table check以外に長時間使わず、admin lifecycleはPostgreSQL advisory transaction lockで短く保護する。パスワードCPU処理はSQL transaction外で行う。
+Lockはowner単位で、別ユーザーはglobal serializeしない。DB table lockはbootstrap empty-table check以外に長時間使わず、admin lifecycle（無効化・再有効化、仮パスワード復旧、削除要求）はPostgreSQL advisory transaction lockを先に取り、その後にuser rowをID順でlockする。削除待ちのユーザーには再有効化も仮パスワード復旧も行わない。パスワードCPU処理はSQL transaction外で行う。
 
 ## 6. Game status cache
 
