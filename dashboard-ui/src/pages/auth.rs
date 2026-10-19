@@ -1,4 +1,4 @@
-use super::common::{Field, PasswordInput};
+use super::common::{Field, Icon, PasswordInput};
 use super::hoyolab::CookieCard;
 use super::security::PasswordCard;
 use super::shell::{Header, Status};
@@ -130,9 +130,10 @@ pub(in crate::app) fn OnboardingPage(mut state: Signal<AppState>) -> Element {
             h1 { {ui.text("auth.setup")} }
             Status { state }
             if !cookie_complete {
-                div { class: "setup-progress", "aria-label": ui.text("auth.setup_progress"),
-                    span { class: if password_required { "current" } else { "" }, {ui.text("auth.1_change_password")} }
-                    span { class: if !password_required { "current" } else { "" }, {ui.text("auth.2_hoyolab_link")} }
+                // A read-only progress list, not navigation: it must not look or act like tabs.
+                ol { class: "setup-steps", "aria-label": ui.text("auth.setup_progress"),
+                    SetupStepItem { number: 1, label: ui.text("auth.step_password"), step: if password_required { SetupStep::Current } else { SetupStep::Done } }
+                    SetupStepItem { number: 2, label: ui.text("auth.step_hoyolab"), step: if password_required { SetupStep::Upcoming } else { SetupStep::Current } }
                 }
             }
             if password_required {
@@ -144,6 +145,37 @@ pub(in crate::app) fn OnboardingPage(mut state: Signal<AppState>) -> Element {
             Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| {
                 spawn_action(state, move |generation| async move { refresh_gate(state, generation).await; });
             }, {ui.text("auth.refresh_setup_status")} }
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SetupStep {
+    Done,
+    Current,
+    Upcoming,
+}
+
+impl SetupStep {
+    fn class(self) -> &'static str {
+        match self {
+            Self::Done => "done",
+            Self::Current => "current",
+            Self::Upcoming => "upcoming",
+        }
+    }
+}
+
+#[component]
+fn SetupStepItem(number: u8, label: &'static str, step: SetupStep) -> Element {
+    let ui = use_preferences();
+    rsx! {
+        li { class: "setup-step {step.class()}", "aria-current": (step == SetupStep::Current).then_some("step"),
+            span { class: "step-marker", "aria-hidden": "true",
+                if step == SetupStep::Done { Icon { name: "check" } } else { "{number}" }
+            }
+            span { class: "step-label", "{label}" }
+            if step == SetupStep::Done { span { class: "visually-hidden", {ui.text("auth.step_done")} } }
         }
     }
 }

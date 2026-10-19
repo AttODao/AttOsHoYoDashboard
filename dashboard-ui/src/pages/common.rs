@@ -24,6 +24,7 @@ pub(super) fn Metric(label: &'static str, value: String) -> Element {
 pub(super) fn Icon(name: &'static str) -> Element {
     let path = match name {
         "close" => "M6 6l12 12M6 18 18 6",
+        "check" => "M5 12.5l4.5 4.5L19 7.5",
         "link" => {
             "M10 13a4 4 0 0 0 6 0l4-4a4 4 0 0 0-6-6l-2 2M14 11a4 4 0 0 0-6 0l-4 4a4 4 0 0 0 6 6l2-2"
         }
