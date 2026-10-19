@@ -319,6 +319,7 @@
   "dashboard.data_age_days": "{count}日前のデータです",
   "dashboard.stale_with_reason": "{age}（{reason}）",
   "dashboard.fetch_failed_with_reason": "状態を取得できませんでした（{reason}）",
+  "security.new_password_required": "新しいパスワードを入力してください。",
   "app.title": "AHD",
   "messages.unavailable": "メッセージを表示できません。"
 }

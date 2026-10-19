@@ -132,7 +132,8 @@ pub(super) fn PasswordCard(mut state: Signal<AppState>, title: &'static str) -> 
                         p { id: "new-password-rules", class: "field-hint", {ui.text("security.password_rules")} }
                         if length_error {
                             p { id: "new-password-error", class: "field-error",
-                                {ui.format("security.password_length_error", &[("count", &next_bytes.to_string())])}
+                                if next_bytes == 0 { {ui.text("security.new_password_required")} }
+                                else { {ui.format("security.password_length_error", &[("count", &next_bytes.to_string())])} }
                             }
                         }
                     }

@@ -319,6 +319,7 @@
   "dashboard.data_age_days": "Data from {count} days ago",
   "dashboard.stale_with_reason": "{age} ({reason})",
   "dashboard.fetch_failed_with_reason": "Could not fetch the status ({reason})",
+  "security.new_password_required": "Enter a new password.",
   "app.title": "AHD",
   "messages.unavailable": "Message unavailable."
 }
