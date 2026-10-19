@@ -68,7 +68,6 @@ pub(super) struct AppState {
     pub(super) hoyolab_error: Option<String>,
     pub(super) accounts: Vec<GameAccount>,
     pub(super) accounts_error: Option<String>,
-    pub(super) selected_account: Option<Uuid>,
     pub(super) selected_accounts: BTreeMap<&'static str, GameSelection>,
     pub(super) account_statuses: Vec<AccountStatusEntry>,
     pub(super) rewards: Vec<RewardSetting>,
@@ -99,7 +98,6 @@ impl AppState {
             hoyolab_error: None,
             accounts: Vec::new(),
             accounts_error: None,
-            selected_account: None,
             selected_accounts: BTreeMap::new(),
             account_statuses: Vec::new(),
             rewards: Vec::new(),
@@ -173,7 +171,6 @@ impl AppState {
         self.hoyolab_error = None;
         self.accounts.clear();
         self.accounts_error = None;
-        self.selected_account = None;
         self.selected_accounts.clear();
         self.account_statuses.clear();
         self.rewards.clear();
@@ -293,15 +290,6 @@ pub(super) fn current_ready_page_generation(
         && read.page == page
 }
 
-pub(super) fn select_account(current: Option<Uuid>, accounts: &[GameAccount]) -> Option<Uuid> {
-    let visible = visible_detected_accounts(accounts);
-    if current.is_some_and(|id| visible.iter().any(|account| account.id == id)) {
-        current
-    } else {
-        visible.first().map(|account| account.id)
-    }
-}
-
 pub(super) fn select_game_account(
     current: Option<Uuid>,
     accounts: &[GameAccount],
@@ -412,8 +400,9 @@ mod tests {
             account(uuid(3), true, false, "800000000"),
             account(uuid(4), true, true, ""),
         ];
-        assert_eq!(visible_detected_accounts(&rows)[0].id, keep);
-        assert_eq!(select_account(None, &rows), Some(keep));
+        let visible = visible_detected_accounts(&rows);
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].id, keep);
     }
 
     #[test]

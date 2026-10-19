@@ -1,9 +1,8 @@
 use super::accounts::UidsPage;
 use super::admin::AdminPage;
-use super::common::{Icon, Metric, focus_element, use_modal};
+use super::common::{Icon, focus_element, use_modal};
 use super::dashboard::DashboardPage;
 use super::deletion::DeletePage;
-use super::docs::DocsPage;
 use super::hoyolab::LinkPage;
 use super::rewards::RewardsPage;
 use super::security::SecurityPage;
@@ -76,10 +75,10 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
                     }
                 }
             } else {
-                match page {
-                    Page::Admin => rsx! { AdminPage { state } },
-                    Page::Docs => rsx! { DocsPage { state } },
-                    _ => rsx! { DashboardPage { state } },
+                if page == Page::Admin {
+                    AdminPage { state }
+                } else {
+                    DashboardPage { state }
                 }
             }
         }
@@ -178,18 +177,6 @@ pub(super) fn Status(state: Signal<AppState>) -> Element {
         .filter(|status| status.message_key != "messages.please_sign_in");
     rsx! { div { class: "live-region", role: "status", "aria-live": "polite",
         if let Some(status) = status { p { class: "status {status.kind}", {ui.text(status.message_key)} } }
-    } }
-}
-
-#[component]
-pub(super) fn ServerSettingsCard(state: Signal<AppState>) -> Element {
-    let ui = use_preferences();
-    let server = state.read().server.clone();
-    rsx! { section { class: "panel", h2 { {ui.text("shell.server_settings")} }
-        dl { class: "metric-list",
-            Metric { label: ui.text("shell.time_zone"), value: server.as_ref().map(|s| s.timezone_offset.clone()).unwrap_or_else(|| ui.text("shell.not_loaded").to_owned()) }
-            Metric { label: ui.text("shell.session_lifetime"), value: server.as_ref().map(|s| ui.format("session.duration_days", &[("count", &s.session_ttl_days.to_string())])).unwrap_or_else(|| ui.text("shell.not_loaded").to_owned()) }
-        }
     } }
 }
 

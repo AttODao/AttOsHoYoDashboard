@@ -2,8 +2,8 @@ use super::actions::handle_api_error_for;
 use super::session::signed_out;
 use super::state::{
     AppState, DASHBOARD_GAMES, Page, Phase, current_generation, current_ready_generation,
-    current_ready_page_generation, password_generation, ready_generation, select_account,
-    set_status, signed_in_generation, upsert_status,
+    current_ready_page_generation, password_generation, ready_generation, set_status,
+    signed_in_generation, upsert_status,
 };
 use crate::{
     api,
@@ -82,10 +82,8 @@ pub(super) async fn load_accounts(mut state: Signal<AppState>) {
     };
     match api::get::<Vec<GameAccount>>("/game-accounts").await {
         Ok(accounts) if current_ready_generation(state, generation) => {
-            let selected = select_account(state.read().selected_account, &accounts);
             let mut write = state.write();
             write.accounts = accounts;
-            write.selected_account = selected;
             write.accounts_error = None;
             write.reconcile_dashboard_accounts();
         }

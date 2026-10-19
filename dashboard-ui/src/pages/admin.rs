@@ -61,11 +61,11 @@ fn guard_user_change(state: Signal<AppState>, target: uuid::Uuid) -> bool {
 #[component]
 pub(super) fn AdminPage(state: Signal<AppState>) -> Element {
     let prefs = use_preferences();
-    rsx! { div { class: "page-stack", h1 { {prefs.text("admin.admin_settings")} } AdminCard { state, compact: false } } }
+    rsx! { div { class: "page-stack", h1 { {prefs.text("admin.admin_settings")} } AdminCard { state } } }
 }
 
 #[component]
-pub(super) fn AdminCard(state: Signal<AppState>, compact: bool) -> Element {
+fn AdminCard(state: Signal<AppState>) -> Element {
     let prefs = use_preferences();
     let mut username = use_signal(String::new);
     let mut result = use_signal(|| None::<CredentialResult>);
@@ -83,7 +83,7 @@ pub(super) fn AdminCard(state: Signal<AppState>, compact: bool) -> Element {
     rsx! {
         div { class: "page-stack",
             Card {
-                CardHeader { CardTitle { {if compact { prefs.text("admin.admin_settings") } else { prefs.text("admin.create_user") }} } }
+                CardHeader { CardTitle { {prefs.text("admin.create_user")} } }
                 CardContent { class: "form-stack",
                     Field { id: "admin-create-username", label: prefs.text("admin.username"),
                         input { id: "admin-create-username", autocomplete: "off", value: "{username}", oninput: move |event| username.set(event.value()) }
@@ -459,7 +459,7 @@ mod tests {
             }))
             .unwrap();
             state.write().me = Some(actor);
-            assert!(current_admin(state, 0)); // Compact onboarding admin flow remains available.
+            assert!(current_admin(state, 0)); // Cookie setup is gated by the shell, not here.
             assert!(!current_admin(state, 1));
             state.write().me.as_mut().unwrap().is_admin = false;
             assert!(!is_admin(state));

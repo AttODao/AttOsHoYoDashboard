@@ -254,7 +254,6 @@ mod tests {
             session_ttl_days: 7,
         });
         state.accounts = vec![account(uuid(1), true, true, "600000000")];
-        state.selected_account = Some(uuid(1));
         state.rewards_error = Some("old owner".to_owned());
         state.admin_users = vec![UserView {
             id: uuid(2),
@@ -274,7 +273,6 @@ mod tests {
         assert_eq!(state.generation, 43);
         assert!(state.server.is_none());
         assert!(state.accounts.is_empty());
-        assert!(state.selected_account.is_none());
         assert!(state.rewards_error.is_none());
         assert!(state.admin_users.is_empty());
     }

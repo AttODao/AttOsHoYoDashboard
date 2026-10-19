@@ -12,19 +12,15 @@ pub(super) fn UidsPage(state: Signal<AppState>) -> Element {
         section { class: "panel page-stack",
             h2 { {preferences.text("accounts.game_visibility")} }
             if let Some(error) = &state.read().accounts_error { p { class: "warning", {preferences.text(error)} } }
-            AccountTable { state, controls: true }
+            AccountTable { state }
         }
     }
 }
 
 #[component]
-pub(super) fn AccountTable(state: Signal<AppState>, controls: bool) -> Element {
+fn AccountTable(state: Signal<AppState>) -> Element {
     let preferences = use_preferences();
-    let accounts = if controls {
-        state.read().accounts.clone()
-    } else {
-        state.read().visible_accounts()
-    };
+    let accounts = state.read().accounts.clone();
     rsx! {
         if accounts.is_empty() && state.read().accounts_error.is_none() {
             p { {preferences.text("accounts.no_game_accounts_returned")} }
@@ -45,31 +41,27 @@ pub(super) fn AccountTable(state: Signal<AppState>, controls: bool) -> Element {
                                 " · " {preferences.text("accounts.last_detected")} " · {account.last_detected_at}"
                             }
                         }
-                        if controls {
-                            label { class: "checkbox-row", r#for: "account-visible-{account.id}",
-                                input { id: "account-visible-{account.id}", r#type: "checkbox", checked: account.visible,
-                                    disabled: state.read().busy || !state.read().ready(),
-                                    "aria-label": preferences.format("accounts.visible_label", &[("game", &account.game_kind), ("uid", &account.game_uid)]),
-                                    onchange: move |event| {
-                                        let id = account.id;
-                                        let visible = event.checked();
-                                        if !state.read().ready() { return; }
-                                        spawn_action(state, move |generation| async move {
-                                            match crate::api::send("PATCH", &format!("/game-accounts/{id}"), Some(json!({"visible": visible}))).await {
-                                                Ok(()) if generation_matches(state, generation) => {
-                                                    set_status(state, "accounts.visibility_updated", "success");
-                                                    load_accounts(state).await;
-                                                }
-                                                Ok(()) => {}
-                                                Err(error) => handle_api_error_for(state, generation, error),
+                        label { class: "checkbox-row", r#for: "account-visible-{account.id}",
+                            input { id: "account-visible-{account.id}", r#type: "checkbox", checked: account.visible,
+                                disabled: state.read().busy || !state.read().ready(),
+                                "aria-label": preferences.format("accounts.visible_label", &[("game", &account.game_kind), ("uid", &account.game_uid)]),
+                                onchange: move |event| {
+                                    let id = account.id;
+                                    let visible = event.checked();
+                                    if !state.read().ready() { return; }
+                                    spawn_action(state, move |generation| async move {
+                                        match crate::api::send("PATCH", &format!("/game-accounts/{id}"), Some(json!({"visible": visible}))).await {
+                                            Ok(()) if generation_matches(state, generation) => {
+                                                set_status(state, "accounts.visibility_updated", "success");
+                                                load_accounts(state).await;
                                             }
-                                        });
-                                    }
+                                            Ok(()) => {}
+                                            Err(error) => handle_api_error_for(state, generation, error),
+                                        }
+                                    });
                                 }
-                                {preferences.text("accounts.visible")}
                             }
-                        } else {
-                            span { {if account.visible { preferences.text("accounts.visible") } else { preferences.text("accounts.hidden") }} }
+                            {preferences.text("accounts.visible")}
                         }
                     }
                 }
