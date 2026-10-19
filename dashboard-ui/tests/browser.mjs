@@ -759,6 +759,7 @@ try{
  assert.equal(await lockedDelete.evaluate(e=>getComputedStyle(e).cursor),'progress');
  assert.equal((await look(ownRow.getByRole('button',{name:'Delete user',exact:true}))).border,'dashed','unavailable action stays dashed while busy');
  releaseAdminPatch();adminPatchHold=null;await idle();
+ await page.getByText('User re-enabled. Old sessions stay signed out, and automatic claiming is off until the user turns it on again in Settings.',{exact:true}).waitFor();
  await otherRow.getByRole('button',{name:'Delete user',exact:true}).click();
  const deletion=page.locator('#admin-delete-'+other.id);
  await deletion.waitFor();await eyes(['admin-delete-password-'+other.id]);

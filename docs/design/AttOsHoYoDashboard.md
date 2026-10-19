@@ -108,7 +108,7 @@ sequenceDiagram
     R->>O: release lock
 ```
 
-Lockはowner単位で、別ユーザーはglobal serializeしない。DB table lockはbootstrap empty-table check以外に長時間使わず、admin lifecycle（無効化・再有効化、仮パスワード復旧、削除要求）はPostgreSQL advisory transaction lockを先に取り、その後にuser rowをID順でlockする。削除待ちのユーザーには再有効化も仮パスワード復旧も行わない。パスワード（Argon2）とWebAuthnのCPU処理はSQL transaction・row lockの外で行う。passkey login finishは署名検証とcounter更新の計算をlockなしのsnapshotで済ませ、user lock取得後にcredential行のUUID・credential ID・fingerprintが同じことだけを確かめて書き込む。DB接続プールは16本（`db/mod.rs`の定数）。
+Lockはowner単位で、別ユーザーはglobal serializeしない。DB table lockはbootstrap empty-table check以外に長時間使わず、admin lifecycle（無効化・再有効化、仮パスワード復旧、削除要求）はPostgreSQL advisory transaction lockを先に取り、その後にuser rowをID順でlockする。削除待ちのユーザーには再有効化も仮パスワード復旧も行わない。再有効化は全セッションを失効させたまま、対象のreward settingを`enabled = false`・`next_run_at = NULL`にする（無効化中の放置後に本人の確認なく自動POSTを再開しないため。時刻は保持し、本人が再度有効にする）。パスワード（Argon2）とWebAuthnのCPU処理はSQL transaction・row lockの外で行う。passkey login finishは署名検証とcounter更新の計算をlockなしのsnapshotで済ませ、user lock取得後にcredential行のUUID・credential ID・fingerprintが同じことだけを確かめて書き込む。DB接続プールは16本（`db/mod.rs`の定数）。
 
 ## 6. Game status cache
 

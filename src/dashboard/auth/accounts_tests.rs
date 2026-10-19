@@ -516,3 +516,59 @@ async fn admin_mutations_reauthenticate_instead_of_trusting_snapshot_or_other_ow
             .active
     );
 }
+
+#[tokio::test]
+async fn reactivation_turns_automatic_rewards_off_but_keeps_their_times() {
+    use crate::dashboard::db::entities::{hoyolab_account, reward_setting};
+    let test = TestDatabase::new().await;
+    let (accounts, admin) = test.ready_admin().await;
+    let target = accounts
+        .create_user(&admin, "member".to_owned(), TEMP_PASSWORD.to_owned())
+        .await
+        .unwrap();
+    let now = Utc::now();
+    let link = Uuid::new_v4();
+    hoyolab_account::ActiveModel {
+        id: Set(link),
+        owner_user_id: Set(target.id),
+        hoyolab_uid: Set(Some("100000001".to_owned())),
+        encrypted_credentials: Set(vec![7; 32]),
+        credential_version: Set(1),
+        auth_status: Set("verified".to_owned()),
+        created_at: Set(now),
+        updated_at: Set(now),
+    }
+    .insert(&test.db)
+    .await
+    .unwrap();
+    let setting = reward_setting::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        hoyolab_account_id: Set(link),
+        game_kind: Set("genshin".to_owned()),
+        enabled: Set(true),
+        local_time: Set("06:00".to_owned()),
+        auth_status: Set("ready".to_owned()),
+        next_run_at: Set(Some(now + Duration::hours(1))),
+    }
+    .insert(&test.db)
+    .await
+    .unwrap();
+    accounts.set_active(&admin, target.id, false).await.unwrap();
+    // Disabling alone leaves the schedule for the worker's own owner checks.
+    let disabled = reward_setting::Entity::find_by_id(setting.id)
+        .one(&test.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(disabled.enabled);
+    // Re-enabling must not resume automatic reward POSTs without the owner opting in again.
+    accounts.set_active(&admin, target.id, true).await.unwrap();
+    let reenabled = reward_setting::Entity::find_by_id(setting.id)
+        .one(&test.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!reenabled.enabled);
+    assert_eq!(reenabled.next_run_at, None);
+    assert_eq!(reenabled.local_time, "06:00");
+}

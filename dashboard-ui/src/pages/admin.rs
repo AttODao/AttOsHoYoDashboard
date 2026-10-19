@@ -219,7 +219,9 @@ fn AdminUserRow(
                         if !current_admin(state, generation) { return; }
                         match crate::api::send("PATCH", &format!("/admin/users/{id}"), Some(json!({"active": active}))).await {
                             Ok(()) if current_admin(state, generation) => {
-                                set_status(state, "admin.user_updated", "success");
+                                // Re-enabling turns automatic claiming off server-side; say so.
+                                let message = if active { "admin.user_reenabled_automatic_claiming_off" } else { "admin.user_updated" };
+                                set_status(state, message, "success");
                                 if refresh_me(state).await && current_admin(state, generation) { load_admin_users(state).await; }
                             }
                             Ok(()) => {}

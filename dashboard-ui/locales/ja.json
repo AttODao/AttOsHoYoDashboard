@@ -137,6 +137,7 @@
   "admin.change_password": "パスワード変更",
   "admin.reissue_password": "パスワード再発行",
   "admin.user_updated": "ユーザーを更新しました。",
+  "admin.user_reenabled_automatic_claiming_off": "ユーザーを再有効化しました。旧セッションは使えません。自動受け取りはOFFになりました（本人が設定で再度有効にできます）。",
   "admin.could_not_update_user": "ユーザーを更新できませんでした。",
   "admin.disable": "無効化",
   "admin.re_enable": "再有効化",

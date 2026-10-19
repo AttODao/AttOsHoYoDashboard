@@ -137,6 +137,7 @@
   "admin.change_password": "Change password",
   "admin.reissue_password": "Reissue password",
   "admin.user_updated": "User updated.",
+  "admin.user_reenabled_automatic_claiming_off": "User re-enabled. Old sessions stay signed out, and automatic claiming is off until the user turns it on again in Settings.",
   "admin.could_not_update_user": "Could not update user.",
   "admin.disable": "Disable",
   "admin.re_enable": "Re-enable",
