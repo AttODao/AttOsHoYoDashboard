@@ -24,7 +24,7 @@ async fn cookie_setup_routes_store_pending_without_returning_credentials_or_clai
             "/api/v1/me/hoyolab/cookie",
             Some(&session),
             Some(json!({
-                "cookie":"ltuid_v2=123; ltoken_v2=synthetic-private-token"
+                "cookie":"ltuid_v2=123; ltoken_v2=synthetic-private-token; ltmid_v2=synthetic-mid"
             })),
         ),
     )
