@@ -1,7 +1,9 @@
 use super::common::{Field, Metric, game_name};
 use crate::app::actions::{handle_api_error_for, spawn_action};
-use crate::app::data::{load_rewards, save_reward_setting};
-use crate::app::display::{datetime_text, error_text};
+use crate::app::data::{
+    load_rewards, reward_run_in_flight, save_reward_setting, start_reward_poll,
+};
+use crate::app::display::{compact_datetime, datetime_text, error_text};
 use crate::app::preferences::use_preferences;
 use crate::app::state::{AppState, generation_matches, set_status};
 use crate::components::{Button, ButtonVariant};
@@ -61,6 +63,21 @@ fn RewardSettingCard(state: Signal<AppState>, setting: RewardSetting) -> Element
         .map(|server| server.timezone_offset.clone());
     let game = game_name(&setting.game_kind, preferences).to_owned();
     let label = |value: &str| reward_label(value, preferences);
+    let polling = state
+        .read()
+        .reward_poll
+        .is_some_and(|poll| poll.setting == setting.id);
+    let run = setting.last_run.clone();
+    let tone = run.as_ref().map_or("", |run| run_tone(&run.state));
+    let last_run = run.as_ref().map_or_else(
+        || preferences.text("rewards.never").to_owned(),
+        |run| label(&run.state),
+    );
+    let ended = run.as_ref().and_then(|run| {
+        let ended = run.ended_at.clone()?;
+        let text = compact_datetime(Some(&ended))?;
+        Some((ended, text))
+    });
     rsx! {
         div { class: "form-stack",
             h3 { "{game}" }
@@ -97,7 +114,6 @@ fn RewardSettingCard(state: Signal<AppState>, setting: RewardSetting) -> Element
                 Metric { label: preferences.text("rewards.reward_status"), value: match setting.is_sign { Some(true) => preferences.text("dashboard.received"), Some(false) => preferences.text("dashboard.not_received"), None => preferences.text("dashboard.not_fetched") }.to_owned() }
                 Metric { label: preferences.text("dashboard.checked"), value: datetime_text(setting.last_checked_at.as_deref(), preferences) }
                 Metric { label: preferences.text("dashboard.next_run"), value: datetime_text(setting.next_run_at.as_deref(), preferences) }
-                Metric { label: preferences.text("rewards.last_run"), value: setting.last_run.as_ref().map(|run| label(&run.state)).unwrap_or_else(|| preferences.text("rewards.never").to_owned()) }
                 Metric { label: preferences.text("dashboard.error"), value: error_text(setting.error_code.as_deref(), preferences).to_owned() }
                 Metric { label: preferences.text("rewards.error_time"), value: datetime_text(setting.error_at.as_deref(), preferences) }
             }
@@ -121,6 +137,7 @@ fn RewardSettingCard(state: Signal<AppState>, setting: RewardSetting) -> Element
                             Ok(()) if generation_matches(state, generation) => {
                                 set_status(state, "rewards.run_accepted_queued_not_completed", "success");
                                 load_rewards(state).await;
+                                start_reward_poll(state, generation, id);
                             }
                             Ok(()) => {}
                             Err(error) => {
@@ -132,6 +149,12 @@ fn RewardSettingCard(state: Signal<AppState>, setting: RewardSetting) -> Element
                         }
                     });
                 }, {preferences.text("rewards.run_now")} }
+            }
+            p { id: "reward-run-state-{setting.id}", class: "run-state {tone}",
+                {preferences.text("rewards.last_run")} ": "
+                strong { {last_run} }
+                if let Some(ended) = ended { " · " time { datetime: "{ended.0}", "{ended.1}" } }
+                if polling { " · " {preferences.text("rewards.checking_automatically")} }
             }
         }
     }
@@ -203,6 +226,15 @@ fn run_eligible(auth_status: &str, last_state: Option<&str>) -> bool {
         )
 }
 
+/// Inline style of the last-run line: in flight, settled well, or needs attention.
+fn run_tone(state: &str) -> &'static str {
+    match state {
+        _ if reward_run_in_flight(state) => "pending",
+        "success" | "already_claimed" => "success",
+        _ => "error",
+    }
+}
+
 fn reward_label(value: &str, preferences: crate::app::preferences::Preferences) -> String {
     match value {
         "ready" => preferences.text("dashboard.ready"),
@@ -253,6 +285,15 @@ mod tests {
         }
         assert!(!run_eligible("action_required", None));
         assert!(!run_eligible("", None));
+    }
+
+    #[test]
+    fn last_run_tone_separates_in_flight_success_and_attention() {
+        assert_eq!(run_tone("queued"), "pending");
+        assert_eq!(run_tone("retry_wait"), "pending");
+        assert_eq!(run_tone("already_claimed"), "success");
+        assert_eq!(run_tone("unknown"), "error");
+        assert_eq!(run_tone("failed"), "error");
     }
 
     #[test]

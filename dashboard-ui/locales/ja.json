@@ -301,6 +301,12 @@
   "hoyolab.step_complete": "本人確認済みです。ゲームアカウントが増えたときは「UIDを同期」を実行してください。",
   "hoyolab.cookie_help": "必要なのは ltoken_v2・ltuid_v2・ltmid_v2 の3つです。hoyolab.com にログインしたブラウザの開発者ツール（Application／ストレージ → Cookie）から値をコピーするか、Cookieヘッダー行をそのまま貼り付けてください。旧形式の ltoken／ltuid は使えません。",
   "hoyolab.sync_requires_verification": "UIDの同期は本人確認が完了すると使えます。",
+  "rewards.checking_automatically": "状態を自動で確認しています…",
+  "rewards.run_finished_success": "手動実行が完了しました。ログインボーナスを受け取りました。",
+  "rewards.run_finished_already_claimed": "手動実行が完了しました。本日分は受取済みでした。",
+  "rewards.run_finished_failed": "手動実行は失敗しました。実行履歴を確認してください。",
+  "rewards.run_finished_unconfirmed": "手動実行の結果を確認できませんでした。実行履歴を確認してください。",
+  "rewards.run_still_pending": "実行はまだ完了していません。しばらくしてから「更新」で確認してください。",
   "app.title": "AHD",
   "messages.unavailable": "メッセージを表示できません。"
 }

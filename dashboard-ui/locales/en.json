@@ -301,6 +301,12 @@
   "hoyolab.step_complete": "Verified. Run Sync UIDs when your game accounts change.",
   "hoyolab.cookie_help": "Requires ltoken_v2, ltuid_v2 and ltmid_v2. Copy them from DevTools (Application/Storage → Cookies) in a browser signed in to hoyolab.com, or paste the whole Cookie header line. The old ltoken/ltuid cookies are not accepted.",
   "hoyolab.sync_requires_verification": "Sync UIDs becomes available after verification.",
+  "rewards.checking_automatically": "Checking automatically…",
+  "rewards.run_finished_success": "Manual run finished: the login bonus was claimed.",
+  "rewards.run_finished_already_claimed": "Manual run finished: today's bonus was already claimed.",
+  "rewards.run_finished_failed": "Manual run failed. Check the run history.",
+  "rewards.run_finished_unconfirmed": "The manual run result could not be confirmed. Check the run history.",
+  "rewards.run_still_pending": "The run has not finished yet. Use Refresh to check again later.",
   "app.title": "AHD",
   "messages.unavailable": "Message unavailable."
 }

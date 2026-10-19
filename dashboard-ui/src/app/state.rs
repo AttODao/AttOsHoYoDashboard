@@ -47,6 +47,13 @@ pub(super) struct StatusLine {
     pub(super) kind: &'static str,
 }
 
+/// The manual reward run being followed after a 202; see `data::start_reward_poll`.
+#[derive(Clone, Copy, PartialEq)]
+pub(super) struct RewardPoll {
+    pub(super) token: u64,
+    pub(super) setting: Uuid,
+}
+
 #[derive(Clone, PartialEq)]
 pub(super) struct AccountStatusEntry {
     pub(super) id: Uuid,
@@ -76,6 +83,7 @@ pub(super) struct AppState {
     pub(super) rewards_error: Option<String>,
     pub(super) reward_runs: Option<Vec<RewardRun>>,
     pub(super) reward_runs_error: Option<String>,
+    pub(super) reward_poll: Option<RewardPoll>,
     pub(super) passkeys: Option<Vec<PasskeyView>>,
     pub(super) passkeys_error: Option<String>,
     pub(super) server: Option<ServerSettings>,
@@ -106,6 +114,7 @@ impl AppState {
             rewards_error: None,
             reward_runs: None,
             reward_runs_error: None,
+            reward_poll: None,
             passkeys: None,
             passkeys_error: None,
             server: None,
@@ -183,6 +192,7 @@ impl AppState {
         self.rewards_error = None;
         self.reward_runs = None;
         self.reward_runs_error = None;
+        self.reward_poll = None;
         self.passkeys = None;
         self.passkeys_error = None;
         self.server = None;

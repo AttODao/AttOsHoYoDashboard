@@ -1,9 +1,9 @@
-use super::actions::handle_api_error_for;
+use super::actions::{handle_api_error_for, spawn_root};
 use super::session::signed_out;
 use super::state::{
-    AppState, DASHBOARD_GAMES, Page, Phase, current_generation, current_ready_generation,
-    current_ready_page_generation, password_generation, ready_generation, set_status,
-    signed_in_generation, upsert_status,
+    AppState, DASHBOARD_GAMES, Page, Phase, RewardPoll, current_generation,
+    current_ready_generation, current_ready_page_generation, password_generation, ready_generation,
+    set_status, signed_in_generation, upsert_status,
 };
 use crate::{
     api,
@@ -15,6 +15,7 @@ use crate::{
 use dioxus::prelude::*;
 use serde::de::DeserializeOwned;
 use serde_json::json;
+use std::sync::atomic::{AtomicU64, Ordering};
 use uuid::Uuid;
 
 pub(super) async fn load_page_data(state: Signal<AppState>, page: Page) {
@@ -296,6 +297,83 @@ pub(super) async fn load_rewards(mut state: Signal<AppState>) {
     }
 }
 
+const REWARD_POLL_INTERVAL_MS: u32 = 3_000;
+const REWARD_POLL_ATTEMPTS: u32 = 20;
+static NEXT_REWARD_POLL: AtomicU64 = AtomicU64::new(1);
+
+/// States in which a run may still change without user action.
+pub(super) fn reward_run_in_flight(state: &str) -> bool {
+    matches!(state, "pending" | "queued" | "running" | "retry_wait")
+}
+
+/// Completion announcement (message key, status kind) for a settled run state.
+fn reward_run_finished(state: &str) -> (&'static str, &'static str) {
+    match state {
+        "success" => ("rewards.run_finished_success", "success"),
+        "already_claimed" => ("rewards.run_finished_already_claimed", "success"),
+        "failed" | "stopped" => ("rewards.run_finished_failed", "error"),
+        _ => ("rewards.run_finished_unconfirmed", "error"),
+    }
+}
+
+/// Follow an accepted manual run for about a minute. Each poll is an ordinary
+/// GET refresh: it never re-sends the POST, skips while an action holds the UI,
+/// and stops on completion, page leave, session change or a newer poll.
+pub(super) fn start_reward_poll(mut state: Signal<AppState>, generation: u64, setting: Uuid) {
+    if !current_ready_page_generation(state, generation, Page::Rewards) {
+        return;
+    }
+    let token = NEXT_REWARD_POLL.fetch_add(1, Ordering::Relaxed);
+    state.write().reward_poll = Some(RewardPoll { token, setting });
+    spawn_root(async move {
+        poll_reward_run(state, generation, token, setting).await;
+        if state
+            .read()
+            .reward_poll
+            .is_some_and(|poll| poll.token == token)
+        {
+            state.write().reward_poll = None;
+        }
+    });
+}
+
+async fn poll_reward_run(state: Signal<AppState>, generation: u64, token: u64, setting: Uuid) {
+    let following = move || {
+        current_ready_page_generation(state, generation, Page::Rewards)
+            && state
+                .read()
+                .reward_poll
+                .is_some_and(|poll| poll.token == token)
+    };
+    let run_state = move || {
+        let read = state.read();
+        let row = read.rewards.iter().find(|row| row.id == setting)?;
+        row.last_run.as_ref().map(|run| run.state.clone())
+    };
+    for _ in 0..REWARD_POLL_ATTEMPTS {
+        if run_state().is_some_and(|run| !reward_run_in_flight(&run)) {
+            break;
+        }
+        gloo_timers::future::TimeoutFuture::new(REWARD_POLL_INTERVAL_MS).await;
+        if !following() {
+            return;
+        }
+        if !state.read().busy {
+            load_rewards(state).await;
+        }
+        if !following() {
+            return;
+        }
+    }
+    match run_state() {
+        Some(run) if !reward_run_in_flight(&run) => {
+            let (key, kind) = reward_run_finished(&run);
+            set_status(state, key, kind);
+        }
+        _ => set_status(state, "rewards.run_still_pending", "info"),
+    }
+}
+
 pub(super) async fn load_passkeys(mut state: Signal<AppState>) {
     let Some(generation) = password_generation(state) else {
         return;
@@ -442,6 +520,50 @@ mod tests {
         state = ready_state();
         state.phase = Phase::SignedOut;
         assert!(!current_status_request(&state, 7, "genshin", id, 10));
+    }
+
+    #[test]
+    fn reward_polling_stops_on_settled_states_and_announces_the_outcome() {
+        for state in ["pending", "queued", "running", "retry_wait"] {
+            assert!(reward_run_in_flight(state), "{state}");
+        }
+        for state in [
+            "success",
+            "already_claimed",
+            "failed",
+            "stopped",
+            "unknown",
+            "action_required",
+        ] {
+            assert!(!reward_run_in_flight(state), "{state}");
+        }
+        assert_eq!(
+            reward_run_finished("success"),
+            ("rewards.run_finished_success", "success")
+        );
+        assert_eq!(reward_run_finished("stopped").1, "error");
+        assert_eq!(
+            reward_run_finished("unknown"),
+            ("rewards.run_finished_unconfirmed", "error")
+        );
+    }
+
+    #[test]
+    fn reward_polling_starts_only_on_the_current_rewards_page() {
+        fn check() -> Element {
+            let state = use_signal(ready_state);
+            start_reward_poll(state, 7, Uuid::from_u128(20));
+            assert!(
+                state.read().reward_poll.is_none(),
+                "dashboard is not the rewards page"
+            );
+            let mut state = state;
+            state.write().page = Page::Rewards;
+            start_reward_poll(state, 6, Uuid::from_u128(20));
+            assert!(state.read().reward_poll.is_none(), "stale session");
+            rsx! {}
+        }
+        VirtualDom::new(check).rebuild_in_place();
     }
 
     #[test]
