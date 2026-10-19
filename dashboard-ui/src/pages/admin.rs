@@ -42,10 +42,11 @@ fn guard_user_change(state: Signal<AppState>, target: uuid::Uuid) -> bool {
     }
     let last_admin = {
         let read = state.read();
-        let Some(user) = read.admin_users.iter().find(|user| user.id == target) else {
+        let users = read.admin_users.as_deref().unwrap_or_default();
+        let Some(user) = users.iter().find(|user| user.id == target) else {
             return false;
         };
-        protected_last_admin(user, &read.admin_users)
+        protected_last_admin(user, users)
     };
     if last_admin {
         set_status(
@@ -80,6 +81,7 @@ fn AdminCard(state: Signal<AppState>) -> Element {
     if !is_admin(state) {
         return rsx! { p { role: "alert", {prefs.text("admin.administrator_access_required")} } };
     }
+    let users = state.read().admin_users.clone().unwrap_or_default();
     rsx! {
         div { class: "page-stack",
             Card {
@@ -116,8 +118,9 @@ fn AdminCard(state: Signal<AppState>) -> Element {
                 CardHeader { CardTitle { {prefs.text("admin.manage_users")} } }
                 CardContent { class: "form-stack",
                     if state.read().admin_error.is_some() { p { class: "warning", role: "alert", {prefs.text("admin.could_not_load_users")} } }
-                    if state.read().admin_users.is_empty() && state.read().admin_error.is_none() { p { {prefs.text("admin.no_users")} } }
-                    if !state.read().admin_users.is_empty() {
+                    else if state.read().admin_users.is_none() { p { role: "status", {prefs.text("admin.loading_users")} } }
+                    else if users.is_empty() { p { {prefs.text("admin.no_users")} } }
+                    else {
                         div { class: "table-wrap", role: "region", tabindex: "0", "aria-label": prefs.text("admin.manage_users"),
                             table { "aria-label": prefs.text("admin.manage_users"),
                                 thead { tr {
@@ -126,7 +129,7 @@ fn AdminCard(state: Signal<AppState>) -> Element {
                                     th { scope: "col", {prefs.text("admin.actions")} }
                                 } }
                                 tbody {
-                                    for user in state.read().admin_users.clone() { AdminUserRow { key: "{user.id}", state, user, result } }
+                                    for user in users { AdminUserRow { key: "{user.id}", state, user, result } }
                                 }
                             }
                         }
@@ -172,7 +175,10 @@ fn AdminUserRow(
 ) -> Element {
     let prefs = use_preferences();
     let mut deleting = use_signal(|| false);
-    let last_admin = protected_last_admin(&user, &state.read().admin_users);
+    let last_admin = protected_last_admin(
+        &user,
+        state.read().admin_users.as_deref().unwrap_or_default(),
+    );
     let own_account = is_own_user(state, user.id);
     let reset_name = user.username.clone();
     let status_class = if user.active { "status" } else { "status off" };
@@ -407,7 +413,7 @@ mod tests {
                 }))
                 .unwrap(),
             );
-            state.write().admin_users = vec![target.clone()];
+            state.write().admin_users = Some(vec![target.clone()]);
             assert!(state.read().status.is_none());
             assert!(!guard_user_change(state, target.id));
             {
@@ -420,13 +426,18 @@ mod tests {
                 assert_eq!(status.kind, "error");
             }
             // Another active admin removes last-admin protection, not self protection.
-            state.write().admin_users.push(user(2, true, true));
+            state
+                .write()
+                .admin_users
+                .as_mut()
+                .unwrap()
+                .push(user(2, true, true));
             state.write().status = None;
             assert!(!guard_user_change(state, target.id));
             assert!(state.read().status.is_none());
             assert!(guard_user_change(state, uuid::Uuid::from_u128(2)));
             // Recheck refreshed rows, including changes since a delete dialog opened.
-            state.write().admin_users[0].is_admin = false;
+            state.write().admin_users.as_mut().unwrap()[0].is_admin = false;
             assert!(!guard_user_change(state, uuid::Uuid::from_u128(2)));
             assert!(state.read().status.is_some());
             state.write().status = None;

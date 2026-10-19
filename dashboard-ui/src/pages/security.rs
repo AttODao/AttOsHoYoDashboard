@@ -114,15 +114,19 @@ pub(super) fn PasskeyCard(mut state: Signal<AppState>) -> Element {
     use_drop(move || {
         label.write().clear();
     });
+    let error = state.read().passkeys_error.clone();
+    let passkeys = state.read().passkeys.clone();
     rsx! {
         section { class: "panel",
             h3 { {ui.text("security.passkeys")} }
-            if let Some(error) = &state.read().passkeys_error { p { class: "warning", {ui.text(error)} } }
-            if state.read().passkeys.is_empty() && state.read().passkeys_error.is_none() {
-                p { {ui.text("security.no_passkeys_registered")} }
-            } else {
+            if let Some(error) = error {
+                p { class: "warning", {ui.text(&error)} }
+            } else if let Some(passkeys) = passkeys {
+                if passkeys.is_empty() {
+                    p { {ui.text("security.no_passkeys_registered")} }
+                } else {
                 ul { class: "item-list",
-                    for passkey in state.read().passkeys.clone() {
+                    for passkey in passkeys {
                         li {
                             span { "{passkey.label} — " {ui.text("security.created")} " {passkey.created_at}" }
                             Button { variant: ButtonVariant::Destructive, r#type: "button", onclick: move |_| {
@@ -141,6 +145,9 @@ pub(super) fn PasskeyCard(mut state: Signal<AppState>) -> Element {
                         }
                     }
                 }
+                }
+            } else {
+                p { role: "status", {ui.text("security.loading_passkeys")} }
             }
             form { onsubmit: move |event| {
                 event.prevent_default();

@@ -66,18 +66,19 @@ pub(super) struct AppState {
     pub(super) logout_unconfirmed: bool,
     pub(super) hoyolab: Option<CookieStatus>,
     pub(super) hoyolab_error: Option<String>,
-    pub(super) accounts: Vec<GameAccount>,
+    /// `None` until the first reply: lists distinguish "loading" from "empty".
+    pub(super) accounts: Option<Vec<GameAccount>>,
     pub(super) accounts_error: Option<String>,
     pub(super) selected_accounts: BTreeMap<&'static str, GameSelection>,
     pub(super) account_statuses: Vec<AccountStatusEntry>,
     pub(super) rewards: Vec<RewardSetting>,
     pub(super) rewards_error: Option<String>,
-    pub(super) reward_runs: Vec<RewardRun>,
+    pub(super) reward_runs: Option<Vec<RewardRun>>,
     pub(super) reward_runs_error: Option<String>,
-    pub(super) passkeys: Vec<PasskeyView>,
+    pub(super) passkeys: Option<Vec<PasskeyView>>,
     pub(super) passkeys_error: Option<String>,
     pub(super) server: Option<ServerSettings>,
-    pub(super) admin_users: Vec<UserView>,
+    pub(super) admin_users: Option<Vec<UserView>>,
     pub(super) admin_error: Option<String>,
     pub(super) openapi: Option<serde_json::Value>,
     pub(super) openapi_error: Option<String>,
@@ -96,18 +97,18 @@ impl AppState {
             logout_unconfirmed: false,
             hoyolab: None,
             hoyolab_error: None,
-            accounts: Vec::new(),
+            accounts: None,
             accounts_error: None,
             selected_accounts: BTreeMap::new(),
             account_statuses: Vec::new(),
             rewards: Vec::new(),
             rewards_error: None,
-            reward_runs: Vec::new(),
+            reward_runs: None,
             reward_runs_error: None,
-            passkeys: Vec::new(),
+            passkeys: None,
             passkeys_error: None,
             server: None,
-            admin_users: Vec::new(),
+            admin_users: None,
             admin_error: None,
             openapi: None,
             openapi_error: None,
@@ -126,8 +127,12 @@ impl AppState {
             .is_some_and(|me| !me.onboarding.password_change_required)
     }
 
+    pub(super) fn account_rows(&self) -> &[GameAccount] {
+        self.accounts.as_deref().unwrap_or_default()
+    }
+
     pub(super) fn visible_accounts(&self) -> Vec<GameAccount> {
-        visible_detected_accounts(&self.accounts)
+        visible_detected_accounts(self.account_rows())
     }
 
     pub(super) fn selected_game_account(&self, game: &str) -> Option<Uuid> {
@@ -135,14 +140,14 @@ impl AppState {
             .selected_accounts
             .get(game)
             .and_then(|selection| selection.id);
-        select_game_account(current, &self.accounts, game)
+        select_game_account(current, self.account_rows(), game)
     }
 
     pub(super) fn select_game_account(&mut self, game: &'static str, id: Option<Uuid>) {
         if !DASHBOARD_GAMES.contains(&game) {
             return;
         }
-        let id = select_game_account(id, &self.accounts, game);
+        let id = select_game_account(id, self.account_rows(), game);
         let selection = self.selected_accounts.entry(game).or_default();
         if selection.id != id {
             selection.id = id;
@@ -169,18 +174,18 @@ impl AppState {
     pub(super) fn clear_owner_data(&mut self) {
         self.hoyolab = None;
         self.hoyolab_error = None;
-        self.accounts.clear();
+        self.accounts = None;
         self.accounts_error = None;
         self.selected_accounts.clear();
         self.account_statuses.clear();
         self.rewards.clear();
         self.rewards_error = None;
-        self.reward_runs.clear();
+        self.reward_runs = None;
         self.reward_runs_error = None;
-        self.passkeys.clear();
+        self.passkeys = None;
         self.passkeys_error = None;
         self.server = None;
-        self.admin_users.clear();
+        self.admin_users = None;
         self.admin_error = None;
     }
 }
@@ -410,26 +415,26 @@ mod tests {
         let mut state = AppState::new(Page::Dashboard);
         let mut starrail = account(uuid(3), true, true, "700000001");
         starrail.game_kind = "starrail".to_owned();
-        state.accounts = vec![
+        state.accounts = Some(vec![
             account(uuid(1), true, true, "600000001"),
             account(uuid(2), true, true, "600000002"),
             starrail,
             account(uuid(4), false, true, "600000004"),
             account(uuid(5), true, false, "600000005"),
             account(uuid(6), true, true, ""),
-        ];
+        ]);
         state.reconcile_dashboard_accounts();
         state.select_game_account("genshin", Some(uuid(2)));
         assert_eq!(state.selected_game_account("genshin"), Some(uuid(2)));
         assert_eq!(state.selected_game_account("starrail"), Some(uuid(3)));
         assert_eq!(
-            select_game_account(Some(uuid(3)), &state.accounts, "genshin"),
+            select_game_account(Some(uuid(3)), state.account_rows(), "genshin"),
             Some(uuid(1))
         );
-        state.accounts[1].visible = false;
+        state.accounts.as_mut().unwrap()[1].visible = false;
         state.reconcile_dashboard_accounts();
         assert_eq!(state.selected_game_account("genshin"), Some(uuid(1)));
-        state.accounts[0].detected = false;
+        state.accounts.as_mut().unwrap()[0].detected = false;
         state.reconcile_dashboard_accounts();
         assert_eq!(state.selected_game_account("genshin"), None);
         assert_eq!(state.selected_game_account("starrail"), Some(uuid(3)));

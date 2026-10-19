@@ -144,6 +144,8 @@ fn GamePanel(
         .me
         .as_ref()
         .is_some_and(|me| me.capabilities.reward_posting_available);
+    let accounts_loaded = snapshot.accounts.is_some();
+    let accounts_failed = snapshot.accounts_error.is_some();
     let busy = snapshot.busy;
     let loading = selection.loading && selection.generation == snapshot.generation;
     drop(snapshot);
@@ -210,7 +212,10 @@ fn GamePanel(
                     }
                 }
             }
-            if visible.is_empty() {
+            if !accounts_loaded {
+                // A failed first load shows the page-level warning instead.
+                if !accounts_failed { p { role: "status", {ui.text("dashboard.loading")} } }
+            } else if visible.is_empty() {
                 div { class: "empty",
                     h3 { {ui.text("dashboard.no_visible_uids")} }
                     button { r#type: "button", onclick: move |_| set_page(state, Page::Uids), {ui.text("dashboard.choose_uids")} }

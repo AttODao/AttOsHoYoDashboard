@@ -20,7 +20,14 @@ pub(super) fn UidsPage(state: Signal<AppState>) -> Element {
 #[component]
 fn AccountTable(state: Signal<AppState>) -> Element {
     let preferences = use_preferences();
-    let accounts = state.read().accounts.clone();
+    let Some(accounts) = state.read().accounts.clone() else {
+        // A failed first load already shows its warning above.
+        return rsx! {
+            if state.read().accounts_error.is_none() {
+                p { role: "status", {preferences.text("accounts.loading_game_accounts")} }
+            }
+        };
+    };
     rsx! {
         if accounts.is_empty() && state.read().accounts_error.is_none() {
             p { {preferences.text("accounts.no_game_accounts_returned")} }

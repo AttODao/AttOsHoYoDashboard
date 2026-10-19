@@ -504,6 +504,8 @@ try{
  passkeyHold=new Promise(resolve=>{releasePasskeys=resolve;});
  const passkeyRead=page.waitForRequest(origin+'/api/v1/me/passkeys');
  await page.locator('#settings-tab-security').click();await passkeyRead;
+ await page.getByText('Loading passkeys…',{exact:true}).waitFor();
+ assert.equal(await page.getByText('No passkeys registered.',{exact:true}).count(),0,'an unloaded list is not reported as empty');
  await change('wrong-synthetic-password');
  await page.getByText('The current password was not accepted. Please try again.',{exact:true}).waitFor();
  releasePasskeys();passkeyHold=null;

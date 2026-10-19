@@ -155,9 +155,10 @@ fn RewardHistory(state: Signal<AppState>) -> Element {
                 }, {preferences.text("rewards.refresh")} }
             }
             if let Some(error) = &state.read().reward_runs_error { p { class: "warning", {preferences.text(error)} } }
-            else if rows.is_empty() { p { {preferences.text("rewards.no_runs_returned_for_the_last_5_days")} } }
+            else if rows.is_none() { p { role: "status", {preferences.text("rewards.loading_run_history")} } }
+            else if rows.as_ref().is_some_and(Vec::is_empty) { p { {preferences.text("rewards.no_runs_returned_for_the_last_5_days")} } }
             ul { class: "history",
-                for run in rows {
+                for run in rows.unwrap_or_default() {
                     li { key: "{run.id}",
                         div {
                             strong { {match run.game_kind.as_str() { "genshin" => preferences.text("dashboard.genshin_impact"), "starrail" => preferences.text("dashboard.honkai_star_rail"), _ => &run.game_kind }} }

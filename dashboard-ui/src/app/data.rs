@@ -117,7 +117,7 @@ pub(super) async fn load_accounts(mut state: Signal<AppState>) {
     let mut write = state.write();
     match result {
         Ok(accounts) => {
-            write.accounts = accounts;
+            write.accounts = Some(accounts);
             write.accounts_error = None;
             write.reconcile_dashboard_accounts();
         }
@@ -192,7 +192,7 @@ pub(super) async fn load_game_status(mut state: Signal<AppState>, game: &'static
         .loading = false;
     match result {
         Ok(status) => {
-            let matches_account = state.read().accounts.iter().any(|account| {
+            let matches_account = state.read().account_rows().iter().any(|account| {
                 account.id == id
                     && status.game_kind == account.game_kind
                     && status.game_uid == account.game_uid
@@ -286,11 +286,11 @@ pub(super) async fn load_rewards(mut state: Signal<AppState>) {
     let mut write = state.write();
     match result {
         Ok(runs) => {
-            write.reward_runs = runs;
+            write.reward_runs = Some(runs);
             write.reward_runs_error = None;
         }
         Err(key) => {
-            write.reward_runs.clear();
+            write.reward_runs = None;
             write.reward_runs_error = Some(key.to_owned());
         }
     }
@@ -309,11 +309,11 @@ pub(super) async fn load_passkeys(mut state: Signal<AppState>) {
     let mut write = state.write();
     match result {
         Ok(passkeys) => {
-            write.passkeys = passkeys;
+            write.passkeys = Some(passkeys);
             write.passkeys_error = None;
         }
         Err(key) => {
-            write.passkeys.clear();
+            write.passkeys = None;
             write.passkeys_error = Some(key.to_owned());
         }
     }
@@ -347,11 +347,11 @@ pub(super) async fn load_admin_users(mut state: Signal<AppState>) {
     let mut write = state.write();
     match result {
         Ok(users) => {
-            write.admin_users = users;
+            write.admin_users = Some(users);
             write.admin_error = None;
         }
         Err(key) => {
-            write.admin_users.clear();
+            write.admin_users = None;
             write.admin_error = Some(key.to_owned());
         }
     }
@@ -393,7 +393,7 @@ mod tests {
             },
         });
         for (n, game) in [(1, "genshin"), (2, "starrail"), (3, "genshin")] {
-            state.accounts.push(GameAccount {
+            state.accounts.get_or_insert_default().push(GameAccount {
                 id: Uuid::from_u128(n),
                 hoyolab_account_id: Uuid::from_u128(101),
                 game_kind: game.to_owned(),
@@ -425,13 +425,13 @@ mod tests {
         assert!(!current_status_request(&state, 7, "genshin", id, 10));
         let request = state.selected_accounts["genshin"].request;
         assert!(current_status_request(&state, 7, "genshin", id, request));
-        state.accounts[0].visible = false;
+        state.accounts.as_mut().unwrap()[0].visible = false;
         assert!(!current_status_request(&state, 7, "genshin", id, request));
-        state.accounts[0].visible = true;
-        state.accounts[0].detected = false;
+        state.accounts.as_mut().unwrap()[0].visible = true;
+        state.accounts.as_mut().unwrap()[0].detected = false;
         assert!(!current_status_request(&state, 7, "genshin", id, request));
-        state.accounts[0].detected = true;
-        state.accounts[0].game_uid.clear();
+        state.accounts.as_mut().unwrap()[0].detected = true;
+        state.accounts.as_mut().unwrap()[0].game_uid.clear();
         assert!(!current_status_request(&state, 7, "genshin", id, request));
         state = ready_state();
         state.page = Page::Rewards;
@@ -450,7 +450,7 @@ mod tests {
         fn check() -> Element {
             let state = use_signal(|| {
                 let mut state = ready_state();
-                for account in &mut state.accounts {
+                for account in state.accounts.iter_mut().flatten() {
                     account.visible = false;
                 }
                 state.reconcile_dashboard_accounts();
