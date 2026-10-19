@@ -128,7 +128,7 @@ async fn protected_passkey_routes_require_sessions_and_ready_users() {
 }
 
 #[tokio::test]
-async fn public_passkey_routes_still_require_exact_origin_before_login_budget() {
+async fn public_login_routes_still_require_exact_origin_before_login_budget() {
     let app = disconnected_app().await;
     for (path, input) in [
         (
@@ -148,5 +148,5 @@ async fn public_passkey_routes_still_require_exact_origin_before_login_budget() 
         req.headers_mut().remove(header::ORIGIN);
         error(call(&app, req).await, StatusCode::FORBIDDEN, "forbidden").await;
     }
-    assert_eq!(app.login_budget.lock().unwrap().attempts, 0);
+    assert_eq!(app.accounts.login_attempts("synthetic"), 0);
 }

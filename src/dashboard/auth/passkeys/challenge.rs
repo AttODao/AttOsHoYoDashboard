@@ -25,6 +25,8 @@ pub(super) enum Ceremony {
         state: PasskeyRegistration,
     },
     Authentication {
+        /// Sign-in budget key for the verify step.
+        username: String,
         offered: Vec<OfferedCredential>,
         state: PasskeyAuthentication,
     },

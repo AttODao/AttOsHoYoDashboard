@@ -1,67 +1,45 @@
 use super::*;
 use crate::dashboard::{
     auth::{password::token_hash, sessions::Sessions},
-    error::Error,
-    http::auth::check_login_budget,
     test_support::{PASSWORD, TestDatabase},
 };
-use std::time::Duration as StdDuration;
 
 #[tokio::test]
-async fn login_budget_allows_twenty_rejects_immediately_then_resets() {
-    let app = disconnected_app().await;
-    for attempt in 1..=20 {
-        check_login_budget(&app).unwrap();
-        assert_eq!(app.login_budget.lock().unwrap().attempts, attempt);
-    }
-    for _ in 0..3 {
-        assert!(matches!(check_login_budget(&app), Err(Error::RateLimited)));
-        assert_eq!(app.login_budget.lock().unwrap().attempts, 20);
-    }
-    {
-        let mut budget = app.login_budget.lock().unwrap();
-        budget.started = Instant::now() - StdDuration::from_secs(61);
-    }
-    let before_reset = Instant::now();
-    check_login_budget(&app).unwrap();
-    let budget = app.login_budget.lock().unwrap();
-    assert_eq!(budget.attempts, 1);
-    assert!(budget.started >= before_reset);
-}
-
-#[tokio::test]
-async fn password_and_both_public_passkey_handlers_share_one_counter() {
+async fn password_and_passkey_logins_share_a_per_username_budget() {
     let db = TestDatabase::new().await;
     let (accounts, _) = db.ready_admin().await;
     let app = app(accounts);
-    app.login_budget.lock().unwrap().attempts = 17;
-    let inputs = [
-        (
-            "/api/v1/auth/login",
-            json!({"username": "missing", "password": PASSWORD}),
-        ),
-        (
-            "/api/v1/auth/passkey/options",
-            json!({"username": "missing"}),
-        ),
-        (
-            "/api/v1/auth/passkey/verify",
-            json!({"challenge_id": Uuid::new_v4(), "response": assertion_response()}),
-        ),
-    ];
-    for (index, (path, input)) in inputs.iter().enumerate() {
+    let inputs = |username: &str| {
+        [
+            (
+                "/api/v1/auth/login",
+                json!({"username": username, "password": PASSWORD}),
+            ),
+            (
+                "/api/v1/auth/passkey/options",
+                json!({"username": username}),
+            ),
+        ]
+    };
+    // Eighteen attempts plus one per handler use up "target"'s twenty.
+    for _ in 0..18 {
+        let (path, input) = inputs("target")[1].clone();
         error(
-            call(&app, request("POST", path, None, Some(input.clone()))).await,
+            call(&app, request("POST", path, None, Some(input))).await,
             StatusCode::UNAUTHORIZED,
             "unauthorized",
         )
         .await;
-        assert_eq!(
-            app.login_budget.lock().unwrap().attempts,
-            18 + u32::try_from(index).unwrap()
-        );
     }
-    for (path, input) in inputs {
+    for (path, input) in inputs("target") {
+        error(
+            call(&app, request("POST", path, None, Some(input))).await,
+            StatusCode::UNAUTHORIZED,
+            "unauthorized",
+        )
+        .await;
+    }
+    for (path, input) in inputs("target") {
         error(
             call(&app, request("POST", path, None, Some(input))).await,
             StatusCode::TOO_MANY_REQUESTS,
@@ -69,7 +47,45 @@ async fn password_and_both_public_passkey_handlers_share_one_counter() {
         )
         .await;
     }
-    assert_eq!(app.login_budget.lock().unwrap().attempts, 20);
+    assert_eq!(app.accounts.login_attempts("target"), 20);
+    // Another username, including the real administrator, is unaffected.
+    for (path, input) in inputs("bystander") {
+        error(
+            call(&app, request("POST", path, None, Some(input))).await,
+            StatusCode::UNAUTHORIZED,
+            "unauthorized",
+        )
+        .await;
+    }
+    let admin = call(
+        &app,
+        request(
+            "POST",
+            "/api/v1/auth/login",
+            None,
+            Some(json!({"username": "admin", "password": PASSWORD})),
+        ),
+    )
+    .await;
+    assert_eq!(admin.status(), StatusCode::OK);
+    // A random challenge has no user and spends nobody's budget.
+    error(
+        call(
+            &app,
+            request(
+                "POST",
+                "/api/v1/auth/passkey/verify",
+                None,
+                Some(json!({"challenge_id": Uuid::new_v4(), "response": assertion_response()})),
+            ),
+        )
+        .await,
+        StatusCode::UNAUTHORIZED,
+        "unauthorized",
+    )
+    .await;
+    // The fixture's own sign-in plus the one above.
+    assert_eq!(app.accounts.login_attempts("admin"), 2);
 }
 
 #[tokio::test]
@@ -296,5 +312,6 @@ async fn body_limit_and_unknown_dto_fields_reject_before_handlers() {
         .status(),
         StatusCode::PAYLOAD_TOO_LARGE
     );
-    assert_eq!(app.login_budget.lock().unwrap().attempts, 0);
+    // Only the fixture's own sign-in; rejected DTOs never reach the budget.
+    assert_eq!(app.accounts.login_attempts("admin"), 1);
 }

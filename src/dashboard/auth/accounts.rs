@@ -5,6 +5,7 @@ mod deletion;
 #[path = "accounts_tests.rs"]
 mod tests;
 use super::{
+    login_limit::LoginLimiter,
     password::Passwords,
     sessions::{Identity, IssuedSession, Sessions},
 };
@@ -18,6 +19,7 @@ use sea_orm::{
     EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, QuerySelect, Set, SqlErr,
     TransactionTrait,
 };
+use std::time::Instant;
 use uuid::Uuid;
 
 // User lifecycle decisions live here; HTTP only translates requests and responses.
@@ -26,6 +28,7 @@ pub(in crate::dashboard) struct Accounts {
     pub(in crate::dashboard) sessions: Sessions,
     passwords: Passwords,
     deletion_retries: deletion::DeletionRetries,
+    login_limit: LoginLimiter,
 }
 
 impl Accounts {
@@ -38,6 +41,7 @@ impl Accounts {
             sessions: Sessions::new(ttl),
             passwords: Passwords::new().await?,
             deletion_retries: deletion::DeletionRetries::default(),
+            login_limit: LoginLimiter::default(),
         })
     }
 
@@ -81,6 +85,7 @@ impl Accounts {
         username: String,
         password: String,
     ) -> Result<(user::Model, IssuedSession)> {
+        self.admit_login(&username)?;
         Sessions::purge_expired(&self.db).await?;
         let snapshot = user::Entity::find()
             .filter(user::Column::Username.eq(username))
@@ -103,6 +108,16 @@ impl Accounts {
         let token = self.sessions.issue(&tx, user.id).await?;
         tx.commit().await?;
         Ok((user, token))
+    }
+
+    /// Spends one attempt from the attempted username's sign-in budget.
+    pub(super) fn admit_login(&self, username: &str) -> Result<()> {
+        self.login_limit.admit(username, Instant::now())
+    }
+
+    #[cfg(test)]
+    pub(in crate::dashboard) fn login_attempts(&self, username: &str) -> u32 {
+        self.login_limit.attempts(username)
     }
 
     pub(in crate::dashboard) async fn change_password(
@@ -284,7 +299,7 @@ impl Accounts {
     }
 }
 
-fn validate_username(username: &str) -> Result<()> {
+pub(super) fn validate_username(username: &str) -> Result<()> {
     if username.is_empty()
         || username.len() > 64
         || !username

@@ -108,7 +108,8 @@ async fn registration_public_authentication_metadata_and_delete_roundtrip() {
         body(login).await,
         json!({"id": actor.user.id, "username": "admin", "is_admin": true, "active": true, "must_change_password": false})
     );
-    assert_eq!(app.login_budget.lock().unwrap().attempts, 2);
+    // The fixture sign-in, then passkey options and verify.
+    assert_eq!(app.accounts.login_attempts("admin"), 3);
     assert_eq!(
         call(
             &app,

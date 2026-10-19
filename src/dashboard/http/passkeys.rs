@@ -1,5 +1,5 @@
 //! HTTP ceremony payloads only; WebAuthn and user policy live in the business modules.
-use super::{App, auth::check_login_budget, session::signed_in};
+use super::{App, session::signed_in};
 use crate::dashboard::{
     auth::{
         passkeys::{AuthenticationChallenge, PasskeyView, RegistrationChallenge},
@@ -103,7 +103,6 @@ async fn authentication_start(
     State(app): State<App>,
     Json(input): Json<Username>,
 ) -> Result<Json<AuthenticationChallenge>> {
-    check_login_budget(&app)?;
     Ok(Json(
         app.passkeys
             .authentication_start(&app.accounts, input.username)
@@ -115,7 +114,6 @@ async fn authentication_finish(
     State(app): State<App>,
     Json(input): Json<Authentication>,
 ) -> Result<Response> {
-    check_login_budget(&app)?;
     let (user, session) = app
         .passkeys
         .authentication_finish(&app.accounts, input.challenge_id, input.response)

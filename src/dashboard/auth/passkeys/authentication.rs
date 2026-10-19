@@ -29,11 +29,12 @@ impl Passkeys {
         accounts: &Accounts,
         username: String,
     ) -> Result<AuthenticationChallenge> {
+        accounts.admit_login(&username)?;
         if username.is_empty() || username.len() > 64 {
             return Err(Error::Unauthorized);
         }
         let user = user::Entity::find()
-            .filter(user::Column::Username.eq(username))
+            .filter(user::Column::Username.eq(&username))
             .one(&accounts.db)
             .await?
             .ok_or(Error::Unauthorized)?;
@@ -63,7 +64,11 @@ impl Passkeys {
         let challenge_id = self.insert_pending(Pending {
             owner: user.id,
             expires_at: Instant::now() + CHALLENGE_TTL,
-            ceremony: Ceremony::Authentication { offered, state },
+            ceremony: Ceremony::Authentication {
+                username,
+                offered,
+                state,
+            },
         })?;
         Ok(AuthenticationChallenge {
             challenge_id,
@@ -78,9 +83,16 @@ impl Passkeys {
         response: PublicKeyCredential,
     ) -> Result<(user::Model, IssuedSession)> {
         let pending = self.take_pending(challenge_id)?;
-        let Ceremony::Authentication { offered, state } = pending.ceremony else {
+        let Ceremony::Authentication {
+            username,
+            offered,
+            state,
+        } = pending.ceremony
+        else {
             return Err(Error::Unauthorized);
         };
+        // An unknown challenge costs no verification work; a known one spends its user's budget.
+        accounts.admit_login(&username)?;
         let result = self
             .run_cpu(move |webauthn| {
                 webauthn

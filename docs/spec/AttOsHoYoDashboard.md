@@ -21,7 +21,7 @@ HoYoLAB連携・手動報酬受け取り・自動報酬受け取りは通常機�
 - 初回・再発行後の必須パスワード設定は新パスワード＋確認のみを入力し、ログイン時の仮パスワードを保持しない。`PUT /api/v1/me/password` の `current_password` は、ユーザー行lock下で再認証した最新アカウントが `must_change_password=true` の場合のみ省略（またはnull）できる。通常変更は正しい現在パスワードが必須で、明示した不正な値は必須設定時も拒否する。新パスワードは省略時も保存済みパスワードと異なる必要があり、確認入力はクライアントで照合してAPIには送らない。失効・期限切れセッションや競合でhash/必須flagが変わったsnapshotは拒否する。
 - mutationは同一Originを必須とし、`Origin` が `PUBLIC_ORIGIN` と完全一致しなければ拒否する。
 - JSON DTOは未知fieldを拒否する。エラーは安全な `error` code とsanitized `message` で返し、Cookie・パスワード・セッショントークン・上流raw messageを含めない。
-- ログイン入口は全体で毎分20リクエストに制限する。passkey CPU枠が満杯の場合は待機列を増やさず503を返す。
+- ログイン入口（パスワードログイン、passkey options/verify）は、入力されたユーザー名ごとに60秒あたり20回に制限し、超過時は429を返す。reverse proxy経由のためIPは使わない。passkey verifyはchallengeを発行したユーザー名の枠を使い、存在しないchallengeは枠を消費しない。ユーザー名として無効な入力は1つの枠を共有し、枠の表は上限1024件で期限切れ・最古の順に捨てる。全体のCPUはArgon2とpasskeyのworker上限（各4）で抑え、worker枠が満杯の場合は待機列を増やさず503を返す。
 
 ## 3. 初期設定と通常利用ゲート
 

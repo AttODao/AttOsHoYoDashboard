@@ -31,10 +31,7 @@ use axum::{
     routing::get,
 };
 use serde_json::json;
-use std::{
-    sync::{Arc, Mutex},
-    time::Instant,
-};
+use std::sync::Arc;
 
 type App = Arc<HttpState>;
 struct HttpState {
@@ -43,7 +40,6 @@ struct HttpState {
     cookies: Option<Arc<CookieStore>>,
     operations: super::hoyolab::operations::Operations,
     config: Config,
-    login_budget: Mutex<auth::LoginBudget>,
 }
 
 pub(super) async fn serve(accounts: Accounts, config: Config) -> Result<()> {
@@ -62,10 +58,6 @@ pub(super) async fn serve(accounts: Accounts, config: Config) -> Result<()> {
         cookies,
         operations,
         config,
-        login_budget: Mutex::new(auth::LoginBudget {
-            started: Instant::now(),
-            attempts: 0,
-        }),
     });
     if !tokio::fs::metadata(app.config.ui_dir.join("index.html"))
         .await

@@ -12,7 +12,7 @@ mod session;
 mod ui;
 mod users;
 
-use super::{App, CookieStore, HttpState, auth::LoginBudget, router, session::cookie_name};
+use super::{App, CookieStore, HttpState, router, session::cookie_name};
 use crate::dashboard::{
     auth::{accounts::Accounts, passkeys::Passkeys, sessions::Sessions},
     config::Config,
@@ -25,10 +25,7 @@ use axum::{
 use chrono::{Duration, FixedOffset, Utc};
 use sea_orm::DatabaseConnection;
 use serde_json::{Value, json};
-use std::{
-    sync::{Arc, Mutex},
-    time::Instant,
-};
+use std::sync::Arc;
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -64,10 +61,6 @@ fn app(accounts: Accounts) -> App {
         passkeys: Passkeys::new(&config.rp_id, &config.origin).unwrap(),
         accounts,
         config,
-        login_budget: Mutex::new(LoginBudget {
-            started: Instant::now(),
-            attempts: 0,
-        }),
     })
 }
 

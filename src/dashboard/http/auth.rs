@@ -1,12 +1,9 @@
-//! Password sign-in/change/sign-out payloads and a shared HTTP login budget.
+//! Password sign-in/change/sign-out payloads; the sign-in budget lives in `auth`.
 use super::{
-    App, HttpState,
+    App,
     session::{set_cookie, signed_in},
 };
-use crate::dashboard::{
-    auth::sessions::Identity,
-    error::{Error, Result},
-};
+use crate::dashboard::{auth::sessions::Identity, error::Result};
 use axum::{
     Json, Router,
     extract::{Extension, State},
@@ -15,15 +12,7 @@ use axum::{
     routing::{post, put},
 };
 use serde::Deserialize;
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
-
-pub(super) struct LoginBudget {
-    pub started: Instant,
-    pub attempts: u32,
-}
+use std::sync::Arc;
 
 pub(super) fn public_routes() -> Router<App> {
     Router::new().route("/api/v1/auth/login", post(login))
@@ -34,20 +23,6 @@ pub(super) fn protected_routes() -> Router<App> {
         .route("/api/v1/auth/logout", post(logout))
 }
 
-pub(super) fn check_login_budget(app: &HttpState) -> Result<()> {
-    // ponytail: global budget for the private app; use per-user/IP limits if usage grows.
-    let mut budget = app.login_budget.lock().map_err(|_| Error::Internal)?;
-    if budget.started.elapsed() >= Duration::from_secs(60) {
-        budget.started = Instant::now();
-        budget.attempts = 0;
-    }
-    if budget.attempts >= 20 {
-        return Err(Error::RateLimited);
-    }
-    budget.attempts += 1;
-    Ok(())
-}
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Login {
@@ -55,7 +30,6 @@ struct Login {
     password: String,
 }
 async fn login(State(app): State<App>, Json(input): Json<Login>) -> Result<Response> {
-    check_login_budget(&app)?;
     let (user, session) = app.accounts.login(input.username, input.password).await?;
     signed_in(&app, user, session)
 }
