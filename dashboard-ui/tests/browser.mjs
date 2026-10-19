@@ -22,7 +22,7 @@ let runPlan=['queued','running','success'];
 let verified=false,cookieSaved=false,statusMode=null,runProgress=[],passkeyDeletes=0,passkeys=[],credentialId,failLogout=false,allowLogin,allowSettings,expirePasswordSession=false,sessionExpired=false;
 const createdUsers=[];
 const secondAdmin={...user,id:uid(14),username:'synthetic-second-admin',must_change_password:false};
-let failCreate=false,adminDeletes=0,loginFailureStatus=0,failPatch=false,passkeyHold=null,releasePasskeys=()=>{};
+let failCreate=false,adminDeletes=0,loginFailureStatus=0,failPatch=false,passkeyHold=null,releasePasskeys=()=>{},adminPatchHold=null,releaseAdminPatch=()=>{};
 const rewardPatches=[];
 const avatarIcon='https://act-webstatic.hoyoverse.com/game_record/genshin/character_side_icon/synthetic.png';
 const itemIcon='https://act-upload.hoyolab.com/game_record/hkrpg/item_icon/synthetic.png';
@@ -100,7 +100,7 @@ const server=http.createServer(async(req,res)=>{
    if(p===`/api/v1/admin/users/${uid(12)}/temporary-password`){assert.equal(req.method,'PUT');assert.ok(validGenerated(body.temporary_password));res.writeHead(204);return res.end();}
    if(p===`/api/v1/admin/users/${other.id}`){
     assert.ok(actor===user);
-    if(req.method==='PATCH'){assert.deepEqual(body,{active:true});other.active=true;res.writeHead(204);return res.end();}
+    if(req.method==='PATCH'){if(adminPatchHold)await adminPatchHold;assert.deepEqual(body,{active:true});other.active=true;res.writeHead(204);return res.end();}
     assert.equal(req.method,'DELETE');assert.ok(body.confirmation===other.username);assert.ok(body.current_password==='synthetic-password-123');adminDeletes++;res.writeHead(202);return res.end();
    }
    if(p==='/api/v1/game-accounts')return json(res,accounts);
@@ -742,7 +742,19 @@ try{
  assert.ok(await page.locator('#admin-generated-password').evaluate(e=>/^[A-Za-z0-9_-]{24}$/.test(e.textContent)));
  await page.keyboard.press('Escape');assert.equal(await page.locator('#admin-generated-password').count(),0);
  const otherRow=page.getByRole('row').filter({has:page.getByRole('rowheader',{name:other.username,exact:true})});
- await otherRow.getByRole('button',{name:'Re-enable',exact:true}).click();await idle();
+ // Busy-locked controls keep their look; only unavailable ones use the dashed outline.
+ adminPatchHold=new Promise(resolve=>{releaseAdminPatch=resolve;});
+ await otherRow.getByRole('button',{name:'Re-enable',exact:true}).click();
+ await page.locator('fieldset.app-shell[aria-busy=true]').waitFor();
+ const lockedDelete=otherRow.getByRole('button',{name:'Delete user',exact:true});
+ assert.ok(await lockedDelete.isDisabled(),'busy shell locks every action');
+ assert.equal(await lockedDelete.getAttribute('disabled'),null,'busy lock comes from the fieldset, not the button');
+ const busyLook=await look(lockedDelete);
+ assert.equal(busyLook.border,'solid','busy-locked action is not styled as unavailable');
+ assert.notEqual(busyLook.background,'rgba(0, 0, 0, 0)','busy-locked action keeps its fill');
+ assert.equal(await lockedDelete.evaluate(e=>getComputedStyle(e).cursor),'progress');
+ assert.equal((await look(ownRow.getByRole('button',{name:'Delete user',exact:true}))).border,'dashed','unavailable action stays dashed while busy');
+ releaseAdminPatch();adminPatchHold=null;await idle();
  await otherRow.getByRole('button',{name:'Delete user',exact:true}).click();
  const deletion=page.locator('#admin-delete-'+other.id);
  await deletion.waitFor();await eyes(['admin-delete-password-'+other.id]);
@@ -808,4 +820,4 @@ try{
  const location=error.stack?.match(/browser\.mjs:\d+:\d+/)?.[0];
  console.error('Browser check failed:',JSON.stringify({stage,type:error.name,location,errors,failures,requests:Object.fromEntries(counts)}));
  process.exitCode=1;
-}finally{allowLogin();allowSettings();releasePasskeys();if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));}
+}finally{allowLogin();allowSettings();releasePasskeys();releaseAdminPatch();if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));}

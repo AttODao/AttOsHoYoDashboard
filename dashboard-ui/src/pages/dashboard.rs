@@ -153,7 +153,6 @@ fn GameStatusSection(mut state: Signal<AppState>, game: &'static str) -> Element
     });
     let accounts_loaded = snapshot.accounts.is_some();
     let accounts_failed = snapshot.accounts_error.is_some();
-    let busy = snapshot.busy;
     let loading = selection.loading && selection.generation == snapshot.generation;
     drop(snapshot);
     rsx! {
@@ -169,7 +168,7 @@ fn GameStatusSection(mut state: Signal<AppState>, game: &'static str) -> Element
             label { class: "uid-select", r#for: "selected-{game}",
                 span { {ui.text("dashboard.selected_uid")} }
                 select {
-                    id: "selected-{game}", value: selected.map(|id| id.to_string()).unwrap_or_default(), disabled: busy,
+                    id: "selected-{game}", value: selected.map(|id| id.to_string()).unwrap_or_default(),
                     onchange: move |event| {
                         if let Ok(id) = event.value().parse::<Uuid>() {
                             state.write().select_game_account(game, Some(id));
@@ -195,7 +194,7 @@ fn GameStatusSection(mut state: Signal<AppState>, game: &'static str) -> Element
                 }
             }
             button {
-                r#type: "button", disabled: busy || loading,
+                r#type: "button", disabled: loading, "aria-busy": loading,
                 onclick: move |_| { spawn_root(async move { load_game_status(state, game).await; }); },
                 if loading { {ui.text("dashboard.refreshing")} } else { {ui.text("dashboard.refresh")} }
             }
@@ -218,7 +217,6 @@ fn BonusSection(state: Signal<AppState>, game: &'static str) -> Element {
         .me
         .as_ref()
         .is_some_and(|me| me.capabilities.reward_posting_available);
-    let busy = snapshot.busy;
     drop(snapshot);
     rsx! {
         section { class: "bonus-section", "aria-labelledby": "bonus-title-{game}",
@@ -228,7 +226,7 @@ fn BonusSection(state: Signal<AppState>, game: &'static str) -> Element {
                     label { class: "switch",
                         input {
                             id: "automation-{game}", r#type: "checkbox", role: "switch", checked: setting.enabled,
-                            disabled: busy || rewards_error,
+                            disabled: rewards_error,
                             "aria-label": ui.format("dashboard.automation_label", &[("game", game_name(game, ui))]),
                             onchange: move |event| {
                                 let id = setting.id;

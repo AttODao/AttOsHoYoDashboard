@@ -49,7 +49,7 @@ fn AccountTable(state: Signal<AppState>) -> Element {
                         }
                         label { class: "checkbox-row", r#for: "account-visible-{account.id}",
                             input { id: "account-visible-{account.id}", r#type: "checkbox", checked: account.visible,
-                                disabled: state.read().busy || !state.read().ready(),
+                                disabled: !state.read().ready(),
                                 "aria-label": preferences.format("accounts.visible_label", &[("game", game_name(&account.game_kind, preferences)), ("uid", &account.game_uid)]),
                                 onchange: move |event| {
                                     let id = account.id;

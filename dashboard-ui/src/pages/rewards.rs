@@ -50,7 +50,7 @@ fn RewardSettingCard(state: Signal<AppState>, setting: RewardSetting) -> Element
         .me
         .as_ref()
         .is_some_and(|me| me.capabilities.reward_posting_available);
-    let disabled = state.read().busy || !state.read().ready() || !available;
+    let disabled = !state.read().ready() || !available;
     let can_run = !disabled
         && run_eligible(
             &setting.auth_status,
@@ -168,7 +168,7 @@ fn RewardHistory(state: Signal<AppState>) -> Element {
         section { class: "page-stack",
             div { class: "row",
                 h3 { {preferences.text("rewards.run_history_last_5_days")} }
-                Button { r#type: "button", variant: ButtonVariant::Secondary, disabled: state.read().busy, onclick: move |_| {
+                Button { r#type: "button", variant: ButtonVariant::Secondary, onclick: move |_| {
                     spawn_action(state, move |_| async move { load_rewards(state).await; });
                 }, {preferences.text("rewards.refresh")} }
             }

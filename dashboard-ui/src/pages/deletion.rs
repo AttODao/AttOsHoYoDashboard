@@ -29,8 +29,7 @@ pub(super) fn DeleteAccountCard(state: Signal<AppState>) -> Element {
         .unwrap_or_default();
     let mut password = use_signal(String::new);
     let mut confirmation = use_signal(String::new);
-    let disabled =
-        state.read().busy || !deletion_confirmed(&username, &confirmation(), &password());
+    let disabled = !deletion_confirmed(&username, &confirmation(), &password());
     rsx! {
         div { class: "form-stack",
             div { class: "notice error danger-note", id: "delete-consequences",
@@ -48,7 +47,7 @@ pub(super) fn DeleteAccountCard(state: Signal<AppState>) -> Element {
             div { class: "button-row",
                 Button { variant: ButtonVariant::Destructive, r#type: "button", disabled, aria_describedby: "delete-consequences", onclick: move |_| {
                     let current_username = state.read().me.as_ref().map(|me| me.username.clone()).unwrap_or_default();
-                    if !deletion_confirmed(&current_username, &confirmation(), &password()) { return; }
+                    if state.read().busy || !deletion_confirmed(&current_username, &confirmation(), &password()) { return; }
                     let pass = std::mem::take(&mut *password.write());
                     let confirm = confirmation();
                     spawn_action(state, move |generation| async move {

@@ -72,7 +72,7 @@ pub fn App() -> Element {
         document::Stylesheet { href: asset!("/assets/dx-components-theme.css") }
         document::Stylesheet { href: asset!("/assets/dashboard.css") }
         document::Link { rel: "license", href: asset!("/src/components/LICENSE-MIT") }
-        fieldset { class: "app-shell", disabled: state.read().busy, "aria-label": preferences.read().text("app.dashboard_actions"),
+        fieldset { class: "app-shell", disabled: state.read().busy, "aria-busy": state.read().busy, "aria-label": preferences.read().text("app.dashboard_actions"),
             if state.read().page == Page::Docs {
                 DocsPage { state }
             } else {

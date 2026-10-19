@@ -145,7 +145,7 @@ pub(super) fn PasswordCard(mut state: Signal<AppState>, title: &'static str) -> 
                     }
                 }
                 div { class: "auth-submit",
-                    Button { r#type: "submit", disabled: state.read().busy, {ui.text("auth.change_password")} }
+                    Button { r#type: "submit", {ui.text("auth.change_password")} }
                 }
             }
         }
@@ -208,7 +208,7 @@ pub(super) fn PasskeyCard(mut state: Signal<AppState>) -> Element {
                     input { id: "passkey-label", maxlength: "100", autocomplete: "off", value: "{label}", oninput: move |event| label.set(event.value()) }
                 }
                 div { class: "auth-submit",
-                    Button { variant: ButtonVariant::Secondary, r#type: "submit", disabled: state.read().busy, {ui.text("security.register_passkey")} }
+                    Button { variant: ButtonVariant::Secondary, r#type: "submit", {ui.text("security.register_passkey")} }
                 }
             }
             if let Some(passkey) = confirming() {
@@ -231,7 +231,7 @@ fn DeletePasskeyDialog(
             p { {ui.format("security.delete_passkey_consequences", &[("label", &passkey.label)])} }
             div { class: "actions",
                 Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| confirming.set(None), {ui.text("admin.cancel")} }
-                Button { variant: ButtonVariant::Destructive, r#type: "button", disabled: state.read().busy, onclick: move |_| {
+                Button { variant: ButtonVariant::Destructive, r#type: "button", onclick: move |_| {
                     confirming.set(None);
                     spawn_action(state, move |generation| async move {
                         match crate::api::send("DELETE", &format!("/me/passkeys/{id}"), None).await {

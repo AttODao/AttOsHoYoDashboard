@@ -79,6 +79,11 @@ devenvで整形・native／WASM Clippy・UI unit 38件・release build・通常�
 
 検証：devenvでUI unit、workspace／WASM Clippy、release build、通常／reduced-motionのブラウザ回帰を通過（カードの順序・残り時間・完了した派遣・段階表示の非操作性とaria-current・ログ欄の不在・無効ボタンのdark／light計算スタイルを追加検査）。HTTP UI境界テストも新しいフォント名で通過。Impeccable手動検査は指摘なし。ja／en・dark／light・375／800／1280をcaptureし、ログインエラー（「違います」）とCookieの説明が豆腐なしで描画されることを確認した。
 
+## 2026-10-19 操作中ロックと使えない操作の区別
+
+- 操作中はapp-shell fieldsetで全体をロックするため、破線の無効表示が操作のたびに全ボタンへ出ていた。各ボタンの`disabled`から`busy`を外し、ロックはfieldsetだけが担う（クリック時のbusy確認と`spawn_action`の予約は維持）。fieldsetに`aria-busy`を付け、自身の`disabled`属性を持たないロック中の操作は通常の見た目・`cursor: progress`・400ms後の軽い減光にした。破線枠は自身の`disabled`属性を持つ操作だけ。UIDの再取得ボタンは読み込み中に`aria-busy`を付け、同じくロック扱い。
+- 検証：ブラウザ回帰で、管理者操作の応答を保留した状態のロック中「ユーザー削除」が実線・塗りあり・progressカーソルで、自分の行の使えない「ユーザー削除」は破線のままであることを確認。
+
 ## 検証状況
 
 本番release bundleとlocal mockによるブラウザ検証を完了。

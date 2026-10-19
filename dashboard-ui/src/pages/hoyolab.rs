@@ -30,7 +30,7 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
         .as_ref()
         .map(|h| h.verification_available)
         .or_else(|| onboarding.as_ref().map(|o| o.verification_available));
-    let disabled = !cookie_action_allowed(password_ok, state.read().busy, available);
+    let disabled = !cookie_action_allowed(password_ok, available);
     let stored = hoyolab.as_ref().is_some_and(|h| h.id.is_some());
     let complete = hoyolab.as_ref().is_some_and(|h| h.setup_complete);
     let raw_status = hoyolab
@@ -73,7 +73,7 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
             }
             div { class: "button-row",
                 Button { variant: save_variant, r#type: "button", disabled: disabled || cookie().trim().is_empty(), onclick: move |_| {
-                    if disabled || !state.read().password_ok() || cookie().trim().is_empty() { return; }
+                    if disabled || state.read().busy || !state.read().password_ok() || cookie().trim().is_empty() { return; }
                     let secret = std::mem::take(&mut *cookie.write());
                     spawn_cookie_action(state, "PUT", "/me/hoyolab/cookie", json!({"cookie": secret}), "hoyolab.cookie_save_accepted");
                 }, {preferences.text("hoyolab.save")} }
@@ -157,8 +157,8 @@ fn spawn_cookie_action(
     });
 }
 
-fn cookie_action_allowed(password_ok: bool, busy: bool, available: Option<bool>) -> bool {
-    password_ok && !busy && available == Some(true)
+fn cookie_action_allowed(password_ok: bool, available: Option<bool>) -> bool {
+    password_ok && available == Some(true)
 }
 
 #[cfg(test)]
@@ -167,11 +167,10 @@ mod tests {
 
     #[test]
     fn cookie_actions_require_password_and_known_server_capability() {
-        assert!(cookie_action_allowed(true, false, Some(true)));
-        assert!(!cookie_action_allowed(false, false, Some(true)));
-        assert!(!cookie_action_allowed(true, true, Some(true)));
-        assert!(!cookie_action_allowed(true, false, Some(false)));
-        assert!(!cookie_action_allowed(true, false, None));
+        assert!(cookie_action_allowed(true, Some(true)));
+        assert!(!cookie_action_allowed(false, Some(true)));
+        assert!(!cookie_action_allowed(true, Some(false)));
+        assert!(!cookie_action_allowed(true, None));
     }
 
     #[test]

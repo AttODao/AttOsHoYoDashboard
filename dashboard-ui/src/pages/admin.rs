@@ -90,7 +90,7 @@ fn AdminCard(state: Signal<AppState>) -> Element {
                     Field { id: "admin-create-username", label: prefs.text("admin.username"),
                         input { id: "admin-create-username", autocomplete: "off", value: "{username}", oninput: move |event| username.set(event.value()) }
                     }
-                    Button { r#type: "button", disabled: state.read().busy || username.read().is_empty(), onclick: move |_| {
+                    Button { r#type: "button", disabled: username.read().is_empty(), onclick: move |_| {
                         if !is_admin(state) || state.read().busy { return; }
                         result.set(None);
                         let user = username.read().clone();
@@ -186,7 +186,7 @@ fn AdminUserRow(
             }
             td {
                 div { class: "actions admin-user-actions",
-                Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: state.read().busy || result.read().is_some(), onclick: move |_| {
+                Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: result.read().is_some(), onclick: move |_| {
                     if !is_admin(state) || state.read().busy { return; }
                     // Self-reissue revokes the session before its generated secret can be delivered.
                     if is_own_user(state, user.id) { set_page(state, Page::Security); return; }
@@ -211,7 +211,7 @@ fn AdminUserRow(
                         }
                     });
                 }, {if own_account { prefs.text("admin.change_password") } else { prefs.text("admin.reissue_password") }} }
-                Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: state.read().busy || (own_account && !last_admin), onclick: move |_| {
+                Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: own_account && !last_admin, onclick: move |_| {
                     if !guard_user_change(state, user.id) { return; }
                     let id = user.id;
                     let active = !user.active;
@@ -227,7 +227,7 @@ fn AdminUserRow(
                         }
                     });
                 }, {if user.active { prefs.text("admin.disable") } else { prefs.text("admin.re_enable") }} }
-                Button { variant: ButtonVariant::Destructive, r#type: "button", disabled: state.read().busy || (own_account && !last_admin), onclick: move |_| {
+                Button { variant: ButtonVariant::Destructive, r#type: "button", disabled: own_account && !last_admin, onclick: move |_| {
                     if guard_user_change(state, user.id) { deleting.set(true); }
                 }, {prefs.text("deletion.delete_user")} }
                 }
@@ -268,7 +268,7 @@ fn DeleteUserDialog(
             }
             div { class: "actions",
                 Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| { current.set(String::new()); confirmation.set(String::new()); deleting.set(false); }, {prefs.text("admin.cancel")} }
-                Button { variant: ButtonVariant::Destructive, r#type: "button", disabled: state.read().busy || current.read().is_empty() || *confirmation.read() != user.username, onclick: move |_| {
+                Button { variant: ButtonVariant::Destructive, r#type: "button", disabled: current.read().is_empty() || *confirmation.read() != user.username, onclick: move |_| {
                     if !guard_user_change(state, user.id) || current.read().is_empty() || *confirmation.read() != user.username { return; }
                     let pass = std::mem::take(&mut *current.write());
                     let confirm = std::mem::take(&mut *confirmation.write());

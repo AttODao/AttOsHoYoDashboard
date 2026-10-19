@@ -106,7 +106,7 @@ pub(in crate::app) fn LoginPage(mut state: Signal<AppState>) -> Element {
                         }
                     }
                     div { class: "auth-submit",
-                        Button { r#type: "submit", disabled: state.read().busy,
+                        Button { r#type: "submit",
                             {if *method.read() == LoginMethod::Password { ui.text("auth.sign_in") } else { ui.text("auth.use_passkey") }}
                         }
                     }
