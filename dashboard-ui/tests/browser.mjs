@@ -21,7 +21,7 @@ const other={...user,id:uid(9),username:'synthetic-other',is_admin:false,active:
 let verified=false,passkeys=[],credentialId,failLogout=false,allowLogin,allowSettings,expirePasswordSession=false,sessionExpired=false;
 const createdUsers=[];
 const secondAdmin={...user,id:uid(14),username:'synthetic-second-admin',must_change_password:false};
-let failCreate=false,adminDeletes=0,loginFailureStatus=0;
+let failCreate=false,adminDeletes=0,loginFailureStatus=0,passkeyHold=null,releasePasskeys=()=>{};
 const rewardPatches=[];
 const avatarIcon='https://act-webstatic.hoyoverse.com/game_record/genshin/character_side_icon/synthetic.png';
 const itemIcon='https://act-upload.hoyolab.com/game_record/hkrpg/item_icon/synthetic.png';
@@ -85,7 +85,7 @@ const server=http.createServer(async(req,res)=>{
     assert.equal(Buffer.from(body.response.rawId,'base64url').toString('base64url'),body.response.rawId);
     credentialId=body.response.rawId;passkeys=[{id:uid(11),label:'Synthetic browser key',created_at:new Date().toISOString()}];return json(res,{});
    }
-   if(p==='/api/v1/me/passkeys')return json(res,passkeys);
+   if(p==='/api/v1/me/passkeys'){if(passkeyHold)await passkeyHold;return json(res,passkeys);}
    if(p==='/api/v1/server-settings'){await settingsGate;return json(res,{timezone_offset:'+09:00',session_ttl_days:7});}
    if(p==='/api/v1/admin/users'){
     if(req.method==='POST'){assert.ok(actor===user);assert.ok(body.username==='synthetic-created');assert.ok(validGenerated(body.temporary_password),'24-character WebCrypto candidate');if(failCreate)return json(res,{error:'unavailable'},503);const created={...other,id:uid(12),username:body.username,must_change_password:true};createdUsers.push(created);return json(res,created,201);}
@@ -473,6 +473,16 @@ try{
  await cdp.send('WebAuthn.addVirtualAuthenticator',{options:{protocol:'ctap2',transport:'internal',hasResidentKey:true,hasUserVerification:true,isUserVerified:true,automaticPresenceSimulation:true}});
  await page.locator('#passkey-label').fill('Synthetic browser key');await button('Register passkey').click();await idle();
  await page.getByText(/Synthetic browser key — Created/).waitFor();
+ // A page load still in flight when an action starts must land: actions reserve
+ // the UI without invalidating the session's loads.
+ await page.goto(origin+'/settings/games');await page.locator('#settings-tab-uids[aria-selected=true]').waitFor();await idle();
+ passkeyHold=new Promise(resolve=>{releasePasskeys=resolve;});
+ const passkeyRead=page.waitForRequest(origin+'/api/v1/me/passkeys');
+ await page.locator('#settings-tab-security').click();await passkeyRead;
+ await change('wrong-synthetic-password');
+ await page.getByText('The current password was not accepted. Please try again.',{exact:true}).waitFor();
+ releasePasskeys();passkeyHold=null;
+ await page.getByText(/Synthetic browser key — Created/).waitFor();
  stage='admin';
  // Admin generated credentials: entropy failure and API failure never reveal a candidate.
  await menu('Administration');
@@ -602,4 +612,4 @@ try{
  const location=error.stack?.match(/browser\.mjs:\d+:\d+/)?.[0];
  console.error('Browser check failed:',JSON.stringify({stage,type:error.name,location,errors,failures,requests:Object.fromEntries(counts)}));
  process.exitCode=1;
-}finally{allowLogin();allowSettings();if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));}
+}finally{allowLogin();allowSettings();releasePasskeys();if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));}

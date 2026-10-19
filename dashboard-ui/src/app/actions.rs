@@ -3,6 +3,7 @@ use super::state::{AppState, generation_matches, set_status};
 use crate::api;
 use dioxus::prelude::*;
 use std::future::Future;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub(super) fn spawn_root(future: impl Future<Output = ()> + 'static) {
     dioxus::core::spawn_forever(future);
@@ -42,29 +43,36 @@ pub(super) async fn handle_password_error_for(
     }
 }
 
-// Reserve before scheduling: epochs cannot undo a browser's already-received Set-Cookie.
+// Reserve before scheduling so a second click cannot start a parallel mutation.
+// The reservation token is separate from the session generation: starting an
+// action must not discard in-flight page loads for the same session.
+static NEXT_ACTION: AtomicU64 = AtomicU64::new(1);
+
 pub(super) fn spawn_action<F: Future<Output = ()> + 'static>(
     state: Signal<AppState>,
     action: impl FnOnce(u64) -> F + 'static,
 ) {
-    let generation = {
+    let (generation, token) = {
         let mut state = state;
         let mut write = state.write();
         if write.busy {
             return;
         }
+        let token = NEXT_ACTION.fetch_add(1, Ordering::Relaxed);
         write.busy = true;
-        write.generation = write.generation.saturating_add(1);
-        write.generation
+        write.action = token;
+        (write.generation, token)
     };
     spawn_root(async move {
         action(generation).await;
-        finish_action(state, generation);
+        finish_action(state, token);
     });
 }
 
-fn finish_action(mut state: Signal<AppState>, generation: u64) {
-    if generation_matches(state, generation) {
+// Tokens are process-unique, so a stale action cannot release a later reservation
+// even after sign-out replaced the whole state.
+fn finish_action(mut state: Signal<AppState>, token: u64) {
+    if state.read().action == token {
         state.write().busy = false;
     }
 }
@@ -75,34 +83,47 @@ mod tests {
     use crate::app::state::Page;
 
     #[test]
-    fn action_reservation_and_completion_reject_stale_generations() {
+    fn action_reservation_keeps_the_session_generation_and_rejects_stale_tokens() {
         fn check() -> Element {
             let mut state = use_signal(|| AppState::new(Page::Dashboard));
+            state.write().generation = 4;
             spawn_action(state, |_| async {});
-            let generation = state.read().generation;
-            assert_eq!(generation, 1);
+            assert_eq!(
+                state.read().generation,
+                4,
+                "actions do not invalidate page loads"
+            );
             assert!(state.read().busy);
+            let token = state.read().action;
 
             spawn_action(state, |_| async {});
-            assert_eq!(state.read().generation, generation);
-            finish_action(state, generation - 1);
+            assert_eq!(
+                state.read().action,
+                token,
+                "busy rejects a second reservation"
+            );
+            finish_action(state, token - 1);
             assert!(state.read().busy);
-            handle_api_error_for(state, generation - 1, api::ApiError::browser("stale"));
+            handle_api_error_for(state, 3, api::ApiError::browser("stale"));
             let mut password_error = std::pin::pin!(handle_password_error_for(
                 state,
-                generation - 1,
+                3,
                 api::ApiError::browser("stale password confirmation"),
             ));
             let mut context = std::task::Context::from_waker(std::task::Waker::noop());
             assert!(password_error.as_mut().poll(&mut context).is_ready());
             assert!(state.read().status.is_none());
 
-            finish_action(state, generation);
+            finish_action(state, token);
             assert!(!state.read().busy);
-            state.write().generation += 1;
-            state.write().busy = true;
-            finish_action(state, generation);
-            assert!(state.read().busy);
+            spawn_action(state, |_| async {});
+            let next = state.read().action;
+            assert_ne!(next, token);
+            finish_action(state, token);
+            assert!(
+                state.read().busy,
+                "an older action cannot release a newer one"
+            );
             rsx! {}
         }
 

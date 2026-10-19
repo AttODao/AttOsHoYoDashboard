@@ -53,7 +53,10 @@ pub(super) struct AccountStatusEntry {
 #[derive(Clone, PartialEq)]
 pub(super) struct AppState {
     pub(super) phase: Phase,
+    /// Session epoch: changes on bootstrap, sign-out and owner change only.
     pub(super) generation: u64,
+    /// Token of the action holding `busy`; see `actions::spawn_action`.
+    pub(super) action: u64,
     pub(super) page: Page,
     pub(super) me: Option<MeView>,
     pub(super) status: Option<StatusLine>,
@@ -84,6 +87,7 @@ impl AppState {
         Self {
             phase: Phase::Loading,
             generation: 0,
+            action: 0,
             page,
             me: None,
             status: None,
