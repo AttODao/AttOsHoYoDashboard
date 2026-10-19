@@ -136,13 +136,6 @@ fn AdminCard(state: Signal<AppState>) -> Element {
                     }
                 }
             }
-            Card {
-                CardHeader { CardTitle { {prefs.text("admin.logs")} } }
-                CardContent {
-                    p { class: "muted", {prefs.text("admin.api_unavailable")} }
-                    Button { r#type: "button", disabled: true, {prefs.text("admin.load_logs")} }
-                }
-            }
             if result.read().as_ref().is_some_and(|value| value.generation == generation) {
                 CredentialDialog { state, result }
             }
