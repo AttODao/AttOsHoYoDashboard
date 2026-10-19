@@ -26,9 +26,11 @@ pub(super) async fn boundary(State(app): State<App>, request: Request, next: Nex
 }
 
 pub(super) fn harden(mut response: Response) -> Response {
+    // Successful `/assets` responses choose their own cache policy (see `ui.rs`).
     response
         .headers_mut()
-        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        .entry(header::CACHE_CONTROL)
+        .or_insert(HeaderValue::from_static("no-store"));
     response.headers_mut().insert(
         "x-content-type-options",
         HeaderValue::from_static("nosniff"),

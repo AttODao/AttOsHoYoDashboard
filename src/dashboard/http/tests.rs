@@ -91,8 +91,12 @@ fn request(method: &str, path: &str, cookie: Option<&str>, body: Option<Value>) 
 }
 
 async fn call(app: &App, request: Request<Body>) -> Response {
+    let asset = request.uri().path().starts_with("/assets/");
     let response = router(app.clone()).oneshot(request).await.unwrap();
-    assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+    // Successful compiled assets carry their own policy, checked in `tests/ui.rs`.
+    if !(asset && response.status().is_success()) {
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+    }
     assert_eq!(response.headers()["x-content-type-options"], "nosniff");
     response
 }

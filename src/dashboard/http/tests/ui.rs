@@ -19,6 +19,12 @@ pub(super) async fn fixture() -> (Bundle, App) {
         ("assets/app.js", b"export function boot() {}"),
         ("assets/style.css", b"body{color:black}"),
         ("assets/app.wasm", b"\0asm\x01\0\0\0"),
+        (
+            "assets/app-dxh2bdb9778a3bf3b39.js",
+            b"export function boot() {}",
+        ),
+        ("assets/app_bg-dxh1ccc56b941a84aa.wasm", b"\0asm\x01\0\0\0"),
+        ("assets/font-293812b054e0.woff2", b"wOF2synthetic"),
         ("private.txt", b"synthetic-private-marker"),
     ] {
         std::fs::write(bundle.0.join(path), content).unwrap();
@@ -45,6 +51,9 @@ async fn compiled_assets_are_public_local_and_hardened() {
         ("/assets/app.js", "text/javascript"),
         ("/assets/style.css", "text/css"),
         ("/assets/app.wasm", "application/wasm"),
+        ("/assets/app-dxh2bdb9778a3bf3b39.js", "text/javascript"),
+        ("/assets/app_bg-dxh1ccc56b941a84aa.wasm", "application/wasm"),
+        ("/assets/font-293812b054e0.woff2", "font/woff2"),
         ("/openapi.json", "application/json"),
     ] {
         // Public GETs need neither an Origin nor a session cookie.
@@ -57,6 +66,15 @@ async fn compiled_assets_are_public_local_and_hardened() {
                 .unwrap()
                 .starts_with(content_type)
         );
+        // Only content-fingerprinted asset names are cached for good; others revalidate.
+        let cache = if !path.starts_with("/assets/") {
+            "no-store"
+        } else if path.contains("-dxh") || path.contains("-293812b054e0") {
+            "public, max-age=31536000, immutable"
+        } else {
+            "no-cache"
+        };
+        assert_eq!(response.headers()[header::CACHE_CONTROL], cache, "{path}");
         if content_type == "text/html" {
             assert_eq!(
                 response.headers()[header::CONTENT_SECURITY_POLICY],
@@ -151,4 +169,30 @@ async fn missing_bundle_returns_hardened_unavailable_without_breaking_api_routes
         "unauthorized",
     )
     .await;
+}
+
+#[test]
+fn dx_and_font_fingerprints_are_recognized_from_real_bundle_names() {
+    use super::super::ui::fingerprinted;
+    for name in [
+        "attos-dashboard-ui-dxh2bdb9778a3bf3b39.js",
+        "attos-dashboard-ui_bg-dxhddaf8fab04e538.wasm",
+        "dashboard-dxh1ccc56b941a84aa.css",
+        "favicon-dxh35b6a291bc41547.png",
+        "LICENSE-MIT-dxh882daef2a2aa2d7a",
+        "noto-sans-jp-OFL-dxh9f25b8d1c04b62b2.txt",
+        "noto-sans-jp-293812b054e0.woff2",
+        "orbitron-4354932df8f5.woff2",
+    ] {
+        assert!(fingerprinted(&format!("/assets/{name}")), "{name}");
+    }
+    for name in [
+        "app.js",
+        "noto-sans-jp-OFL.txt",
+        "focus-trap.js",
+        "app-dxh.js",
+        "site-cafe.css",
+    ] {
+        assert!(!fingerprinted(&format!("/assets/{name}")), "{name}");
+    }
 }
