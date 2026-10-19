@@ -1,6 +1,7 @@
 use super::common::{game_name, reset_checked};
 use crate::app::actions::{handle_api_error_for, spawn_action};
 use crate::app::data::load_accounts;
+use crate::app::display::datetime_text;
 use crate::app::preferences::use_preferences;
 use crate::app::state::{AppState, generation_matches, set_status};
 use dioxus::prelude::*;
@@ -42,13 +43,14 @@ fn AccountTable(state: Signal<AppState>) -> Element {
                             p {
                                 {preferences.text("accounts.detected")} " · "
                                 {if account.detected { preferences.text("accounts.yes") } else { preferences.text("accounts.no") }}
-                                " · " {preferences.text("accounts.last_detected")} " · {account.last_detected_at}"
+                                " · " {preferences.text("accounts.last_detected")} " · "
+                                time { datetime: "{account.last_detected_at}", {datetime_text(Some(&account.last_detected_at), preferences)} }
                             }
                         }
                         label { class: "checkbox-row", r#for: "account-visible-{account.id}",
                             input { id: "account-visible-{account.id}", r#type: "checkbox", checked: account.visible,
                                 disabled: state.read().busy || !state.read().ready(),
-                                "aria-label": preferences.format("accounts.visible_label", &[("game", &account.game_kind), ("uid", &account.game_uid)]),
+                                "aria-label": preferences.format("accounts.visible_label", &[("game", game_name(&account.game_kind, preferences)), ("uid", &account.game_uid)]),
                                 onchange: move |event| {
                                     let id = account.id;
                                     let visible = event.checked();

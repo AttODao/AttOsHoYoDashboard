@@ -285,6 +285,17 @@
   "docs.unknown_version": "不明",
   "docs.path": "パス",
   "docs.methods": "メソッド",
+  "errors.network": "HoYoLABに接続できませんでした",
+  "errors.upstream_unavailable": "HoYoLABが一時的に応答していません",
+  "errors.rate_limited": "HoYoLABへのリクエストが多すぎます。しばらく待ってください",
+  "errors.upstream_rejected": "HoYoLABがリクエストを受け付けませんでした",
+  "errors.upstream_data": "HoYoLABの応答を読み取れませんでした",
+  "errors.cookie_invalid": "Cookieが無効か期限切れです。HoYoLAB連携から再登録してください",
+  "errors.record_private": "HoYoLABの戦績が非公開になっています",
+  "errors.action_required": "HoYoLABで追加の確認が必要です",
+  "errors.unknown": "原因不明のエラー",
+  "dashboard.error_code": "エラーコード",
+  "dashboard.other_game": "その他のゲーム",
   "app.title": "AHD",
   "messages.unavailable": "メッセージを表示できません。"
 }

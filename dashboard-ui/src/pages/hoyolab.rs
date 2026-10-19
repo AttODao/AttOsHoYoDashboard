@@ -1,5 +1,6 @@
 use super::common::{Field, Metric};
 use crate::app::actions::{handle_api_error_for, spawn_action};
+use crate::app::display::datetime_text;
 use crate::app::preferences::use_preferences;
 use crate::app::session::refresh_gate;
 use crate::app::state::{AppState, generation_matches, set_status};
@@ -43,7 +44,7 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
         Some("cookie_invalid" | "invalid") => preferences.text("dashboard.invalid"),
         Some("unreadable") => preferences.text("hoyolab.unreadable"),
         Some("storage_unavailable") => preferences.text("hoyolab.storage_unavailable"),
-        Some(other) => other,
+        Some(_) => preferences.text("dashboard.unknown"),
         None => preferences.text("hoyolab.not_loaded"),
     }
     .to_owned();
@@ -59,7 +60,7 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
                     Some(false) => preferences.text("hoyolab.unavailable"),
                     None => preferences.text("hoyolab.not_loaded"),
                 }.to_owned() }
-                Metric { label: preferences.text("hoyolab.updated"), value: hoyolab.as_ref().and_then(|h| h.updated_at.clone()).unwrap_or_else(|| preferences.text("hoyolab.not_reported").to_owned()) }
+                Metric { label: preferences.text("hoyolab.updated"), value: datetime_text(hoyolab.as_ref().and_then(|h| h.updated_at.as_deref()), preferences) }
             }
             Field { id: "hoyolab-cookie", label: preferences.text("hoyolab.cookie"),
                 textarea { id: "hoyolab-cookie", autocomplete: "off", disabled, value: "{cookie}", oninput: move |event| cookie.set(event.value()) }

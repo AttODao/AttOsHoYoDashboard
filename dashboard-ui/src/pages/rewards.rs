@@ -1,6 +1,7 @@
 use super::common::{Field, Metric, game_name};
 use crate::app::actions::{handle_api_error_for, spawn_action};
 use crate::app::data::{load_rewards, save_reward_setting};
+use crate::app::display::{datetime_text, error_text};
 use crate::app::preferences::use_preferences;
 use crate::app::state::{AppState, generation_matches, set_status};
 use crate::components::{Button, ButtonVariant};
@@ -60,7 +61,6 @@ fn RewardSettingCard(state: Signal<AppState>, setting: RewardSetting) -> Element
         .map(|server| server.timezone_offset.clone());
     let game = game_name(&setting.game_kind, preferences).to_owned();
     let label = |value: &str| reward_label(value, preferences);
-    let missing = preferences.text("hoyolab.not_reported");
     rsx! {
         div { class: "form-stack",
             h3 { "{game}" }
@@ -95,11 +95,11 @@ fn RewardSettingCard(state: Signal<AppState>, setting: RewardSetting) -> Element
                 Metric { label: preferences.text("rewards.automatic_claim"), value: (if setting.enabled { preferences.text("rewards.on") } else { preferences.text("rewards.off") }).to_owned() }
                 Metric { label: preferences.text("dashboard.auth_status"), value: label(&setting.auth_status) }
                 Metric { label: preferences.text("rewards.reward_status"), value: match setting.is_sign { Some(true) => preferences.text("dashboard.received"), Some(false) => preferences.text("dashboard.not_received"), None => preferences.text("dashboard.not_fetched") }.to_owned() }
-                Metric { label: preferences.text("dashboard.checked"), value: setting.last_checked_at.clone().unwrap_or_else(|| missing.to_owned()) }
-                Metric { label: preferences.text("dashboard.next_run"), value: setting.next_run_at.clone().unwrap_or_else(|| missing.to_owned()) }
+                Metric { label: preferences.text("dashboard.checked"), value: datetime_text(setting.last_checked_at.as_deref(), preferences) }
+                Metric { label: preferences.text("dashboard.next_run"), value: datetime_text(setting.next_run_at.as_deref(), preferences) }
                 Metric { label: preferences.text("rewards.last_run"), value: setting.last_run.as_ref().map(|run| label(&run.state)).unwrap_or_else(|| preferences.text("rewards.never").to_owned()) }
-                Metric { label: preferences.text("dashboard.error"), value: setting.error_code.clone().unwrap_or_else(|| preferences.text("dashboard.none").to_owned()) }
-                Metric { label: preferences.text("rewards.error_time"), value: setting.error_at.clone().unwrap_or_else(|| missing.to_owned()) }
+                Metric { label: preferences.text("dashboard.error"), value: error_text(setting.error_code.as_deref(), preferences).to_owned() }
+                Metric { label: preferences.text("rewards.error_time"), value: datetime_text(setting.error_at.as_deref(), preferences) }
             }
             div { class: "button-row",
                 Button { r#type: "button", disabled: disabled || parts.is_none(), onclick: move |_| {
@@ -160,12 +160,12 @@ fn RewardHistory(state: Signal<AppState>) -> Element {
                             " · " {reward_label(&run.state, preferences)}
                             " · " {reward_label(&run.trigger, preferences)}
                         }
-                        time { "{run.created_at}" }
-                        span { {preferences.text("rewards.ended")} " · " {run.ended_at.as_deref().unwrap_or(preferences.text("hoyolab.not_reported"))} }
+                        time { datetime: "{run.created_at}", {datetime_text(Some(&run.created_at), preferences)} }
+                        span { {preferences.text("rewards.ended")} " · " {datetime_text(run.ended_at.as_deref(), preferences)} }
                         span { {preferences.text("rewards.attempts")} " · {run.attempt_count}" }
                         for attempt in &run.attempts {
                             div { "{attempt.number} · " {reward_label(&attempt.outcome, preferences)}
-                                if let Some(error) = &attempt.error_code { " · {error}" }
+                                if attempt.error_code.is_some() { " · " {error_text(attempt.error_code.as_deref(), preferences)} }
                             }
                         }
                     }
@@ -218,7 +218,7 @@ fn reward_label(value: &str, preferences: crate::app::preferences::Preferences) 
         "manual" => preferences.text("rewards.manual"),
         "scheduled" => preferences.text("rewards.scheduled"),
         "catchup" => preferences.text("rewards.catch_up"),
-        other => return other.to_owned(),
+        _ => preferences.text("dashboard.unknown"),
     }
     .to_owned()
 }
@@ -253,5 +253,16 @@ mod tests {
         }
         assert!(!run_eligible("action_required", None));
         assert!(!run_eligible("", None));
+    }
+
+    #[test]
+    fn unknown_run_states_use_a_localized_fallback_not_the_raw_value() {
+        let ui = crate::app::preferences::Preferences::default();
+        assert_eq!(reward_label("success", ui), ui.text("rewards.success"));
+        assert_eq!(reward_label("manual", ui), ui.text("rewards.manual"));
+        assert_eq!(
+            reward_label("synthetic_state", ui),
+            ui.text("dashboard.unknown")
+        );
     }
 }

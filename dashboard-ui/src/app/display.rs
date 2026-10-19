@@ -49,9 +49,75 @@ pub(super) fn compact_datetime(value: Option<&str>) -> Option<String> {
     }
 }
 
+/// Compact local datetime for display, or the shared "not fetched" placeholder.
+/// Absent and unparseable values never fall back to the raw ISO string.
+pub(super) fn datetime_text(value: Option<&str>, ui: Preferences) -> String {
+    compact_datetime(value).unwrap_or_else(|| ui.text("dashboard.not_reported").to_owned())
+}
+
+/// Catalog key for a backend `error_code` (see `hoyolab::gateway::error_code`).
+/// Unknown codes get a generic message; raw codes stay in technical details only.
+pub(super) fn error_message_key(code: &str) -> &'static str {
+    match code {
+        "network" => "errors.network",
+        "upstream_data" => "errors.upstream_data",
+        "action_required" => "errors.action_required",
+        // Mirrors `gateway::cookie_invalid` and the private-record code.
+        "upstream:-100" | "upstream:10001" | "upstream:-1071" => "errors.cookie_invalid",
+        "upstream:10102" => "errors.record_private",
+        "http:429" => "errors.rate_limited",
+        _ if code.starts_with("http:5") => "errors.upstream_unavailable",
+        _ if code.starts_with("http:") || code.starts_with("upstream:") => {
+            "errors.upstream_rejected"
+        }
+        _ => "errors.unknown",
+    }
+}
+
+/// Localized error text, or "None" when the backend reported no error.
+pub(super) fn error_text(code: Option<&str>, ui: Preferences) -> &'static str {
+    code.map_or(ui.text("dashboard.none"), |code| {
+        ui.text(error_message_key(code))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn backend_error_codes_map_to_messages_without_echoing_the_code() {
+        for (code, key) in [
+            ("network", "errors.network"),
+            ("upstream_data", "errors.upstream_data"),
+            ("action_required", "errors.action_required"),
+            ("upstream:-100", "errors.cookie_invalid"),
+            ("upstream:10001", "errors.cookie_invalid"),
+            ("upstream:-1071", "errors.cookie_invalid"),
+            ("upstream:10102", "errors.record_private"),
+            ("http:429", "errors.rate_limited"),
+            ("http:503", "errors.upstream_unavailable"),
+            ("http:404", "errors.upstream_rejected"),
+            ("upstream:-1", "errors.upstream_rejected"),
+            ("upstream_unavailable", "errors.unknown"),
+            ("", "errors.unknown"),
+        ] {
+            assert_eq!(error_message_key(code), key, "{code}");
+        }
+        let ui = Preferences::default();
+        assert_eq!(error_text(None, ui), ui.text("dashboard.none"));
+        let unknown = error_text(Some("synthetic_code"), ui);
+        assert!(!unknown.contains("synthetic_code"));
+        assert_eq!(unknown, ui.text("errors.unknown"));
+    }
+
+    #[test]
+    fn unparseable_datetimes_use_the_placeholder_not_the_raw_value() {
+        let ui = Preferences::default();
+        assert_eq!(datetime_text(None, ui), "未取得");
+        // Native tests have no JS Date; the browser check covers real formatting.
+        assert!(!datetime_text(Some("2026-10-17T12:38:00Z"), ui).contains('T'));
+    }
 
     #[test]
     fn absent_datetimes_do_not_invent_estimates() {

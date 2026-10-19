@@ -285,6 +285,17 @@
   "docs.unknown_version": "unknown",
   "docs.path": "Path",
   "docs.methods": "Methods",
+  "errors.network": "Could not reach HoYoLAB",
+  "errors.upstream_unavailable": "HoYoLAB is temporarily unavailable",
+  "errors.rate_limited": "Too many requests to HoYoLAB; wait a while",
+  "errors.upstream_rejected": "HoYoLAB rejected the request",
+  "errors.upstream_data": "Could not read the HoYoLAB response",
+  "errors.cookie_invalid": "The cookie is invalid or expired; register it again under HoYoLAB link",
+  "errors.record_private": "The HoYoLAB battle record is private",
+  "errors.action_required": "HoYoLAB requires additional verification",
+  "errors.unknown": "Unknown error",
+  "dashboard.error_code": "Error code",
+  "dashboard.other_game": "Other game",
   "app.title": "AHD",
   "messages.unavailable": "Message unavailable."
 }

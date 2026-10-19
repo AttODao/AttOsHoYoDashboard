@@ -1,7 +1,7 @@
 use super::common::{Icon, Metric, focus_element, game_name, reset_checked};
 use crate::app::actions::{spawn_action, spawn_root};
 use crate::app::data::{load_game_status, save_reward_setting};
-use crate::app::display::{compact_datetime, count_pair, hours_minutes};
+use crate::app::display::{compact_datetime, count_pair, datetime_text, error_text, hours_minutes};
 use crate::app::preferences::{Preferences, use_preferences};
 use crate::app::state::{AppState, DASHBOARD_GAMES, Page, set_page};
 use crate::models::{DailySummary, Expedition, GameStatus};
@@ -199,8 +199,8 @@ fn GamePanel(
                         if setting.auth_status == "action_required" {
                             " · " {model_status(&setting.auth_status, ui)}
                         }
-                        if let Some(code) = &setting.error_code {
-                            " · " {ui.text("dashboard.error")} ": {code}"
+                        if setting.error_code.is_some() {
+                            " · " {ui.text("dashboard.error")} ": " {error_text(setting.error_code.as_deref(), ui)}
                         }
                     }
                     dl { class: "metrics",
@@ -209,7 +209,7 @@ fn GamePanel(
                     Metric { label: ui.text("dashboard.checked"), value: date(&setting.last_checked_at, ui) }
                     Metric { label: ui.text("dashboard.next_run"), value: date(&setting.next_run_at, ui) }
                     Metric { label: ui.text("dashboard.last_run_state"), value: setting.last_run.as_ref().map(|run| model_status(&run.state, ui).to_owned()).unwrap_or_else(|| ui.text("dashboard.never_run").to_owned()) }
-                    Metric { label: ui.text("dashboard.bonus_error"), value: setting.error_code.clone().unwrap_or_else(|| ui.text("dashboard.none").to_owned()) }
+                    Metric { label: ui.text("dashboard.bonus_error"), value: error_text(setting.error_code.as_deref(), ui).to_owned() }
                     Metric { label: ui.text("dashboard.error_at"), value: date(&setting.error_at, ui) }
                     }
                 }
@@ -300,7 +300,7 @@ fn GameStatusCard(status: GameStatus) -> Element {
             details { class: "status-details",
                 summary {
                     {ui.text("dashboard.data_details")}
-                    if let Some(code) = &status.error_code { " · {code}" }
+                    if status.error_code.is_some() { " · " {error_text(status.error_code.as_deref(), ui)} }
                 }
                 dl { class: "metrics status-metadata",
                     Metric { label: ui.text("dashboard.uid"), value: if status.game_uid.is_empty() { ui.text("dashboard.missing").to_owned() } else { status.game_uid.clone() } }
@@ -309,7 +309,10 @@ fn GameStatusCard(status: GameStatus) -> Element {
                     Metric { label: ui.text("dashboard.stale"), value: yes_no(status.stale) }
                     Metric { label: ui.text("dashboard.visible"), value: yes_no(status.visible) }
                     Metric { label: ui.text("dashboard.detected"), value: yes_no(status.detected) }
-                    Metric { label: ui.text("dashboard.error"), value: status.error_code.clone().unwrap_or_else(|| ui.text("dashboard.none").to_owned()) }
+                    Metric { label: ui.text("dashboard.error"), value: error_text(status.error_code.as_deref(), ui).to_owned() }
+                    if let Some(code) = &status.error_code {
+                        Metric { label: ui.text("dashboard.error_code"), value: code.clone() }
+                    }
                     Metric { label: ui.text("dashboard.error_at"), value: date(&status.error_at, ui) }
                 }
             }
@@ -434,9 +437,7 @@ fn pair(current: Option<i64>, maximum: Option<i64>, ui: Preferences) -> String {
 }
 
 fn date(value: &Option<String>, ui: Preferences) -> String {
-    value
-        .clone()
-        .unwrap_or_else(|| ui.text("dashboard.not_reported").to_owned())
+    datetime_text(value.as_deref(), ui)
 }
 
 fn received(value: Option<bool>, ui: Preferences) -> &'static str {
@@ -447,7 +448,7 @@ fn received(value: Option<bool>, ui: Preferences) -> &'static str {
     }
 }
 
-fn model_status(value: &str, ui: Preferences) -> &str {
+fn model_status(value: &str, ui: Preferences) -> &'static str {
     match value {
         "pending" | "queued" => ui.text("dashboard.queued_completion_unconfirmed"),
         "running" => ui.text("dashboard.running"),
@@ -464,7 +465,7 @@ fn model_status(value: &str, ui: Preferences) -> &str {
         "invalid" => ui.text("dashboard.invalid"),
         "Ongoing" => ui.text("dashboard.ongoing"),
         "Finished" => ui.text("dashboard.finished"),
-        other => other,
+        _ => ui.text("dashboard.unknown"),
     }
 }
 

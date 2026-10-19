@@ -1,6 +1,7 @@
 use super::common::{Field, Metric, PasswordInput};
 use crate::app::actions::{handle_api_error_for, handle_password_error_for, spawn_action};
 use crate::app::data::load_passkeys;
+use crate::app::display::datetime_text;
 use crate::app::preferences::use_preferences;
 use crate::app::session::refresh_gate;
 use crate::app::state::{AppState, generation_matches, set_status};
@@ -128,7 +129,9 @@ pub(super) fn PasskeyCard(mut state: Signal<AppState>) -> Element {
                 ul { class: "item-list",
                     for passkey in passkeys {
                         li {
-                            span { "{passkey.label} — " {ui.text("security.created")} " {passkey.created_at}" }
+                            span { "{passkey.label} — " {ui.text("security.created")} " "
+                                time { datetime: "{passkey.created_at}", {datetime_text(Some(&passkey.created_at), ui)} }
+                            }
                             Button { variant: ButtonVariant::Destructive, r#type: "button", onclick: move |_| {
                                 let id = passkey.id;
                                 spawn_action(state, move |generation| async move {

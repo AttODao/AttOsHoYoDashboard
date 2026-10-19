@@ -1,12 +1,12 @@
 use crate::app::preferences::{Preferences, use_preferences};
 use dioxus::prelude::*;
 
-/// Localized title for a backend `game_kind`; unknown kinds are shown as sent.
-pub(super) fn game_name(game: &str, ui: Preferences) -> &str {
+/// Localized title for a backend `game_kind`; unknown kinds get a generic name.
+pub(super) fn game_name(game: &str, ui: Preferences) -> &'static str {
     match game {
         "genshin" => ui.text("dashboard.genshin_impact"),
         "starrail" => ui.text("dashboard.honkai_star_rail"),
-        other => other,
+        _ => ui.text("dashboard.other_game"),
     }
 }
 
@@ -367,7 +367,7 @@ mod tests {
     use super::{Preferences, game_name, outside_bounds};
 
     #[test]
-    fn game_names_are_localized_and_unknown_kinds_pass_through() {
+    fn game_names_are_localized_and_unknown_kinds_get_a_generic_name() {
         let ui = Preferences::default();
         assert_eq!(
             game_name("genshin", ui),
@@ -377,7 +377,7 @@ mod tests {
             game_name("starrail", ui),
             ui.text("dashboard.honkai_star_rail")
         );
-        assert_eq!(game_name("zzz", ui), "zzz");
+        assert_eq!(game_name("zzz", ui), ui.text("dashboard.other_game"));
     }
 
     #[test]
