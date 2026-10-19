@@ -57,16 +57,64 @@ pub(super) async fn load_dashboard_data(state: Signal<AppState>, include_account
     load_rewards(state).await;
 }
 
-// Session-scoped GET: a reply for an older session (or a lost gate) is dropped
-// and a 401 signs out; otherwise the caller gets the value or a message key.
+/// Resources refreshed by overlapping loads (page entry, polling and the
+/// refresh after an action). Game status has its own per-game request guard.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Resource {
+    Hoyolab,
+    Accounts,
+    Rewards,
+    RewardRuns,
+    Passkeys,
+    ServerSettings,
+    AdminUsers,
+}
+
+const RESOURCES: usize = Resource::AdminUsers as usize + 1;
+
+/// Latest request issued per resource. Actions keep the session generation, so
+/// an older in-flight GET may finish after a newer refresh; only the reply to the
+/// latest request for a resource may be applied.
+struct RequestSequence {
+    next: AtomicU64,
+    latest: [AtomicU64; RESOURCES],
+}
+
+impl RequestSequence {
+    const fn new() -> Self {
+        Self {
+            next: AtomicU64::new(1),
+            latest: [const { AtomicU64::new(0) }; RESOURCES],
+        }
+    }
+
+    fn issue(&self, resource: Resource) -> u64 {
+        let ticket = self.next.fetch_add(1, Ordering::Relaxed);
+        self.latest[resource as usize].store(ticket, Ordering::Relaxed);
+        ticket
+    }
+
+    fn is_latest(&self, resource: Resource, ticket: u64) -> bool {
+        self.latest[resource as usize].load(Ordering::Relaxed) == ticket
+    }
+}
+
+// Tickets are process-unique, so they stay ordered across sign-out and state resets.
+static REQUESTS: RequestSequence = RequestSequence::new();
+
+// Session-scoped GET: a reply for an older session (or a lost gate), or one
+// superseded by a newer request for the same resource, is dropped and a 401
+// signs out; otherwise the caller gets the value or a message key.
 async fn fetch_current<T: DeserializeOwned>(
     state: Signal<AppState>,
+    resource: Resource,
     path: &str,
     generation: u64,
     current: fn(Signal<AppState>, u64) -> bool,
 ) -> Option<Result<T, &'static str>> {
+    let ticket = REQUESTS.issue(resource);
     let result = api::get::<T>(path).await;
-    if !current(state, generation) {
+    if !current(state, generation) || !REQUESTS.is_latest(resource, ticket) {
         return None;
     }
     match result {
@@ -83,8 +131,14 @@ pub(super) async fn load_hoyolab(mut state: Signal<AppState>) {
     let Some(generation) = signed_in_generation(state) else {
         return;
     };
-    let Some(result) =
-        fetch_current::<CookieStatus>(state, "/me/hoyolab", generation, current_generation).await
+    let Some(result) = fetch_current::<CookieStatus>(
+        state,
+        Resource::Hoyolab,
+        "/me/hoyolab",
+        generation,
+        current_generation,
+    )
+    .await
     else {
         return;
     };
@@ -107,6 +161,7 @@ pub(super) async fn load_accounts(mut state: Signal<AppState>) {
     };
     let Some(result) = fetch_current::<Vec<GameAccount>>(
         state,
+        Resource::Accounts,
         "/game-accounts",
         generation,
         current_ready_generation,
@@ -253,6 +308,7 @@ pub(super) async fn load_rewards(mut state: Signal<AppState>) {
     };
     let Some(result) = fetch_current::<Vec<RewardSetting>>(
         state,
+        Resource::Rewards,
         "/reward-settings",
         generation,
         current_ready_generation,
@@ -276,6 +332,7 @@ pub(super) async fn load_rewards(mut state: Signal<AppState>) {
     }
     let Some(result) = fetch_current::<Vec<RewardRun>>(
         state,
+        Resource::RewardRuns,
         "/reward-runs?limit=100",
         generation,
         current_ready_generation,
@@ -378,9 +435,14 @@ pub(super) async fn load_passkeys(mut state: Signal<AppState>) {
     let Some(generation) = password_generation(state) else {
         return;
     };
-    let Some(result) =
-        fetch_current::<Vec<PasskeyView>>(state, "/me/passkeys", generation, current_generation)
-            .await
+    let Some(result) = fetch_current::<Vec<PasskeyView>>(
+        state,
+        Resource::Passkeys,
+        "/me/passkeys",
+        generation,
+        current_generation,
+    )
+    .await
     else {
         return;
     };
@@ -402,9 +464,14 @@ pub(super) async fn load_server_settings(mut state: Signal<AppState>) {
         return;
     };
     // Optional context: a failure leaves the "not loaded" placeholders.
-    if let Some(Ok(settings)) =
-        fetch_current::<ServerSettings>(state, "/server-settings", generation, current_generation)
-            .await
+    if let Some(Ok(settings)) = fetch_current::<ServerSettings>(
+        state,
+        Resource::ServerSettings,
+        "/server-settings",
+        generation,
+        current_generation,
+    )
+    .await
     {
         state.write().server = Some(settings);
     }
@@ -417,8 +484,14 @@ pub(super) async fn load_admin_users(mut state: Signal<AppState>) {
     if !state.read().me.as_ref().is_some_and(|me| me.is_admin) {
         return;
     }
-    let Some(result) =
-        fetch_current::<Vec<UserView>>(state, "/admin/users", generation, current_generation).await
+    let Some(result) = fetch_current::<Vec<UserView>>(
+        state,
+        Resource::AdminUsers,
+        "/admin/users",
+        generation,
+        current_generation,
+    )
+    .await
     else {
         return;
     };
@@ -520,6 +593,34 @@ mod tests {
         state = ready_state();
         state.phase = Phase::SignedOut;
         assert!(!current_status_request(&state, 7, "genshin", id, 10));
+    }
+
+    #[test]
+    fn only_the_latest_request_per_resource_may_apply_its_reply() {
+        let requests = RequestSequence::new();
+        let first = requests.issue(Resource::Rewards);
+        assert!(requests.is_latest(Resource::Rewards, first));
+        // A refresh after an action supersedes the in-flight page load.
+        let refresh = requests.issue(Resource::Rewards);
+        assert!(refresh > first);
+        assert!(!requests.is_latest(Resource::Rewards, first));
+        assert!(requests.is_latest(Resource::Rewards, refresh));
+        // Other resources are sequenced independently.
+        let runs = requests.issue(Resource::RewardRuns);
+        let accounts = requests.issue(Resource::Accounts);
+        assert!(requests.is_latest(Resource::Rewards, refresh));
+        assert!(requests.is_latest(Resource::RewardRuns, runs));
+        assert!(requests.is_latest(Resource::Accounts, accounts));
+        for resource in [
+            Resource::Hoyolab,
+            Resource::Passkeys,
+            Resource::ServerSettings,
+            Resource::AdminUsers,
+        ] {
+            let ticket = requests.issue(resource);
+            assert!(requests.is_latest(resource, ticket), "{resource:?}");
+        }
+        assert!(requests.is_latest(Resource::Accounts, accounts));
     }
 
     #[test]
