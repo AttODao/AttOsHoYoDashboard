@@ -88,7 +88,7 @@ fn RewardSettingCard(state: Signal<AppState>, setting: RewardSetting) -> Element
                         select { id: "reward-hour-{setting.id}", value: "{hour}", onchange: move |event| {
                             if let Some((_, minute)) = schedule_parts(&local_time()) { local_time.set(format!("{}:{minute}", event.value())); }
                         },
-                            if parts.is_none() { option { value: "", {preferences.text("hoyolab.not_loaded")} } }
+                            if parts.is_none() { option { value: "", {preferences.text("common.not_fetched")} } }
                             for value in 0..24 { option { value: format!("{value:02}"), "{value:02}" } }
                         }
                     }
@@ -97,7 +97,7 @@ fn RewardSettingCard(state: Signal<AppState>, setting: RewardSetting) -> Element
                         select { id: "reward-minute-{setting.id}", value: "{minute}", onchange: move |event| {
                             if let Some((hour, _)) = schedule_parts(&local_time()) { local_time.set(format!("{hour}:{}", event.value())); }
                         },
-                            if parts.is_none() { option { value: "", {preferences.text("hoyolab.not_loaded")} } }
+                            if parts.is_none() { option { value: "", {preferences.text("common.not_fetched")} } }
                             for value in 0..60 { option { value: format!("{value:02}"), "{value:02}" } }
                         }
                     }
@@ -111,7 +111,7 @@ fn RewardSettingCard(state: Signal<AppState>, setting: RewardSetting) -> Element
             dl { class: "metric-list",
                 Metric { label: preferences.text("rewards.automatic_claim"), value: (if setting.enabled { preferences.text("rewards.on") } else { preferences.text("rewards.off") }).to_owned() }
                 Metric { label: preferences.text("dashboard.auth_status"), value: label(&setting.auth_status) }
-                Metric { label: preferences.text("rewards.reward_status"), value: match setting.is_sign { Some(true) => preferences.text("dashboard.received"), Some(false) => preferences.text("dashboard.not_received"), None => preferences.text("dashboard.not_fetched") }.to_owned() }
+                Metric { label: preferences.text("rewards.reward_status"), value: match setting.is_sign { Some(true) => preferences.text("dashboard.received"), Some(false) => preferences.text("dashboard.not_received"), None => preferences.text("common.not_fetched") }.to_owned() }
                 Metric { label: preferences.text("dashboard.checked"), value: datetime_text(setting.last_checked_at.as_deref(), preferences) }
                 Metric { label: preferences.text("dashboard.next_run"), value: datetime_text(setting.next_run_at.as_deref(), preferences) }
                 Metric { label: preferences.text("dashboard.error"), value: error_text(setting.error_code.as_deref(), preferences).to_owned() }

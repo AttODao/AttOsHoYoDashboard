@@ -52,7 +52,34 @@ pub(super) fn compact_datetime(value: Option<&str>) -> Option<String> {
 /// Compact local datetime for display, or the shared "not fetched" placeholder.
 /// Absent and unparseable values never fall back to the raw ISO string.
 pub(super) fn datetime_text(value: Option<&str>, ui: Preferences) -> String {
-    compact_datetime(value).unwrap_or_else(|| ui.text("dashboard.not_reported").to_owned())
+    compact_datetime(value).unwrap_or_else(|| ui.text("common.not_fetched").to_owned())
+}
+
+/// How old cached data is, in the largest whole unit (minutes, hours or days).
+pub(super) fn data_age(seconds: i64, ui: Preferences) -> String {
+    let minutes = (seconds.max(0) / 60).max(1);
+    let (key, count) = match minutes {
+        ..60 => ("dashboard.data_age_minutes", minutes),
+        60..2880 => ("dashboard.data_age_hours", minutes / 60),
+        _ => ("dashboard.data_age_days", minutes / 1440),
+    };
+    ui.format(key, &[("count", &count.to_string())])
+}
+
+/// Seconds elapsed since an ISO timestamp, by the browser clock.
+pub(super) fn seconds_since(value: Option<&str>) -> Option<i64> {
+    let value = value.filter(|value| !value.trim().is_empty())?;
+    #[cfg(target_arch = "wasm32")]
+    {
+        let then = js_sys::Date::new(&wasm_bindgen::JsValue::from_str(value)).get_time();
+        then.is_finite()
+            .then(|| ((js_sys::Date::now() - then) / 1000.0) as i64)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = value;
+        None
+    }
 }
 
 /// Catalog key for a backend `error_code` (see `hoyolab::gateway::error_code`).
@@ -109,6 +136,25 @@ mod tests {
         let unknown = error_text(Some("synthetic_code"), ui);
         assert!(!unknown.contains("synthetic_code"));
         assert_eq!(unknown, ui.text("errors.unknown"));
+    }
+
+    #[test]
+    fn data_age_uses_the_largest_whole_unit() {
+        let ui = Preferences::default();
+        assert_eq!(data_age(0, ui), "1分前のデータです");
+        assert_eq!(data_age(-30, ui), "1分前のデータです");
+        assert_eq!(data_age(59 * 60 + 59, ui), "59分前のデータです");
+        assert_eq!(data_age(60 * 60, ui), "1時間前のデータです");
+        assert_eq!(data_age(6 * 3600 + 1800, ui), "6時間前のデータです");
+        assert_eq!(data_age(47 * 3600, ui), "47時間前のデータです");
+        assert_eq!(data_age(48 * 3600, ui), "2日前のデータです");
+        let english = Preferences {
+            language: crate::i18n::Language::English,
+            ..ui
+        };
+        assert_eq!(data_age(5 * 60, english), "Data from 5 min ago");
+        assert_eq!(data_age(3 * 86400, english), "Data from 3 days ago");
+        assert_eq!(seconds_since(None), None);
     }
 
     #[test]

@@ -22,7 +22,7 @@ pub(super) fn SecurityPage(state: Signal<AppState>) -> Element {
             section { class: "panel",
                 h3 { {ui.text("security.session")} }
                 dl { class: "metric-list",
-                    Metric { label: ui.text("shell.session_lifetime"), value: server.as_ref().map(|s| ui.format("session.duration_days", &[("count", &s.session_ttl_days.to_string())])).unwrap_or_else(|| ui.text("shell.not_loaded").to_owned()) }
+                    Metric { label: ui.text("shell.session_lifetime"), value: server.as_ref().map(|s| ui.format("session.duration_days", &[("count", &s.session_ttl_days.to_string())])).unwrap_or_else(|| ui.text("common.not_fetched").to_owned()) }
                 }
             }
         }

@@ -46,7 +46,7 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
         Some("unreadable") => preferences.text("hoyolab.unreadable"),
         Some("storage_unavailable") => preferences.text("hoyolab.storage_unavailable"),
         Some(_) => preferences.text("dashboard.unknown"),
-        None => preferences.text("hoyolab.not_loaded"),
+        None => preferences.text("common.not_fetched"),
     }
     .to_owned();
     // The next useful action carries the primary style: verify a saved cookie, else save.
@@ -64,7 +64,7 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
             if password_ok { p { id: "hoyolab-step", class: "notice {step_class}", {preferences.text(step_key)} } }
             dl { class: "metric-list",
                 Metric { label: preferences.text("hoyolab.cookie_status"), value: status }
-                Metric { label: preferences.text("hoyolab.hoyolab_uid"), value: hoyolab.as_ref().and_then(|h| h.hoyolab_uid.clone()).unwrap_or_else(|| preferences.text("hoyolab.not_reported").to_owned()) }
+                Metric { label: preferences.text("hoyolab.hoyolab_uid"), value: hoyolab.as_ref().and_then(|h| h.hoyolab_uid.clone()).unwrap_or_else(|| preferences.text("common.not_fetched").to_owned()) }
                 Metric { label: preferences.text("hoyolab.updated"), value: datetime_text(hoyolab.as_ref().and_then(|h| h.updated_at.as_deref()), preferences) }
             }
             Field { id: "hoyolab-cookie", label: preferences.text("hoyolab.cookie"),

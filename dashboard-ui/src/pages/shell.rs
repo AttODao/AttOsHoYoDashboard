@@ -26,7 +26,7 @@ const SETTINGS: [(Page, &str, &str, &str); 5] = [
         Page::Security,
         "security",
         "settings.security",
-        "settings.security_short",
+        "settings.security",
     ),
     (Page::Delete, "delete", "settings.delete", "security.delete"),
 ];

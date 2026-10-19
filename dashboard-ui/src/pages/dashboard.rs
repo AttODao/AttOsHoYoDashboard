@@ -1,7 +1,9 @@
 use super::common::{Icon, Metric, focus_element, game_name, reset_checked};
 use crate::app::actions::{spawn_action, spawn_root};
 use crate::app::data::{load_game_status, save_reward_setting};
-use crate::app::display::{compact_datetime, count_pair, datetime_text, error_text, hours_minutes};
+use crate::app::display::{
+    compact_datetime, count_pair, data_age, datetime_text, error_text, hours_minutes, seconds_since,
+};
 use crate::app::preferences::{Preferences, use_preferences};
 use crate::app::state::{AppState, DASHBOARD_GAMES, Page, set_page};
 use crate::models::{DailySummary, Expedition, GameStatus};
@@ -180,7 +182,7 @@ fn GamePanel(
                         span { if setting.enabled { {ui.text("dashboard.on")} } else { {ui.text("dashboard.off")} } }
                     }
                 } else {
-                    span { {ui.text("dashboard.not_fetched")} }
+                    span { {ui.text("common.not_fetched")} }
                 }
             }
             if rewards_error {
@@ -239,14 +241,15 @@ fn GamePanel(
                     }
                 }
                 if let Some(key) = selection.error {
-                    p { class: "warning", role: "status", {ui.text(key)} }
+                    // Without a payload there is nothing that could be outdated.
+                    p { class: "warning", role: "status", {ui.text(refresh_error_key(key, status.is_some()))} }
                 }
                 div { "aria-busy": loading,
                     if let Some(status) = status {
                         GameStatusCard { status }
                     } else if loading {
                         p { role: "status", {ui.text("dashboard.loading")} }
-                    } else {
+                    } else if selection.error.is_none() {
                         p { {ui.text("dashboard.status_has_not_been_fetched")} }
                     }
                 }
@@ -273,7 +276,7 @@ fn GameStatusCard(status: GameStatus) -> Element {
     };
     rsx! {
         div { class: "status-card",
-            if status.stale { p { class: "warning", {ui.text("dashboard.cached_status_is_stale")} } }
+            if let Some(notice) = freshness_notice(&status, ui) { p { class: "warning", {notice} } }
             if let Some(data) = status.data.as_ref() {
                 if status.game_kind == "genshin" {
                     Resource { label: ui.text("dashboard.resin"), current: data.current_resin, maximum: data.max_resin, full_at: data.resin_full_at.clone() }
@@ -294,7 +297,7 @@ fn GameStatusCard(status: GameStatus) -> Element {
                     ExpeditionList { expeditions: data.expeditions.clone() }
                 }
             }
-            if let Some(key) = missing_payload_notice(status.data.as_ref()) {
+            if let Some(key) = missing_payload_notice(status.data.as_ref()).filter(|_| status.error_code.is_none()) {
                 p { {ui.text(key)} }
             }
             details { class: "status-details",
@@ -358,7 +361,7 @@ fn Estimate(
                 if let Some(formatted) = formatted {
                     time { class: if numeric { "recovery-at" } else { "estimate-at" }, datetime: value, "{formatted}" }
                 } else {
-                    {ui.text("dashboard.not_reported")}
+                    {ui.text("common.not_fetched")}
                 }
             }
         }
@@ -382,11 +385,11 @@ fn ExpeditionList(expeditions: Option<Vec<Expedition>>) -> Element {
                                 label: expedition_label(expedition.name.as_deref(), index, ui),
                             }
                             span { {expedition.status.as_deref().map(|value| model_status(value, ui)).unwrap_or(ui.text("dashboard.unknown"))} }
-                            span { {ui.text("dashboard.remaining")} ": " {expedition.remained_time.or(expedition.remaining_time).map(|duration| duration.seconds().map(|seconds| hours_minutes(seconds, ui)).unwrap_or_else(|| duration.to_string())).unwrap_or_else(|| ui.text("dashboard.not_reported").to_owned())} }
+                            span { {ui.text("dashboard.remaining")} ": " {expedition.remained_time.or(expedition.remaining_time).map(|duration| duration.seconds().map(|seconds| hours_minutes(seconds, ui)).unwrap_or_else(|| duration.to_string())).unwrap_or_else(|| ui.text("common.not_fetched").to_owned())} }
                         }
                     }
                 }
-            } else { p { {ui.text("dashboard.not_reported")} } }
+            } else { p { {ui.text("common.not_fetched")} } }
         }
     }
 }
@@ -419,6 +422,42 @@ fn expedition_label(name: Option<&str>, index: usize, ui: Preferences) -> String
         })
 }
 
+/// A failed refresh only warns about outdated data when a payload is shown.
+fn refresh_error_key(key: &'static str, has_status: bool) -> &'static str {
+    if key == "dashboard.refresh_failed" && !has_status {
+        "dashboard.status_fetch_failed"
+    } else {
+        key
+    }
+}
+
+/// One warning per status: a failed fetch without data says only that it
+/// failed; stale data says how old it is, with the failure reason if known.
+fn freshness_notice(status: &GameStatus, ui: Preferences) -> Option<String> {
+    let reason = status
+        .error_code
+        .as_deref()
+        .map(|code| error_text(Some(code), ui));
+    if status.data.is_none() {
+        return reason
+            .map(|reason| ui.format("dashboard.fetch_failed_with_reason", &[("reason", reason)]));
+    }
+    if !status.stale {
+        return None;
+    }
+    let age = seconds_since(status.fetched_at.as_deref()).map_or_else(
+        || ui.text("dashboard.cached_status_is_stale").to_owned(),
+        |seconds| data_age(seconds, ui),
+    );
+    Some(match reason {
+        Some(reason) => ui.format(
+            "dashboard.stale_with_reason",
+            &[("age", &age), ("reason", reason)],
+        ),
+        None => age,
+    })
+}
+
 fn missing_payload_notice(data: Option<&DailySummary>) -> Option<&'static str> {
     data.is_none()
         .then_some("dashboard.no_daily_summary_payload_returned")
@@ -427,13 +466,13 @@ fn missing_payload_notice(data: Option<&DailySummary>) -> Option<&'static str> {
 fn number(value: Option<i64>, ui: Preferences) -> String {
     value
         .map(|n| n.to_string())
-        .unwrap_or_else(|| ui.text("dashboard.not_reported").to_owned())
+        .unwrap_or_else(|| ui.text("common.not_fetched").to_owned())
 }
 
 fn pair(current: Option<i64>, maximum: Option<i64>, ui: Preferences) -> String {
     current
         .map(|value| count_pair(value, maximum))
-        .unwrap_or_else(|| ui.text("dashboard.not_reported").to_owned())
+        .unwrap_or_else(|| ui.text("common.not_fetched").to_owned())
 }
 
 fn date(value: &Option<String>, ui: Preferences) -> String {
@@ -444,7 +483,7 @@ fn received(value: Option<bool>, ui: Preferences) -> &'static str {
     match value {
         Some(true) => ui.text("dashboard.received"),
         Some(false) => ui.text("dashboard.not_received"),
-        None => ui.text("dashboard.not_fetched"),
+        None => ui.text("common.not_fetched"),
     }
 }
 
@@ -495,6 +534,42 @@ mod tests {
             "未取得"
         );
         assert_eq!(count_pair(0, None), "0");
+    }
+
+    #[test]
+    fn failed_fetches_without_data_do_not_also_claim_outdated_data() {
+        assert_eq!(
+            refresh_error_key("dashboard.refresh_failed", false),
+            "dashboard.status_fetch_failed"
+        );
+        assert_eq!(
+            refresh_error_key("dashboard.refresh_failed", true),
+            "dashboard.refresh_failed"
+        );
+        assert_eq!(
+            refresh_error_key("dashboard.status_identity_mismatch", false),
+            "dashboard.status_identity_mismatch"
+        );
+        let ui = Preferences::default();
+        let mut status: GameStatus = serde_json::from_value(serde_json::json!({
+            "game_kind": "genshin", "game_uid": "600000000", "region": "os_asia",
+            "visible": true, "detected": true, "data": null, "fetched_at": null,
+            "error_code": "network", "error_at": null, "stale": true
+        }))
+        .unwrap();
+        assert_eq!(
+            freshness_notice(&status, ui).unwrap(),
+            "状態を取得できませんでした（HoYoLABに接続できませんでした）"
+        );
+        status.data = Some(serde_json::from_value(serde_json::json!({})).unwrap());
+        // Native tests cannot read fetched_at; the browser check covers the age text.
+        assert_eq!(
+            freshness_notice(&status, ui).unwrap(),
+            "表示中のデータは最新ではありません（HoYoLABに接続できませんでした）"
+        );
+        status.stale = false;
+        status.error_code = None;
+        assert_eq!(freshness_notice(&status, ui), None);
     }
 
     #[test]
