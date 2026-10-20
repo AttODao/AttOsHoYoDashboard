@@ -13,7 +13,7 @@ use openssl::{
 };
 use reqwest::{
     Certificate, Client,
-    header::{CONNECTION, COOKIE, HeaderMap, HeaderValue, USER_AGENT},
+    header::{CONNECTION, HeaderMap, HeaderValue, USER_AGENT},
 };
 use std::{
     collections::{HashMap, VecDeque},
@@ -145,11 +145,8 @@ impl TlsMockServer {
         }
     }
 
-    pub fn client(&self, cookie: &str, user_agent: &str) -> Client {
+    pub fn client(&self, user_agent: &str) -> Client {
         let mut headers = HeaderMap::new();
-        let mut cookie = HeaderValue::from_str(cookie).unwrap();
-        cookie.set_sensitive(true);
-        headers.insert(COOKIE, cookie);
         headers.insert(USER_AGENT, HeaderValue::from_str(user_agent).unwrap());
         headers.insert(CONNECTION, HeaderValue::from_static("close"));
 

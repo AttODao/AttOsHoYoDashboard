@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::{Value, value::RawValue};
 
-use super::{Error, HoyolabClient, Result, request, send};
+use super::{Error, HoyolabClient, Result, send};
 
 pub(super) const ACCOUNT_IDENTITY_URL: &str =
     "https://api-account-os.hoyolab.com/auth/api/getUserAccountInfoByLToken";
@@ -17,7 +17,12 @@ impl HoyolabClient {
     /// This is a response candidate only; it is not proof that a cookie belongs to a
     /// dashboard user or to any game UID.
     pub async fn account_identity(&self) -> Result<String> {
-        let data = send(self.http.get(ACCOUNT_IDENTITY_URL)).await?;
+        let data = send(
+            self.http
+                .get(ACCOUNT_IDENTITY_URL)
+                .header(reqwest::header::COOKIE, self.cookie.clone()),
+        )
+        .await?;
         parse_account_identity(&data)
     }
 
@@ -26,7 +31,7 @@ impl HoyolabClient {
     /// This is a response candidate only; it is not proof that a cookie belongs to a
     /// dashboard user or to any game UID.
     pub async fn community_identity(&self) -> Result<String> {
-        let data = request(&self.http, COMMUNITY_IDENTITY_URL, &[], None).await?;
+        let data = self.get(COMMUNITY_IDENTITY_URL, &[], None).await?;
         parse_community_identity(&data)
     }
 }

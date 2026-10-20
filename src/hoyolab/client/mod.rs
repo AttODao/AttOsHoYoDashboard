@@ -15,6 +15,7 @@ use super::{
 use serde_json::value::RawValue;
 use std::{
     collections::HashMap,
+    sync::OnceLock,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -28,6 +29,7 @@ const ROLES_URL: &str = "https://api-os-takumi.mihoyo.com/binding/api/getUserGam
 /// The cookie is sensitive and is never included in error messages.
 pub struct HoyolabClient {
     http: Client,
+    cookie: HeaderValue,
 }
 
 #[derive(Debug, Clone)]
@@ -37,14 +39,25 @@ pub struct RecordAccount {
 }
 
 impl HoyolabClient {
+    /// Uses one process-wide connection pool; the cookie travels per request, never in the pool.
     pub fn new(cookie: &str) -> Result<Self> {
-        Self::with_user_agent(cookie, UA)
+        static SHARED: OnceLock<Option<Client>> = OnceLock::new();
+        let http = SHARED
+            .get_or_init(|| build_client(UA).ok())
+            .clone()
+            .ok_or(Error::ClientConfiguration)?;
+        Self::with_http(http, cookie)
     }
 
     pub fn with_user_agent(cookie: &str, user_agent: &str) -> Result<Self> {
-        Ok(Self {
-            http: build_client(cookie, user_agent)?,
-        })
+        Self::with_http(build_client(user_agent)?, cookie)
+    }
+
+    fn with_http(http: Client, cookie: &str) -> Result<Self> {
+        validate_cookie(cookie)?;
+        let mut cookie = HeaderValue::from_str(cookie).map_err(|_| "Cookieヘッダーが不正です")?;
+        cookie.set_sensitive(true);
+        Ok(Self { http, cookie })
     }
 
     /// Lists linked game accounts without exposing the authentication cookie.
@@ -53,7 +66,7 @@ impl HoyolabClient {
         struct Accounts {
             list: Vec<Account>,
         }
-        let data = request(&self.http, ROLES_URL, &[], None).await?;
+        let data = self.get(ROLES_URL, &[], None).await?;
         Ok(parse::<Accounts>(&data)?.list)
     }
 
@@ -96,13 +109,13 @@ impl HoyolabClient {
             return Err("ゲームUIDまたはserverが不正です".into());
         }
         let url = format!("{}/{endpoint}", G::RECORD_BASE);
-        let data = request(
-            &self.http,
-            &url,
-            &[("role_id", &account.uid), ("server", &account.server)],
-            None,
-        )
-        .await?;
+        let data = self
+            .get(
+                &url,
+                &[("role_id", &account.uid), ("server", &account.server)],
+                None,
+            )
+            .await?;
         parse(&data)
     }
 
@@ -113,8 +126,7 @@ impl HoyolabClient {
         method: reqwest::Method,
     ) -> Result<T> {
         let url = format!("{}/{endpoint}", G::DAILY_BASE);
-        let request = prepare_request(
-            &self.http,
+        let request = self.prepare(
             &url,
             &[("act_id", G::ACT_ID), ("lang", LANG)],
             Some(G::SIGN_GAME),
@@ -122,14 +134,30 @@ impl HoyolabClient {
         )?;
         parse(&send(request).await?)
     }
+
+    async fn get(
+        &self,
+        url: &str,
+        query: &[(&str, &str)],
+        sign_game: Option<&str>,
+    ) -> Result<Box<RawValue>> {
+        send(self.prepare(url, query, sign_game, reqwest::Method::GET)?).await
+    }
+
+    fn prepare(
+        &self,
+        url: &str,
+        query: &[(&str, &str)],
+        sign_game: Option<&str>,
+        method: reqwest::Method,
+    ) -> Result<reqwest::RequestBuilder> {
+        Ok(prepare_request(&self.http, url, query, sign_game, method)?
+            .header(COOKIE, self.cookie.clone()))
+    }
 }
 
-fn build_client(cookie: &str, ua: &str) -> Result<Client> {
-    validate_cookie(cookie)?;
-    let mut cookie = HeaderValue::from_str(cookie).map_err(|_| "Cookieヘッダーが不正です")?;
-    cookie.set_sensitive(true);
+fn build_client(ua: &str) -> Result<Client> {
     let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(COOKIE, cookie);
     headers.insert(
         USER_AGENT,
         HeaderValue::from_str(ua).map_err(|_| "User-Agentが不正です")?,
@@ -140,22 +168,6 @@ fn build_client(cookie: &str, ua: &str) -> Result<Client> {
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|_| Error::ClientConfiguration)
-}
-
-async fn request(
-    client: &Client,
-    url: &str,
-    query: &[(&str, &str)],
-    sign_game: Option<&str>,
-) -> Result<Box<RawValue>> {
-    send(prepare_request(
-        client,
-        url,
-        query,
-        sign_game,
-        reqwest::Method::GET,
-    )?)
-    .await
 }
 
 fn prepare_request(

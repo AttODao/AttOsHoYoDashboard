@@ -13,9 +13,7 @@ async fn implemented_endpoints_use_production_urls_over_local_tls() {
     assert_current_production_urls();
 
     let server = TlsMockServer::start(expected_requests());
-    let client = HoyolabClient {
-        http: server.client(COOKIE_VALUE, UA),
-    };
+    let client = HoyolabClient::with_http(server.client(UA), COOKIE_VALUE).unwrap();
     let account = RecordAccount {
         uid: RECORD_UID.into(),
         server: RECORD_SERVER.into(),

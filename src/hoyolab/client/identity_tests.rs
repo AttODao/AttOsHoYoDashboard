@@ -16,9 +16,7 @@ async fn identity_candidates_use_exact_tls_get_protocol_and_canonicalize_ids() {
         community_get(ok(json!({"user_info": {"uid": "456"}}))),
         community_get(ok(json!({"user_info": {"uid": 789}}))),
     ]);
-    let client = HoyolabClient {
-        http: server.client(COOKIE_VALUE, UA),
-    };
+    let client = HoyolabClient::with_http(server.client(UA), COOKIE_VALUE).unwrap();
 
     let account = client.account_identity().await.unwrap();
     assert_eq!(account, "123");
@@ -51,9 +49,7 @@ async fn identity_candidates_reject_nullable_malformed_invalid_and_upstream_enve
         community_get(ok(json!({"user_info": {"uid": false}}))),
         community_get(ok(json!({}))),
     ]);
-    let client = HoyolabClient {
-        http: server.client(COOKIE_VALUE, UA),
-    };
+    let client = HoyolabClient::with_http(server.client(UA), COOKIE_VALUE).unwrap();
 
     assert!(matches!(
         client.account_identity().await,
