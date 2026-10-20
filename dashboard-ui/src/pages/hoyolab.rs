@@ -74,16 +74,16 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
             div { class: "button-row",
                 Button { variant: save_variant, r#type: "button", disabled: disabled || cookie().trim().is_empty(), onclick: move |_| {
                     if disabled || state.read().busy || !state.read().password_ok() || cookie().trim().is_empty() { return; }
-                    let secret = std::mem::take(&mut *cookie.write());
-                    spawn_cookie_action(state, "PUT", "/me/hoyolab/cookie", json!({"cookie": secret}), "hoyolab.cookie_save_accepted");
+                    // Keep the pasted value until the server accepts it, so a failed save needs no re-paste.
+                    spawn_cookie_action(state, "PUT", "/me/hoyolab/cookie", json!({"cookie": cookie()}), "hoyolab.cookie_save_accepted", Some(cookie));
                 }, {preferences.text("hoyolab.save")} }
                 Button { variant: verify_variant, r#type: "button", disabled: disabled || !stored, aria_describedby: verify_next.then_some("hoyolab-step"), onclick: move |_| {
                     if disabled || !stored || !state.read().password_ok() { return; }
-                    spawn_cookie_action(state, "POST", "/me/hoyolab/verify", json!({}), "hoyolab.verification_response_received");
+                    spawn_cookie_action(state, "POST", "/me/hoyolab/verify", json!({}), "hoyolab.verification_response_received", None);
                 }, {preferences.text("hoyolab.verify")} }
                 Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: disabled || !complete, aria_describedby: (!complete).then_some("hoyolab-sync-hint"), onclick: move |_| {
                     if disabled || !complete || !state.read().password_ok() { return; }
-                    spawn_cookie_action(state, "POST", "/me/hoyolab/sync", json!({}), "hoyolab.sync_response_received");
+                    spawn_cookie_action(state, "POST", "/me/hoyolab/sync", json!({}), "hoyolab.sync_response_received", None);
                 }, {preferences.text("hoyolab.sync_uids")} }
             }
             if !complete {
@@ -144,10 +144,14 @@ fn spawn_cookie_action(
     path: &'static str,
     body: Value,
     success: &'static str,
+    clear_on_success: Option<Signal<String>>,
 ) {
     spawn_action(state, move |generation| async move {
         match crate::api::send(method, path, Some(body)).await {
             Ok(()) if generation_matches(state, generation) => {
+                if let Some(mut input) = clear_on_success {
+                    input.set(String::new());
+                }
                 set_status(state, success, "success");
                 refresh_gate(state, generation).await;
             }

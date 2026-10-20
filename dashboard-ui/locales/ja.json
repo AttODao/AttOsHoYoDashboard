@@ -220,7 +220,6 @@
   "rewards.reward_status": "受け取り状態",
   "rewards.last_run": "前回実行",
   "rewards.never": "実行なし",
-  "rewards.error_time": "エラー日時",
   "rewards.schedule_saved": "時刻を保存しました",
   "rewards.run_accepted_queued_not_completed": "実行を受け付けました（処理待ち）",
   "rewards.run_now": "今すぐ実行",

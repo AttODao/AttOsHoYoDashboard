@@ -115,7 +115,7 @@ fn RewardSettingCard(state: Signal<AppState>, setting: RewardSetting) -> Element
                 Metric { label: preferences.text("dashboard.checked"), value: datetime_text(setting.last_checked_at.as_deref(), preferences) }
                 Metric { label: preferences.text("dashboard.next_run"), value: datetime_text(setting.next_run_at.as_deref(), preferences) }
                 Metric { label: preferences.text("dashboard.error"), value: error_text(setting.error_code.as_deref(), preferences).to_owned() }
-                Metric { label: preferences.text("rewards.error_time"), value: datetime_text(setting.error_at.as_deref(), preferences) }
+                Metric { label: preferences.text("dashboard.error_at"), value: datetime_text(setting.error_at.as_deref(), preferences) }
             }
             div { class: "button-row",
                 Button { r#type: "button", disabled: disabled || parts.is_none(), onclick: move |_| {

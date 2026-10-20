@@ -220,7 +220,6 @@
   "rewards.reward_status": "Reward status",
   "rewards.last_run": "Last run",
   "rewards.never": "Never",
-  "rewards.error_time": "Error time",
   "rewards.schedule_saved": "Schedule saved.",
   "rewards.run_accepted_queued_not_completed": "Run accepted; queued, not completed.",
   "rewards.run_now": "Run now",
