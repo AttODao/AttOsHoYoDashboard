@@ -252,6 +252,7 @@ mod tests {
         state.me = Some(me(false, true));
         state.server = Some(ServerSettings {
             timezone_offset: "+08:00".to_owned(),
+            timezone: None,
             session_ttl_days: 7,
         });
         state.accounts = Some(vec![account(uuid(1), true, true, "600000000")]);

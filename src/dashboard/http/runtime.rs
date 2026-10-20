@@ -4,7 +4,14 @@ use crate::dashboard::{
     error::Result,
     rewards::{deletion, service::Rewards},
 };
-use std::{collections::HashMap, time::Instant};
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::{AtomicI64, Ordering},
+    },
+    time::Instant,
+};
 use tokio::{
     sync::watch,
     task::JoinSet,
@@ -14,6 +21,30 @@ use uuid::Uuid;
 
 const DELETION_TASKS: usize = 32;
 const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(60 * 60);
+/// A reward worker silent for longer than this reports the service as degraded.
+pub(super) const STALLED_AFTER_SECS: i64 = 120;
+
+/// Last time the reward worker completed a tick, for `/health`.
+#[derive(Clone)]
+pub(super) struct Heartbeat(Arc<AtomicI64>);
+
+impl Heartbeat {
+    pub(super) fn new() -> Self {
+        Self(Arc::new(AtomicI64::new(chrono::Utc::now().timestamp())))
+    }
+    fn beat(&self) {
+        self.0
+            .store(chrono::Utc::now().timestamp(), Ordering::Relaxed);
+    }
+    #[cfg(test)]
+    pub(super) fn set_age_secs(&self, age: i64) {
+        self.0
+            .store(chrono::Utc::now().timestamp() - age, Ordering::Relaxed);
+    }
+    pub(super) fn age_secs(&self) -> i64 {
+        chrono::Utc::now().timestamp() - self.0.load(Ordering::Relaxed)
+    }
+}
 
 pub(super) async fn run(app: App, stop: watch::Receiver<bool>) {
     tokio::join!(rewards(app.clone(), stop.clone()), deletions(app, stop));
@@ -41,6 +72,7 @@ async fn rewards(app: App, mut stop: watch::Receiver<bool>) {
         if let Err(error) = rewards.tick().await {
             tracing::error!(error=%error,"reward worker failed");
         }
+        app.heartbeat.beat();
         if *stop.borrow() {
             break;
         }

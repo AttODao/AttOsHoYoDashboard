@@ -27,9 +27,7 @@ mod cache;
 mod tests;
 mod worker;
 
-const HISTORY_DAYS: i64 = 5;
 const RUN_LIMIT: u64 = 16;
-const MAX_ATTEMPTS: i32 = 4;
 
 pub(in crate::dashboard) struct Rewards<G: Gateway = LiveGateway> {
     store: Arc<CookieStore<G>>,
@@ -80,7 +78,9 @@ impl<G: Gateway> Rewards<G> {
                 .one(&self.store.db)
                 .await?;
             let cache = if setting.auth_status == "action_required"
-                || cache.as_ref().is_some_and(|cache| cache_fresh(cache, now))
+                || cache
+                    .as_ref()
+                    .is_some_and(|cache| cache_fresh(cache, now, self.store.tuning.status_ttl))
             {
                 cache
             } else {
@@ -216,7 +216,10 @@ impl<G: Gateway> Rewards<G> {
         }
         let runs = reward_run::Entity::find()
             .filter(reward_run::Column::SettingId.is_in(setting_ids))
-            .filter(reward_run::Column::CreatedAt.gte(Utc::now() - Duration::days(HISTORY_DAYS)))
+            .filter(
+                reward_run::Column::CreatedAt
+                    .gte(Utc::now() - Duration::days(self.store.tuning.history_days)),
+            )
             .order_by_desc(reward_run::Column::CreatedAt)
             .limit(limit)
             .all(&tx)

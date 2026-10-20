@@ -27,6 +27,11 @@ pub(super) fn RewardsPage(state: Signal<AppState>) -> Element {
         .server
         .as_ref()
         .map(|server| server.timezone_offset.clone());
+    let zone = state
+        .read()
+        .server
+        .as_ref()
+        .and_then(|server| server.timezone.clone());
     let reset = offset
         .as_deref()
         .and_then(offset_minutes)
@@ -42,7 +47,7 @@ pub(super) fn RewardsPage(state: Signal<AppState>) -> Element {
             }
             div { class: "form-grid",
                 for setting in state.read().rewards.clone() {
-                    RewardSettingCard { key: "{setting.id}", state, setting, offset: offset.clone() }
+                    RewardSettingCard { key: "{setting.id}", state, setting, offset: offset.clone(), zone: zone.clone() }
                 }
             }
             hr { class: "divider" }
@@ -89,6 +94,7 @@ fn RewardSettingCard(
     state: Signal<AppState>,
     setting: RewardSetting,
     offset: Option<String>,
+    zone: Option<String>,
 ) -> Element {
     let preferences = use_preferences();
     let mut local_time = use_signal(|| setting.local_time.clone());
@@ -158,7 +164,8 @@ fn RewardSettingCard(
                     }
                 }
                 p { class: "timezone", id: "reward-timezone-{id}",
-                    if let Some(offset) = &offset { {preferences.format("rewards.server_time", &[("offset", offset)])} }
+                    if let (Some(offset), Some(zone)) = (&offset, &zone) { {preferences.format("rewards.server_time_named", &[("zone", zone), ("offset", offset)])} }
+                    else if let Some(offset) = &offset { {preferences.format("rewards.server_time", &[("offset", offset)])} }
                     else { {preferences.text("rewards.server_time_unknown")} }
                     if let Some(browser_time) = browser_time { " " {preferences.format("rewards.browser_time", &[("time", &browser_time)])} }
                 }

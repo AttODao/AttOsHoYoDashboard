@@ -41,8 +41,17 @@ The default `DASHBOARD_UI_DIR` is `target/dx/attos-dashboard-ui/release/web/publ
 
 - HoYoLAB Cookie plaintext is never returned by API responses. Stored credentials are AES-256-GCM sealed with AAD including owner and verified UID context.
 - Back up PostgreSQL and the cookie key consistently. Restoring the database without the matching key, or changing AAD/key material, fails closed because stored cookies cannot be opened.
-- Key rotation/re-encryption tooling is not implemented. Do not change `HOYOLAB_COOKIE_KEY` casually; plan a manual re-encryption migration first.
+- Rotate the key offline: stop the server, back up the database, then run `attoshoyodashboard rekey` with the current key in `HOYOLAB_COOKIE_KEY` and the new one in `HOYOLAB_COOKIE_KEY_NEW` (for Compose: `docker compose run --rm -e HOYOLAB_COOKIE_KEY_NEW=… app rekey`). Every stored Cookie is re-encrypted in one transaction; any row the current key cannot open aborts the rotation unchanged. Then set `HOYOLAB_COOKIE_KEY` to the new key and start the server. Decoy passkey-login credential IDs derive from this key and change with it.
+- Users can remove their stored Cookie from the HoYoLAB link page; the ciphertext is deleted and the link waits for a Cookie from the same HoYoLAB account.
 - Do not read production `.env` or dump secrets for troubleshooting. Use sanitized error codes and local synthetic tests.
+
+## Logging, health, and metrics
+
+- `RUST_LOG` selects log levels (default `info`, e.g. `info,attoshoyodashboard=debug`); `LOG_FORMAT=json` writes one JSON object per line. Logs never include Cookie values, credentials, request payloads, or raw upstream errors.
+- `GET /health` returns `{"status":"ok","worker":"ok"}`. `worker` is `disabled` without `HOYOLAB_COOKIE_KEY`; if the reward worker has not ticked for 120 s the response is 503 with `{"status":"degraded","worker":"stalled"}`.
+- `GET /metrics` exists only when `METRICS_TOKEN` (16+ visible ASCII characters) is set, and requires `Authorization: Bearer <METRICS_TOKEN>`. It reports user, link, reward-run and reward-setting counts and the worker heartbeat age in Prometheus text format.
+- Schedules use `TIMEZONE` (IANA name, DST aware; a time skipped by DST runs at the first minute after the gap, a repeated time at its first occurrence) when set, otherwise the fixed `TIMEZONE_OFFSET`.
+- Tuning: `REWARD_HISTORY_DAYS` (1–90, default 5), `STATUS_CACHE_TTL_MINUTES` (1–60, default 5), `REWARD_MAX_ATTEMPTS` (1–4, default 4), `REWARD_RETRY_DELAY_SECONDS` (1–600, default 10).
 
 ## Availability and shutdown
 

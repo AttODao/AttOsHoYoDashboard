@@ -156,7 +156,7 @@ async fn user_routes_enforce_auth_admin_and_temporary_password_exceptions() {
     assert_eq!(settings.status(), StatusCode::OK);
     assert_eq!(
         body(settings).await,
-        json!({"timezone_offset": "+09:00", "session_ttl_days": 7})
+        json!({"timezone_offset": "+09:00", "timezone": null, "session_ttl_days": 7})
     );
     let listing = call(
         &app,

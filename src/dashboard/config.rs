@@ -1,8 +1,85 @@
 use super::error::{Error, Result};
 use super::hoyolab::credentials::CookieKey;
-use chrono::{Duration, FixedOffset, Utc};
+use super::rewards::schedule::ScheduleZone;
+use chrono::{Duration, Utc};
 use reqwest::Url;
 use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
+
+/// Operational limits shared by status caching and the reward worker.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct Tuning {
+    /// Finished reward runs older than this are deleted.
+    pub history_days: i64,
+    /// Game and reward status younger than this is served without an upstream GET.
+    pub status_ttl: Duration,
+    /// Initial try plus retries for one reward run (the schema allows at most 4).
+    pub max_attempts: i32,
+    /// Wait before retrying a transient reward GET failure.
+    pub retry_delay: Duration,
+}
+
+impl Default for Tuning {
+    fn default() -> Self {
+        Self {
+            history_days: 5,
+            status_ttl: Duration::minutes(5),
+            max_attempts: 4,
+            retry_delay: Duration::seconds(10),
+        }
+    }
+}
+
+fn bounded(
+    read: &mut impl FnMut(&str) -> std::result::Result<String, env::VarError>,
+    name: &str,
+    default: i64,
+    range: std::ops::RangeInclusive<i64>,
+    message: &'static str,
+) -> Result<i64> {
+    setting(read, name, &default.to_string())?
+        .parse::<i64>()
+        .ok()
+        .filter(|value| range.contains(value))
+        .ok_or(Error::Invalid(message))
+}
+
+impl Tuning {
+    fn load(
+        read: &mut impl FnMut(&str) -> std::result::Result<String, env::VarError>,
+    ) -> Result<Self> {
+        let defaults = Self::default();
+        Ok(Self {
+            history_days: bounded(
+                read,
+                "REWARD_HISTORY_DAYS",
+                defaults.history_days,
+                1..=90,
+                "REWARD_HISTORY_DAYS must be 1 to 90",
+            )?,
+            status_ttl: Duration::minutes(bounded(
+                read,
+                "STATUS_CACHE_TTL_MINUTES",
+                defaults.status_ttl.num_minutes(),
+                1..=60,
+                "STATUS_CACHE_TTL_MINUTES must be 1 to 60",
+            )?),
+            max_attempts: bounded(
+                read,
+                "REWARD_MAX_ATTEMPTS",
+                defaults.max_attempts.into(),
+                1..=4,
+                "REWARD_MAX_ATTEMPTS must be 1 to 4",
+            )? as i32,
+            retry_delay: Duration::seconds(bounded(
+                read,
+                "REWARD_RETRY_DELAY_SECONDS",
+                defaults.retry_delay.num_seconds(),
+                1..=600,
+                "REWARD_RETRY_DELAY_SECONDS must be 1 to 600",
+            )?),
+        })
+    }
+}
 
 // Deliberately not Debug: the database URL contains credentials.
 pub(super) struct Config {
@@ -12,7 +89,10 @@ pub(super) struct Config {
     pub rp_id: String,
     pub secure_cookie: bool,
     pub session_ttl: Duration,
-    pub timezone: FixedOffset,
+    pub timezone: ScheduleZone,
+    pub tuning: Tuning,
+    /// Bearer token for `/metrics`; the endpoint is absent without one.
+    pub metrics_token: Option<String>,
     pub cookie_key: Option<Arc<CookieKey>>,
     pub ui_dir: PathBuf,
 }
@@ -121,9 +201,23 @@ impl Config {
             .ok_or(Error::Invalid(
                 "SESSION_TTL_DAYS must be positive and representable",
             ))?;
-        let timezone = setting(&mut read, "TIMEZONE_OFFSET", "+09:00")?
-            .parse()
-            .map_err(|_| Error::Invalid("TIMEZONE_OFFSET must be a fixed UTC offset"))?;
+        let zone_name = setting(&mut read, "TIMEZONE", "")?;
+        let timezone = ScheduleZone::parse(
+            Some(zone_name.as_str()),
+            &setting(&mut read, "TIMEZONE_OFFSET", "+09:00")?,
+        )?;
+        let tuning = Tuning::load(&mut read)?;
+        let metrics_token = match setting(&mut read, "METRICS_TOKEN", "")? {
+            token if token.is_empty() => None,
+            token if token.len() >= 16 && token.bytes().all(|b| b.is_ascii_graphic()) => {
+                Some(token)
+            }
+            _ => {
+                return Err(Error::Invalid(
+                    "METRICS_TOKEN must be at least 16 visible ASCII characters",
+                ));
+            }
+        };
         let ui_dir = setting(
             &mut read,
             "DASHBOARD_UI_DIR",
@@ -147,6 +241,8 @@ impl Config {
             secure_cookie: url.scheme() == "https",
             session_ttl,
             timezone,
+            tuning,
+            metrics_token,
             cookie_key,
             ui_dir: ui_dir.into(),
         })

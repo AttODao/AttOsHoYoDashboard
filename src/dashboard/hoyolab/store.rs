@@ -9,8 +9,10 @@ use crate::dashboard::{
         accounts::{lock_user, record, require_ready},
         sessions::{Identity, Sessions},
     },
+    config::Tuning,
     db::entities::{hoyolab_account, reward_setting},
     error::{Error, Result},
+    rewards::schedule::ScheduleZone,
 };
 use chrono::{FixedOffset, Utc};
 use sea_orm::{
@@ -31,7 +33,8 @@ pub(in crate::dashboard) struct CookieStore<G: Gateway = LiveGateway> {
     pub(in crate::dashboard) db: DatabaseConnection,
     pub(in crate::dashboard) gateway: G,
     pub(in crate::dashboard) operations: Operations,
-    pub(in crate::dashboard) timezone: FixedOffset,
+    pub(in crate::dashboard) timezone: ScheduleZone,
+    pub(in crate::dashboard) tuning: Tuning,
     pub(super) key: Arc<CookieKey>,
     pub(super) closing: AtomicBool,
 }
@@ -42,7 +45,10 @@ impl CookieStore<LiveGateway> {
             key,
             gateway: LiveGateway,
             operations: Operations::default(),
-            timezone: FixedOffset::east_opt(9 * 3600).expect("fixed valid offset"),
+            timezone: ScheduleZone::Fixed(
+                FixedOffset::east_opt(9 * 3600).expect("fixed valid offset"),
+            ),
+            tuning: Tuning::default(),
             closing: AtomicBool::new(false),
         }
     }
@@ -153,7 +159,8 @@ impl<G: Gateway> CookieStore<G> {
             key,
             gateway,
             operations: Operations::default(),
-            timezone: FixedOffset::east_opt(9 * 3600).unwrap(),
+            timezone: ScheduleZone::Fixed(FixedOffset::east_opt(9 * 3600).unwrap()),
+            tuning: Tuning::default(),
             closing: AtomicBool::new(false),
         }
     }

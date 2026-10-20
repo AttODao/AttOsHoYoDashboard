@@ -438,7 +438,10 @@ async fn schedule_update_waits_for_in_flight_attempt_and_its_stop_is_final() {
     assert!(!update.is_finished());
     // The in-flight attempt schedules a retry before releasing the owner lock.
     rewards
-        .finish_attempt(prepared, Finish::retry("network".into()))
+        .finish_attempt(
+            prepared,
+            Finish::retry("network".into(), chrono::Duration::seconds(10)),
+        )
         .await
         .unwrap();
     drop(operation);

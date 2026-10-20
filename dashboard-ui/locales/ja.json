@@ -366,5 +366,6 @@
   "hoyolab.remove_cookie": "Cookieを削除",
   "hoyolab.remove_hint": "保存したCookieをこのサーバーから削除できます。",
   "hoyolab.remove_consequences": "保存したCookieを削除します。HoYoLAB UIDとの紐付け、ゲーム表示、実行履歴は残り、自動受け取りはすべてOFFになります。再び使うには、同じHoYoLABアカウントのCookieを登録してください。",
-  "hoyolab.cookie_removed": "Cookieを削除しました。"
+  "hoyolab.cookie_removed": "Cookieを削除しました。",
+  "rewards.server_time_named": "サーバー時刻（{zone}、現在UTC{offset}）で実行します。"
 }

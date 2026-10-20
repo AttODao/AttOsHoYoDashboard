@@ -18,7 +18,6 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 const CACHE_VERSION: i32 = 3;
-const FRESH_TTL: Duration = Duration::minutes(5);
 const PRIVATE_RECORD_CODE: &str = "upstream:10102";
 
 pub(in crate::dashboard) struct Games<G: Gateway = LiveGateway> {
@@ -129,12 +128,18 @@ impl<G: Gateway> Games<G> {
             status.error_code = Some("action_required".into());
             return Ok(status);
         }
-        if let Some(cache) = cache.as_ref().filter(|cache| private_recently(cache, now)) {
+        if let Some(cache) = cache
+            .as_ref()
+            .filter(|cache| private_recently(cache, now, self.store.tuning.status_ttl))
+        {
             // A private record only affects this game's status; reward settings stay unchanged.
             let payload = cache.payload.clone();
             return Ok(status_from_cache(account, Some(cache), payload, true));
         }
-        if let Some(cache) = cache.as_ref().filter(|cache| fresh(cache, now)) {
+        if let Some(cache) = cache
+            .as_ref()
+            .filter(|cache| fresh(cache, now, self.store.tuning.status_ttl))
+        {
             return Ok(status_from_cache(
                 account,
                 Some(cache),
@@ -247,22 +252,22 @@ where
         .await?)
 }
 
-fn fresh(cache: &game_status_cache::Model, now: DateTime<Utc>) -> bool {
+fn fresh(cache: &game_status_cache::Model, now: DateTime<Utc>, ttl: Duration) -> bool {
     cache.payload_version == CACHE_VERSION
         && cache.payload.is_some()
         && cache.fetched_at.is_some_and(|fetched_at| {
             let age = now.signed_duration_since(fetched_at);
-            age >= Duration::zero() && age <= FRESH_TTL
+            age >= Duration::zero() && age <= ttl
         })
 }
 
 /// Backs off repeated note fetches after a private-record retcode without a sticky state.
-fn private_recently(cache: &game_status_cache::Model, now: DateTime<Utc>) -> bool {
+fn private_recently(cache: &game_status_cache::Model, now: DateTime<Utc>, ttl: Duration) -> bool {
     cache.payload_version == CACHE_VERSION
         && cache.error_code.as_deref() == Some(PRIVATE_RECORD_CODE)
         && cache.error_at.is_some_and(|error_at| {
             let age = now.signed_duration_since(error_at);
-            age >= Duration::zero() && age <= FRESH_TTL
+            age >= Duration::zero() && age <= ttl
         })
 }
 

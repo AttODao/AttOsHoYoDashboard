@@ -1,5 +1,5 @@
 use super::{
-    super::{MAX_ATTEMPTS, Rewards},
+    super::Rewards,
     state::{Finish, PreparedAttempt, finish_run_tx},
 };
 use crate::dashboard::{
@@ -86,7 +86,7 @@ impl<G: Gateway> Rewards<G> {
                 || (run.trigger != "manual" && !setting.enabled)
                 || setting.auth_status != "ready"
                 || link.auth_status != "verified"
-                || run.attempt_count >= MAX_ATTEMPTS)
+                || run.attempt_count >= self.store.tuning.max_attempts)
         {
             finish_run_tx(&tx, run.id, "stopped", "not_sent", None, true).await?;
             tx.commit().await?;
@@ -103,7 +103,7 @@ impl<G: Gateway> Rewards<G> {
             }
             Err(error) => return Err(error),
         };
-        let number = (run.attempt_count + 1).min(MAX_ATTEMPTS);
+        let number = (run.attempt_count + 1).min(self.store.tuning.max_attempts);
         let attempt = reward_attempt::ActiveModel {
             id: Set(Uuid::new_v4()),
             run_id: Set(run.id),
@@ -198,8 +198,10 @@ impl<G: Gateway> Rewards<G> {
             self.store.mark_cookie_invalid(owner).await?;
             return Ok(());
         }
-        if gateway::transient(&error) && prepared.run.attempt_count < MAX_ATTEMPTS {
-            self.finish_attempt(prepared, Finish::retry(code)).await
+        if gateway::transient(&error) && prepared.run.attempt_count < self.store.tuning.max_attempts
+        {
+            self.finish_attempt(prepared, Finish::retry(code, self.store.tuning.retry_delay))
+                .await
         } else {
             self.finish_attempt(prepared, Finish::failed(code)).await
         }

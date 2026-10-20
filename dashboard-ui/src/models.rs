@@ -203,6 +203,8 @@ pub struct RewardAttempt {
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct ServerSettings {
     pub timezone_offset: String,
+    #[serde(default)]
+    pub timezone: Option<String>,
     pub session_ttl_days: i64,
 }
 

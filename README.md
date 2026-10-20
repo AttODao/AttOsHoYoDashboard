@@ -81,6 +81,12 @@ curl --fail http://127.0.0.1:8080/health
 | `RP_ID` | パスキー用ドメイン。例：`ahd.example.com` |
 | `SESSION_TTL_DAYS` | 固定有効日数。正の整数、`7`。アクセスによる延長なし |
 | `TIMEZONE_OFFSET` | 自動受け取りの固定UTCオフセット。`+09:00`。夏時間非対応 |
+| `TIMEZONE` | 任意。IANAタイムゾーン名（例：`Asia/Tokyo`、`Europe/Berlin`）。指定時は `TIMEZONE_OFFSET` より優先し、夏時間に対応 |
+| `RUST_LOG` / `LOG_FORMAT` | 任意。ログレベル（既定 `info`）／`json` で1行1JSONのログ |
+| `METRICS_TOKEN` | 任意。16文字以上。設定時のみ `/metrics` を `Authorization: Bearer` 付きで公開 |
+| `REWARD_HISTORY_DAYS` | 実行履歴の保持日数。1〜90、既定 `5` |
+| `STATUS_CACHE_TTL_MINUTES` | ゲーム・報酬状態のキャッシュ有効分数。1〜60、既定 `5` |
+| `REWARD_MAX_ATTEMPTS` / `REWARD_RETRY_DELAY_SECONDS` | 一時的な失敗の試行回数（1〜4、既定 `4`）／再試行までの秒数（1〜600、既定 `10`） |
 
 HoYoLAB Cookieは環境変数ではなく画面から登録します。
 
@@ -99,7 +105,8 @@ HTTPSリバースプロキシから `http://127.0.0.1:8080` へパスを保持�
 | `/admin` | 管理者画面（管理者権限必須） |
 | `/docs` / `/openapi.json` | API仕様の閲覧／OpenAPI JSON |
 | `/manifest.webmanifest` | ホーム画面追加用のWebマニフェスト |
-| `/health` | DB疎通確認。正常時 `{"status":"ok"}` |
+| `/health` | DB疎通と報酬ワーカーの生存確認。正常時 `{"status":"ok","worker":"ok"}`、ワーカー停止時は503 |
+| `/metrics` | `METRICS_TOKEN` 設定時のみ。Prometheus形式の件数・ワーカー状態 |
 
 ## 開発とUI設計
 
@@ -135,9 +142,9 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 | パス | 責務 |
 | --- | --- |
 | `src/dashboard/auth/` | ユーザーのライフサイクル、パスワード、セッション、パスキー（アカウントの有無を明かさないログインoptionsを含む）、削除要求と完了（再試行の待機を含む）、ユーザー名ごとのログイン試行制限、ユーザーごとの現在パスワード確認の試行制限 |
-| `src/dashboard/http/` | ルート、DTO、Cookie、Origin・キャッシュの境界、UI配信、報酬・削除のバックグラウンド処理の起動 |
+| `src/dashboard/http/` | ルート、DTO、Cookie、Origin・キャッシュの境界、UI配信、ヘルスチェック・メトリクス、報酬・削除のバックグラウンド処理の起動と保守 |
 | `src/dashboard/db/` | `entities/` に保存モデル、`migrations/` にスキーマ変更 |
-| `src/dashboard/hoyolab/` | Cookieの解析・暗号化保存・削除、連携の検証・同期、ユーザー単位の操作ロック |
+| `src/dashboard/hoyolab/` | Cookieの解析・暗号化保存・削除・鍵の再暗号化（`rekey`）、連携の検証・同期、ユーザー単位の操作ロック |
 | `src/dashboard/games/` | ゲームUID一覧・表示設定・状態キャッシュ |
 | `src/dashboard/rewards/` | 報酬設定・スケジュール・実行（定時と遅延実行の区別）、送信不確定時のガード、今月の報酬一覧のキャッシュ、ユーザー削除前の報酬確認 |
 | `src/hoyolab/` | HoYoLAB上流APIの型付きクライアント（ダッシュボードの方針は含めない） |
@@ -155,7 +162,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 ## 運用上の制約
 
 - 永続データは `db-data` ボリュームに保存します。`POSTGRES_DB`・`POSTGRES_USER`・`POSTGRES_PASSWORD` は初回初期化用で、既存DBには `compose.yaml` の変更だけでは反映されません。
-- **DBと対応する `HOYOLAB_COOKIE_KEY` をセットでバックアップ**してください。鍵の変更・再暗号化ツールはありません。保存済みCookieがある状態で鍵を変更すると復号できません。
+- **DBと対応する `HOYOLAB_COOKIE_KEY` をセットでバックアップ**してください。鍵を変更するときは、サーバーを止めてバックアップ後に `docker compose run --rm -e HOYOLAB_COOKIE_KEY_NEW=<新しい鍵> app rekey` で再暗号化し、`HOYOLAB_COOKIE_KEY` を新しい鍵に替えてから起動します。単に鍵を書き換えると保存済みCookieを復号できません。
 - 更新はバックアップ後に `docker compose pull && docker compose up -d`。起動時のDB更新を伴うため、ロールバックにDB復元が必要になる場合があります。
 
 ## リリースイメージ

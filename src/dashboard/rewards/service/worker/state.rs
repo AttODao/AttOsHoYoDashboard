@@ -151,12 +151,12 @@ impl Finish {
             observed: None,
         }
     }
-    pub(super) fn retry(code: String) -> Self {
+    pub(super) fn retry(code: String, delay: Duration) -> Self {
         Self {
             state: "retry_wait".to_owned(),
             send_state: "not_sent".to_owned(),
             error_code: Some(code),
-            next_retry_at: Some(Utc::now() + Duration::seconds(10)),
+            next_retry_at: Some(Utc::now() + delay),
             clear_guard: false,
             setting_action_required: false,
             observed: None,

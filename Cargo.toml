@@ -13,6 +13,7 @@ default-run = "attoshoyodashboard"
 argon2 = "0.5"
 axum = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
 derive_more = { version = "2", default-features = false, features = ["debug"] }
 dotenvy = "0.15"
 md5 = "0.8"
@@ -28,7 +29,7 @@ thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time", "sync", "signal"] }
 tower-http = { version = "0.6", features = ["fs"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "json"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 # conditional-ui only supplies the challenge generator for decoy passkey login options.
 webauthn-rs = { version = "0.5", default-features = false, features = ["conditional-ui"] }

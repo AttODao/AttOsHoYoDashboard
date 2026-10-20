@@ -40,7 +40,9 @@ fn config(secure_cookie: bool) -> Config {
         rp_id: "dashboard.example.test".to_owned(),
         secure_cookie,
         session_ttl: Duration::days(7),
-        timezone: FixedOffset::east_opt(9 * 3600).unwrap(),
+        timezone: FixedOffset::east_opt(9 * 3600).unwrap().into(),
+        tuning: crate::dashboard::config::Tuning::default(),
+        metrics_token: Some("synthetic-metrics-token".to_owned()),
         cookie_key: Some(Arc::new(
             crate::dashboard::hoyolab::credentials::CookieKey::from_hex(&"11".repeat(32)).unwrap(),
         )),
@@ -61,6 +63,7 @@ fn app(accounts: Accounts) -> App {
         passkeys: Passkeys::new(&config.rp_id, &config.origin, config.cookie_key.as_deref())
             .unwrap(),
         accounts,
+        heartbeat: super::runtime::Heartbeat::new(),
         config,
     })
 }

@@ -20,7 +20,6 @@ use uuid::Uuid;
 mod tests;
 
 pub(super) const CACHE_VERSION: i32 = 1;
-const FRESH_TTL: Duration = Duration::minutes(5);
 
 impl<G: Gateway> Rewards<G> {
     pub(super) async fn refresh_cache(
@@ -196,11 +195,15 @@ pub(super) async fn upsert_cache(
     )
 }
 
-pub(super) fn cache_fresh(cache: &reward_status_cache::Model, now: DateTime<Utc>) -> bool {
+pub(super) fn cache_fresh(
+    cache: &reward_status_cache::Model,
+    now: DateTime<Utc>,
+    ttl: Duration,
+) -> bool {
     cache.payload_version == CACHE_VERSION
         && cache.payload.is_some()
         && cache.fetched_at.is_some_and(|at| {
             let age = now.signed_duration_since(at);
-            age >= Duration::zero() && age <= FRESH_TTL
+            age >= Duration::zero() && age <= ttl
         })
 }

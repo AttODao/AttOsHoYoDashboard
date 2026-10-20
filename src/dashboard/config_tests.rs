@@ -25,7 +25,7 @@ fn defaults_and_explicit_settings_share_the_production_parser() {
     assert_eq!(config.rp_id, "localhost");
     assert!(!config.secure_cookie);
     assert_eq!(config.session_ttl, Duration::days(7));
-    assert_eq!(config.timezone.local_minus_utc(), 9 * 3600);
+    assert_eq!(config.timezone.to_string(), "+09:00");
     let config = load(&[
         ("PUBLIC_ORIGIN", "https://app.example.test"),
         ("RP_ID", "example.test"),
@@ -40,7 +40,10 @@ fn defaults_and_explicit_settings_share_the_production_parser() {
     assert_eq!(config.listen, "[::1]:9010".parse::<SocketAddr>().unwrap());
     assert!(config.secure_cookie);
     assert_eq!(config.session_ttl, Duration::days(2));
-    assert_eq!(config.timezone.local_minus_utc(), -16200);
+    assert_eq!(config.timezone.to_string(), "-04:30");
+    // A named zone takes precedence over the fixed offset.
+    let config = load(&[("TIMEZONE", "Europe/Berlin"), ("TIMEZONE_OFFSET", "+09:00")]).unwrap();
+    assert_eq!(config.timezone.name(), Some("Europe/Berlin"));
 }
 
 #[test]
@@ -137,6 +140,7 @@ fn invalid_database_address_lifetime_and_timezone_fail_closed() {
         ("SESSION_TTL_DAYS", "NaN"),
         ("TIMEZONE_OFFSET", "Asia/Tokyo"),
         ("TIMEZONE_OFFSET", "+25:00"),
+        ("TIMEZONE", "Mars/Base"),
     ] {
         assert!(load(&[pair]).is_err(), "invalid {} accepted", pair.0);
     }
@@ -188,4 +192,30 @@ fn non_unicode_configuration_is_not_silently_defaulted() {
         result,
         Err(Error::Invalid("configuration must be UTF-8"))
     ));
+}
+
+#[test]
+fn tuning_defaults_and_bounds() {
+    assert_eq!(load(&[]).unwrap().tuning, Tuning::default());
+    let tuning = load(&[
+        ("REWARD_HISTORY_DAYS", "30"),
+        ("STATUS_CACHE_TTL_MINUTES", "15"),
+        ("REWARD_MAX_ATTEMPTS", "2"),
+        ("REWARD_RETRY_DELAY_SECONDS", "60"),
+    ])
+    .unwrap()
+    .tuning;
+    assert_eq!(tuning.history_days, 30);
+    assert_eq!(tuning.status_ttl, Duration::minutes(15));
+    assert_eq!(tuning.max_attempts, 2);
+    assert_eq!(tuning.retry_delay, Duration::seconds(60));
+    for pair in [
+        ("REWARD_HISTORY_DAYS", "0"),
+        ("REWARD_HISTORY_DAYS", "91"),
+        ("STATUS_CACHE_TTL_MINUTES", "0"),
+        ("REWARD_MAX_ATTEMPTS", "5"),
+        ("REWARD_RETRY_DELAY_SECONDS", "x"),
+    ] {
+        assert!(load(&[pair]).is_err(), "{} accepted", pair.0);
+    }
 }

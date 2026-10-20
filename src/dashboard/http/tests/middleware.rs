@@ -72,7 +72,10 @@ async fn safe_methods_do_not_require_origin_and_all_responses_are_hardened() {
         .header(header::ORIGIN, "https://other.example.test")
         .body(Body::empty())
         .unwrap();
-    assert_eq!(body(call(&app, req).await).await, json!({"status": "ok"}));
+    assert_eq!(
+        body(call(&app, req).await).await,
+        json!({"status": "ok", "worker": "ok"})
+    );
     for (method, path, input) in [
         ("GET", "/api/v1/me", None),
         ("GET", "/api/v1/server-settings", None),
@@ -162,4 +165,59 @@ async fn authentication_rejects_missing_expired_inactive_and_duplicate_cookies()
         "unauthorized",
     )
     .await;
+}
+
+#[tokio::test]
+async fn health_reports_a_stalled_reward_worker_as_unavailable() {
+    let db = TestDatabase::new().await;
+    let (accounts, _) = db.ready_admin().await;
+    let app = app(accounts);
+    app.heartbeat
+        .set_age_secs(crate::dashboard::http::runtime::STALLED_AFTER_SECS + 1);
+    let response = call(&app, request("GET", "/health", None, None)).await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        body(response).await,
+        json!({"status": "degraded", "worker": "stalled"})
+    );
+}
+
+#[tokio::test]
+async fn metrics_require_the_configured_bearer_token() {
+    let db = TestDatabase::new().await;
+    let (accounts, _) = db.ready_admin().await;
+    let app = app(accounts);
+    let scrape = |token: Option<&str>| {
+        let mut builder = Request::builder().uri("/metrics");
+        if let Some(token) = token {
+            builder = builder.header(header::AUTHORIZATION, format!("Bearer {token}"));
+        }
+        builder.body(Body::empty()).unwrap()
+    };
+    for token in [None, Some("wrong-synthetic-token")] {
+        assert_eq!(
+            call(&app, scrape(token)).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    let response = call(&app, scrape(Some("synthetic-metrics-token"))).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let text = String::from_utf8(
+        to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(text.contains("ahd_up 1"));
+    assert!(text.contains("ahd_users{state=\"active\"} 1"));
+    assert!(text.contains("ahd_reward_worker_heartbeat_age_seconds "));
+
+    // Without a configured token the endpoint does not exist.
+    let mut app = app;
+    Arc::get_mut(&mut app).unwrap().config.metrics_token = None;
+    let closed = call(&app, scrape(Some("synthetic-metrics-token")))
+        .await
+        .status();
+    assert_eq!(closed, StatusCode::NOT_FOUND);
 }

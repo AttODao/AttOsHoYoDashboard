@@ -2,6 +2,7 @@
 pub(super) mod credentials;
 pub(super) mod gateway;
 pub(super) mod operations;
+pub(super) mod rekey;
 pub(super) mod store;
 mod verification;
 #[cfg(test)]

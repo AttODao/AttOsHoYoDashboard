@@ -2,6 +2,7 @@
 mod auth;
 mod games;
 mod hoyolab;
+mod metrics;
 mod middleware;
 mod passkeys;
 mod response;
@@ -39,6 +40,7 @@ struct HttpState {
     passkeys: Passkeys,
     cookies: Option<Arc<CookieStore>>,
     operations: super::hoyolab::operations::Operations,
+    heartbeat: runtime::Heartbeat,
     config: Config,
 }
 
@@ -49,6 +51,7 @@ pub(super) async fn serve(accounts: Accounts, config: Config) -> Result<()> {
         let mut store = CookieStore::new(db.clone(), Arc::clone(key));
         store.operations = operations.clone();
         store.timezone = config.timezone;
+        store.tuning = config.tuning;
         Arc::new(store)
     });
     let passkeys = Passkeys::new(&config.rp_id, &config.origin, config.cookie_key.as_deref())?;
@@ -57,6 +60,7 @@ pub(super) async fn serve(accounts: Accounts, config: Config) -> Result<()> {
         passkeys,
         cookies,
         operations,
+        heartbeat: runtime::Heartbeat::new(),
         config,
     });
     if !tokio::fs::metadata(app.config.ui_dir.join("index.html"))
@@ -101,6 +105,7 @@ fn router(app: App) -> Router {
         .route_layer(from_fn_with_state(app.clone(), middleware::authenticate));
     Router::new()
         .route("/health", get(health))
+        .route("/metrics", get(metrics::metrics))
         .route("/openapi.json", get(ui::openapi))
         .merge(ui::routes(&app))
         .merge(auth::public_routes())
@@ -111,9 +116,24 @@ fn router(app: App) -> Router {
         .with_state(app)
 }
 
-async fn health(State(app): State<App>) -> Result<Json<serde_json::Value>> {
+/// Database reachability plus the reward worker's liveness; a stalled worker is 503.
+async fn health(
+    State(app): State<App>,
+) -> Result<(axum::http::StatusCode, Json<serde_json::Value>)> {
     app.accounts.db.ping().await?;
-    Ok(Json(json!({"status": "ok"})))
+    let worker = if app.cookies.is_none() {
+        "disabled"
+    } else if app.heartbeat.age_secs() > runtime::STALLED_AFTER_SECS {
+        "stalled"
+    } else {
+        "ok"
+    };
+    let (code, status) = if worker == "stalled" {
+        (axum::http::StatusCode::SERVICE_UNAVAILABLE, "degraded")
+    } else {
+        (axum::http::StatusCode::OK, "ok")
+    };
+    Ok((code, Json(json!({"status": status, "worker": worker}))))
 }
 async fn server_settings(
     State(app): State<App>,
@@ -121,7 +141,7 @@ async fn server_settings(
 ) -> Result<Json<serde_json::Value>> {
     accounts::require_ready(&actor.user)?;
     Ok(Json(
-        json!({"timezone_offset": app.config.timezone.to_string(), "session_ttl_days": app.config.session_ttl.num_days()}),
+        json!({"timezone_offset": app.config.timezone.offset_at(chrono::Utc::now()).to_string(), "timezone": app.config.timezone.name(), "session_ttl_days": app.config.session_ttl.num_days()}),
     ))
 }
 

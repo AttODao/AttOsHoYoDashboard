@@ -50,7 +50,7 @@
           "public"
         ],
         "operationId": "getHealth",
-        "summary": "Check database connectivity.",
+        "summary": "Check database connectivity and reward worker liveness.",
         "responses": {
           "200": {
             "description": "OK.",
@@ -60,12 +60,25 @@
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
-                    "status"
+                    "status",
+                    "worker"
                   ],
                   "properties": {
                     "status": {
                       "type": "string",
-                      "const": "ok"
+                      "enum": [
+                        "ok",
+                        "degraded"
+                      ]
+                    },
+                    "worker": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "stalled",
+                        "disabled"
+                      ],
+                      "description": "`disabled` without HOYOLAB_COOKIE_KEY; `stalled` after 120 s without a reward worker tick."
                     }
                   }
                 }
@@ -106,7 +119,44 @@
             "$ref": "#/components/responses/BadGateway"
           },
           "503": {
-            "$ref": "#/components/responses/Unavailable"
+            "description": "The reward worker is stalled, or the database is unreachable (CommonError).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "status",
+                        "worker"
+                      ],
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "ok",
+                            "degraded"
+                          ]
+                        },
+                        "worker": {
+                          "type": "string",
+                          "enum": [
+                            "ok",
+                            "stalled",
+                            "disabled"
+                          ],
+                          "description": "`disabled` without HOYOLAB_COOKIE_KEY; `stalled` after 120 s without a reward worker tick."
+                        }
+                      }
+                    },
+                    {
+                      "$ref": "#/components/schemas/CommonError"
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "security": []
@@ -2414,6 +2464,49 @@
           }
         ]
       }
+    },
+    "/metrics": {
+      "get": {
+        "tags": [
+          "public"
+        ],
+        "operationId": "getMetrics",
+        "summary": "Prometheus text metrics (users, link states, reward runs and settings, worker heartbeat).",
+        "responses": {
+          "200": {
+            "description": "Prometheus text exposition format 0.0.4.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [],
+        "description": "Mounted only when METRICS_TOKEN is set; otherwise 404. Requires `Authorization: Bearer <METRICS_TOKEN>`.",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Bearer METRICS_TOKEN."
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -2708,6 +2801,7 @@
         "additionalProperties": false,
         "required": [
           "timezone_offset",
+          "timezone",
           "session_ttl_days"
         ],
         "properties": {
@@ -2715,7 +2809,18 @@
             "type": "string",
             "examples": [
               "+09:00"
-            ]
+            ],
+            "description": "UTC offset of the schedule clock now."
+          },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "examples": [
+              "Asia/Tokyo"
+            ],
+            "description": "IANA zone name when TIMEZONE is set; null for a fixed TIMEZONE_OFFSET."
           },
           "session_ttl_days": {
             "type": "integer",

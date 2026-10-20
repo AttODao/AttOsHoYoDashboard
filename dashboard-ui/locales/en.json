@@ -366,5 +366,6 @@
   "hoyolab.remove_cookie": "Remove Cookie",
   "hoyolab.remove_hint": "You can delete the stored Cookie from this server.",
   "hoyolab.remove_consequences": "This deletes the stored Cookie. The HoYoLAB UID binding, game display and history remain, and automatic claiming turns OFF for every game. To use the dashboard again, register a Cookie from the same HoYoLAB account.",
-  "hoyolab.cookie_removed": "Cookie removed."
+  "hoyolab.cookie_removed": "Cookie removed.",
+  "rewards.server_time_named": "Runs on server time ({zone}, now UTC{offset})."
 }

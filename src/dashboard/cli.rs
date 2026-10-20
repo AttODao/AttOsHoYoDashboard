@@ -4,6 +4,7 @@ use super::{
     config::Config,
     db,
     error::{Error, Result},
+    hoyolab::{credentials::CookieKey, rekey},
     http,
 };
 use std::io::Read;
@@ -13,17 +14,17 @@ pub(crate) async fn run() -> Result<()> {
     let command = args.first().map(String::as_str).unwrap_or("serve");
     if command == "help" || command == "--help" {
         println!(
-            "Commands: serve | migrate | bootstrap-admin [USERNAME]\nbootstrap-admin USERNAME reads the temporary password from standard input\nbootstrap-admin uses INITIAL_ADMIN_USERNAME and INITIAL_ADMIN_PASSWORD"
+            "Commands: serve | migrate | bootstrap-admin [USERNAME] | rekey\nbootstrap-admin USERNAME reads the temporary password from standard input\nbootstrap-admin uses INITIAL_ADMIN_USERNAME and INITIAL_ADMIN_PASSWORD\nrekey re-encrypts stored Cookies from HOYOLAB_COOKIE_KEY to HOYOLAB_COOKIE_KEY_NEW; stop the server first"
         );
         return Ok(());
     }
     let valid = matches!(
         (command, args.len()),
-        ("serve" | "migrate", 0 | 1) | ("bootstrap-admin", 1 | 2)
+        ("serve" | "migrate" | "rekey", 0 | 1) | ("bootstrap-admin", 1 | 2)
     );
     if !valid {
         return Err(Error::Invalid(
-            "usage: attoshoyodashboard [serve | migrate | bootstrap-admin [USERNAME]]",
+            "usage: attoshoyodashboard [serve | migrate | bootstrap-admin [USERNAME] | rekey]",
         ));
     }
     let config = Config::load()?;
@@ -40,6 +41,28 @@ pub(crate) async fn run() -> Result<()> {
         "migrate" => {
             db::migrate(&db).await?;
             println!("Migrations applied");
+        }
+        "rekey" => {
+            let old = config
+                .cookie_key
+                .clone()
+                .ok_or(Error::Invalid("HOYOLAB_COOKIE_KEY is required"))?;
+            let raw = std::env::var("HOYOLAB_COOKIE_KEY_NEW").map_err(|_| {
+                Error::Invalid("HOYOLAB_COOKIE_KEY_NEW is required and must be UTF-8")
+            })?;
+            if std::env::var("HOYOLAB_COOKIE_KEY")
+                .is_ok_and(|current| current.eq_ignore_ascii_case(&raw))
+            {
+                return Err(Error::Invalid(
+                    "HOYOLAB_COOKIE_KEY_NEW must differ from HOYOLAB_COOKIE_KEY",
+                ));
+            }
+            let new = CookieKey::from_hex(&raw)?;
+            db::migrate(&db).await?;
+            let count = rekey::rekey(&db, &old, &new).await?;
+            println!(
+                "Re-encrypted {count} stored Cookie(s). Set HOYOLAB_COOKIE_KEY to the new key before starting the server."
+            );
         }
         "bootstrap-admin" => {
             let (username, password) = if let Some(username) = args.get(1) {

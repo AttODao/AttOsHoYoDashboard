@@ -1,4 +1,4 @@
-use super::super::{HISTORY_DAYS, RUN_LIMIT, Rewards, enqueue_in};
+use super::super::{RUN_LIMIT, Rewards, enqueue_in};
 use crate::dashboard::{
     db::entities::{hoyolab_account, reward_guard, reward_run, reward_setting},
     error::{Error, Result},
@@ -143,7 +143,7 @@ impl<G: Gateway> Rewards<G> {
 
     /// Periodic maintenance; the runtime calls it far less often than `tick`.
     pub(in crate::dashboard) async fn cleanup_history(&self) -> Result<()> {
-        let cutoff = Utc::now() - Duration::days(HISTORY_DAYS);
+        let cutoff = Utc::now() - Duration::days(self.store.tuning.history_days);
         // Preserve interrupted work for confirmation; the attempts FK handles completed history cleanup.
         reward_run::Entity::delete_many()
             .filter(reward_run::Column::CreatedAt.lt(cutoff))
