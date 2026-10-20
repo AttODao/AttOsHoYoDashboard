@@ -11,11 +11,13 @@ use axum::{
 use tower_http::services::ServeDir;
 
 const OPENAPI: &str = include_str!("../../../docs/dashboard-api.json");
-// DX emits an external loader. Only expedition images may use the official image CDNs;
+// DX emits an external loader. Only expedition and check-in reward images may use the official image CDNs;
 // scripts, styles and API connections remain same-origin.
-const CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' https://upload-os-bbs.hoyolab.com https://act-upload.hoyolab.com https://act-webstatic.hoyoverse.com; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'";
+const CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' https://upload-os-bbs.hoyolab.com https://act-upload.hoyolab.com https://act-webstatic.hoyoverse.com https://fastcdn.hoyoverse.com; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'";
 
 const IMMUTABLE: &str = "public, max-age=31536000, immutable";
+/// Install metadata for adding the dashboard to a home screen; the icon is an unhashed asset.
+const MANIFEST: &str = r##"{"name":"AHD","short_name":"AHD","description":"HoYoLAB dashboard","lang":"ja","start_url":"/dashboard","scope":"/","display":"standalone","background_color":"#0C0B0E","theme_color":"#0C0B0E","icons":[{"src":"/assets/dashboard-icon.png","sizes":"256x256","type":"image/png","purpose":"any"}]}"##;
 
 pub(super) fn routes(app: &App) -> Router<App> {
     let assets = Router::new()
@@ -41,6 +43,7 @@ pub(super) fn routes(app: &App) -> Router<App> {
         .route("/settings/security", get(index))
         .route("/settings/delete", get(index))
         .route("/admin", get(index))
+        .route("/manifest.webmanifest", get(manifest))
         .merge(assets)
 }
 
@@ -83,6 +86,13 @@ async fn index(State(app): State<App>) -> Result<Response> {
         html,
     )
         .into_response())
+}
+
+async fn manifest() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "application/manifest+json")],
+        MANIFEST,
+    )
 }
 
 pub(super) async fn openapi() -> impl IntoResponse {

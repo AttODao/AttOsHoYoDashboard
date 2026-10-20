@@ -32,7 +32,7 @@ async fn list(
     Extension(actor): Extension<Arc<Identity>>,
 ) -> Result<Json<Value>> {
     let rows = service(&app)?.list(&actor).await?;
-    Ok(Json(Value::Array(rows.into_iter().map(|row|json!({"id":row.setting.id,"game_kind":row.setting.game_kind,"enabled":row.setting.enabled,"local_time":row.setting.local_time,"auth_status":row.setting.auth_status,"next_run_at":row.setting.next_run_at,"last_run":row.last_run.map(|run|json!({"id":run.id,"state":run.state,"ended_at":run.ended_at})),"is_sign":row.is_sign,"last_checked_at":row.last_checked_at,"error_code":row.error_code,"error_at":row.error_at})).collect())))
+    Ok(Json(Value::Array(rows.into_iter().map(|row|json!({"id":row.setting.id,"game_kind":row.setting.game_kind,"enabled":row.setting.enabled,"local_time":row.setting.local_time,"auth_status":row.setting.auth_status,"next_run_at":row.setting.next_run_at,"last_run":row.last_run.map(|run|json!({"id":run.id,"state":run.state,"ended_at":run.ended_at})),"is_sign":row.is_sign,"total_sign_day":row.total_sign_day,"today_award":row.today_award,"last_checked_at":row.last_checked_at,"error_code":row.error_code,"error_at":row.error_at})).collect())))
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

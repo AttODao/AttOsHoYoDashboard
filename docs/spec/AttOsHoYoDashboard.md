@@ -44,7 +44,8 @@ flowchart TD
 
 ## 4. HoYoLAB連携とUID
 
-- 1 Dashboardユーザーにつき HoYoLABアカウントは1個。追加連携、別UIDへの置換、独立unlinkは提供しない。
+- 1 Dashboardユーザーにつき HoYoLABアカウントは1個。追加連携、別UIDへの置換は提供しない。
+- 本人は保存済みCookieを削除できる（`DELETE /api/v1/me/hoyolab/cookie`）。本人確認済みの連携は `removed` となり、暗号文を消してUIDの紐付け・ゲーム表示・履歴・送信ガードを残し、全ゲームの自動受け取りをOFF（次回予定も消去）にする。通常利用の条件を満たさなくなるため初期設定ゲートに戻り、同じHoYoLAB UIDのCookie登録と本人確認でのみ復帰できる。未確認の連携は行ごと削除する。削除済みの連携でユーザー削除を完了する場合、不確定な送信はGET確認できないためunknownのまま記録する。
 - verified HoYoLAB UID は全ユーザーで一意。同一UIDのCookie更新だけが設定・履歴・game visibilityを維持して許可される。
 - Cookie claimやrolesのgame UIDだけを本人HoYoLAB UIDの証明にしない。候補の `account_identity()` と `community_identity()` は実装済みだが、token-to-UID binding とroles principal一致の本番証拠ではない。
 - Cookie parserはlegacy/v2の正規化保存に対応する。ブラウザからコピーした `Cookie: ...` ヘッダー行を受け付け、空・値なし・不正な名前の要素は無視する。新規登録では有効な `ltoken_v2`・`ltuid_v2`・`ltmid_v2` が各1つ必須で、それ以外（旧形式Cookieや他のUID/MID alias、その重複・不一致）は無視する。MIDの必須性は未実証のため、MIDなしの登録は受け付けない。保存済みCookieの復号時は、MIDなし・旧形式も従来どおり読み込む。draft verification pathは現在 v2 ltoken credential だけを受け入れる。MIDが本当に不要かは未実証で、`ltuid`+`ltoken`だけで十分とは書かない。
@@ -68,7 +69,7 @@ flowchart TD
 
 ## 6. ゲーム状態
 
-ゲーム状態APIは所有者の verified link と password changed を要求する。状態cacheはゲームUIDごとの最新curated JSON version 2で、TTLは5分。hidden/undetected UIDはnote fetchしない。fetch失敗時は既存payload/fetched_atを保持し、sanitized error_code/error_atを別に記録する。future fetched_atはfresh扱いしない。
+ゲーム状態APIは所有者の verified link と password changed を要求する。状態cacheはゲームUIDごとの最新curated JSON version 3で、TTLは5分。hidden/undetected UIDはnote fetchしない。fetch失敗時は既存payload/fetched_atを保持し、sanitized error_code/error_atを別に記録する。future fetched_atはfresh扱いしない。
 
 初期表示対象:
 
@@ -77,11 +78,14 @@ flowchart TD
 | `current_resin`, `max_resin`, `resin_full_at` | `current_stamina`, `max_stamina`, `stamina_full_at` |
 | `current_home_coin`, `max_home_coin`, `home_coin_full_at` | `current_reserve_stamina` |
 | `finished_task_num`, `total_task_num`, `is_extra_task_reward_received` | `current_train_score`, `max_train_score` |
+| `remain_resin_discount_num`, `resin_discount_num_limit`（週ボス割引の残り） | `weekly_cocoon_cnt`, `weekly_cocoon_limit`（歴戦余韻の残り）, `current_rogue_score`, `max_rogue_score` |
+| `transformer_obtained`, `transformer_ready`, `transformer_ready_at`（参量物質変化器） | `is_reserve_stamina_full`, `rogue_tourn_weekly_*`（差分宇宙、解放時のみ） |
+| `current_expedition_num`, `max_expedition_num` | `accepted_expedition_num`（上流の綴り誤り `accepted_epedition_num` を改名）, `total_expedition_num` |
 | expeditions: `status`, `name`, `remained_time`, `avatar_side_icon` | expeditions/assignments: `status`, `name`, `remaining_time`, `item_url` |
 
 原神の派遣表示はavatar iconを使い、名称は代替テキストに残す。スターレイルの派遣欄は表示しない（APIの取得fieldは維持する）。画像は公式画像CDNのみ許可し、Refererを送らない。欠落・読込失敗時は代替アイコンとラベルを保つ。旧cache versionは新しい派遣fieldを持たないため再取得する。上流が空配列を返した場合と派遣field自体がない場合を区別する。
 
-不足fieldから非公開・非対応などを断定しない。変化器・週間項目・推定増加・未確認上限は初期対象外。
+不足fieldから非公開・非対応などを断定しない。推定増加・未確認上限（予備開拓力の上限値など）は対象外。主リソースは上限の90%以上で「まもなく上限」、上限で「上限」を表示する。
 
 ## 7. ログインボーナス
 
@@ -90,6 +94,9 @@ flowchart TD
 - schedulerはpage viewに依存しない。停止中に時刻を逃した場合は現在分だけcatchupし、過去分を補填しない。
 - 実行はPOST前にdaily statusをGET確認する。成功はPOST応答だけでなく最終状態で確認する。
 - pre-POST/GET retry pathは初回+最大3回、10秒backoffを永続化する。不明または送信可能性がある場合はdurable guardを立て、restart・credential update・5日履歴cleanup後も無条件POST再送しない。
+- 定時の時刻から5分以内に開始したrunは `scheduled`、それより遅れた（停止中・延期）runは `catchup` と記録する。履歴の掃除は1時間ごと。
+- 報酬状態の取得時に、その月の報酬一覧（`home`）を報酬月（UTC+8）ごとに1回だけGETしてキャッシュし、`total_sign_day` と当日の報酬（未受け取りなら次、受け取り済みならその日の分）を返す。一覧の取得失敗は状態取得を失敗させない。
+- 画面の手動受け取りはダッシュボードの1つの操作にまとめ、本日分が未受け取りで実行可能なゲームだけに報酬設定ごとのPOSTを1回ずつ送る。
 - 手動runとschedulerは同じworkerを使用する。追加認証要求はaction_required、不確定な送信結果はunknownとして停止し、無条件にPOSTを再送しない。
 
 ## 8. Web API契約
@@ -108,4 +115,4 @@ OpenAPI 3.1 の正本は [`../dashboard-api.json`](../dashboard-api.json)。現�
 
 ## 9. 対象外
 
-招待・自由登録、PAT/Scope、メール復旧、Cookie自動更新、複数HoYoLAB連携、別UID置換、個別unlink、CAPTCHA自動突破、他人へのゲームデータ共有、中国本土版、原神・崩壊：スターレイル以外、網羅的キャラクター戦績、push/email通知、native mobile app、SSR/fullstack新server、DST対応。
+招待・自由登録、PAT/Scope、メール復旧、Cookie自動更新、複数HoYoLAB連携、別UID置換、CAPTCHA自動突破、他人へのゲームデータ共有、中国本土版、原神・崩壊：スターレイル以外、網羅的キャラクター戦績、push/email通知、native mobile app、SSR/fullstack新server、DST対応。

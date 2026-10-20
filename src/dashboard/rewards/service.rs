@@ -1,4 +1,4 @@
-use self::cache::{CACHE_VERSION, cache_fresh};
+use self::cache::{CACHE_VERSION, cache_fresh, today_award};
 use super::schedule;
 use crate::dashboard::{
     auth::sessions::Identity,
@@ -47,6 +47,8 @@ pub(in crate::dashboard) struct RewardView {
     pub(in crate::dashboard) setting: reward_setting::Model,
     pub(in crate::dashboard) last_run: Option<reward_run::Model>,
     pub(in crate::dashboard) is_sign: Option<bool>,
+    pub(in crate::dashboard) total_sign_day: Option<i64>,
+    pub(in crate::dashboard) today_award: Option<Value>,
     pub(in crate::dashboard) last_checked_at: Option<DateTime<Utc>>,
     pub(in crate::dashboard) error_code: Option<String>,
     pub(in crate::dashboard) error_at: Option<DateTime<Utc>>,
@@ -96,13 +98,17 @@ impl<G: Gateway> Rewards<G> {
             let cached = cache
                 .as_ref()
                 .filter(|row| row.payload_version == CACHE_VERSION);
+            let payload = cached.and_then(|row| row.payload.as_ref());
             views.push(RewardView {
                 setting,
                 last_run,
-                is_sign: cached
-                    .and_then(|row| row.payload.as_ref())
+                is_sign: payload
                     .and_then(|payload| payload.get("is_sign"))
                     .and_then(Value::as_bool),
+                total_sign_day: payload
+                    .and_then(|payload| payload.get("total_sign_day"))
+                    .and_then(Value::as_i64),
+                today_award: payload.and_then(|payload| today_award(payload, now)),
                 last_checked_at: cached.and_then(|row| row.fetched_at),
                 error_code: cached.and_then(|row| row.error_code.clone()),
                 error_at: cached.and_then(|row| row.error_at),

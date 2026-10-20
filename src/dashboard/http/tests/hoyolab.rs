@@ -15,7 +15,7 @@ async fn cookie_setup_routes_store_pending_without_returning_credentials_or_clai
     assert_eq!(initial.status(), StatusCode::OK);
     assert_eq!(
         body(initial).await,
-        json!({"status":"not_configured","setup_complete":false,"updated_at":null,"id":null,"hoyolab_uid":null,"verification_available":true})
+        json!({"status":"not_configured","setup_complete":false,"updated_at":null,"id":null,"hoyolab_uid":null,"verified_at":null,"verification_available":true})
     );
     let response = call(
         &app,
@@ -44,11 +44,35 @@ async fn cookie_setup_routes_store_pending_without_returning_credentials_or_clai
     assert_eq!(data["status"], "pending_verification");
     assert_eq!(data["setup_complete"], false);
     assert!(data["updated_at"].is_string());
-    assert_eq!(data.as_object().unwrap().len(), 6);
+    assert_eq!(data.as_object().unwrap().len(), 7);
     assert!(data["id"].is_string());
     assert!(data["hoyolab_uid"].is_null());
+    assert!(data["verified_at"].is_null());
     assert_eq!(data["verification_available"], true);
     assert!(!data.to_string().contains("synthetic-private-token"));
+    // Removing an unverified Cookie returns the link to "not configured".
+    let response = call(
+        &app,
+        request("DELETE", "/api/v1/me/hoyolab/cookie", Some(&session), None),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    let response = call(
+        &app,
+        request("GET", "/api/v1/me/hoyolab", Some(&session), None),
+    )
+    .await;
+    assert_eq!(body(response).await["status"], "not_configured");
+    error(
+        call(
+            &app,
+            request("DELETE", "/api/v1/me/hoyolab/cookie", Some(&session), None),
+        )
+        .await,
+        StatusCode::NOT_FOUND,
+        "not_found",
+    )
+    .await;
 }
 
 #[tokio::test]

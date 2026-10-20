@@ -25,13 +25,14 @@ async fn pending_setup_is_encrypted_owned_audited_and_never_identity_proof() {
     assert_eq!(first.credential_version, 1);
     assert!(
         !first
-            .encrypted_credentials
+            .sealed_credentials()
+            .unwrap()
             .windows(b"synthetic-cookie-token".len())
             .any(|w| w == b"synthetic-cookie-token")
     );
     assert!(!format!("{first:?}").contains("123"));
     assert_eq!(
-        key.open(actor.user.id, None, &first.encrypted_credentials)
+        key.open(actor.user.id, None, first.sealed_credentials().unwrap())
             .unwrap()
             .as_str(),
         Credentials::parse(RAW).unwrap().as_str()
@@ -44,7 +45,7 @@ async fn pending_setup_is_encrypted_owned_audited_and_never_identity_proof() {
     assert_eq!(second.credential_version, 2);
     assert_eq!(second.hoyolab_uid, None);
     assert_eq!(
-        key.open(actor.user.id, None, &second.encrypted_credentials)
+        key.open(actor.user.id, None, second.sealed_credentials().unwrap())
             .unwrap()
             .as_str(),
         Credentials::parse(updated).unwrap().as_str()
@@ -178,13 +179,15 @@ async fn stored_uid_cannot_be_replaced_by_a_cookie_claim_and_ciphertext_is_row_b
     let mut verified = pending.clone().into_active_model();
     verified.hoyolab_uid = Set(Some("123".into()));
     verified.auth_status = Set("verified".into());
-    verified.encrypted_credentials = Set(key()
-        .seal(
-            actor.user.id,
-            Some("123"),
-            &Credentials::parse(raw).unwrap(),
-        )
-        .unwrap());
+    verified.encrypted_credentials = Set(Some(
+        key()
+            .seal(
+                actor.user.id,
+                Some("123"),
+                &Credentials::parse(raw).unwrap(),
+            )
+            .unwrap(),
+    ));
     let verified = verified.update(&fixture.db).await.unwrap();
     assert!(matches!(
         store
@@ -249,9 +252,11 @@ fn stored(owner: Uuid, uid: Option<&str>) -> hoyolab_account::ActiveModel {
         id: Set(Uuid::new_v4()),
         owner_user_id: Set(owner),
         hoyolab_uid: Set(uid.map(str::to_owned)),
-        encrypted_credentials: Set(key()
-            .seal(owner, uid, &Credentials::parse(RAW).unwrap())
-            .unwrap()),
+        encrypted_credentials: Set(Some(
+            key()
+                .seal(owner, uid, &Credentials::parse(RAW).unwrap())
+                .unwrap(),
+        )),
         credential_version: Set(1),
         auth_status: Set(if uid.is_some() {
             "verified"
@@ -261,6 +266,7 @@ fn stored(owner: Uuid, uid: Option<&str>) -> hoyolab_account::ActiveModel {
         .into()),
         created_at: Set(now),
         updated_at: Set(now),
+        verified_at: Set(None),
     }
 }
 

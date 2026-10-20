@@ -5,7 +5,7 @@ use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
 /// HoYoLAB overseas daily check-in resets at 00:00 UTC+8, independent of the schedule offset.
 const REWARD_DAY_OFFSET_SECONDS: i32 = 8 * 3600;
 
-fn reward_day(at: DateTime<Utc>) -> NaiveDate {
+pub(in crate::dashboard::rewards) fn reward_day(at: DateTime<Utc>) -> NaiveDate {
     let offset = FixedOffset::east_opt(REWARD_DAY_OFFSET_SECONDS).expect("fixed valid offset");
     at.with_timezone(&offset).date_naive()
 }

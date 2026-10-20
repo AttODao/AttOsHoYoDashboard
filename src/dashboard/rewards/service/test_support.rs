@@ -7,7 +7,7 @@ use crate::dashboard::{
     db::entities::{hoyolab_account, reward_run, reward_setting, user},
     hoyolab::{
         credentials::{CookieKey, Credentials},
-        gateway::{DailyState, Gateway, SignState},
+        gateway::{DailyAward, DailyState, Gateway, SignState},
         store::CookieStore,
     },
 };
@@ -28,12 +28,17 @@ use std::{
 };
 use uuid::Uuid;
 
+/// A month's synthetic award list as (name, count).
+type Awards = Option<Vec<(String, i64)>>;
+
 #[derive(Clone)]
 pub(super) struct MockGateway {
     daily: Arc<Mutex<VecDeque<UpstreamResult<DailyState>>>>,
     sign: Arc<Mutex<VecDeque<UpstreamResult<SignState>>>>,
+    awards: Arc<Mutex<Awards>>,
     daily_calls: Arc<AtomicUsize>,
     sign_calls: Arc<AtomicUsize>,
+    award_calls: Arc<AtomicUsize>,
 }
 
 impl MockGateway {
@@ -44,9 +49,24 @@ impl MockGateway {
         Self {
             daily: Arc::new(Mutex::new(daily.into_iter().collect())),
             sign: Arc::new(Mutex::new(sign.into_iter().collect())),
+            awards: Arc::new(Mutex::new(None)),
             daily_calls: Arc::new(AtomicUsize::new(0)),
             sign_calls: Arc::new(AtomicUsize::new(0)),
+            award_calls: Arc::new(AtomicUsize::new(0)),
         }
+    }
+    /// Serves a month's award list; without one the award GET fails like an upstream error.
+    pub(super) fn with_awards(self, awards: &[(&str, i64)]) -> Self {
+        *self.awards.lock().unwrap() = Some(
+            awards
+                .iter()
+                .map(|(name, count)| ((*name).to_owned(), *count))
+                .collect(),
+        );
+        self
+    }
+    pub(super) fn award_calls(&self) -> usize {
+        self.award_calls.load(Ordering::SeqCst)
     }
     pub(super) fn daily_calls(&self) -> usize {
         self.daily_calls.load(Ordering::SeqCst)
@@ -81,6 +101,19 @@ impl Gateway for MockGateway {
             .unwrap()
             .pop_front()
             .expect("unexpected sign call")
+    }
+    async fn awards(&self, _: &Credentials, _: GameKind) -> UpstreamResult<Vec<DailyAward>> {
+        self.award_calls.fetch_add(1, Ordering::SeqCst);
+        let awards = self.awards.lock().unwrap().clone();
+        let awards = awards.ok_or(attoshoyodashboard::hoyolab::Error::MissingData)?;
+        Ok(awards
+            .into_iter()
+            .map(|(name, count)| DailyAward {
+                name,
+                count,
+                icon: "https://act-webstatic.hoyoverse.com/synthetic.png".to_owned(),
+            })
+            .collect())
     }
 }
 
@@ -159,11 +192,12 @@ pub(super) async fn verified_link(
         id: Set(Uuid::new_v4()),
         owner_user_id: Set(owner),
         hoyolab_uid: Set(Some(uid.to_owned())),
-        encrypted_credentials: Set(key.seal(owner, Some(uid), &cookie).unwrap()),
+        encrypted_credentials: Set(Some(key.seal(owner, Some(uid), &cookie).unwrap())),
         credential_version: Set(1),
         auth_status: Set("verified".to_owned()),
         created_at: Set(now),
         updated_at: Set(now),
+        verified_at: Set(Some(now)),
     }
     .insert(db)
     .await

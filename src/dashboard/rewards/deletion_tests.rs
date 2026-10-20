@@ -33,18 +33,21 @@ async fn owner_with_setting(db: &DatabaseConnection) -> (Uuid, Uuid) {
         owner_user_id: Set(owner.id),
         hoyolab_uid: Set(Some("123".to_owned())),
         // Sealed with a synthetic key the server under test does not have.
-        encrypted_credentials: Set(CookieKey::from_hex(&"11".repeat(32))
-            .unwrap()
-            .seal(
-                owner.id,
-                Some("123"),
-                &Credentials::parse("ltoken_v2=synthetictoken123; ltuid_v2=123").unwrap(),
-            )
-            .unwrap()),
+        encrypted_credentials: Set(Some(
+            CookieKey::from_hex(&"11".repeat(32))
+                .unwrap()
+                .seal(
+                    owner.id,
+                    Some("123"),
+                    &Credentials::parse("ltoken_v2=synthetictoken123; ltuid_v2=123").unwrap(),
+                )
+                .unwrap(),
+        )),
         credential_version: Set(1),
         auth_status: Set("verified".to_owned()),
         created_at: Set(now),
         updated_at: Set(now),
+        verified_at: Set(None),
     }
     .insert(db)
     .await

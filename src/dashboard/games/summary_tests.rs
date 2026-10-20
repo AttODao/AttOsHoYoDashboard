@@ -173,7 +173,7 @@ fn invalid_or_negative_genshin_recovery_does_not_fabricate_projection_or_zeroes(
 }
 
 #[test]
-fn starrail_summary_keeps_supported_current_fields_without_weekly_or_made_up_reserve_limits() {
+fn starrail_summary_keeps_supported_current_fields_without_made_up_reserve_limits() {
     let fetched_at = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
     let summary = summarize(
         GameKind::Starrail(Starrail),
@@ -196,6 +196,53 @@ fn starrail_summary_keeps_supported_current_fields_without_weekly_or_made_up_res
     assert_eq!(summary["current_reserve_stamina"], 900);
     assert_eq!(summary["expeditions"][0]["remaining_time"], 0);
     assert!(summary.get("max_reserve_stamina").is_none());
-    assert!(summary.get("weekly_cocoon_cnt").is_none());
+    assert_eq!(summary["weekly_cocoon_cnt"], 1);
     assert_eq!(summary["expeditions"][0]["item_url"], "private-url");
+}
+
+#[test]
+fn weekly_counts_and_transformer_are_projected_when_present() {
+    let fetched_at = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
+    let mut raw: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/hoyolab/genshin-note.json"
+    ))
+    .unwrap();
+    raw["transformer"] = json!({
+        "obtained": true,
+        "recovery_time": {"Day": 1, "Hour": 2, "Minute": 3, "Second": 4, "reached": false}
+    });
+    let genshin = summarize(GameKind::Genshin(Genshin), fetched_at, &raw).unwrap();
+    assert_eq!(genshin["remain_resin_discount_num"], 3);
+    assert_eq!(genshin["resin_discount_num_limit"], 3);
+    assert_eq!(genshin["max_expedition_num"], 5);
+    assert_eq!(genshin["transformer_obtained"], true);
+    assert_eq!(genshin["transformer_ready"], false);
+    assert_eq!(
+        genshin["transformer_ready_at"],
+        Utc.with_ymd_and_hms(2026, 1, 3, 5, 7, 9)
+            .unwrap()
+            .to_rfc3339()
+    );
+    raw["transformer"]["recovery_time"]["reached"] = json!(true);
+    let ready = summarize(GameKind::Genshin(Genshin), fetched_at, &raw).unwrap();
+    assert_eq!(ready["transformer_ready"], true);
+    assert!(ready.get("transformer_ready_at").is_none());
+    raw["transformer"] = json!({"obtained": false, "recovery_time": {}});
+    let missing = summarize(GameKind::Genshin(Genshin), fetched_at, &raw).unwrap();
+    assert_eq!(missing["transformer_obtained"], false);
+    assert!(missing.get("transformer_ready").is_none());
+
+    let raw: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/hoyolab/starrail-note.json"
+    ))
+    .unwrap();
+    let starrail = summarize(GameKind::Starrail(Starrail), fetched_at, &raw).unwrap();
+    assert_eq!(starrail["max_rogue_score"], 14000);
+    assert_eq!(starrail["current_rogue_score"], 0);
+    assert_eq!(starrail["weekly_cocoon_cnt"], 0);
+    assert_eq!(starrail["weekly_cocoon_limit"], 3);
+    assert_eq!(starrail["is_reserve_stamina_full"], false);
+    assert_eq!(starrail["accepted_expedition_num"], 0);
+    assert_eq!(starrail["total_expedition_num"], 4);
+    assert!(starrail.get("accepted_epedition_num").is_none());
 }

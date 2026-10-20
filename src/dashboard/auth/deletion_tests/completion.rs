@@ -22,11 +22,12 @@ async fn insert_owned_tree(db: &DatabaseConnection, owner: Uuid, uid: &str) -> (
         id: Set(link),
         owner_user_id: Set(owner),
         hoyolab_uid: Set(Some(uid.to_owned())),
-        encrypted_credentials: Set(vec![7; 32]),
+        encrypted_credentials: Set(Some(vec![7; 32])),
         credential_version: Set(1),
         auth_status: Set("verified".to_owned()),
         created_at: Set(now),
         updated_at: Set(now),
+        verified_at: Set(None),
     }
     .insert(db)
     .await
@@ -249,11 +250,12 @@ async fn finish_deletion_cascades_owned_data_releases_uid_and_cleans_audit_refer
         id: Set(Uuid::new_v4()),
         owner_user_id: Set(admin.user.id),
         hoyolab_uid: Set(Some("123456".to_owned())),
-        encrypted_credentials: Set(vec![8; 32]),
+        encrypted_credentials: Set(Some(vec![8; 32])),
         credential_version: Set(1),
         auth_status: Set("verified".to_owned()),
         created_at: Set(Utc::now()),
         updated_at: Set(Utc::now()),
+        verified_at: Set(None),
     }
     .insert(&test.db)
     .await

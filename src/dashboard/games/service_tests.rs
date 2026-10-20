@@ -8,7 +8,7 @@ use crate::dashboard::{
     error::Error,
     hoyolab::{
         credentials::{CookieKey, Credentials},
-        gateway::{DailyState, Gateway, SignState},
+        gateway::{DailyAward, DailyState, Gateway, SignState},
         store::CookieStore,
     },
     test_support::TestDatabase,
@@ -78,6 +78,10 @@ impl Gateway for MockGateway {
     async fn sign(&self, _: &Credentials, _: GameKind) -> UpstreamResult<SignState> {
         panic!("sign must not be called by games service tests")
     }
+
+    async fn awards(&self, _: &Credentials, _: GameKind) -> UpstreamResult<Vec<DailyAward>> {
+        panic!("awards must not be called by games service tests")
+    }
 }
 
 fn key() -> Arc<CookieKey> {
@@ -122,11 +126,12 @@ async fn verified_link(
         id: Set(Uuid::new_v4()),
         owner_user_id: Set(owner),
         hoyolab_uid: Set(Some(uid.to_owned())),
-        encrypted_credentials: Set(key.seal(owner, Some(uid), &cookie).unwrap()),
+        encrypted_credentials: Set(Some(key.seal(owner, Some(uid), &cookie).unwrap())),
         credential_version: Set(1),
         auth_status: Set("verified".to_owned()),
         created_at: Set(now),
         updated_at: Set(now),
+        verified_at: Set(None),
     }
     .insert(db)
     .await
@@ -247,7 +252,7 @@ async fn hidden_and_undetected_status_never_fetch_and_never_display_cached_paylo
         hidden.id,
         Some(Utc::now()),
         Some(json!({"private":"old"})),
-        2,
+        3,
     )
     .await;
     cache(
@@ -255,7 +260,7 @@ async fn hidden_and_undetected_status_never_fetch_and_never_display_cached_paylo
         missing.id,
         Some(Utc::now()),
         Some(json!({"private":"old"})),
-        2,
+        3,
     )
     .await;
     let gateway = MockGateway::empty();
@@ -284,7 +289,7 @@ async fn fresh_cache_is_reused_without_fetch_or_credential_leakage() {
         account.id,
         Some(Utc::now()),
         Some(payload.clone()),
-        2,
+        3,
     )
     .await;
     let gateway = MockGateway::empty();
@@ -336,7 +341,7 @@ async fn fresh_legacy_summary_is_refetched_to_populate_starrail_expedition_icons
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(stored.payload_version, 2);
+    assert_eq!(stored.payload_version, 3);
     assert_eq!(stored.payload, status.payload);
 
     let cached = games.status(&actor, account.id).await.unwrap();
@@ -356,7 +361,7 @@ async fn stale_visible_detected_status_fetches_summary_and_updates_cache() {
         account.id,
         Some(Utc::now() - Duration::minutes(10)),
         Some(json!({"current_resin": 1})),
-        2,
+        3,
     )
     .await;
     let gateway = MockGateway::new([Ok(json!({
@@ -403,7 +408,7 @@ async fn upstream_failure_retains_supported_old_payload_and_records_safe_error()
         account.id,
         Some(fetched_at),
         Some(old.clone()),
-        2,
+        3,
     )
     .await;
     let gateway = MockGateway::new([Err(UpstreamError::Network), Ok(json!({}))]);
@@ -427,7 +432,7 @@ async fn upstream_failure_retains_supported_old_payload_and_records_safe_error()
         .unwrap();
     assert_eq!(stored.payload, Some(old));
     assert_eq!(stored.fetched_at, status.fetched_at);
-    assert_eq!(stored.payload_version, 2);
+    assert_eq!(stored.payload_version, 3);
     assert_eq!(stored.error_code.as_deref(), Some("network"));
     assert!(stored.error_at.is_some());
 
@@ -442,7 +447,7 @@ async fn upstream_failure_retains_supported_old_payload_and_records_safe_error()
         .unwrap();
     assert!(stored.payload.is_none());
     assert!(stored.fetched_at.unwrap() > fetched_at);
-    assert_eq!(stored.payload_version, 2);
+    assert_eq!(stored.payload_version, 3);
     assert!(stored.error_code.is_none());
     assert!(stored.error_at.is_none());
 }
@@ -470,7 +475,7 @@ async fn first_failed_fetch_has_no_payload_or_fetched_at() {
         .unwrap();
     assert!(stored.payload.is_none());
     assert!(stored.fetched_at.is_none());
-    assert_eq!(stored.payload_version, 2);
+    assert_eq!(stored.payload_version, 3);
     assert_eq!(stored.error_code.as_deref(), Some("http:500"));
     assert!(stored.error_at.is_some());
 }
@@ -514,7 +519,7 @@ async fn unsupported_cache_version_is_not_displayed_and_is_replaced_by_refresh()
         .unwrap();
     assert!(stored.payload.is_none());
     assert!(stored.fetched_at.is_none());
-    assert_eq!(stored.payload_version, 2);
+    assert_eq!(stored.payload_version, 3);
 
     let status = games.status(&actor, account.id).await.unwrap();
 
@@ -526,7 +531,7 @@ async fn unsupported_cache_version_is_not_displayed_and_is_replaced_by_refresh()
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(stored.payload_version, 2);
+    assert_eq!(stored.payload_version, 3);
 }
 
 #[tokio::test]

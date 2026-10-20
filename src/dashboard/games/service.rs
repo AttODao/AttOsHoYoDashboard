@@ -17,7 +17,7 @@ use serde_json::Value;
 use std::sync::Arc;
 use uuid::Uuid;
 
-const CACHE_VERSION: i32 = 2;
+const CACHE_VERSION: i32 = 3;
 const FRESH_TTL: Duration = Duration::minutes(5);
 const PRIVATE_RECORD_CODE: &str = "upstream:10102";
 

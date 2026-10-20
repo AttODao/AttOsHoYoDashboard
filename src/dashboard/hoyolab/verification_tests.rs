@@ -1,7 +1,7 @@
 //! Synthetic principal contracts exercise policy, never claim live token binding proof.
 use super::{
     credentials::{CookieKey, Credentials},
-    gateway::{DailyState, Gateway, LiveGateway, SignState},
+    gateway::{DailyAward, DailyState, Gateway, LiveGateway, SignState},
     store::CookieStore,
 };
 use crate::dashboard::{
@@ -75,6 +75,10 @@ impl Gateway for Mock {
     async fn sign(&self, _: &Credentials, _: GameKind) -> UpstreamResult<SignState> {
         panic!("unexpected sign request")
     }
+
+    async fn awards(&self, _: &Credentials, _: GameKind) -> UpstreamResult<Vec<DailyAward>> {
+        panic!("unexpected awards request")
+    }
 }
 fn key() -> Arc<CookieKey> {
     Arc::new(CookieKey::from_hex(&"11".repeat(32)).unwrap())
@@ -122,13 +126,17 @@ async fn mock_consensus_seals_verified_context_and_creates_hidden_uids_off_setti
     assert!(
         store
             .key
-            .open(actor.user.id, Some("42"), &link.encrypted_credentials)
+            .open(
+                actor.user.id,
+                Some("42"),
+                link.sealed_credentials().unwrap()
+            )
             .is_ok()
     );
     assert!(
         store
             .key
-            .open(actor.user.id, None, &link.encrypted_credentials)
+            .open(actor.user.id, None, link.sealed_credentials().unwrap())
             .is_err()
     );
     let roles = game_account::Entity::find()
@@ -352,4 +360,86 @@ async fn disabling_during_identity_get_prevents_link_promotion() {
     pause.1.notify_one();
     assert!(matches!(task.await.unwrap(), Err(Error::Unauthorized)));
     assert_eq!(row(&store, actor.user.id).await.hoyolab_uid, None);
+}
+
+#[tokio::test]
+async fn removing_a_verified_cookie_keeps_the_uid_binding_and_turns_claiming_off() {
+    let fixture = TestDatabase::new().await;
+    let (_, actor) = fixture.ready_admin().await;
+    let gateway = Mock::new("42");
+    let store = CookieStore::for_test(fixture.db.clone(), key(), gateway.clone());
+    store.submit(&actor, &cookie("42")).await.unwrap();
+    store.verify(&actor).await.unwrap();
+    let verified = row(&store, actor.user.id).await;
+    assert!(verified.verified_at.is_some());
+    let settings = reward_setting::Entity::find()
+        .filter(reward_setting::Column::HoyolabAccountId.eq(verified.id))
+        .all(&store.db)
+        .await
+        .unwrap();
+    for setting in settings {
+        let mut setting = setting.into_active_model();
+        setting.enabled = Set(true);
+        setting.next_run_at = Set(Some(Utc::now()));
+        setting.update(&store.db).await.unwrap();
+    }
+
+    store.remove_cookie(&actor).await.unwrap();
+    let removed = row(&store, actor.user.id).await;
+    assert_eq!(removed.auth_status, "removed");
+    assert_eq!(removed.hoyolab_uid.as_deref(), Some("42"));
+    assert!(removed.encrypted_credentials.is_none());
+    assert!(removed.credential_version > verified.credential_version);
+    // Status stays readable without a Cookie, and nothing can use the link.
+    assert_eq!(
+        store.status(&actor).await.unwrap().unwrap().auth_status,
+        "removed"
+    );
+    assert!(matches!(
+        store.ready_link(&actor).await,
+        Err(Error::InitialSetupRequired)
+    ));
+    assert!(matches!(
+        store.verify(&actor).await,
+        Err(Error::InitialSetupRequired)
+    ));
+    assert!(store.stored_cookie(actor.user.id).await.unwrap().is_none());
+    for setting in reward_setting::Entity::find()
+        .filter(reward_setting::Column::HoyolabAccountId.eq(removed.id))
+        .all(&store.db)
+        .await
+        .unwrap()
+    {
+        assert!(!setting.enabled);
+        assert!(setting.next_run_at.is_none());
+    }
+    assert!(matches!(
+        store.remove_cookie(&actor).await,
+        Err(Error::NotFound)
+    ));
+
+    // Only the same HoYoLAB account can restore the link, on the same row.
+    assert!(matches!(
+        store.submit(&actor, &cookie("43")).await,
+        Err(Error::Forbidden)
+    ));
+    store.submit(&actor, &cookie("42")).await.unwrap();
+    let restored = row(&store, actor.user.id).await;
+    assert_eq!(restored.id, verified.id);
+    assert_eq!(restored.auth_status, "verified");
+    assert!(restored.encrypted_credentials.is_some());
+}
+
+#[tokio::test]
+async fn removing_an_unverified_cookie_deletes_the_pending_link() {
+    let fixture = TestDatabase::new().await;
+    let (_, actor) = fixture.ready_admin().await;
+    let store = CookieStore::for_test(fixture.db.clone(), key(), Mock::new("42"));
+    assert!(matches!(
+        store.remove_cookie(&actor).await,
+        Err(Error::NotFound)
+    ));
+    store.submit(&actor, &cookie("42")).await.unwrap();
+    store.remove_cookie(&actor).await.unwrap();
+    assert!(store.status(&actor).await.unwrap().is_none());
 }

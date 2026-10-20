@@ -12,6 +12,11 @@ pub(in crate::dashboard) struct DailyState {
     pub is_sign: bool,
     pub total_sign_day: i64,
 }
+pub(in crate::dashboard) struct DailyAward {
+    pub name: String,
+    pub count: i64,
+    pub icon: String,
+}
 pub(in crate::dashboard) struct SignState {
     pub requires_verification: Option<bool>,
 }
@@ -38,6 +43,12 @@ pub(in crate::dashboard) trait Gateway: Send + Sync + 'static {
         cookie: &Credentials,
         game: GameKind,
     ) -> impl Future<Output = Result<SignState>> + Send;
+    /// This month's check-in rewards, in claim order (GET only).
+    fn awards(
+        &self,
+        cookie: &Credentials,
+        game: GameKind,
+    ) -> impl Future<Output = Result<Vec<DailyAward>>> + Send;
 }
 
 pub(in crate::dashboard) struct LiveGateway;
@@ -97,6 +108,22 @@ impl Gateway for LiveGateway {
         Ok(SignState {
             requires_verification: state.requires_verification(),
         })
+    }
+    async fn awards(&self, cookie: &Credentials, game: GameKind) -> Result<Vec<DailyAward>> {
+        let client = HoyolabClient::new(cookie.as_str())?;
+        let home = match game {
+            GameKind::Genshin(_) => client.daily_home(Genshin).await?,
+            GameKind::Starrail(_) => client.daily_home(Starrail).await?,
+        };
+        Ok(home
+            .awards
+            .into_iter()
+            .map(|award| DailyAward {
+                name: award.name,
+                count: award.cnt,
+                icon: award.icon,
+            })
+            .collect())
     }
 }
 

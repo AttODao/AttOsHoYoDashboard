@@ -55,6 +55,7 @@ async fn compiled_assets_are_public_local_and_hardened() {
         ("/assets/app_bg-dxh1ccc56b941a84aa.wasm", "application/wasm"),
         ("/assets/font-94fb3a1af0eb.woff2", "font/woff2"),
         ("/openapi.json", "application/json"),
+        ("/manifest.webmanifest", "application/manifest+json"),
     ] {
         // Public GETs need neither an Origin nor a session cookie.
         let request = Request::builder().uri(path).body(Body::empty()).unwrap();
@@ -78,7 +79,7 @@ async fn compiled_assets_are_public_local_and_hardened() {
         if content_type == "text/html" {
             assert_eq!(
                 response.headers()[header::CONTENT_SECURITY_POLICY],
-                "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' https://upload-os-bbs.hoyolab.com https://act-upload.hoyolab.com https://act-webstatic.hoyoverse.com; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+                "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' https://upload-os-bbs.hoyolab.com https://act-upload.hoyolab.com https://act-webstatic.hoyoverse.com https://fastcdn.hoyoverse.com; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'"
             );
         }
         assert!(
@@ -195,4 +196,22 @@ fn dx_and_font_fingerprints_are_recognized_from_real_bundle_names() {
     ] {
         assert!(!fingerprinted(&format!("/assets/{name}")), "{name}");
     }
+}
+
+#[tokio::test]
+async fn web_manifest_points_at_the_unhashed_icon_and_dashboard() {
+    let (_bundle, app) = fixture().await;
+    let request = Request::builder()
+        .uri("/manifest.webmanifest")
+        .body(Body::empty())
+        .unwrap();
+    let response = call(&app, request).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), 4096)
+        .await
+        .unwrap();
+    let manifest: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(manifest["start_url"], "/dashboard");
+    assert_eq!(manifest["display"], "standalone");
+    assert_eq!(manifest["icons"][0]["src"], "/assets/dashboard-icon.png");
 }

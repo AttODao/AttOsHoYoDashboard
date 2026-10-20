@@ -35,11 +35,12 @@ async fn insert_hoyolab(db: &DatabaseConnection, owner_user_id: Uuid) -> hoyolab
         id: Set(Uuid::new_v4()),
         owner_user_id: Set(owner_user_id),
         hoyolab_uid: Set(Some("123456789".to_owned())),
-        encrypted_credentials: Set(vec![7; 30]),
+        encrypted_credentials: Set(Some(vec![7; 30])),
         credential_version: Set(1),
         auth_status: Set("verified".to_owned()),
         created_at: Set(Utc::now()),
         updated_at: Set(Utc::now()),
+        verified_at: Set(None),
     }
     .insert(db)
     .await
@@ -128,7 +129,7 @@ async fn dashboard_games_migration_is_ordered_reversible_and_updates_hoyolab_sta
         .map(|row| row.try_get("", "version").unwrap())
         .collect();
     assert_eq!(
-        names.last().map(String::as_str),
+        names.iter().rev().nth(1).map(String::as_str),
         Some("m20261013_000004_dashboard_games")
     );
 
@@ -143,7 +144,8 @@ async fn dashboard_games_migration_is_ordered_reversible_and_updates_hoyolab_sta
         .await
         .unwrap();
 
-    migrations::Migrator::down(&fixture.db, Some(1))
+    // The later Cookie-removal migration is undone first.
+    migrations::Migrator::down(&fixture.db, Some(2))
         .await
         .unwrap();
     let row = fixture
@@ -672,4 +674,62 @@ async fn deletion_requests_cascade_with_target_and_null_deleted_requester() {
             .unwrap(),
         0
     );
+}
+
+#[tokio::test]
+async fn removed_cookie_state_requires_no_ciphertext_and_reverts_by_deleting_the_link() {
+    let fixture = TestDatabase::new().await;
+    let owner = insert_user(&fixture.db, "owner").await;
+    let account = insert_hoyolab(&fixture.db, owner.id).await;
+    let db = &fixture.db;
+    // Removal must drop the ciphertext, and only removal may.
+    exec_err(
+        db,
+        format!(
+            "UPDATE hoyolab_accounts SET auth_status = 'removed' WHERE id = '{}'",
+            account.id
+        ),
+    )
+    .await;
+    exec_err(
+        db,
+        format!(
+            "UPDATE hoyolab_accounts SET encrypted_credentials = NULL WHERE id = '{}'",
+            account.id
+        ),
+    )
+    .await;
+    db.execute_unprepared(&format!(
+        "UPDATE hoyolab_accounts SET auth_status = 'removed', encrypted_credentials = NULL \
+         WHERE id = '{}'",
+        account.id
+    ))
+    .await
+    .unwrap();
+    exec_err(
+        db,
+        format!(
+            "UPDATE hoyolab_accounts SET hoyolab_uid = NULL WHERE id = '{}'",
+            account.id
+        ),
+    )
+    .await;
+
+    migrations::Migrator::down(db, Some(1)).await.unwrap();
+    // The entity now names a column the older schema lacks: count with raw SQL.
+    let remaining = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT count(*) AS n FROM hoyolab_accounts",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<i64>("", "n")
+        .unwrap();
+    assert_eq!(
+        remaining, 0,
+        "a removed link cannot satisfy the older non-null schema"
+    );
+    migrations::Migrator::up(db, None).await.unwrap();
 }

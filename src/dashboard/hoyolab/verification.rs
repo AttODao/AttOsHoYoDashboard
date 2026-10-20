@@ -27,7 +27,7 @@ impl<G: Gateway> CookieStore<G> {
         let cookie = self.key.open(
             actor.user.id,
             row.hoyolab_uid.as_deref(),
-            &row.encrypted_credentials,
+            row.sealed_credentials()?,
         )?;
         tx.commit().await?;
         self.accept_verified(actor, &cookie, row.hoyolab_uid.as_deref())
@@ -78,11 +78,15 @@ impl<G: Gateway> CookieStore<G> {
             .ok_or(Error::Internal)?;
         let mut row = row.into_active_model();
         row.hoyolab_uid = Set(Some(account_uid.clone()));
-        row.encrypted_credentials =
-            Set(self.key.seal(actor.user.id, Some(&account_uid), cookie)?);
+        row.encrypted_credentials = Set(Some(self.key.seal(
+            actor.user.id,
+            Some(&account_uid),
+            cookie,
+        )?));
         row.credential_version = Set(version);
         row.auth_status = Set("verified".into());
         row.updated_at = Set(Utc::now());
+        row.verified_at = Set(Some(Utc::now()));
         let row = row.update(&tx).await.map_err(|e| {
             if matches!(e.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) {
                 Error::Forbidden

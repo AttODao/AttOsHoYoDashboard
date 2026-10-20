@@ -7,7 +7,7 @@ use super::{
 };
 use crate::dashboard::{
     db::entities::reward_status_cache,
-    error::{Error, Result},
+    error::Result,
     hoyolab::gateway::{self, Gateway},
     rewards::deletion::{Unresolved, unresolved_settings},
 };
@@ -20,33 +20,39 @@ impl<G: Gateway> Rewards<G> {
         owner: Uuid,
     ) -> Result<()> {
         for Unresolved { setting, runs } in unresolved_settings(&self.store.db, owner).await? {
-            // Each unresolved setting still requires a bounded GET before deletion.
-            let (_, cookie) = self
-                .store
-                .stored_cookie(owner)
-                .await?
-                .ok_or(Error::Internal)?;
+            // Each unresolved setting still requires a bounded GET before deletion,
+            // unless the owner removed the Cookie: then the outcome stays unknown.
             let prior = reward_status_cache::Entity::find_by_id(setting.id)
                 .one(&self.store.db)
                 .await?;
-            let (state, write) = match self
-                .store
-                .gateway
-                .daily(&cookie, gateway::game(&setting.game_kind)?)
-                .await
-            {
-                Ok(info) => {
-                    let state = if info.is_sign {
-                        "already_claimed"
-                    } else {
-                        "unknown"
-                    };
-                    (state, CacheWrite::success(info))
-                }
-                Err(error) => (
-                    "unknown",
-                    CacheWrite::failure(gateway::error_code(&error), prior.as_ref()),
+            let observed = match self.store.stored_cookie(owner).await? {
+                Some((_, cookie)) => Some(
+                    self.store
+                        .gateway
+                        .daily(&cookie, gateway::game(&setting.game_kind)?)
+                        .await,
                 ),
+                None => None,
+            };
+            let (state, write) = match observed {
+                None => (
+                    "unknown",
+                    CacheWrite::failure("cookie_removed".to_owned(), prior.as_ref()),
+                ),
+                Some(observed) => match observed {
+                    Ok(info) => {
+                        let state = if info.is_sign {
+                            "already_claimed"
+                        } else {
+                            "unknown"
+                        };
+                        (state, CacheWrite::success(info))
+                    }
+                    Err(error) => (
+                        "unknown",
+                        CacheWrite::failure(gateway::error_code(&error), prior.as_ref()),
+                    ),
+                },
             };
             let tx = self.store.db.begin().await?;
             crate::dashboard::auth::accounts::lock_user(&tx, owner).await?;

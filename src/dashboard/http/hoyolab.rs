@@ -18,7 +18,7 @@ use std::sync::Arc;
 pub(super) fn protected_routes() -> Router<App> {
     Router::new()
         .route("/api/v1/me/hoyolab", get(status))
-        .route("/api/v1/me/hoyolab/cookie", put(submit))
+        .route("/api/v1/me/hoyolab/cookie", put(submit).delete(remove))
         .route("/api/v1/me/hoyolab/verify", post(verify))
         .route("/api/v1/me/hoyolab/sync", post(sync))
 }
@@ -40,6 +40,7 @@ async fn status(
         "updated_at": row.as_ref().map(|row| row.updated_at),
         "id":row.as_ref().map(|row|row.id),
         "hoyolab_uid":row.as_ref().and_then(|row|row.hoyolab_uid.as_deref()),
+        "verified_at":row.as_ref().and_then(|row|row.verified_at),
         "verification_available":true,
     })))
 }
@@ -61,6 +62,14 @@ async fn sync(
     Json(_): Json<EmptyInput>,
 ) -> Result<StatusCode> {
     store(&app)?.sync(&actor).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn remove(
+    State(app): State<App>,
+    Extension(actor): Extension<Arc<Identity>>,
+) -> Result<StatusCode> {
+    store(&app)?.remove_cookie(&actor).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

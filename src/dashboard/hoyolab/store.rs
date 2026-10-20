@@ -9,13 +9,13 @@ use crate::dashboard::{
         accounts::{lock_user, record, require_ready},
         sessions::{Identity, Sessions},
     },
-    db::entities::hoyolab_account,
+    db::entities::{hoyolab_account, reward_setting},
     error::{Error, Result},
 };
 use chrono::{FixedOffset, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, DatabaseTransaction, EntityTrait,
-    IntoActiveModel, QueryFilter, Set, TransactionTrait,
+    IntoActiveModel, QueryFilter, Set, TransactionTrait, sea_query::Expr,
 };
 use std::sync::{
     Arc,
@@ -100,11 +100,9 @@ impl<G: Gateway> CookieStore<G> {
         if row.auth_status != "verified" || row.hoyolab_uid.is_none() {
             return Err(Error::InitialSetupRequired);
         }
-        let cookie = self.key.open(
-            owner,
-            row.hoyolab_uid.as_deref(),
-            &row.encrypted_credentials,
-        )?;
+        let cookie = self
+            .key
+            .open(owner, row.hoyolab_uid.as_deref(), row.sealed_credentials()?)?;
         Ok((row, cookie))
     }
     // Internal deletion/restart confirmation only. No user-facing route may use this to bypass active/ready checks.
@@ -116,16 +114,14 @@ impl<G: Gateway> CookieStore<G> {
             .filter(hoyolab_account::Column::OwnerUserId.eq(owner))
             .one(&self.db)
             .await?;
-        row.map(|row| {
-            self.key
-                .open(
-                    owner,
-                    row.hoyolab_uid.as_deref(),
-                    &row.encrypted_credentials,
-                )
-                .map(|cookie| (row, cookie))
-        })
-        .transpose()
+        // A removed Cookie leaves nothing to confirm with.
+        row.filter(|row| row.encrypted_credentials.is_some())
+            .map(|row| {
+                self.key
+                    .open(owner, row.hoyolab_uid.as_deref(), row.sealed_credentials()?)
+                    .map(|cookie| (row, cookie))
+            })
+            .transpose()
     }
     pub(in crate::dashboard) async fn mark_cookie_invalid(&self, owner: Uuid) -> Result<()> {
         let tx = self.db.begin().await?;
@@ -134,7 +130,9 @@ impl<G: Gateway> CookieStore<G> {
             .filter(hoyolab_account::Column::OwnerUserId.eq(owner))
             .one(&tx)
             .await?;
-        if let Some(row) = row.filter(|row| row.hoyolab_uid.is_some()) {
+        if let Some(row) =
+            row.filter(|row| row.hoyolab_uid.is_some() && row.auth_status == "verified")
+        {
             let mut row = row.into_active_model();
             row.auth_status = Set("cookie_invalid".into());
             row.updated_at = Set(Utc::now());
@@ -175,11 +173,11 @@ impl<G: Gateway> CookieStore<G> {
             .one(&tx)
             .await?;
         // Fail closed on corruption or a wrong key, never declare an unreadable Cookie usable.
-        if let Some(row) = &row {
+        if let Some(row) = row.as_ref().filter(|row| row.auth_status != "removed") {
             self.key.open(
                 row.owner_user_id,
                 row.hoyolab_uid.as_deref(),
-                &row.encrypted_credentials,
+                row.sealed_credentials()?,
             )?;
         }
         tx.commit().await?;
@@ -221,7 +219,7 @@ impl<G: Gateway> CookieStore<G> {
                 .checked_add(1)
                 .ok_or(Error::Internal)?;
             let mut row = existing.into_active_model();
-            row.encrypted_credentials = Set(encrypted);
+            row.encrypted_credentials = Set(Some(encrypted));
             row.credential_version = Set(next);
             row.auth_status = Set("pending_verification".to_owned());
             row.updated_at = Set(now);
@@ -231,11 +229,12 @@ impl<G: Gateway> CookieStore<G> {
                 id: Set(Uuid::new_v4()),
                 owner_user_id: Set(fresh.user.id),
                 hoyolab_uid: Set(None),
-                encrypted_credentials: Set(encrypted),
+                encrypted_credentials: Set(Some(encrypted)),
                 credential_version: Set(1),
                 auth_status: Set("pending_verification".to_owned()),
                 created_at: Set(now),
                 updated_at: Set(now),
+                verified_at: Set(None),
             }
             .insert(&tx)
             .await?;
@@ -245,6 +244,59 @@ impl<G: Gateway> CookieStore<G> {
             Some(fresh.user.id),
             fresh.user.id,
             "hoyolab_cookie_submitted",
+        )
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Forget the stored Cookie. A verified link keeps its UID binding, game
+    /// visibility, history and send guards so the same account can be restored;
+    /// automatic claiming turns off. An unverified link is deleted outright.
+    pub(in crate::dashboard) async fn remove_cookie(&self, actor: &Identity) -> Result<()> {
+        // Serialize with reward attempts so none is mid-flight with the old Cookie.
+        let _operation = self.operations.acquire(actor.user.id).await;
+        let tx = self.db.begin().await?;
+        let fresh = self.actor_locked(&tx, actor).await?;
+        let Some(row) = hoyolab_account::Entity::find()
+            .filter(hoyolab_account::Column::OwnerUserId.eq(fresh.user.id))
+            .one(&tx)
+            .await?
+            .filter(|row| row.auth_status != "removed")
+        else {
+            return Err(Error::NotFound);
+        };
+        if row.hoyolab_uid.is_none() {
+            hoyolab_account::Entity::delete_by_id(row.id)
+                .exec(&tx)
+                .await?;
+        } else {
+            let next = row
+                .credential_version
+                .checked_add(1)
+                .ok_or(Error::Internal)?;
+            let link = row.id;
+            let mut row = row.into_active_model();
+            row.encrypted_credentials = Set(None);
+            row.credential_version = Set(next);
+            row.auth_status = Set("removed".to_owned());
+            row.updated_at = Set(Utc::now());
+            row.update(&tx).await?;
+            reward_setting::Entity::update_many()
+                .col_expr(reward_setting::Column::Enabled, Expr::value(false))
+                .col_expr(
+                    reward_setting::Column::NextRunAt,
+                    Expr::value(Option::<chrono::DateTime<Utc>>::None),
+                )
+                .filter(reward_setting::Column::HoyolabAccountId.eq(link))
+                .exec(&tx)
+                .await?;
+        }
+        record(
+            &tx,
+            Some(fresh.user.id),
+            fresh.user.id,
+            "hoyolab_cookie_removed",
         )
         .await?;
         tx.commit().await?;

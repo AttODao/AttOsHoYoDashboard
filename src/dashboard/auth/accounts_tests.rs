@@ -532,11 +532,12 @@ async fn reactivation_turns_automatic_rewards_off_but_keeps_their_times() {
         id: Set(link),
         owner_user_id: Set(target.id),
         hoyolab_uid: Set(Some("100000001".to_owned())),
-        encrypted_credentials: Set(vec![7; 32]),
+        encrypted_credentials: Set(Some(vec![7; 32])),
         credential_version: Set(1),
         auth_status: Set("verified".to_owned()),
         created_at: Set(now),
         updated_at: Set(now),
+        verified_at: Set(None),
     }
     .insert(&test.db)
     .await

@@ -72,7 +72,7 @@ async fn approved_stored_cookie_expeditions() {
         .open(
             link.owner_user_id,
             link.hoyolab_uid.as_deref(),
-            &link.encrypted_credentials,
+            link.sealed_credentials().unwrap(),
         )
         .unwrap_or_else(|_| panic!("stored Cookie decryption failed"));
     let accounts = game_account::Entity::find()

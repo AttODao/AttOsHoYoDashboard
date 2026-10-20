@@ -1,6 +1,7 @@
 //! Ordered migration registry; names and schema live in their individual migrations.
 mod dashboard_games;
 mod hoyolab_accounts;
+mod hoyolab_cookie_removal;
 mod initial_accounts;
 mod passkeys;
 
@@ -16,6 +17,7 @@ impl MigratorTrait for Migrator {
             Box::new(passkeys::Passkeys),
             Box::new(hoyolab_accounts::HoyolabAccounts),
             Box::new(dashboard_games::DashboardGames),
+            Box::new(hoyolab_cookie_removal::HoyolabCookieRemoval),
         ]
     }
 }

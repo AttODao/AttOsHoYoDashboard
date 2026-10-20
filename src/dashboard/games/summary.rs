@@ -32,8 +32,13 @@ fn summarize_genshin(
             "finished_task_num",
             "total_task_num",
             "is_extra_task_reward_received",
+            "remain_resin_discount_num",
+            "resin_discount_num_limit",
+            "current_expedition_num",
+            "max_expedition_num",
         ],
     );
+    project_transformer(source, out, fetched_at);
     project_recovery(
         source,
         out,
@@ -65,8 +70,21 @@ fn summarize_starrail(
             "current_reserve_stamina",
             "current_train_score",
             "max_train_score",
+            "current_rogue_score",
+            "max_rogue_score",
+            "weekly_cocoon_cnt",
+            "weekly_cocoon_limit",
+            "is_reserve_stamina_full",
+            "total_expedition_num",
+            "rogue_tourn_weekly_unlocked",
+            "rogue_tourn_weekly_cur",
+            "rogue_tourn_weekly_max",
         ],
     );
+    // The API's misspelled count gets a readable name in the summary.
+    if let Some(accepted) = source.get("accepted_epedition_num") {
+        out.insert("accepted_expedition_num".to_owned(), accepted.clone());
+    }
     project_recovery(
         source,
         out,
@@ -102,6 +120,51 @@ fn project_recovery(
         return;
     };
     out.insert(full_at_key.to_owned(), Value::String(full_at.to_rfc3339()));
+}
+
+/// Parametric Transformer: obtained, and whether (or when) it is ready again.
+fn project_transformer(
+    source: &Map<String, Value>,
+    out: &mut Map<String, Value>,
+    fetched_at: DateTime<Utc>,
+) {
+    let Some(transformer) = source.get("transformer").and_then(Value::as_object) else {
+        return;
+    };
+    let Some(obtained) = transformer.get("obtained").and_then(Value::as_bool) else {
+        return;
+    };
+    out.insert("transformer_obtained".to_owned(), Value::Bool(obtained));
+    let Some(recovery) = transformer.get("recovery_time").and_then(Value::as_object) else {
+        return;
+    };
+    let Some(reached) = recovery.get("reached").and_then(Value::as_bool) else {
+        return;
+    };
+    out.insert("transformer_ready".to_owned(), Value::Bool(reached));
+    if reached {
+        return;
+    }
+    let part = |key: &str| recovery.get(key).and_then(nonnegative_seconds);
+    let (Some(days), Some(hours), Some(minutes), Some(seconds)) =
+        (part("Day"), part("Hour"), part("Minute"), part("Second"))
+    else {
+        return;
+    };
+    let total = days
+        .checked_mul(86_400)
+        .and_then(|total| total.checked_add(hours.checked_mul(3_600)?))
+        .and_then(|total| total.checked_add(minutes.checked_mul(60)?))
+        .and_then(|total| total.checked_add(seconds));
+    if let Some(ready_at) = total
+        .and_then(Duration::try_seconds)
+        .and_then(|duration| fetched_at.checked_add_signed(duration))
+    {
+        out.insert(
+            "transformer_ready_at".to_owned(),
+            Value::String(ready_at.to_rfc3339()),
+        );
+    }
 }
 
 fn nonnegative_seconds(value: &Value) -> Option<i64> {

@@ -196,3 +196,84 @@ async fn future_cache_is_not_fresh_and_action_required_does_not_refresh() {
     assert_eq!(future_view.is_sign, Some(false));
     assert_eq!(halted_view.is_sign, Some(true));
 }
+
+#[tokio::test]
+async fn month_awards_are_fetched_once_and_survive_worker_status_writes() {
+    let fixture = TestDatabase::new().await;
+    let actor = ready_identity(&fixture.db, "owner").await;
+    let key = key();
+    let link = verified_link(&fixture.db, &key, actor.user.id, "123").await;
+    let row = setting(&fixture.db, link.id, "genshin", false).await;
+    let unclaimed = || {
+        Ok(DailyState {
+            is_sign: false,
+            total_sign_day: 1,
+        })
+    };
+    let gateway = MockGateway::new([unclaimed(), unclaimed()], Vec::new()).with_awards(&[
+        ("Primogem", 20),
+        ("Mora", 5000),
+        ("Hero's Wit", 2),
+    ]);
+    let rewards = service(fixture.db.clone(), key, gateway.clone());
+
+    let views = rewards.list(&actor).await.unwrap();
+    assert_eq!(views[0].total_sign_day, Some(1));
+    // One reward already claimed this month and today's not yet: the second is next.
+    assert_eq!(views[0].today_award.as_ref().unwrap()["name"], "Mora");
+    assert_eq!(gateway.award_calls(), 1);
+
+    // A worker confirmation stores status only, yet the month's list stays.
+    let tx = fixture.db.begin().await.unwrap();
+    upsert_cache(
+        &tx,
+        row.id,
+        CacheWrite::success(DailyState {
+            is_sign: true,
+            total_sign_day: 2,
+        }),
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let views = rewards.list(&actor).await.unwrap();
+    assert_eq!(views[0].today_award.as_ref().unwrap()["name"], "Mora");
+    assert_eq!(views[0].today_award.as_ref().unwrap()["count"], 5000);
+    assert_eq!(gateway.award_calls(), 1);
+
+    // Expire the status so the next list refreshes it without refetching awards.
+    let mut stale = reward_status_cache::Entity::find_by_id(row.id)
+        .one(&fixture.db)
+        .await
+        .unwrap()
+        .unwrap()
+        .into_active_model();
+    stale.fetched_at = Set(Some(Utc::now() - Duration::hours(1)));
+    stale.update(&fixture.db).await.unwrap();
+    let views = rewards.list(&actor).await.unwrap();
+    assert_eq!(views[0].is_sign, Some(false));
+    assert_eq!(views[0].today_award.as_ref().unwrap()["name"], "Mora");
+    assert_eq!(gateway.award_calls(), 1);
+    assert_eq!(gateway.daily_calls(), 2);
+}
+
+#[test]
+fn today_award_ignores_other_months_and_out_of_range_days() {
+    let now = Utc::now();
+    let month = award_month(now);
+    let payload = |is_sign: bool, days: i64, month: &str| {
+        json!({"is_sign": is_sign, "total_sign_day": days, "awards_month": month,
+               "awards": [{"name": "a"}, {"name": "b"}]})
+    };
+    assert_eq!(
+        today_award(&payload(true, 1, &month), now).unwrap()["name"],
+        "a"
+    );
+    assert_eq!(
+        today_award(&payload(false, 1, &month), now).unwrap()["name"],
+        "b"
+    );
+    assert!(today_award(&payload(false, 2, &month), now).is_none());
+    assert!(today_award(&payload(true, 0, &month), now).is_none());
+    assert!(today_award(&payload(true, 1, "1999-01"), now).is_none());
+}
