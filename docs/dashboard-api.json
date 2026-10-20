@@ -1249,7 +1249,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/UserView"
+                    "$ref": "#/components/schemas/AdminUserView"
                   }
                 }
               }
@@ -1387,7 +1387,7 @@
           "admin"
         ],
         "operationId": "setUserActive",
-        "summary": "Disable or re-enable a dashboard user.",
+        "summary": "Disable, re-enable, or change the administrator role of a user.",
         "responses": {
           "204": {
             "description": "No content."
@@ -1460,7 +1460,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ActivationInput"
+                "$ref": "#/components/schemas/UserChangeInput"
               }
             }
           }
@@ -2837,6 +2837,129 @@
           }
         }
       }
+    },
+    "/api/v1/admin/audit": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "listAuditLog",
+        "summary": "Account audit log, newest first.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "action",
+                      "created_at",
+                      "actor",
+                      "target"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "action": {
+                        "type": "string"
+                      },
+                      "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "actor": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "Acting username; null for system actions or deleted users."
+                      },
+                      "target": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "Subject username; null once deleted."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Return entries older than this instant (paging)."
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -4089,6 +4212,62 @@
             "description": "The session making this request."
           }
         }
+      },
+      "AdminUserView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/UserView"
+          },
+          {
+            "type": "object",
+            "required": [
+              "created_at",
+              "link_status",
+              "automatic_claims"
+            ],
+            "properties": {
+              "created_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "link_status": {
+                "type": "string",
+                "enum": [
+                  "not_configured",
+                  "pending_verification",
+                  "verified",
+                  "cookie_invalid",
+                  "removed"
+                ]
+              },
+              "automatic_claims": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Games with automatic claiming ON."
+              }
+            }
+          }
+        ]
+      },
+      "UserChangeInput": {
+        "description": "Exactly one change: activation or the administrator role. Administrators cannot change their own role or disable themselves.",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ActivationInput"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "is_admin"
+            ],
+            "properties": {
+              "is_admin": {
+                "type": "boolean"
+              }
+            }
+          }
+        ]
       }
     }
   }

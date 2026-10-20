@@ -199,15 +199,6 @@ impl Accounts {
         Ok(())
     }
 
-    pub(in crate::dashboard) async fn list_users(
-        &self,
-        actor: &Identity,
-    ) -> Result<Vec<user::Model>> {
-        let fresh = Sessions::authenticate(&self.db, &actor.token_hash).await?;
-        require_admin(&fresh.user)?;
-        Ok(user::Entity::find().all(&self.db).await?)
-    }
-
     pub(in crate::dashboard) async fn create_user(
         &self,
         actor: &Identity,
@@ -297,6 +288,46 @@ impl Accounts {
                 "user_enabled"
             } else {
                 "user_disabled"
+            },
+        )
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+}
+
+impl Accounts {
+    /// Grants or revokes administrator rights. Administrators cannot change their own
+    /// role, so at least the acting administrator always remains.
+    pub(in crate::dashboard) async fn set_admin(
+        &self,
+        actor: &Identity,
+        target: Uuid,
+        is_admin: bool,
+    ) -> Result<()> {
+        require_admin(&actor.user)?;
+        if target == actor.user.id {
+            return Err(Error::Invalid("cannot change your own administrator role"));
+        }
+        let tx = self.db.begin().await?;
+        lock_membership(&tx).await?;
+        authorize_admin(&tx, actor, Some(target)).await?;
+        let user = lock_user(&tx, target).await?;
+        reject_pending_deletion(&tx, target).await?;
+        if user.is_admin == is_admin {
+            return Ok(());
+        }
+        let mut update = user.into_active_model();
+        update.is_admin = Set(is_admin);
+        update.update(&tx).await?;
+        record(
+            &tx,
+            Some(actor.user.id),
+            target,
+            if is_admin {
+                "admin_granted"
+            } else {
+                "admin_revoked"
             },
         )
         .await?;
@@ -421,7 +452,7 @@ pub(in crate::dashboard) fn require_ready(user: &user::Model) -> Result<()> {
     Ok(())
 }
 
-fn require_admin(user: &user::Model) -> Result<()> {
+pub(super) fn require_admin(user: &user::Model) -> Result<()> {
     require_ready(user)?;
     if !user.is_admin {
         return Err(Error::Forbidden);

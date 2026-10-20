@@ -1,13 +1,18 @@
 //! User view DTO and account-management routes; lifecycle rules remain in Accounts.
 use super::App;
-use crate::dashboard::{auth::sessions::Identity, db::entities::user, error::Result};
+use crate::dashboard::{
+    auth::sessions::Identity,
+    db::entities::user,
+    error::{Error, Result},
+};
 use axum::{
     Json, Router,
-    extract::{Extension, Path, State},
+    extract::{Extension, Path, Query, State},
     http::{StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, patch, put},
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -24,6 +29,7 @@ pub(super) fn protected_routes() -> Router<App> {
             "/api/v1/admin/users/{id}/temporary-password",
             put(reset_password),
         )
+        .route("/api/v1/admin/audit", get(audit_log))
 }
 
 #[derive(Serialize)]
@@ -115,16 +121,69 @@ async fn delete_user(
         .await?;
     Ok(StatusCode::ACCEPTED)
 }
+/// Administrator listing: the public user fields plus account and linkage health.
+#[derive(Serialize)]
+struct AdminUserView {
+    #[serde(flatten)]
+    user: UserView,
+    created_at: DateTime<Utc>,
+    link_status: String,
+    automatic_claims: u64,
+}
+
 async fn list_users(
     State(app): State<App>,
     Extension(actor): Extension<Arc<Identity>>,
-) -> Result<Json<Vec<UserView>>> {
+) -> Result<Json<Vec<AdminUserView>>> {
     Ok(Json(
         app.accounts
-            .list_users(&actor)
+            .user_overview(&actor)
             .await?
             .into_iter()
-            .map(UserView::from)
+            .map(|row| AdminUserView {
+                created_at: row.user.created_at,
+                user: UserView::from(row.user),
+                link_status: row.link_status,
+                automatic_claims: row.automatic_claims,
+            })
+            .collect(),
+    ))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuditQuery {
+    limit: Option<u64>,
+    before: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize)]
+struct AuditView {
+    id: Uuid,
+    action: String,
+    created_at: DateTime<Utc>,
+    actor: Option<String>,
+    target: Option<String>,
+}
+
+async fn audit_log(
+    State(app): State<App>,
+    Extension(actor): Extension<Arc<Identity>>,
+    Query(query): Query<AuditQuery>,
+) -> Result<Json<Vec<AuditView>>> {
+    let rows = app
+        .accounts
+        .audit_log(&actor, query.limit.unwrap_or(50), query.before)
+        .await?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|row| AuditView {
+                id: row.id,
+                action: row.action,
+                created_at: row.created_at,
+                actor: row.actor,
+                target: row.target,
+            })
             .collect(),
     ))
 }
@@ -161,17 +220,25 @@ async fn reset_password(
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }
+/// Exactly one change per request: activation or administrator role.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Activation {
-    active: bool,
+struct UserChange {
+    active: Option<bool>,
+    is_admin: Option<bool>,
 }
 async fn set_active(
     State(app): State<App>,
     Extension(actor): Extension<Arc<Identity>>,
     Path(id): Path<Uuid>,
-    Json(input): Json<Activation>,
+    Json(input): Json<UserChange>,
 ) -> Result<StatusCode> {
-    app.accounts.set_active(&actor, id, input.active).await?;
+    match (input.active, input.is_admin) {
+        (Some(active), None) => app.accounts.set_active(&actor, id, active).await?,
+        (None, Some(is_admin)) => app.accounts.set_admin(&actor, id, is_admin).await?,
+        _ => {
+            return Err(Error::Invalid("send exactly one of active or is_admin"));
+        }
+    }
     Ok(StatusCode::NO_CONTENT)
 }

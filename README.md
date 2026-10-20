@@ -192,7 +192,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 | HoYoLAB | `GET /me/hoyolab`、`PUT`・`DELETE /me/hoyolab/cookie`、`POST /me/hoyolab/verify`・`/me/hoyolab/sync` |
 | ゲーム | `GET /game-accounts`、`PATCH /game-accounts/{id}`、`GET /game-accounts/{id}/status` |
 | 報酬 | `GET /reward-settings`、`PATCH /reward-settings/{id}`、`POST /reward-settings/{id}/run`、`GET /reward-runs` |
-| ユーザー管理 | `GET /admin/users`、`POST /admin/users`、`PATCH /admin/users/{id}`、`PUT /admin/users/{id}/temporary-password` |
+| ユーザー管理 | `GET /admin/users`（連携状態・自動受け取り数・最終ログインを含む）、`POST /admin/users`、`PATCH /admin/users/{id}`（`active` または `is_admin`）、`PUT /admin/users/{id}/temporary-password`、`GET /admin/audit` |
 | ユーザー削除 | `DELETE /me`、`DELETE /admin/users/{id}` |
 | サーバー設定 | `GET /server-settings` |
 

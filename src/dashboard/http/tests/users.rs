@@ -170,9 +170,11 @@ async fn user_routes_enforce_auth_admin_and_temporary_password_exceptions() {
     let listing = body(listing).await;
     assert_eq!(listing.as_array().unwrap().len(), 2);
     for view in listing.as_array().unwrap() {
-        assert_eq!(view.as_object().unwrap().len(), 6);
+        assert_eq!(view.as_object().unwrap().len(), 9);
         assert!(view.get("password_hash").is_none());
-        assert!(view.get("created_at").is_none());
+        assert!(view["created_at"].is_string());
+        assert_eq!(view["link_status"], "not_configured");
+        assert_eq!(view["automatic_claims"], 0);
     }
     error(
         call(
@@ -282,4 +284,68 @@ async fn user_routes_enforce_auth_admin_and_temporary_password_exceptions() {
     .await;
     assert_eq!(login.status(), StatusCode::OK);
     assert_eq!(body(login).await["must_change_password"], true);
+}
+
+#[tokio::test]
+async fn admin_audit_and_role_routes_validate_their_input() {
+    let fixture = TestDatabase::new().await;
+    let (accounts, actor) = fixture.ready_admin().await;
+    let app = app(accounts);
+    let admin = cookie(&app, actor.user.id).await;
+    let created = body(
+        call(
+            &app,
+            request(
+                "POST",
+                "/api/v1/admin/users",
+                Some(&admin),
+                Some(json!({"username": "member", "temporary_password": TEMP_PASSWORD})),
+            ),
+        )
+        .await,
+    )
+    .await;
+    let path = format!("/api/v1/admin/users/{}", created["id"].as_str().unwrap());
+    for input in [json!({}), json!({"active": true, "is_admin": true})] {
+        error(
+            call(&app, request("PATCH", &path, Some(&admin), Some(input))).await,
+            StatusCode::BAD_REQUEST,
+            "invalid_input",
+        )
+        .await;
+    }
+    let response = call(
+        &app,
+        request(
+            "PATCH",
+            &path,
+            Some(&admin),
+            Some(json!({"is_admin": true})),
+        ),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    let audit = body(
+        call(
+            &app,
+            request("GET", "/api/v1/admin/audit?limit=2", Some(&admin), None),
+        )
+        .await,
+    )
+    .await;
+    let entries = audit.as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0]["action"], "admin_granted");
+    assert_eq!(entries[0]["actor"], "admin");
+    assert_eq!(entries[0]["target"], "member");
+    assert_eq!(entries[0].as_object().unwrap().len(), 5);
+    assert!(
+        call(
+            &app,
+            request("GET", "/api/v1/admin/audit?limit=x", Some(&admin), None),
+        )
+        .await
+        .status()
+        .is_client_error()
+    );
 }

@@ -183,7 +183,7 @@ async fn bootstrap_requires_empty_table_and_temporary_admin_must_change_password
         .unwrap();
     let actor = identity(&test.db, &issued).await;
     assert!(matches!(
-        accounts.list_users(&actor).await,
+        accounts.user_overview(&actor).await,
         Err(Error::PasswordChangeRequired)
     ));
     assert!(matches!(
@@ -214,7 +214,7 @@ async fn bootstrap_requires_empty_table_and_temporary_admin_must_change_password
         .unwrap();
     assert!(!ready.must_change_password);
     let ready_actor = identity(&test.db, &replacement).await;
-    assert_eq!(accounts.list_users(&ready_actor).await.unwrap().len(), 1);
+    assert_eq!(accounts.user_overview(&ready_actor).await.unwrap().len(), 1);
     assert_eq!(
         audit_count(&test.db, Some(admin.id), admin.id, "password_changed").await,
         1
@@ -411,7 +411,7 @@ async fn admin_mutations_reauthenticate_instead_of_trusting_snapshot_or_other_ow
         .unwrap();
     let member = identity(&test.db, &issued).await;
     assert!(matches!(
-        accounts.list_users(&member).await,
+        accounts.user_overview(&member).await,
         Err(Error::Forbidden)
     ));
     assert!(matches!(
@@ -489,7 +489,7 @@ async fn admin_mutations_reauthenticate_instead_of_trusting_snapshot_or_other_ow
     .unwrap();
     accounts.logout(&admin).await.unwrap();
     assert!(matches!(
-        accounts.list_users(&admin).await,
+        accounts.user_overview(&admin).await,
         Err(Error::Unauthorized)
     ));
     assert!(matches!(
