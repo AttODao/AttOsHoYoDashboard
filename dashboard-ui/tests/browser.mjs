@@ -101,8 +101,9 @@ const server=http.createServer(async(req,res)=>{
    if(p==='/api/v1/server-settings'){await settingsGate;return json(res,{timezone_offset:'+09:00',session_ttl_days:7});}
    if(p==='/api/v1/admin/users'){
     if(req.method==='POST'){assert.ok(actor===user);assert.ok(body.username==='synthetic-created');assert.ok(validGenerated(body.temporary_password),'24-character WebCrypto candidate');if(failCreate)return json(res,{error:'unavailable'},503);const created={...other,id:uid(12),username:body.username,must_change_password:true};createdUsers.push(created);return json(res,created,201);}
-    return json(res,[user,other,secondAdmin,...createdUsers]);
+    return json(res,[user,other,secondAdmin,...createdUsers].map(row=>({...row,created_at:hoursAgo(100),link_status:row===other?'verified':'not_configured',automatic_claims:row===other?2:0,last_login_at:row===user?hoursAgo(1):null})));
    }
+   if(p==='/api/v1/admin/audit'){assert.equal(req.method,'GET');return json(res,[{id:uid(60),action:'user_created',created_at:hoursAgo(1),actor:user.username,target:other.username},{id:uid(61),action:'signed_in',created_at:hoursAgo(2),actor:null,target:null}]);}
    if(p===`/api/v1/admin/users/${uid(12)}/temporary-password`){assert.equal(req.method,'PUT');assert.ok(validGenerated(body.temporary_password));res.writeHead(204);return res.end();}
    if(p===`/api/v1/admin/users/${other.id}`){
     assert.ok(actor===user);
@@ -753,6 +754,17 @@ try{
  assert.equal(await page.locator('[data-slot=card]').first().evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(24, 23, 29)','AHD card skin does not depend on hashed module class names');
  assert.equal(await page.locator('input[autocomplete=new-password]').count(),0,'no administrator-entered temporary password form');
  const ownRow=page.getByRole('row').filter({has:page.getByRole('rowheader',{name:new RegExp('^'+user.username)})});
+ // Linkage health, last sign-in and the audit log are visible; search narrows the table.
+ const otherRowEarly=page.getByRole('row').filter({has:page.getByRole('rowheader',{name:new RegExp('^'+other.username)})});
+ assert.ok((await otherRowEarly.innerText()).includes('Verified')&&(await otherRowEarly.innerText()).includes('Auto-claim 2'));
+ assert.ok((await otherRowEarly.innerText()).includes('Never'));
+ const audit=page.getByRole('table').filter({hasText:'User created'});
+ assert.ok((await audit.innerText()).includes('System')&&(await audit.innerText()).includes('Deleted user'));
+ await page.locator('#admin-search').fill(other.username);
+ assert.equal(await page.locator('.admin-users tbody tr').count(),1);
+ await page.locator('#admin-search').fill('');
+ assert.equal(await ownRow.getByRole('button',{name:'Remove admin',exact:true}).count()+await ownRow.getByRole('button',{name:'Make admin',exact:true}).count(),1);
+ assert.ok(await ownRow.getByRole('button',{name:/admin$/}).isDisabled(),'an administrator cannot change their own role');
  assert.equal(await page.getByRole('table',{name:'Manage users',exact:true}).count(),1);
  const actionColumns=await page.locator('.admin-user-actions').evaluateAll(rows=>rows.map(row=>[...row.querySelectorAll('button')].map(button=>Math.round(button.getBoundingClientRect().x))));
  assert.deepEqual(actionColumns[0],actionColumns[1],'all lifecycle action columns align despite different password labels');
@@ -817,8 +829,16 @@ try{
  await page.evaluate(()=>window.finishCopy());await page.getByText('Copied',{exact:true}).waitFor();
  await page.evaluate(()=>{Clipboard.prototype.writeText=window.originalClipboardWrite;});
  await button('Close').click();assert.equal(await page.locator('#admin-generated-password').count(),0);
- const createdRow=page.getByRole('row').filter({has:page.getByRole('rowheader',{name:'synthetic-created',exact:true})});
- await createdRow.getByRole('button',{name:'Reissue password',exact:true}).click();await idle();
+ const createdRow=page.getByRole('row').filter({has:page.getByRole('rowheader',{name:/^synthetic-created/})});
+ await createdRow.getByRole('button',{name:'Reissue password',exact:true}).click();
+ // Reissuing invalidates the user's credentials, so it asks first; cancelling sends nothing.
+ const reissueDialog=page.locator('#admin-confirm-'+uid(12));
+ await reissueDialog.waitFor();
+ assert.ok((await reissueDialog.innerText()).includes('passkeys and sessions stop working'));
+ await reissueDialog.getByRole('button',{name:'Cancel',exact:true}).click();await reissueDialog.waitFor({state:'detached'});
+ assert.equal(counts.get('/api/v1/admin/users/'+uid(12)+'/temporary-password')||0,0);
+ await createdRow.getByRole('button',{name:'Reissue password',exact:true}).click();
+ await reissueDialog.getByRole('button',{name:'Reissue password',exact:true}).click();await idle();
  await page.locator('#admin-credential-result[open]').waitFor();
  assert.equal(counts.get('/api/v1/admin/users/'+uid(12)+'/temporary-password'),1);
  assert.equal(await page.getByText('Copied',{exact:true}).count(),0,'copy state cannot leak between generated results');
@@ -828,6 +848,9 @@ try{
  // Busy-locked controls keep their look; only unavailable ones use the dashed outline.
  adminPatchHold=new Promise(resolve=>{releaseAdminPatch=resolve;});
  await otherRow.getByRole('button',{name:'Re-enable',exact:true}).click();
+ const enableDialog=page.locator('#admin-confirm-'+other.id);
+ assert.ok((await enableDialog.innerText()).includes('Automatic claiming turns OFF'));
+ await enableDialog.getByRole('button',{name:'Re-enable',exact:true}).click();
  await page.locator('fieldset.app-shell[aria-busy=true]').waitFor();
  const lockedDelete=otherRow.getByRole('button',{name:'Delete user',exact:true});
  assert.ok(await lockedDelete.isDisabled(),'busy shell locks every action');

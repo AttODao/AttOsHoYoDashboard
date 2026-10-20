@@ -12,6 +12,22 @@ pub struct UserView {
     pub must_change_password: bool,
     #[serde(default)]
     pub last_login_at: Option<String>,
+    /// Administrator listing only.
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub link_status: Option<String>,
+    #[serde(default)]
+    pub automatic_claims: Option<u64>,
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct AuditEntry {
+    pub id: Uuid,
+    pub action: String,
+    pub created_at: String,
+    pub actor: Option<String>,
+    pub target: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]

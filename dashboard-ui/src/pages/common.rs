@@ -250,6 +250,32 @@ pub(super) fn ModalDialog(
     }
 }
 
+/// A yes/no confirmation in the shared native dialog.
+#[component]
+pub(super) fn ConfirmDialog(
+    id: String,
+    title: &'static str,
+    message: String,
+    confirm: String,
+    #[props(default)] danger: bool,
+    onconfirm: EventHandler<()>,
+    onclose: EventHandler<()>,
+) -> Element {
+    let ui = use_preferences();
+    rsx! {
+        ModalDialog { id, title, onclose,
+            p { "{message}" }
+            div { class: "actions",
+                crate::components::Button { variant: crate::components::ButtonVariant::Secondary, r#type: "button", onclick: move |_| onclose.call(()), {ui.text("admin.cancel")} }
+                crate::components::Button {
+                    variant: if danger { crate::components::ButtonVariant::Destructive } else { crate::components::ButtonVariant::Primary },
+                    r#type: "button", onclick: move |_| onconfirm.call(()), "{confirm}"
+                }
+            }
+        }
+    }
+}
+
 /// Own the native modal, its browser listeners, scroll lock and focus restoration.
 pub(super) fn use_modal(id: String, active: bool, onclose: EventHandler<()>) {
     #[cfg(target_arch = "wasm32")]

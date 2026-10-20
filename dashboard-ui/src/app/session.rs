@@ -264,6 +264,9 @@ mod tests {
             active: true,
             must_change_password: false,
             last_login_at: None,
+            created_at: None,
+            link_status: None,
+            automatic_claims: None,
         }]);
 
         let mut next = me(false, true);

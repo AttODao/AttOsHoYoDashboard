@@ -8,7 +8,7 @@ use super::state::{
 use crate::{
     api,
     models::{
-        CookieStatus, GameAccount, GameStatus, PasskeyView, RewardRun, RewardSetting,
+        AuditEntry, CookieStatus, GameAccount, GameStatus, PasskeyView, RewardRun, RewardSetting,
         ServerSettings, SessionView, UserView,
     },
 };
@@ -34,7 +34,10 @@ pub(super) async fn load_page_data(state: Signal<AppState>, page: Page) {
             load_passkeys(state).await;
             load_sessions(state).await;
         }
-        Page::Admin => load_admin_users(state).await,
+        Page::Admin => {
+            load_admin_users(state).await;
+            load_admin_audit(state, false).await;
+        }
         Page::Delete => {}
         Page::Docs => {}
     }
@@ -71,6 +74,7 @@ enum Resource {
     Passkeys,
     Sessions,
     ServerSettings,
+    AdminAudit,
     AdminUsers,
 }
 
@@ -686,6 +690,62 @@ pub(super) async fn load_admin_users(mut state: Signal<AppState>) {
     }
 }
 
+pub(super) const AUDIT_PAGE: usize = 50;
+
+/// The newest audit page, or (with `older`) the page before the oldest shown entry.
+pub(super) async fn load_admin_audit(mut state: Signal<AppState>, older: bool) {
+    let Some(generation) = password_generation(state) else {
+        return;
+    };
+    if !state.read().me.as_ref().is_some_and(|me| me.is_admin) {
+        return;
+    }
+    let before = older
+        .then(|| {
+            state
+                .read()
+                .admin_audit
+                .as_ref()
+                .and_then(|rows| rows.last().map(|row| row.created_at.clone()))
+        })
+        .flatten();
+    let path = match &before {
+        Some(before) => format!(
+            "/admin/audit?limit={AUDIT_PAGE}&before={}",
+            query_value(before)
+        ),
+        None => format!("/admin/audit?limit={AUDIT_PAGE}"),
+    };
+    let Some(result) = fetch_current::<Vec<AuditEntry>>(
+        state,
+        Resource::AdminAudit,
+        &path,
+        generation,
+        current_generation,
+    )
+    .await
+    else {
+        return;
+    };
+    let mut write = state.write();
+    match result {
+        Ok(rows) => {
+            write.admin_audit_more = rows.len() == AUDIT_PAGE;
+            match (&mut write.admin_audit, before.is_some()) {
+                (Some(existing), true) => existing.extend(rows),
+                _ => write.admin_audit = Some(rows),
+            }
+            write.admin_audit_error = None;
+        }
+        Err(key) => write.admin_audit_error = Some(key.to_owned()),
+    }
+}
+
+/// Percent-encodes the characters an RFC 3339 timestamp may carry into a query value.
+fn query_value(value: &str) -> String {
+    value.replace('+', "%2B").replace(':', "%3A")
+}
+
 pub(super) async fn load_docs(mut state: Signal<AppState>) {
     match api::openapi().await {
         Ok(value) => {
@@ -794,6 +854,7 @@ mod tests {
             Resource::Passkeys,
             Resource::Sessions,
             Resource::ServerSettings,
+            Resource::AdminAudit,
             Resource::AdminUsers,
         ] {
             let ticket = requests.issue(resource);

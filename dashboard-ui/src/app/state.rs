@@ -1,8 +1,8 @@
 use super::actions::spawn_root;
 use super::data::load_page_data;
 use crate::models::{
-    CookieStatus, GameAccount, GameStatus, MeView, PasskeyView, RewardRun, RewardSetting,
-    ServerSettings, SessionView, UserView,
+    AuditEntry, CookieStatus, GameAccount, GameStatus, MeView, PasskeyView, RewardRun,
+    RewardSetting, ServerSettings, SessionView, UserView,
 };
 use dioxus::prelude::*;
 use std::collections::BTreeMap;
@@ -98,6 +98,10 @@ pub(super) struct AppState {
     pub(super) server: Option<ServerSettings>,
     pub(super) admin_users: Option<Vec<UserView>>,
     pub(super) admin_error: Option<String>,
+    pub(super) admin_audit: Option<Vec<AuditEntry>>,
+    pub(super) admin_audit_error: Option<String>,
+    /// Whether an older audit page may exist.
+    pub(super) admin_audit_more: bool,
     pub(super) openapi: Option<serde_json::Value>,
     pub(super) openapi_error: Option<String>,
 }
@@ -131,6 +135,9 @@ impl AppState {
             server: None,
             admin_users: None,
             admin_error: None,
+            admin_audit: None,
+            admin_audit_error: None,
+            admin_audit_more: false,
             openapi: None,
             openapi_error: None,
         }
@@ -211,6 +218,9 @@ impl AppState {
         self.server = None;
         self.admin_users = None;
         self.admin_error = None;
+        self.admin_audit = None;
+        self.admin_audit_error = None;
+        self.admin_audit_more = false;
     }
 }
 
