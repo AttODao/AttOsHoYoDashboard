@@ -13,6 +13,7 @@ pub struct Model {
     pub label: String,
     pub credential: Json,
     pub created_at: DateTimeUtc,
+    pub last_used_at: Option<DateTimeUtc>,
 }
 
 // Never expose the stored WebAuthn credential, even in error diagnostics.

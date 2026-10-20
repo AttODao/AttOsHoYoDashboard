@@ -352,6 +352,7 @@ async fn queue_deletions(test: &TestDatabase, admin: &user::Model, count: i64) -
             active: Set(false),
             must_change_password: Set(false),
             created_at: Set(base),
+            last_login_at: Set(None),
         }
         .insert(&test.db)
         .await

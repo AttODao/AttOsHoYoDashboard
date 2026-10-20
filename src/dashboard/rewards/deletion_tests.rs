@@ -24,6 +24,7 @@ async fn owner_with_setting(db: &DatabaseConnection) -> (Uuid, Uuid) {
         active: Set(false),
         must_change_password: Set(false),
         created_at: Set(now),
+        last_login_at: Set(None),
     }
     .insert(db)
     .await

@@ -8,6 +8,12 @@ pub struct Model {
     pub token_hash: String,
     pub user_id: Uuid,
     pub expires_at: DateTimeUtc,
+    /// Public handle for listing and revoking; never the token or its hash.
+    #[sea_orm(unique)]
+    pub id: Uuid,
+    pub created_at: DateTimeUtc,
+    pub last_seen_at: Option<DateTimeUtc>,
+    pub user_agent: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

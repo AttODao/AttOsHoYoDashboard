@@ -207,6 +207,7 @@ async fn registration_limit_is_rechecked_at_finish_and_start() {
             label: Set("count fixture".into()),
             credential: Set(template.credential.clone()),
             created_at: Set(Utc::now()),
+            last_used_at: Set(None),
         }
         .insert(&fixture.db.db)
         .await

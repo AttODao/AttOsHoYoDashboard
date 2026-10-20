@@ -24,7 +24,7 @@ use chrono::{DateTime, Utc};
 use decoy::DecoyKey;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, QueryFilter, QueryOrder,
-    QuerySelect, TransactionTrait,
+    QuerySelect, TransactionTrait, sea_query::Expr,
 };
 use serde::Serialize;
 use std::{
@@ -53,6 +53,7 @@ pub(in crate::dashboard) struct PasskeyView {
     pub(in crate::dashboard) id: Uuid,
     pub(in crate::dashboard) label: String,
     pub(in crate::dashboard) created_at: DateTime<Utc>,
+    pub(in crate::dashboard) last_used_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Serialize)]
@@ -107,6 +108,7 @@ impl Passkeys {
                 passkey::Column::Id,
                 passkey::Column::Label,
                 passkey::Column::CreatedAt,
+                passkey::Column::LastUsedAt,
             ])
             .filter(passkey::Column::UserId.eq(fresh.user.id))
             .order_by_asc(passkey::Column::CreatedAt)
@@ -135,6 +137,31 @@ impl Passkeys {
             return Err(Error::NotFound);
         }
         accounts::record(&tx, Some(fresh.user.id), fresh.user.id, "passkey_deleted").await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    pub(in crate::dashboard) async fn rename(
+        &self,
+        accounts: &Accounts,
+        actor: &Identity,
+        id: Uuid,
+        label: String,
+    ) -> Result<()> {
+        let label = validate_label(label)?;
+        let tx = accounts.db.begin().await?;
+        accounts::lock_user(&tx, actor.user.id).await?;
+        let fresh = Sessions::authenticate(&tx, &actor.token_hash).await?;
+        accounts::require_ready(&fresh.user)?;
+        let renamed = passkey::Entity::update_many()
+            .col_expr(passkey::Column::Label, Expr::value(label))
+            .filter(passkey::Column::Id.eq(id))
+            .filter(passkey::Column::UserId.eq(fresh.user.id))
+            .exec(&tx)
+            .await?;
+        if renamed.rows_affected != 1 {
+            return Err(Error::NotFound);
+        }
         tx.commit().await?;
         Ok(())
     }

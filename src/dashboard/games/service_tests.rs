@@ -101,6 +101,7 @@ async fn ready_identity(db: &sea_orm::DatabaseConnection, name: &str) -> Identit
         active: Set(true),
         must_change_password: Set(false),
         created_at: Set(Utc::now()),
+        last_login_at: Set(None),
     }
     .insert(db)
     .await

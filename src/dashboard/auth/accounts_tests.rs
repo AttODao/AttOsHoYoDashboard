@@ -27,6 +27,7 @@ fn policy_user() -> user::Model {
         active: true,
         must_change_password: false,
         created_at: Utc::now(),
+        last_login_at: None,
     }
 }
 
@@ -56,6 +57,7 @@ async fn stub_passkey(db: &DatabaseConnection, owner: Uuid) -> Uuid {
         credential: Set(serde_json::json!({"test_stub": true})),
         label: Set("test credential".to_owned()),
         created_at: Set(Utc::now()),
+        last_used_at: Set(None),
     }
     .insert(db)
     .await
@@ -92,11 +94,15 @@ async fn startup_bootstrap_only_reads_credentials_for_an_empty_database() {
         .await
         .unwrap();
     assert_eq!(user::Entity::find().count(&fixture.db).await.unwrap(), 1);
-    assert!(
-        accounts
-            .login("synthetic-startup".into(), TEMP_PASSWORD.into())
-            .await
-            .is_ok()
+    let (signed_in, _) = accounts
+        .login("synthetic-startup".into(), TEMP_PASSWORD.into())
+        .await
+        .unwrap();
+    // A successful sign-in is timestamped and audited.
+    assert!(signed_in.last_login_at.is_some());
+    assert_eq!(
+        audit_count(&fixture.db, Some(signed_in.id), signed_in.id, "signed_in").await,
+        1
     );
     assert!(matches!(
         accounts

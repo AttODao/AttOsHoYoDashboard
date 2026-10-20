@@ -102,8 +102,15 @@ async fn public_password_login_rotates_cookie_without_extending_expiry_and_logou
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     let login_cookie = response_cookie(&response);
+    let signed_in = body(response).await;
+    assert!(
+        signed_in["last_login_at"].is_string(),
+        "sign-in is timestamped"
+    );
+    let mut signed_in = signed_in.as_object().unwrap().clone();
+    signed_in.remove("last_login_at");
     assert_eq!(
-        body(response).await,
+        serde_json::Value::Object(signed_in),
         json!({"id": actor.user.id, "username": "admin", "is_admin": true, "active": true, "must_change_password": false})
     );
     assert_eq!(
@@ -311,4 +318,71 @@ async fn body_limit_and_unknown_dto_fields_reject_before_handlers() {
     );
     // Only the fixture's own sign-in; rejected DTOs never reach the budget.
     assert_eq!(app.accounts.login_attempts("admin"), 1);
+}
+
+#[tokio::test]
+async fn session_routes_list_and_revoke_only_the_callers_other_sessions() {
+    let fixture = TestDatabase::new().await;
+    let (accounts, actor) = fixture.ready_admin().await;
+    let app = app(accounts);
+    let current = cookie(&app, actor.user.id).await;
+    let other = cookie(&app, actor.user.id).await;
+    let listed = body(
+        call(
+            &app,
+            request("GET", "/api/v1/me/sessions", Some(&current), None),
+        )
+        .await,
+    )
+    .await;
+    let rows = listed.as_array().unwrap();
+    assert!(rows.len() >= 2);
+    assert_eq!(rows.iter().filter(|row| row["current"] == true).count(), 1);
+    // Neither the token nor its hash is ever exposed.
+    let text = listed.to_string();
+    assert!(!text.contains(current.split('=').nth(1).unwrap()));
+    assert!(!text.contains("token"));
+    let current_id = rows.iter().find(|row| row["current"] == true).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    error(
+        call(
+            &app,
+            request(
+                "DELETE",
+                &format!("/api/v1/me/sessions/{current_id}"),
+                Some(&current),
+                None,
+            ),
+        )
+        .await,
+        StatusCode::CONFLICT,
+        "conflict",
+    )
+    .await;
+    let response = call(
+        &app,
+        request(
+            "POST",
+            "/api/v1/me/sessions/revoke-others",
+            Some(&current),
+            Some(json!({})),
+        ),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(body(response).await["revoked"].as_u64().unwrap() >= 1);
+    error(
+        call(&app, request("GET", "/api/v1/me", Some(&other), None)).await,
+        StatusCode::UNAUTHORIZED,
+        "unauthorized",
+    )
+    .await;
+    assert_eq!(
+        call(&app, request("GET", "/api/v1/me", Some(&current), None))
+            .await
+            .status(),
+        StatusCode::OK
+    );
 }

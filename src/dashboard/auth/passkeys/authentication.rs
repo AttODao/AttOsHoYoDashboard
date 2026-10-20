@@ -170,12 +170,14 @@ impl Passkeys {
         if Instant::now() >= pending.expires_at {
             return Err(Error::Unauthorized);
         }
+        let mut update = row.into_active_model();
         if let Some(credential) = updated {
-            let mut update = row.into_active_model();
             update.credential = Set(credential);
-            update.update(&tx).await?;
         }
+        update.last_used_at = Set(Some(chrono::Utc::now()));
+        update.update(&tx).await?;
         let session = accounts.sessions.issue(&tx, user.id).await?;
+        let user = accounts::mark_signed_in(&tx, user).await?;
         tx.commit().await?;
         Ok((user, session))
     }

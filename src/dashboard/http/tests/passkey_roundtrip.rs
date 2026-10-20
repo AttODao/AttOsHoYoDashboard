@@ -62,7 +62,8 @@ async fn registration_public_authentication_metadata_and_delete_roundtrip() {
     .await;
     assert_eq!(registered.status(), StatusCode::CREATED);
     let metadata = body(registered).await;
-    assert_eq!(metadata.as_object().unwrap().len(), 3);
+    assert_eq!(metadata.as_object().unwrap().len(), 4);
+    assert!(metadata["last_used_at"].is_null());
     assert_eq!(metadata["label"], "software fixture");
     assert!(metadata["created_at"].is_string());
     let id: Uuid = metadata["id"].as_str().unwrap().parse().unwrap();
@@ -104,8 +105,15 @@ async fn registration_public_authentication_metadata_and_delete_roundtrip() {
     assert_eq!(login.status(), StatusCode::OK);
     let passkey_cookie = response_cookie(&login);
     assert!(passkey_cookie.starts_with("attos_session="));
+    let signed_in = body(login).await;
+    assert!(
+        signed_in["last_login_at"].is_string(),
+        "passkey sign-in is timestamped"
+    );
+    let mut signed_in = signed_in.as_object().unwrap().clone();
+    signed_in.remove("last_login_at");
     assert_eq!(
-        body(login).await,
+        serde_json::Value::Object(signed_in),
         json!({"id": actor.user.id, "username": "admin", "is_admin": true, "active": true, "must_change_password": false})
     );
     // The fixture sign-in, then passkey options and verify.

@@ -18,6 +18,7 @@ fn row(credential: Value, credential_id: Vec<u8>) -> passkey::Model {
         label: "key".into(),
         credential,
         created_at: Utc::now(),
+        last_used_at: None,
     }
 }
 
@@ -86,6 +87,7 @@ async fn loader_is_owner_scoped_and_rejects_more_than_twenty_rows() {
             label: Set("synthetic stored row".into()),
             credential: Set(template.credential.clone()),
             created_at: Set(Utc::now()),
+            last_used_at: Set(None),
         }
         .insert(&fixture.db.db)
         .await

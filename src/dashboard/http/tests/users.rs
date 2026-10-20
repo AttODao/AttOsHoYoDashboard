@@ -54,7 +54,7 @@ async fn user_routes_enforce_auth_admin_and_temporary_password_exceptions() {
     let id: Uuid = created["id"].as_str().unwrap().parse().unwrap();
     assert_eq!(
         created,
-        json!({"id": id, "username": "ordinary", "is_admin": false, "active": true, "must_change_password": true})
+        json!({"id": id, "username": "ordinary", "is_admin": false, "active": true, "must_change_password": true, "last_login_at": null})
     );
     let login = call(
         &app,
@@ -71,10 +71,13 @@ async fn user_routes_enforce_auth_admin_and_temporary_password_exceptions() {
     let mut expected = created.clone();
     expected["onboarding"] = json!({"password_change_required":true,"cookie_setup_complete":false,"cookie_status":"not_configured","verification_available":true});
     expected["capabilities"] = json!({"reward_posting_available":true});
-    assert_eq!(
-        body(call(&app, request("GET", "/api/v1/me", Some(&temporary), None)).await).await,
-        expected
+    let mut me = body(call(&app, request("GET", "/api/v1/me", Some(&temporary), None)).await).await;
+    assert!(
+        me["last_login_at"].is_string(),
+        "the first sign-in is recorded"
     );
+    me["last_login_at"] = serde_json::Value::Null;
+    assert_eq!(me, expected);
     for (method, path, input) in &admin_routes {
         error(
             call(&app, request(method, path, Some(&temporary), input.clone())).await,
@@ -167,7 +170,7 @@ async fn user_routes_enforce_auth_admin_and_temporary_password_exceptions() {
     let listing = body(listing).await;
     assert_eq!(listing.as_array().unwrap().len(), 2);
     for view in listing.as_array().unwrap() {
-        assert_eq!(view.as_object().unwrap().len(), 5);
+        assert_eq!(view.as_object().unwrap().len(), 6);
         assert!(view.get("password_hash").is_none());
         assert!(view.get("created_at").is_none());
     }

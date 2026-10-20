@@ -105,18 +105,21 @@ async fn signed_in_uses_remaining_lifetime_and_serializes_only_public_user_metad
         active: true,
         must_change_password: true,
         created_at: Utc::now(),
+        last_login_at: None,
     };
-    let expected = json!({"id": user.id, "username": user.username, "is_admin": false, "active": true, "must_change_password": true});
+    let expected = json!({"id": user.id, "username": user.username, "is_admin": false, "active": true, "must_change_password": true, "last_login_at": null});
     let before = Utc::now();
     let expires_at = before + Duration::seconds(90);
     let response = signed_in(
         &app,
+        &HeaderMap::new(),
         user.clone(),
         IssuedSession {
             token: "synthetic-token".to_owned(),
             expires_at,
         },
     )
+    .await
     .unwrap();
     let after = Utc::now();
     let set = response.headers()[header::SET_COOKIE].to_str().unwrap();
@@ -134,12 +137,14 @@ async fn signed_in_uses_remaining_lifetime_and_serializes_only_public_user_metad
     assert_eq!(body(response).await, expected);
     let response = signed_in(
         &app,
+        &HeaderMap::new(),
         user,
         IssuedSession {
             token: "synthetic-token".to_owned(),
             expires_at: Utc::now() - Duration::seconds(1),
         },
     )
+    .await
     .unwrap();
     assert!(
         response.headers()[header::SET_COOKIE]

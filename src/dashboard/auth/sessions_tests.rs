@@ -41,6 +41,7 @@ async fn other_user(db: &DatabaseConnection, template: &user::Model) -> user::Mo
         active: Set(true),
         must_change_password: Set(false),
         created_at: Set(Utc::now()),
+        last_login_at: Set(None),
     }
     .insert(db)
     .await
@@ -219,5 +220,82 @@ async fn issue_until_preserves_deadline_and_sql_owner_fk_cascades() {
         Sessions::authenticate(&test.db, &admin.token_hash)
             .await
             .is_ok()
+    );
+}
+
+#[tokio::test]
+async fn sessions_are_listed_described_touched_and_revoked_by_their_owner() {
+    let test = TestDatabase::new().await;
+    let (_, admin) = test.ready_admin().await;
+    let sessions = Sessions::new(Duration::hours(1));
+    let first = issue_locked(&test.db, &sessions, admin.user.id).await;
+    let second = issue_locked(&test.db, &sessions, admin.user.id).await;
+    let third = issue_locked(&test.db, &sessions, admin.user.id).await;
+    Sessions::describe(&test.db, &first.token, Some("Synthetic\u{7}Browser/1.0"))
+        .await
+        .unwrap();
+    let current = Sessions::authenticate(&test.db, &password::token_hash(&first.token).unwrap())
+        .await
+        .unwrap();
+    Sessions::touch(&test.db, &current.token_hash)
+        .await
+        .unwrap();
+    let listed = Sessions::list(&test.db, admin.user.id).await.unwrap();
+    // The bootstrap fixture's own session counts too.
+    assert_eq!(listed.len(), 4);
+    let mine = listed
+        .iter()
+        .find(|row| row.token_hash == current.token_hash)
+        .unwrap();
+    assert_eq!(mine.user_agent.as_deref(), Some("SyntheticBrowser/1.0"));
+    assert!(mine.last_seen_at.is_some());
+    let touched = mine.last_seen_at;
+    // A second touch within the interval does not write again.
+    Sessions::touch(&test.db, &current.token_hash)
+        .await
+        .unwrap();
+    assert_eq!(
+        session::Entity::find_by_id(current.token_hash.clone())
+            .one(&test.db)
+            .await
+            .unwrap()
+            .unwrap()
+            .last_seen_at,
+        touched
+    );
+
+    assert!(matches!(
+        Sessions::revoke(&test.db, &current, mine.id).await,
+        Err(Error::Conflict)
+    ));
+    assert!(matches!(
+        Sessions::revoke(&test.db, &current, Uuid::new_v4()).await,
+        Err(Error::NotFound)
+    ));
+    let second_id = listed
+        .iter()
+        .find(|row| row.token_hash == password::token_hash(&second.token).unwrap())
+        .unwrap()
+        .id;
+    Sessions::revoke(&test.db, &current, second_id)
+        .await
+        .unwrap();
+    assert!(
+        Sessions::authenticate(&test.db, &password::token_hash(&second.token).unwrap())
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        Sessions::revoke_others(&test.db, &current).await.unwrap(),
+        2
+    );
+    assert!(
+        Sessions::authenticate(&test.db, &password::token_hash(&third.token).unwrap())
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        Sessions::list(&test.db, admin.user.id).await.unwrap().len(),
+        1
     );
 }

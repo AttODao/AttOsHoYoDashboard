@@ -65,6 +65,7 @@ async fn stub_passkey(db: &DatabaseConnection, owner: Uuid) -> Uuid {
         credential: Set(serde_json::json!({"synthetic": true})),
         label: Set("delete me".to_owned()),
         created_at: Set(Utc::now()),
+        last_used_at: Set(None),
     }
     .insert(db)
     .await

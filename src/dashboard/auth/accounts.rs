@@ -108,6 +108,7 @@ impl Accounts {
             return Err(Error::Unauthorized);
         }
         let token = self.sessions.issue(&tx, user.id).await?;
+        let user = mark_signed_in(&tx, user).await?;
         tx.commit().await?;
         Ok((user, token))
     }
@@ -318,6 +319,19 @@ pub(super) fn validate_username(username: &str) -> Result<()> {
     Ok(())
 }
 
+/// Records a successful sign-in (password or passkey) inside the caller's user lock.
+pub(in crate::dashboard) async fn mark_signed_in(
+    tx: &impl ConnectionTrait,
+    user: user::Model,
+) -> Result<user::Model> {
+    let id = user.id;
+    let mut row = user.into_active_model();
+    row.last_login_at = Set(Some(Utc::now()));
+    let user = row.update(tx).await?;
+    record(tx, Some(id), id, "signed_in").await?;
+    Ok(user)
+}
+
 async fn insert_user(
     db: &impl ConnectionTrait,
     username: String,
@@ -332,6 +346,7 @@ async fn insert_user(
         active: Set(true),
         must_change_password: Set(true),
         created_at: Set(Utc::now()),
+        last_login_at: Set(None),
     }
     .insert(db)
     .await

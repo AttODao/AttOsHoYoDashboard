@@ -1,7 +1,10 @@
 //! Session-cookie encoding/parsing and sign-in response; never sets session policy.
 use super::{HttpState, users::UserView};
 use crate::dashboard::{
-    auth::{password, sessions::IssuedSession},
+    auth::{
+        password,
+        sessions::{IssuedSession, Sessions},
+    },
     config::Config,
     db::entities::user,
     error::{Error, Result},
@@ -46,11 +49,20 @@ pub(super) fn set_cookie(config: &Config, token: &str, max_age: i64) -> Result<H
     .map_err(|_| Error::Internal)
 }
 
-pub(super) fn signed_in(
+/// The sign-in response: records which browser holds the session, then sets the cookie.
+pub(super) async fn signed_in(
     app: &HttpState,
+    headers: &HeaderMap,
     user: user::Model,
     session: IssuedSession,
 ) -> Result<Response> {
+    let agent = headers
+        .get(header::USER_AGENT)
+        .and_then(|value| value.to_str().ok());
+    // The browser label is a convenience; a failure to store it must not fail sign-in.
+    if let Err(error) = Sessions::describe(&app.accounts.db, &session.token, agent).await {
+        tracing::warn!(error = %error, "session browser not recorded");
+    }
     let mut response = Json(UserView::from(user)).into_response();
     let remaining = session
         .expires_at

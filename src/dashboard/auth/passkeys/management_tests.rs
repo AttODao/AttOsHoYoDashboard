@@ -129,7 +129,47 @@ async fn list_exposes_only_metadata_and_delete_is_owner_scoped() {
         .map(String::as_str)
         .collect::<Vec<_>>();
     fields.sort_unstable();
-    assert_eq!(fields, ["created_at", "id", "label"]);
+    assert_eq!(fields, ["created_at", "id", "label", "last_used_at"]);
+    assert!(keys[0].last_used_at.is_none());
+    // Renaming is owner-scoped and validated like registration labels.
+    assert!(matches!(
+        fixture
+            .passkeys
+            .rename(&fixture.accounts, &other, fixture.key_id, "stolen".into())
+            .await,
+        Err(Error::NotFound)
+    ));
+    assert!(matches!(
+        fixture
+            .passkeys
+            .rename(
+                &fixture.accounts,
+                &fixture.actor,
+                fixture.key_id,
+                " ".into()
+            )
+            .await,
+        Err(Error::Invalid(_))
+    ));
+    fixture
+        .passkeys
+        .rename(
+            &fixture.accounts,
+            &fixture.actor,
+            fixture.key_id,
+            "  phone ".into(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        fixture
+            .passkeys
+            .list(&fixture.accounts, &fixture.actor)
+            .await
+            .unwrap()[0]
+            .label,
+        "phone"
+    );
     assert!(matches!(
         fixture
             .passkeys

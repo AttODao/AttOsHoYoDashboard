@@ -30,7 +30,7 @@ pub(super) fn protected_routes() -> Router<App> {
         .route("/api/v1/me/passkeys", get(list))
         .route("/api/v1/me/passkeys/options", post(registration_start))
         .route("/api/v1/me/passkeys/verify", post(registration_finish))
-        .route("/api/v1/me/passkeys/{id}", delete(remove))
+        .route("/api/v1/me/passkeys/{id}", delete(remove).patch(rename))
 }
 
 #[derive(Deserialize)]
@@ -99,6 +99,18 @@ async fn remove(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn rename(
+    State(app): State<App>,
+    Extension(actor): Extension<Arc<Identity>>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<Label>,
+) -> Result<StatusCode> {
+    app.passkeys
+        .rename(&app.accounts, &actor, id, input.label)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn authentication_start(
     State(app): State<App>,
     Json(input): Json<Username>,
@@ -112,11 +124,12 @@ async fn authentication_start(
 
 async fn authentication_finish(
     State(app): State<App>,
+    headers: axum::http::HeaderMap,
     Json(input): Json<Authentication>,
 ) -> Result<Response> {
     let (user, session) = app
         .passkeys
         .authentication_finish(&app.accounts, input.challenge_id, input.response)
         .await?;
-    signed_in(&app, user, session)
+    signed_in(&app, &headers, user, session).await
 }

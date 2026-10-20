@@ -54,6 +54,10 @@ pub(super) async fn authenticate(
     };
     match result {
         Ok(identity) => {
+            // Activity is a convenience for the session list; never fail a request over it.
+            if let Err(error) = Sessions::touch(&app.accounts.db, &identity.token_hash).await {
+                tracing::warn!(error = %error, "session activity not recorded");
+            }
             request.extensions_mut().insert(Arc::new(identity));
             next.run(request).await
         }

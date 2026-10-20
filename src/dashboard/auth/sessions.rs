@@ -8,7 +8,10 @@ use crate::dashboard::{
     error::{Error, Result},
 };
 use chrono::{DateTime, Duration, Utc};
-use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, Set,
+    sea_query::Expr,
+};
 use uuid::Uuid;
 
 pub(in crate::dashboard) struct Identity {
@@ -22,6 +25,8 @@ pub(in crate::dashboard) struct IssuedSession {
     pub(in crate::dashboard) token: String,
     pub(in crate::dashboard) expires_at: DateTime<Utc>,
 }
+
+const TOUCH_INTERVAL: Duration = Duration::minutes(5);
 
 pub(in crate::dashboard) struct Sessions {
     ttl: Duration,
@@ -54,6 +59,10 @@ impl Sessions {
             token_hash: Set(password::token_hash(&raw)?),
             user_id: Set(user_id),
             expires_at: Set(expires_at),
+            id: Set(Uuid::new_v4()),
+            created_at: Set(Utc::now()),
+            last_seen_at: Set(None),
+            user_agent: Set(None),
         }
         .insert(db)
         .await?;
@@ -93,6 +102,92 @@ impl Sessions {
             .exec(db)
             .await?;
         Ok(())
+    }
+
+    /// Notes which browser holds a newly issued session (truncated, display only).
+    pub(in crate::dashboard) async fn describe(
+        db: &impl ConnectionTrait,
+        token: &str,
+        user_agent: Option<&str>,
+    ) -> Result<()> {
+        let agent = user_agent
+            .map(|agent| {
+                agent
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .take(256)
+                    .collect::<String>()
+            })
+            .filter(|agent| !agent.trim().is_empty());
+        session::Entity::update_many()
+            .col_expr(session::Column::UserAgent, Expr::value(agent))
+            .filter(session::Column::TokenHash.eq(password::token_hash(token)?))
+            .exec(db)
+            .await?;
+        Ok(())
+    }
+
+    /// Records use at most every few minutes, so ordinary requests rarely write.
+    pub(in crate::dashboard) async fn touch(db: &impl ConnectionTrait, hash: &str) -> Result<()> {
+        let now = Utc::now();
+        session::Entity::update_many()
+            .col_expr(session::Column::LastSeenAt, Expr::value(Some(now)))
+            .filter(session::Column::TokenHash.eq(hash))
+            .filter(
+                sea_orm::Condition::any()
+                    .add(session::Column::LastSeenAt.is_null())
+                    .add(session::Column::LastSeenAt.lt(now - TOUCH_INTERVAL)),
+            )
+            .exec(db)
+            .await?;
+        Ok(())
+    }
+
+    /// The user's unexpired sessions, newest first.
+    pub(in crate::dashboard) async fn list(
+        db: &impl ConnectionTrait,
+        user_id: Uuid,
+    ) -> Result<Vec<session::Model>> {
+        Ok(session::Entity::find()
+            .filter(session::Column::UserId.eq(user_id))
+            .filter(session::Column::ExpiresAt.gt(Utc::now()))
+            .order_by_desc(session::Column::CreatedAt)
+            .all(db)
+            .await?)
+    }
+
+    /// Ends one of the actor's other sessions; the current one ends by signing out.
+    pub(in crate::dashboard) async fn revoke(
+        db: &impl ConnectionTrait,
+        actor: &Identity,
+        id: Uuid,
+    ) -> Result<()> {
+        let target = session::Entity::find()
+            .filter(session::Column::Id.eq(id))
+            .filter(session::Column::UserId.eq(actor.user.id))
+            .one(db)
+            .await?
+            .ok_or(Error::NotFound)?;
+        if target.token_hash == actor.token_hash {
+            return Err(Error::Conflict);
+        }
+        session::Entity::delete_by_id(target.token_hash)
+            .exec(db)
+            .await?;
+        Ok(())
+    }
+
+    /// Ends every session of the actor except the current one; returns how many.
+    pub(in crate::dashboard) async fn revoke_others(
+        db: &impl ConnectionTrait,
+        actor: &Identity,
+    ) -> Result<u64> {
+        Ok(session::Entity::delete_many()
+            .filter(session::Column::UserId.eq(actor.user.id))
+            .filter(session::Column::TokenHash.ne(actor.token_hash.as_str()))
+            .exec(db)
+            .await?
+            .rows_affected)
     }
 
     pub(in crate::dashboard) async fn purge_expired(db: &impl ConnectionTrait) -> Result<()> {

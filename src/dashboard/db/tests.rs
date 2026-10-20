@@ -20,6 +20,7 @@ async fn insert_user(db: &DatabaseConnection, username: &str) -> user::Model {
         active: Set(true),
         must_change_password: Set(false),
         created_at: Set(Utc::now()),
+        last_login_at: Set(None),
     }
     .insert(db)
     .await
@@ -49,7 +50,8 @@ async fn migrations_are_ordered_idempotent_and_reversible() {
             "m20261012_000002_passkeys",
             "m20261013_000003_hoyolab_accounts",
             "m20261013_000004_dashboard_games",
-            "m20261020_000005_hoyolab_cookie_removal"
+            "m20261020_000005_hoyolab_cookie_removal",
+            "m20261020_000006_account_activity"
         ]
     );
     migrations::Migrator::down(&fixture.db, None).await.unwrap();
@@ -79,6 +81,7 @@ async fn user_and_credential_uniqueness_foreign_keys_and_cascade_are_enforced() 
         active: Set(true),
         must_change_password: Set(true),
         created_at: Set(Utc::now()),
+        last_login_at: Set(None),
     }
     .insert(&fixture.db)
     .await
@@ -94,6 +97,7 @@ async fn user_and_credential_uniqueness_foreign_keys_and_cascade_are_enforced() 
         label: Set("local".to_owned()),
         credential: Set(serde_json::json!({"synthetic-private-key-metadata": true})),
         created_at: Set(Utc::now()),
+        last_used_at: Set(None),
     };
     key.clone().insert(&fixture.db).await.unwrap();
     let mut duplicate = key;
@@ -107,6 +111,10 @@ async fn user_and_credential_uniqueness_foreign_keys_and_cascade_are_enforced() 
         token_hash: Set("a".repeat(64)),
         user_id: Set(owner.id),
         expires_at: Set(expires),
+        id: Set(uuid::Uuid::new_v4()),
+        created_at: Set(chrono::Utc::now()),
+        last_seen_at: Set(None),
+        user_agent: Set(None),
     }
     .insert(&fixture.db)
     .await
@@ -115,6 +123,10 @@ async fn user_and_credential_uniqueness_foreign_keys_and_cascade_are_enforced() 
         token_hash: Set("b".repeat(64)),
         user_id: Set(Uuid::new_v4()),
         expires_at: Set(expires),
+        id: Set(uuid::Uuid::new_v4()),
+        created_at: Set(chrono::Utc::now()),
+        last_seen_at: Set(None),
+        user_agent: Set(None),
     }
     .insert(&fixture.db)
     .await;
@@ -167,6 +179,7 @@ async fn audit_requires_existing_subject_and_diagnostics_redact_credentials() {
         label: "synthetic-private-label".to_owned(),
         credential: serde_json::json!({"synthetic-private-metadata":true}),
         created_at: Utc::now(),
+        last_used_at: None,
     };
     for diagnostic in [format!("{key:?}"), format!("{key:#?}")] {
         assert_eq!(diagnostic, format!("Passkey {{ id: {:?}, .. }}", key.id));

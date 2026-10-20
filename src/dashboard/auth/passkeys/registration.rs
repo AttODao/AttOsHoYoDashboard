@@ -127,6 +127,7 @@ impl Passkeys {
             label: Set(label),
             credential: Set(credential),
             created_at: Set(Utc::now()),
+            last_used_at: Set(None),
         }
         .insert(&tx)
         .await
@@ -149,6 +150,7 @@ impl Passkeys {
             id: row.id,
             label: row.label,
             created_at: row.created_at,
+            last_used_at: row.last_used_at,
         })
     }
 }

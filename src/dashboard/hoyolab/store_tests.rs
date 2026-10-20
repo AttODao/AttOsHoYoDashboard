@@ -241,6 +241,7 @@ async fn user_without_audit(db: &DatabaseConnection, name: &str) -> user::Model 
         active: Set(true),
         must_change_password: Set(false),
         created_at: Set(Utc::now()),
+        last_login_at: Set(None),
     }
     .insert(db)
     .await

@@ -1,6 +1,7 @@
 //! Independent, bounded reward and deletion work; neither depends on Dashboard visits.
 use super::App;
 use crate::dashboard::{
+    auth::sessions::Sessions,
     error::Result,
     rewards::{deletion, service::Rewards},
 };
@@ -47,7 +48,23 @@ impl Heartbeat {
 }
 
 pub(super) async fn run(app: App, stop: watch::Receiver<bool>) {
-    tokio::join!(rewards(app.clone(), stop.clone()), deletions(app, stop));
+    tokio::join!(
+        rewards(app.clone(), stop.clone()),
+        deletions(app.clone(), stop.clone()),
+        maintenance(app, stop)
+    );
+}
+
+/// Hourly housekeeping that no request path depends on.
+async fn maintenance(app: App, mut stop: watch::Receiver<bool>) {
+    let mut timer = interval(MAINTENANCE_INTERVAL);
+    timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    loop {
+        tokio::select! {_ = stop.changed() => break, _ = timer.tick() => {}}
+        if let Err(error) = Sessions::purge_expired(&app.accounts.db).await {
+            tracing::error!(error = %error, "expired session cleanup failed");
+        }
+    }
 }
 async fn rewards(app: App, mut stop: watch::Receiver<bool>) {
     let Some(cookies) = &app.cookies else {

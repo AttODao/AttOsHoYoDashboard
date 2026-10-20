@@ -33,6 +33,7 @@ pub(super) struct UserView {
     is_admin: bool,
     active: bool,
     must_change_password: bool,
+    last_login_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 impl From<user::Model> for UserView {
     fn from(user: user::Model) -> Self {
@@ -42,6 +43,7 @@ impl From<user::Model> for UserView {
             is_admin: user.is_admin,
             active: user.active,
             must_change_password: user.must_change_password,
+            last_login_at: user.last_login_at,
         }
     }
 }

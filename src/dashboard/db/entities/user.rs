@@ -13,6 +13,7 @@ pub struct Model {
     pub active: bool,
     pub must_change_password: bool,
     pub created_at: DateTimeUtc,
+    pub last_login_at: Option<DateTimeUtc>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

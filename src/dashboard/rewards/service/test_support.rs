@@ -142,6 +142,7 @@ pub(super) async fn identity_with(
         active: Set(true),
         must_change_password: Set(must_change_password),
         created_at: Set(Utc::now()),
+        last_login_at: Set(None),
     }
     .insert(db)
     .await
