@@ -89,6 +89,38 @@ pub(super) fn shift_clock(clock: &str, from_minutes: i32, to_minutes: i32) -> Op
     Some(format!("{:02}:{:02}", shifted / 60, shifted % 60))
 }
 
+/// A short "browser · system" label from a User-Agent string, or None if unrecognized.
+pub(super) fn browser_label(agent: &str) -> Option<String> {
+    let browser = [
+        ("Edg/", "Edge"),
+        ("OPR/", "Opera"),
+        ("Firefox/", "Firefox"),
+        ("Chrome/", "Chrome"),
+        ("CriOS/", "Chrome"),
+        ("Safari/", "Safari"),
+    ]
+    .into_iter()
+    .find(|(marker, _)| agent.contains(marker))
+    .map(|(_, name)| name);
+    let system = [
+        ("iPhone", "iOS"),
+        ("iPad", "iPadOS"),
+        ("Android", "Android"),
+        ("Windows", "Windows"),
+        ("Mac OS X", "macOS"),
+        ("CrOS", "ChromeOS"),
+        ("Linux", "Linux"),
+    ]
+    .into_iter()
+    .find(|(marker, _)| agent.contains(marker))
+    .map(|(_, name)| name);
+    match (browser, system) {
+        (Some(browser), Some(system)) => Some(format!("{browser} · {system}")),
+        (Some(one), None) | (None, Some(one)) => Some(one.to_owned()),
+        (None, None) => None,
+    }
+}
+
 /// Compact month/day and 24-hour browser-local time, with an explicit timezone.
 pub(super) fn compact_datetime(value: Option<&str>) -> Option<String> {
     let value = value.filter(|value| !value.trim().is_empty())?;
@@ -196,6 +228,20 @@ mod tests {
         assert_eq!(fill_level(Some(179), Some(200)), "");
         assert_eq!(fill_level(Some(5), None), "");
         assert_eq!(fill_level(Some(0), Some(0)), "");
+    }
+
+    #[test]
+    fn user_agents_reduce_to_browser_and_system() {
+        let chrome = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
+        assert_eq!(browser_label(chrome).as_deref(), Some("Chrome · Windows"));
+        let edge =
+            "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/130.0 Safari/537.36 Edg/130.0";
+        assert_eq!(browser_label(edge).as_deref(), Some("Edge · Windows"));
+        let iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1";
+        assert_eq!(browser_label(iphone).as_deref(), Some("Safari · iOS"));
+        let firefox = "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0";
+        assert_eq!(browser_label(firefox).as_deref(), Some("Firefox · Linux"));
+        assert_eq!(browser_label("curl/8.0"), None);
     }
 
     #[test]

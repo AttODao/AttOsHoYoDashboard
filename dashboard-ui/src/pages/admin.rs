@@ -362,6 +362,7 @@ mod tests {
             active,
             is_admin,
             must_change_password: false,
+            last_login_at: None,
         }
     }
 

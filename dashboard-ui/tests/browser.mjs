@@ -36,6 +36,7 @@ accounts.push(...[{id:uid(6),game_kind:'genshin',game_uid:'600000006'},{id:uid(7
 const rewardSettings=['genshin','starrail'].map((game_kind,i)=>({id:uid(20+i),game_kind,enabled:false,local_time:'06:00',auth_status:'ready',next_run_at:null,last_run:null,is_sign:!!i,total_sign_day:12+i,today_award:i?null:{name:'Primogem',count:20,icon:awardIcon},last_checked_at:new Date().toISOString(),error_code:null,error_at:null}));
 const hoursAgo=h=>new Date(Date.now()-h*3600e3).toISOString();
 // Backend error codes (gateway::error_code) must never be rendered raw in settings.
+let sessions=[{id:uid(50),created_at:hoursAgo(2),last_seen_at:hoursAgo(0.1),expires_at:hoursAgo(-100),user_agent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36',current:true},{id:uid(51),created_at:hoursAgo(30),last_seen_at:null,expires_at:hoursAgo(-70),user_agent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1',current:false},{id:uid(52),created_at:hoursAgo(50),last_seen_at:null,expires_at:hoursAgo(-50),user_agent:null,current:false}];
 const rewardRuns=[{id:uid(40),setting_id:uid(20),game_kind:'genshin',trigger:'scheduled',state:'failed',created_at:hoursAgo(20),ended_at:hoursAgo(19.9),attempt_count:1,attempts:[{number:1,outcome:'failed',error_code:'http:503',started_at:hoursAgo(20),finished_at:hoursAgo(19.9)}]}];
 const json=(res,data,status=200)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
 let origin;
@@ -89,9 +90,13 @@ const server=http.createServer(async(req,res)=>{
     assert.equal(typeof body.response.id,'string');assert.match(body.response.id,/^[A-Za-z0-9_-]+$/);
     assert.equal(body.response.id,body.response.rawId,'native credential id matches base64url rawId');
     assert.equal(Buffer.from(body.response.rawId,'base64url').toString('base64url'),body.response.rawId);
-    credentialId=body.response.rawId;passkeys=[{id:uid(11),label:'Synthetic browser key',created_at:new Date().toISOString()}];return json(res,{});
+    credentialId=body.response.rawId;passkeys=[{id:uid(11),label:'Synthetic browser key',created_at:new Date().toISOString(),last_used_at:null}];return json(res,{});
    }
+   if(p===`/api/v1/me/passkeys/${uid(11)}`&&req.method==='PATCH'){assert.deepEqual(Object.keys(body),['label']);passkeys[0].label=body.label;res.writeHead(204);return res.end();}
    if(p===`/api/v1/me/passkeys/${uid(11)}`){assert.equal(req.method,'DELETE');passkeyDeletes++;passkeys=[];res.writeHead(204);return res.end();}
+   if(p==='/api/v1/me/sessions'){assert.equal(req.method,'GET');return json(res,sessions);}
+   if(p===`/api/v1/me/sessions/${uid(51)}`){assert.equal(req.method,'DELETE');sessions=sessions.filter(row=>row.id!==uid(51));res.writeHead(204);return res.end();}
+   if(p==='/api/v1/me/sessions/revoke-others'){assert.equal(req.method,'POST');assert.deepEqual(body,{});const revoked=sessions.filter(row=>!row.current).length;sessions=sessions.filter(row=>row.current);return json(res,{revoked});}
    if(p==='/api/v1/me/passkeys'){if(passkeyHold)await passkeyHold;return json(res,passkeys);}
    if(p==='/api/v1/server-settings'){await settingsGate;return json(res,{timezone_offset:'+09:00',session_ttl_days:7});}
    if(p==='/api/v1/admin/users'){
@@ -683,7 +688,7 @@ try{
  const cdp=await context.newCDPSession(page);await cdp.send('WebAuthn.enable');
  await cdp.send('WebAuthn.addVirtualAuthenticator',{options:{protocol:'ctap2',transport:'internal',hasResidentKey:true,hasUserVerification:true,isUserVerified:true,automaticPresenceSimulation:true}});
  await page.locator('#passkey-label').fill('Synthetic browser key');await button('Register passkey').click();await idle();
- await page.getByText(/Synthetic browser key — Created/).waitFor();
+ await page.getByText('Synthetic browser key',{exact:true}).waitFor();
  // A page load still in flight when an action starts must land: actions reserve
  // the UI without invalidating the session's loads.
  await page.goto(origin+'/settings/games');await page.locator('#settings-tab-uids[aria-selected=true]').waitFor();await idle();
@@ -695,8 +700,33 @@ try{
  await change('wrong-synthetic-password');
  await page.getByText('The current password was not accepted. Please try again.',{exact:true}).waitFor();
  releasePasskeys();passkeyHold=null;
- await page.getByText(/Synthetic browser key — Created/).waitFor();
+ await page.getByText('Synthetic browser key',{exact:true}).waitFor();
  assert.doesNotMatch(await page.locator('#settings-panel').innerText(),/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/,'passkey dates are formatted');
+ assert.ok((await page.locator('#settings-panel').innerText()).includes('Last used Never'));
+ // Renaming goes through a dialog and keeps the key.
+ await page.getByRole('button',{name:'Rename passkey “Synthetic browser key”',exact:true}).click();
+ await page.locator('#passkey-rename-input').fill('Desk laptop');
+ await page.locator('#passkey-rename-dialog').getByRole('button',{name:'Rename',exact:true}).click();await idle();
+ await page.locator('.status.success').getByText('Passkey renamed.',{exact:true}).waitFor();
+ await page.getByText('Desk laptop',{exact:true}).waitFor();
+ passkeys[0].label='Synthetic browser key';
+ await page.locator('#settings-tab-uids').click();await page.locator('#settings-tab-security').click();await idle();
+ await page.getByText('Synthetic browser key',{exact:true}).waitFor();
+ // Sessions: this browser is marked; another can be signed out alone, or all others at once.
+ const sessionList=page.locator('.sessions');
+ await sessionList.getByText('Chrome · Windows',{exact:true}).waitFor();
+ assert.equal(await sessionList.locator('li').count(),3);
+ assert.ok((await sessionList.locator('li').first().innerText()).includes('This browser'));
+ assert.equal(await sessionList.locator('li').first().getByRole('button').count(),0,'the current session signs out from the menu');
+ await page.getByRole('button',{name:'Sign out the Safari · iOS session',exact:true}).click();await idle();
+ await page.locator('.status.success').getByText('The session is signed out.',{exact:true}).waitFor();
+ assert.equal(await sessionList.locator('li').count(),2);
+ await button('Sign out all other sessions').click();
+ assert.ok((await page.locator('#sessions-revoke-dialog').innerText()).includes('1 session(s)'));
+ await page.locator('#sessions-revoke-dialog').getByRole('button',{name:'Sign out all other sessions',exact:true}).click();await idle();
+ await page.locator('.status.success').getByText('Other sessions are signed out.',{exact:true}).waitFor();
+ assert.equal(await sessionList.locator('li').count(),1);
+ assert.equal(await button('Sign out all other sessions').count(),0);
  // Deleting a passkey needs confirmation; Cancel and Escape keep it and return focus.
  const deletePasskey=page.getByRole('button',{name:'Delete passkey “Synthetic browser key”',exact:true});
  const passkeyDialog=page.locator('#passkey-delete-dialog');
@@ -709,7 +739,7 @@ try{
  await deletePasskey.click();await page.locator('#passkey-delete-dialog[open]').waitFor();
  await page.keyboard.press('Escape');await page.locator('#passkey-delete-dialog').waitFor({state:'detached'});
  assert.equal(passkeyDeletes,0,'cancelled confirmations send nothing');
- await page.getByText(/Synthetic browser key — Created/).waitFor();
+ await page.getByText('Synthetic browser key',{exact:true}).waitFor();
  await deletePasskey.click();
  await passkeyDialog.getByRole('button',{name:'Delete',exact:true}).click();await idle();
  await page.locator('.status.success').getByText('Passkey deleted.',{exact:true}).waitFor();

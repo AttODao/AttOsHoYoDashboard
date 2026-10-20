@@ -9,7 +9,7 @@ use crate::{
     api,
     models::{
         CookieStatus, GameAccount, GameStatus, PasskeyView, RewardRun, RewardSetting,
-        ServerSettings, UserView,
+        ServerSettings, SessionView, UserView,
     },
 };
 use dioxus::prelude::*;
@@ -30,7 +30,10 @@ pub(super) async fn load_page_data(state: Signal<AppState>, page: Page) {
         Page::Link => load_hoyolab(state).await,
         Page::Uids => load_accounts(state).await,
         Page::Rewards => load_rewards(state).await,
-        Page::Security => load_passkeys(state).await,
+        Page::Security => {
+            load_passkeys(state).await;
+            load_sessions(state).await;
+        }
         Page::Admin => load_admin_users(state).await,
         Page::Delete => {}
         Page::Docs => {}
@@ -66,6 +69,7 @@ enum Resource {
     Rewards,
     RewardRuns,
     Passkeys,
+    Sessions,
     ServerSettings,
     AdminUsers,
 }
@@ -577,6 +581,34 @@ async fn poll_reward_runs(
     }
 }
 
+pub(super) async fn load_sessions(mut state: Signal<AppState>) {
+    let Some(generation) = password_generation(state) else {
+        return;
+    };
+    let Some(result) = fetch_current::<Vec<SessionView>>(
+        state,
+        Resource::Sessions,
+        "/me/sessions",
+        generation,
+        current_generation,
+    )
+    .await
+    else {
+        return;
+    };
+    let mut write = state.write();
+    match result {
+        Ok(sessions) => {
+            write.sessions = Some(sessions);
+            write.sessions_error = None;
+        }
+        Err(key) => {
+            write.sessions = None;
+            write.sessions_error = Some(key.to_owned());
+        }
+    }
+}
+
 pub(super) async fn load_passkeys(mut state: Signal<AppState>) {
     let Some(generation) = password_generation(state) else {
         return;
@@ -760,6 +792,7 @@ mod tests {
         for resource in [
             Resource::Hoyolab,
             Resource::Passkeys,
+            Resource::Sessions,
             Resource::ServerSettings,
             Resource::AdminUsers,
         ] {

@@ -10,6 +10,8 @@ pub struct UserView {
     pub is_admin: bool,
     pub active: bool,
     pub must_change_password: bool,
+    #[serde(default)]
+    pub last_login_at: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -213,6 +215,18 @@ pub struct PasskeyView {
     pub id: Uuid,
     pub label: String,
     pub created_at: String,
+    #[serde(default)]
+    pub last_used_at: Option<String>,
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionView {
+    pub id: Uuid,
+    pub created_at: String,
+    pub last_seen_at: Option<String>,
+    pub expires_at: String,
+    pub user_agent: Option<String>,
+    pub current: bool,
 }
 
 #[cfg(target_arch = "wasm32")]

@@ -263,6 +263,7 @@ mod tests {
             is_admin: false,
             active: true,
             must_change_password: false,
+            last_login_at: None,
         }]);
 
         let mut next = me(false, true);

@@ -1,12 +1,12 @@
 use super::common::{Field, LoadError, Metric, ModalDialog, PasswordInput, focus_element};
 use crate::app::actions::{handle_api_error_for, handle_password_error_for, spawn_action};
-use crate::app::data::load_passkeys;
-use crate::app::display::datetime_text;
+use crate::app::data::{load_passkeys, load_sessions};
+use crate::app::display::{browser_label, datetime_text};
 use crate::app::preferences::use_preferences;
 use crate::app::session::refresh_gate;
 use crate::app::state::{AppState, generation_matches, set_status};
 use crate::components::{Button, ButtonVariant};
-use crate::models::PasskeyView;
+use crate::models::{PasskeyView, SessionView};
 use dioxus::prelude::*;
 use serde_json::{Value, json};
 
@@ -19,11 +19,12 @@ pub(super) fn SecurityPage(state: Signal<AppState>) -> Element {
             h2 { {ui.text("security.security")} }
             PasswordCard { state, title: ui.text("auth.change_password") }
             PasskeyCard { state }
-            section { class: "panel",
-                h3 { {ui.text("security.session")} }
+            section { class: "panel page-stack",
+                h3 { {ui.text("security.sessions")} }
                 dl { class: "metric-list",
                     Metric { label: ui.text("shell.session_lifetime"), value: server.as_ref().map(|s| ui.format("session.duration_days", &[("count", &s.session_ttl_days.to_string())])).unwrap_or_else(|| ui.text("common.not_fetched").to_owned()) }
                 }
+                SessionList { state }
             }
         }
     }
@@ -160,6 +161,7 @@ pub(super) fn PasskeyCard(mut state: Signal<AppState>) -> Element {
         label.write().clear();
     });
     let mut confirming = use_signal(|| None::<PasskeyView>);
+    let mut renaming = use_signal(|| None::<PasskeyView>);
     let error = state.read().passkeys_error.clone();
     let passkeys = state.read().passkeys.clone();
     rsx! {
@@ -174,13 +176,25 @@ pub(super) fn PasskeyCard(mut state: Signal<AppState>) -> Element {
                 ul { class: "item-list",
                     for (passkey, target) in passkeys.into_iter().map(|passkey| (passkey.clone(), passkey)) {
                         li { key: "{passkey.id}",
-                            span { "{passkey.label} — " {ui.text("security.created")} " "
-                                time { datetime: "{passkey.created_at}", {datetime_text(Some(&passkey.created_at), ui)} }
+                            div {
+                                strong { "{passkey.label}" }
+                                p { class: "field-hint",
+                                    {ui.text("security.created")} " " time { datetime: "{passkey.created_at}", {datetime_text(Some(&passkey.created_at), ui)} }
+                                    " · " {ui.text("security.last_used")} " "
+                                    if passkey.last_used_at.is_some() { {datetime_text(passkey.last_used_at.as_deref(), ui)} } else { {ui.text("security.never_used")} }
+                                }
                             }
-                            Button { variant: ButtonVariant::Destructive, r#type: "button", id: "passkey-delete-{passkey.id}",
-                                "aria-label": ui.format("security.delete_passkey_label", &[("label", &passkey.label)]),
-                                onclick: move |_| { if !state.read().busy { confirming.set(Some(target.clone())); } },
-                                {ui.text("security.delete")}
+                            div { class: "button-row",
+                                Button { variant: ButtonVariant::Secondary, r#type: "button", id: "passkey-rename-{passkey.id}",
+                                    "aria-label": ui.format("security.rename_passkey_label", &[("label", &passkey.label)]),
+                                    onclick: { let target = target.clone(); move |_| { if !state.read().busy { renaming.set(Some(target.clone())); } } },
+                                    {ui.text("security.rename")}
+                                }
+                                Button { variant: ButtonVariant::Destructive, r#type: "button", id: "passkey-delete-{passkey.id}",
+                                    "aria-label": ui.format("security.delete_passkey_label", &[("label", &passkey.label)]),
+                                    onclick: move |_| { if !state.read().busy { confirming.set(Some(target.clone())); } },
+                                    {ui.text("security.delete")}
+                                }
                             }
                         }
                     }
@@ -192,7 +206,9 @@ pub(super) fn PasskeyCard(mut state: Signal<AppState>) -> Element {
             form { onsubmit: move |event| {
                 event.prevent_default();
                 if state.read().busy { return; }
-                let label_value = std::mem::take(&mut *label.write());
+                // An empty name registers under a generic one the user can rename later.
+                let typed = std::mem::take(&mut *label.write());
+                let label_value = if typed.trim().is_empty() { ui.text("security.default_passkey_label").to_owned() } else { typed };
                 spawn_action(state, move |generation| async move {
                     match crate::webauthn::register(&label_value).await {
                         Ok(()) if generation_matches(state, generation) => {
@@ -205,7 +221,8 @@ pub(super) fn PasskeyCard(mut state: Signal<AppState>) -> Element {
                 });
             },
                 Field { id: "passkey-label", label: ui.text("security.new_passkey_label"),
-                    input { id: "passkey-label", maxlength: "100", autocomplete: "off", value: "{label}", oninput: move |event| label.set(event.value()) }
+                    input { id: "passkey-label", maxlength: "100", autocomplete: "off", "aria-describedby": "passkey-label-hint", value: "{label}", oninput: move |event| label.set(event.value()) }
+                    p { id: "passkey-label-hint", class: "field-hint", {ui.text("security.passkey_label_hint")} }
                 }
                 div { class: "auth-submit",
                     Button { variant: ButtonVariant::Secondary, r#type: "submit", {ui.text("security.register_passkey")} }
@@ -213,6 +230,141 @@ pub(super) fn PasskeyCard(mut state: Signal<AppState>) -> Element {
             }
             if let Some(passkey) = confirming() {
                 DeletePasskeyDialog { state, passkey, confirming }
+            }
+            if let Some(passkey) = renaming() {
+                RenamePasskeyDialog { state, passkey, renaming }
+            }
+        }
+    }
+}
+
+#[component]
+fn RenamePasskeyDialog(
+    state: Signal<AppState>,
+    passkey: PasskeyView,
+    mut renaming: Signal<Option<PasskeyView>>,
+) -> Element {
+    let ui = use_preferences();
+    let mut name = use_signal(|| passkey.label.clone());
+    let id = passkey.id;
+    let valid = !name().trim().is_empty() && name().len() <= 100;
+    rsx! {
+        ModalDialog { id: "passkey-rename-dialog", title: ui.text("security.rename_passkey_title"), onclose: move |_| renaming.set(None),
+            form { class: "form-stack", onsubmit: move |event| {
+                event.prevent_default();
+                let label = name().trim().to_owned();
+                if label.is_empty() || state.read().busy { return; }
+                renaming.set(None);
+                spawn_action(state, move |generation| async move {
+                    match crate::api::send("PATCH", &format!("/me/passkeys/{id}"), Some(json!({"label": label}))).await {
+                        Ok(()) if generation_matches(state, generation) => {
+                            set_status(state, "security.passkey_renamed", "success");
+                            load_passkeys(state).await;
+                        }
+                        Ok(()) => {}
+                        Err(error) => handle_api_error_for(state, generation, error),
+                    }
+                });
+            },
+                Field { id: "passkey-rename-input", label: ui.text("security.passkey_name"),
+                    input { id: "passkey-rename-input", maxlength: "100", autocomplete: "off", value: "{name}", oninput: move |event| name.set(event.value()) }
+                }
+                div { class: "actions",
+                    Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| renaming.set(None), {ui.text("admin.cancel")} }
+                    Button { r#type: "submit", disabled: !valid, {ui.text("security.rename")} }
+                }
+            }
+        }
+    }
+}
+
+/// Every unexpired session, with this browser marked; others can be signed out.
+#[component]
+fn SessionList(state: Signal<AppState>) -> Element {
+    let ui = use_preferences();
+    let mut confirming_all = use_signal(|| false);
+    let error = state.read().sessions_error.clone();
+    let sessions = state.read().sessions.clone();
+    let others = sessions
+        .as_ref()
+        .map_or(0, |rows| rows.iter().filter(|row| !row.current).count());
+    rsx! {
+        if let Some(error) = error {
+            LoadError { state, message: ui.text(&error) }
+        } else if let Some(rows) = sessions {
+            ul { class: "item-list sessions",
+                for session in rows {
+                    SessionRow { key: "{session.id}", state, session }
+                }
+            }
+            if others > 0 {
+                div { class: "button-row",
+                    Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| confirming_all.set(true), {ui.text("security.sign_out_others")} }
+                }
+            }
+        } else {
+            p { role: "status", {ui.text("security.loading_sessions")} }
+        }
+        if confirming_all() {
+            ModalDialog { id: "sessions-revoke-dialog", title: ui.text("security.sign_out_others"), onclose: move |_| confirming_all.set(false),
+                p { {ui.format("security.sign_out_others_consequences", &[("count", &others.to_string())])} }
+                div { class: "actions",
+                    Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| confirming_all.set(false), {ui.text("admin.cancel")} }
+                    Button { variant: ButtonVariant::Destructive, r#type: "button", onclick: move |_| {
+                        confirming_all.set(false);
+                        spawn_action(state, move |generation| async move {
+                            match crate::api::send("POST", "/me/sessions/revoke-others", Some(json!({}))).await {
+                                Ok(()) if generation_matches(state, generation) => {
+                                    set_status(state, "security.other_sessions_signed_out", "success");
+                                    load_sessions(state).await;
+                                }
+                                Ok(()) => {}
+                                Err(error) => handle_api_error_for(state, generation, error),
+                            }
+                        });
+                    }, {ui.text("security.sign_out_others")} }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn SessionRow(state: Signal<AppState>, session: SessionView) -> Element {
+    let ui = use_preferences();
+    let label = session
+        .user_agent
+        .as_deref()
+        .and_then(browser_label)
+        .unwrap_or_else(|| ui.text("security.unknown_browser").to_owned());
+    let id = session.id;
+    rsx! {
+        li {
+            div {
+                strong { "{label}" }
+                if session.current { " " span { class: "status", {ui.text("security.this_browser")} } }
+                p { class: "field-hint",
+                    {ui.text("security.signed_in_at")} " " {datetime_text(Some(&session.created_at), ui)}
+                    if let Some(seen) = &session.last_seen_at { " · " {ui.text("security.last_active")} " " {datetime_text(Some(seen), ui)} }
+                }
+            }
+            if !session.current {
+                Button { variant: ButtonVariant::Secondary, r#type: "button",
+                    "aria-label": ui.format("security.sign_out_session_label", &[("browser", &label)]),
+                    onclick: move |_| {
+                        spawn_action(state, move |generation| async move {
+                            match crate::api::send("DELETE", &format!("/me/sessions/{id}"), None).await {
+                                Ok(()) if generation_matches(state, generation) => {
+                                    set_status(state, "security.session_signed_out", "success");
+                                    load_sessions(state).await;
+                                }
+                                Ok(()) => {}
+                                Err(error) => handle_api_error_for(state, generation, error),
+                            }
+                        });
+                    },
+                    {ui.text("shell.sign_out")}
+                }
             }
         }
     }

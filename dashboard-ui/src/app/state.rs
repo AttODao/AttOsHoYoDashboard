@@ -2,7 +2,7 @@ use super::actions::spawn_root;
 use super::data::load_page_data;
 use crate::models::{
     CookieStatus, GameAccount, GameStatus, MeView, PasskeyView, RewardRun, RewardSetting,
-    ServerSettings, UserView,
+    ServerSettings, SessionView, UserView,
 };
 use dioxus::prelude::*;
 use std::collections::BTreeMap;
@@ -93,6 +93,8 @@ pub(super) struct AppState {
     pub(super) reward_poll: Option<RewardPoll>,
     pub(super) passkeys: Option<Vec<PasskeyView>>,
     pub(super) passkeys_error: Option<String>,
+    pub(super) sessions: Option<Vec<SessionView>>,
+    pub(super) sessions_error: Option<String>,
     pub(super) server: Option<ServerSettings>,
     pub(super) admin_users: Option<Vec<UserView>>,
     pub(super) admin_error: Option<String>,
@@ -124,6 +126,8 @@ impl AppState {
             reward_poll: None,
             passkeys: None,
             passkeys_error: None,
+            sessions: None,
+            sessions_error: None,
             server: None,
             admin_users: None,
             admin_error: None,
@@ -202,6 +206,8 @@ impl AppState {
         self.reward_poll = None;
         self.passkeys = None;
         self.passkeys_error = None;
+        self.sessions = None;
+        self.sessions_error = None;
         self.server = None;
         self.admin_users = None;
         self.admin_error = None;
