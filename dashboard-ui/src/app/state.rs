@@ -45,13 +45,20 @@ pub(super) enum Phase {
 pub(super) struct StatusLine {
     pub(super) message_key: &'static str,
     pub(super) kind: &'static str,
+    /// Distinguishes repeated messages, so a timer only clears the line it showed.
+    pub(super) serial: u64,
 }
 
-/// The manual reward run being followed after a 202; see `data::start_reward_poll`.
-#[derive(Clone, Copy, PartialEq)]
+/// How long a success or info line stays before clearing itself.
+const STATUS_DISMISS_MS: u32 = 8_000;
+
+/// Manual reward runs being followed after their 202s; see `data::start_reward_poll`.
+#[derive(Clone, PartialEq)]
 pub(super) struct RewardPoll {
     pub(super) token: u64,
-    pub(super) setting: Uuid,
+    pub(super) settings: Vec<Uuid>,
+    /// Following stops when the user leaves this page.
+    pub(super) page: Page,
 }
 
 #[derive(Clone, PartialEq)]
@@ -224,6 +231,8 @@ pub(super) fn restore_page(mut state: Signal<AppState>, page: Page) {
     {
         let mut write = state.write();
         write.page = page;
+        // A message belongs to the page it was raised on.
+        write.status = None;
         if check_session {
             write.phase = Phase::Loading;
         }
@@ -242,7 +251,35 @@ pub(super) fn set_status(
     message_key: &'static str,
     kind: &'static str,
 ) {
-    state.write().status = Some(StatusLine { message_key, kind });
+    static NEXT_STATUS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let serial = NEXT_STATUS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    state.write().status = Some(StatusLine {
+        message_key,
+        kind,
+        serial,
+    });
+    // Errors need reading and a decision; they stay until dismissed or replaced.
+    if kind != "error" {
+        spawn_root(async move {
+            #[cfg(target_arch = "wasm32")]
+            gloo_timers::future::TimeoutFuture::new(STATUS_DISMISS_MS).await;
+            #[cfg(not(target_arch = "wasm32"))]
+            let _ = STATUS_DISMISS_MS;
+            if state
+                .read()
+                .status
+                .as_ref()
+                .is_some_and(|status| status.serial == serial)
+                && cfg!(target_arch = "wasm32")
+            {
+                state.write().status = None;
+            }
+        });
+    }
+}
+
+pub(super) fn clear_status(mut state: Signal<AppState>) {
+    state.write().status = None;
 }
 
 pub(super) fn generation_matches(state: Signal<AppState>, generation: u64) -> bool {

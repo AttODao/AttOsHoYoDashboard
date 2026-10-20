@@ -115,7 +115,7 @@ mod tests {
         let key = "messages.the_username_or_password_is_incorrect";
         assert_eq!(
             Language::Japanese.text(key),
-            "ユーザー名かパスワードが違います"
+            "ユーザー名かパスワードが違います。"
         );
         assert_eq!(
             Language::English.text(key),

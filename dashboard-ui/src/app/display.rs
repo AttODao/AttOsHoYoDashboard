@@ -19,6 +19,76 @@ pub(super) fn hours_minutes(seconds: i64, ui: Preferences) -> String {
     )
 }
 
+/// Remaining seconds as days and hours when a day or more is left, else hours and minutes.
+pub(super) fn days_hours(seconds: i64, ui: Preferences) -> String {
+    let hours = seconds.max(0).unsigned_abs().div_ceil(3600);
+    if hours < 24 {
+        return hours_minutes(seconds, ui);
+    }
+    ui.format(
+        "dashboard.days_hours",
+        &[
+            ("days", &(hours / 24).to_string()),
+            ("hours", &(hours % 24).to_string()),
+        ],
+    )
+}
+
+/// Short relative age such as "3 min ago", for always-visible freshness labels.
+pub(super) fn relative_age(seconds: i64, ui: Preferences) -> String {
+    let minutes = seconds.max(0) / 60;
+    let (key, count) = match minutes {
+        0 => return ui.text("time.just_now").to_owned(),
+        1..60 => ("time.minutes_ago", minutes),
+        60..2880 => ("time.hours_ago", minutes / 60),
+        _ => ("time.days_ago", minutes / 1440),
+    };
+    ui.format(key, &[("count", &count.to_string())])
+}
+
+/// How close a resource is to its cap: "full" at or over it, "near" from 90%.
+pub(super) fn fill_level(current: Option<i64>, maximum: Option<i64>) -> &'static str {
+    match (current, maximum) {
+        (Some(current), Some(maximum)) if maximum > 0 && current >= maximum => "full",
+        (Some(current), Some(maximum)) if maximum > 0 && current * 10 >= maximum * 9 => "near",
+        _ => "",
+    }
+}
+
+/// The browser's UTC offset in minutes east, e.g. 540 for JST.
+pub(super) fn browser_offset_minutes() -> Option<i32> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        Some(-(js_sys::Date::new_0().get_timezone_offset() as i32))
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    None
+}
+
+/// Minutes east of UTC for a server offset such as "+09:00".
+pub(super) fn offset_minutes(offset: &str) -> Option<i32> {
+    let (sign, rest) = match offset.as_bytes().first()? {
+        b'+' => (1, &offset[1..]),
+        b'-' => (-1, &offset[1..]),
+        _ => return None,
+    };
+    let (hours, minutes) = rest.split_once(':')?;
+    if hours.len() != 2 || minutes.len() != 2 {
+        return None;
+    }
+    let hours: i32 = hours.parse().ok()?;
+    let minutes: i32 = minutes.parse().ok()?;
+    (hours <= 18 && minutes < 60).then_some(sign * (hours * 60 + minutes))
+}
+
+/// An "HH:MM" clock moved from one UTC offset to another, wrapping at midnight.
+pub(super) fn shift_clock(clock: &str, from_minutes: i32, to_minutes: i32) -> Option<String> {
+    let (hour, minute) = clock.split_once(':')?;
+    let total = hour.parse::<i32>().ok()? * 60 + minute.parse::<i32>().ok()?;
+    let shifted = (total - from_minutes + to_minutes).rem_euclid(24 * 60);
+    Some(format!("{:02}:{:02}", shifted / 60, shifted % 60))
+}
+
 /// Compact month/day and 24-hour browser-local time, with an explicit timezone.
 pub(super) fn compact_datetime(value: Option<&str>) -> Option<String> {
     let value = value.filter(|value| !value.trim().is_empty())?;
@@ -111,6 +181,35 @@ pub(super) fn error_text(code: Option<&str>, ui: Preferences) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn durations_ages_and_fill_levels_read_naturally() {
+        let ui = Preferences::default();
+        assert_eq!(days_hours(3 * 3600, ui), "3時間00分");
+        assert_eq!(days_hours(26 * 3600 + 1, ui), "1日3時間");
+        assert_eq!(relative_age(30, ui), "たった今");
+        assert_eq!(relative_age(5 * 60, ui), "5分前");
+        assert_eq!(relative_age(3 * 3600, ui), "3時間前");
+        assert_eq!(relative_age(3 * 86400, ui), "3日前");
+        assert_eq!(fill_level(Some(200), Some(200)), "full");
+        assert_eq!(fill_level(Some(180), Some(200)), "near");
+        assert_eq!(fill_level(Some(179), Some(200)), "");
+        assert_eq!(fill_level(Some(5), None), "");
+        assert_eq!(fill_level(Some(0), Some(0)), "");
+    }
+
+    #[test]
+    fn server_clock_converts_between_offsets() {
+        assert_eq!(offset_minutes("+09:00"), Some(540));
+        assert_eq!(offset_minutes("-05:30"), Some(-330));
+        assert_eq!(offset_minutes("09:00"), None);
+        assert_eq!(offset_minutes("+9:00"), None);
+        assert_eq!(shift_clock("06:00", 540, 540).as_deref(), Some("06:00"));
+        assert_eq!(shift_clock("06:00", 540, 60).as_deref(), Some("22:00"));
+        assert_eq!(shift_clock("23:30", 540, 600).as_deref(), Some("00:30"));
+        // The reward day starts at 00:00 UTC+8, which is 01:00 at UTC+9.
+        assert_eq!(shift_clock("00:00", 480, 540).as_deref(), Some("01:00"));
+    }
 
     #[test]
     fn backend_error_codes_map_to_messages_without_echoing_the_code() {

@@ -1,12 +1,14 @@
-use super::common::{Icon, Metric, focus_element, game_name, reset_checked};
-use crate::app::actions::{spawn_action, spawn_root};
-use crate::app::data::{load_game_status, save_reward_setting};
+use super::common::{Icon, LoadError, Metric, focus_element, game_name};
+use super::rewards::AutomationSwitch;
+use crate::app::actions::spawn_root;
+use crate::app::data::{RunAll, load_game_status, run_all_targets, run_rewards_now};
 use crate::app::display::{
-    compact_datetime, count_pair, data_age, datetime_text, error_text, hours_minutes, seconds_since,
+    compact_datetime, count_pair, data_age, datetime_text, days_hours, error_text, fill_level,
+    hours_minutes, relative_age, seconds_since,
 };
 use crate::app::preferences::{Preferences, use_preferences};
 use crate::app::state::{AppState, DASHBOARD_GAMES, Page, set_page};
-use crate::models::{DailySummary, Expedition, GameStatus};
+use crate::models::{DailyAward, DailySummary, Expedition, GameStatus, RewardSetting};
 use dioxus::prelude::*;
 use uuid::Uuid;
 
@@ -17,9 +19,12 @@ pub(super) fn DashboardPage(state: Signal<AppState>) -> Element {
     let mobile = use_mobile_dashboard();
     rsx! {
         div { class: "page-stack dashboard",
-            h1 { {ui.text("dashboard.dashboard")} }
+            div { class: "page-intro",
+                h1 { {ui.text("dashboard.dashboard")} }
+                ClaimNow { state }
+            }
             if state.read().accounts_error.is_some() {
-                p { class: "warning", role: "status", {ui.text("dashboard.could_not_refresh_the_uid_list")} }
+                LoadError { state, message: ui.text("dashboard.could_not_refresh_the_uid_list") }
             }
             div { class: "game-tabs tabs", role: "tablist", "aria-label": ui.text("dashboard.games"),
                 for game in DASHBOARD_GAMES {
@@ -43,6 +48,44 @@ pub(super) fn DashboardPage(state: Signal<AppState>) -> Element {
                 for game in DASHBOARD_GAMES {
                     GamePanel { key: "{game}", state, game, active: active() == game, mobile: mobile() }
                 }
+            }
+        }
+    }
+}
+
+/// The one manual claim control: runs every game whose bonus is still open today.
+#[component]
+fn ClaimNow(state: Signal<AppState>) -> Element {
+    let ui = use_preferences();
+    let snapshot = state.read();
+    let posting = snapshot
+        .me
+        .as_ref()
+        .is_some_and(|me| me.capabilities.reward_posting_available);
+    let targets = run_all_targets(&snapshot.rewards, posting);
+    let following = snapshot
+        .reward_poll
+        .as_ref()
+        .is_some_and(|poll| poll.page == Page::Dashboard);
+    let loaded = snapshot.rewards_error.is_none();
+    drop(snapshot);
+    let blocked = match &targets {
+        RunAll::Ready(_) => None,
+        RunAll::Blocked(key) => Some(*key),
+    };
+    rsx! {
+        div { class: "claim-now",
+            button {
+                r#type: "button", class: "primary", id: "claim-now",
+                disabled: blocked.is_some() || !loaded,
+                "aria-describedby": blocked.map(|_| "claim-now-hint"),
+                onclick: move |_| run_rewards_now(state, Page::Dashboard),
+                {ui.text("rewards.claim_now")}
+            }
+            if following {
+                p { class: "field-hint", role: "status", {ui.text("rewards.checking_automatically")} }
+            } else if let Some(key) = blocked.filter(|_| loaded) {
+                p { id: "claim-now-hint", class: "field-hint", {ui.text(key)} }
             }
         }
     }
@@ -144,7 +187,7 @@ fn GameStatusSection(mut state: Signal<AppState>, game: &'static str) -> Element
         .get(game)
         .cloned()
         .unwrap_or_default();
-    let status = selected.and_then(|id| {
+    let status: Option<GameStatus> = selected.and_then(|id| {
         snapshot
             .account_statuses
             .iter()
@@ -185,7 +228,7 @@ fn GameStatusSection(mut state: Signal<AppState>, game: &'static str) -> Element
                 p { class: "warning", role: "status", {ui.text(refresh_error_key(key, status.is_some()))} }
             }
             div { "aria-busy": loading,
-                if let Some(status) = status {
+                if let Some(status) = status.clone() {
                     GameStatusCard { status }
                 } else if loading {
                     p { role: "status", {ui.text("dashboard.loading")} }
@@ -193,11 +236,32 @@ fn GameStatusSection(mut state: Signal<AppState>, game: &'static str) -> Element
                     p { {ui.text("dashboard.status_has_not_been_fetched")} }
                 }
             }
-            button {
-                r#type: "button", disabled: loading, "aria-busy": loading,
-                onclick: move |_| { spawn_root(async move { load_game_status(state, game).await; }); },
-                if loading { {ui.text("dashboard.refreshing")} } else { {ui.text("dashboard.refresh")} }
+            div { class: "refresh-row",
+                Freshness { fetched_at: status.as_ref().and_then(|status| status.fetched_at.clone()), stale: status.as_ref().is_some_and(|status| status.stale) }
+                button {
+                    r#type: "button", disabled: loading, "aria-busy": loading,
+                    onclick: move |_| { spawn_root(async move { load_game_status(state, game).await; }); },
+                    if loading { {ui.text("dashboard.refreshing")} } else { {ui.text("dashboard.refresh")} }
+                }
             }
+        }
+    }
+}
+
+/// Always-visible age of the shown data, re-rendered each minute.
+#[component]
+fn Freshness(fetched_at: Option<String>, stale: bool) -> Element {
+    let ui = use_preferences();
+    let minute = use_minute_tick();
+    let _ = minute();
+    let age = seconds_since(fetched_at.as_deref()).map(|seconds| relative_age(seconds, ui));
+    rsx! {
+        if let Some(age) = age {
+            p { class: if stale { "freshness stale" } else { "freshness" },
+                time { datetime: fetched_at, {ui.format("dashboard.updated_ago", &[("age", &age)])} }
+            }
+        } else {
+            span {}
         }
     }
 }
@@ -213,68 +277,91 @@ fn BonusSection(state: Signal<AppState>, game: &'static str) -> Element {
         .find(|setting| setting.game_kind == game)
         .cloned();
     let rewards_error = snapshot.rewards_error.is_some();
-    let posting_available = snapshot
-        .me
-        .as_ref()
-        .is_some_and(|me| me.capabilities.reward_posting_available);
     drop(snapshot);
     rsx! {
         section { class: "bonus-section", "aria-labelledby": "bonus-title-{game}",
             div { class: "card-automation",
                 h3 { id: "bonus-title-{game}", {ui.text("dashboard.login_bonus")} }
                 if let Some(setting) = setting.clone() {
-                    label { class: "switch",
-                        input {
-                            id: "automation-{game}", r#type: "checkbox", role: "switch", checked: setting.enabled,
-                            disabled: rewards_error,
-                            "aria-label": ui.format("dashboard.automation_label", &[("game", game_name(game, ui))]),
-                            onchange: move |event| {
-                                let id = setting.id;
-                                let enabled = event.checked();
-                                let local_time = setting.local_time.clone();
-                                spawn_action(state, move |generation| async move {
-                                    save_reward_setting(state, generation, id, enabled, local_time, "dashboard.automation_setting_saved").await;
-                                    let stored = state.read().rewards.iter().find(|row| row.id == id).map(|row| row.enabled);
-                                    if let Some(stored) = stored { reset_checked(&format!("automation-{game}"), stored); }
-                                });
-                            }
-                        }
-                        span { class: "switch-track", "aria-hidden": "true" }
-                        span { if setting.enabled { {ui.text("dashboard.on")} } else { {ui.text("dashboard.off")} } }
-                    }
+                    AutomationSwitch { state, setting, id: "automation-{game}", disabled: rewards_error }
                 } else {
                     span { {ui.text("common.not_fetched")} }
                 }
             }
             if rewards_error {
-                p { class: "warning", {ui.text("dashboard.could_not_load_bonus_settings")} }
-            }
-            if !posting_available {
-                p { class: "warning", {ui.text("dashboard.reward_posting_is_unavailable_on_this_server")} }
+                LoadError { state, message: ui.text("dashboard.could_not_load_bonus_settings") }
             }
             if let Some(setting) = setting {
-                details { class: "bonus-status",
-                    summary {
-                        {ui.text("dashboard.today_s_reward")} ": " {received(setting.is_sign, ui)}
-                        if let Some(run) = &setting.last_run {
-                            " · " {ui.text("dashboard.last_run_state")} ": " {model_status(&run.state, ui)}
-                        }
-                        if setting.auth_status == "action_required" {
-                            " · " {model_status(&setting.auth_status, ui)}
-                        }
-                        if setting.error_code.is_some() {
-                            " · " {ui.text("dashboard.error")} ": " {error_text(setting.error_code.as_deref(), ui)}
-                        }
-                    }
-                    dl { class: "metrics",
-                        Metric { label: ui.text("dashboard.today_s_reward"), value: received(setting.is_sign, ui).to_owned() }
-                        Metric { label: ui.text("dashboard.auth_status"), value: model_status(&setting.auth_status, ui).to_owned() }
-                        Metric { label: ui.text("dashboard.checked"), value: date(&setting.last_checked_at, ui) }
-                        Metric { label: ui.text("dashboard.next_run"), value: date(&setting.next_run_at, ui) }
-                        Metric { label: ui.text("dashboard.last_run_state"), value: setting.last_run.as_ref().map(|run| model_status(&run.state, ui).to_owned()).unwrap_or_else(|| ui.text("dashboard.never_run").to_owned()) }
-                        Metric { label: ui.text("dashboard.bonus_error"), value: error_text(setting.error_code.as_deref(), ui).to_owned() }
-                        Metric { label: ui.text("dashboard.error_at"), value: date(&setting.error_at, ui) }
-                    }
+                BonusToday { state, setting }
+            }
+        }
+    }
+}
+
+/// Today's claim, this month's count and reward, the next automatic run, then details.
+#[component]
+fn BonusToday(state: Signal<AppState>, setting: RewardSetting) -> Element {
+    let ui = use_preferences();
+    let minute = use_minute_tick();
+    let _ = minute();
+    let tone = match setting.is_sign {
+        Some(true) => "success",
+        Some(false) => "pending",
+        None => "",
+    };
+    let needs_link = matches!(
+        setting.auth_status.as_str(),
+        "action_required" | "cookie_invalid"
+    );
+    let next_in = setting
+        .next_run_at
+        .as_deref()
+        .and_then(|next| seconds_since(Some(next)))
+        .filter(|elapsed| *elapsed < 0)
+        .map(|elapsed| hours_minutes(-elapsed, ui));
+    rsx! {
+        p { class: "run-state bonus-today {tone}",
+            {ui.text("dashboard.today_s_reward")} ": "
+            strong { {received(setting.is_sign, ui)} }
+            if let Some(days) = setting.total_sign_day {
+                " · " {ui.format("dashboard.month_sign_days", &[("count", &days.to_string())])}
+            }
+        }
+        if let Some(award) = setting.today_award.clone() {
+            AwardLine { award, claimed: setting.is_sign == Some(true) }
+        }
+        p { class: "run-state",
+            if setting.enabled {
+                {ui.text("dashboard.next_run")} ": "
+                strong { {date(&setting.next_run_at, ui)} }
+                if let Some(next_in) = next_in { " · " {ui.format("dashboard.in_duration", &[("duration", &next_in)])} }
+            } else {
+                {ui.text("dashboard.automation_off")}
+            }
+        }
+        if needs_link {
+            div { class: "notice warn bonus-attention", role: "status",
+                {ui.text(if setting.auth_status == "action_required" { "dashboard.bonus_action_required" } else { "errors.cookie_invalid" })}
+                p { button { r#type: "button", onclick: move |_| set_page(state, Page::Link), {ui.text("dashboard.open_link_settings")} } }
+            }
+        }
+        details { class: "bonus-status",
+            summary {
+                {ui.text("dashboard.bonus_details")}
+                if let Some(run) = &setting.last_run {
+                    " · " {ui.text("dashboard.last_run_state")} ": " {model_status(&run.state, ui)}
+                }
+                if setting.error_code.is_some() {
+                    " · " {error_text(setting.error_code.as_deref(), ui)}
+                }
+            }
+            dl { class: "metrics",
+                Metric { label: ui.text("dashboard.auth_status"), value: model_status(&setting.auth_status, ui).to_owned() }
+                Metric { label: ui.text("dashboard.checked"), value: date(&setting.last_checked_at, ui) }
+                Metric { label: ui.text("dashboard.last_run_state"), value: setting.last_run.as_ref().map(|run| model_status(&run.state, ui).to_owned()).unwrap_or_else(|| ui.text("dashboard.never_run").to_owned()) }
+                if setting.error_code.is_some() {
+                    Metric { label: ui.text("dashboard.bonus_error"), value: error_text(setting.error_code.as_deref(), ui).to_owned() }
+                    Metric { label: ui.text("dashboard.error_at"), value: date(&setting.error_at, ui) }
                 }
             }
         }
@@ -282,37 +369,58 @@ fn BonusSection(state: Signal<AppState>, game: &'static str) -> Element {
 }
 
 #[component]
-fn GameStatusCard(status: GameStatus) -> Element {
+fn AwardLine(award: DailyAward, claimed: bool) -> Element {
     let ui = use_preferences();
-    let yes_no = |value| {
-        if value {
-            ui.text("dashboard.yes")
-        } else {
-            ui.text("dashboard.no")
-        }
-        .to_owned()
+    let mut failed = use_signal(|| false);
+    let key = if claimed {
+        "dashboard.award_claimed"
+    } else {
+        "dashboard.award_next"
     };
     rsx! {
+        p { class: "award",
+            if !award.icon.is_empty() && !failed() {
+                img { class: "award-icon", src: award.icon.clone(), alt: "", width: "32", height: "32",
+                    loading: "lazy", decoding: "async", referrerpolicy: "no-referrer",
+                    onerror: move |_| failed.set(true),
+                }
+            }
+            span { {ui.text(key)} ": " strong { {award.name.clone()} } " ×{award.count}" }
+        }
+    }
+}
+
+#[component]
+fn GameStatusCard(status: GameStatus) -> Element {
+    let ui = use_preferences();
+    rsx! {
         div { class: "status-card",
-            if let Some(notice) = freshness_notice(&status, ui) { p { class: "warning", {notice} } }
+            if let Some(notice) = freshness_notice(&status, ui) { p { class: "warning", role: "status", {notice} } }
             if let Some(data) = status.data.as_ref() {
                 if status.game_kind == "genshin" {
                     Resource { label: ui.text("dashboard.resin"), current: data.current_resin, maximum: data.max_resin, full_at: data.resin_full_at.clone() }
                     dl { class: "metrics",
                         Metric { label: ui.text("dashboard.realm_currency"), value: pair(data.current_home_coin, data.max_home_coin, ui) }
-                        Estimate { label: ui.text("dashboard.currency_full_at"), value: data.home_coin_full_at.clone() }
+                        Estimate { label: ui.text("dashboard.currency_full_at"), value: data.home_coin_full_at.clone(), countdown: true, reached: "dashboard.at_cap" }
                         Metric { label: ui.text("dashboard.commissions"), value: pair(data.finished_task_num, data.total_task_num, ui) }
                         Metric { label: ui.text("dashboard.extra_commission_reward"), value: received(data.is_extra_task_reward_received, ui).to_owned() }
+                        Metric { label: ui.text("dashboard.weekly_boss_discounts"), value: remaining(data.remain_resin_discount_num, data.resin_discount_num_limit, ui) }
+                        Metric { label: ui.text("dashboard.transformer"), value: transformer_text(data, ui) }
                     }
                 } else if status.game_kind == "starrail" {
                     Resource { label: ui.text("dashboard.trailblaze_power"), current: data.current_stamina, maximum: data.max_stamina, full_at: data.stamina_full_at.clone() }
                     dl { class: "metrics",
-                        Metric { label: ui.text("dashboard.reserved_trailblaze_power"), value: number(data.current_reserve_stamina, ui) }
+                        Metric { label: ui.text("dashboard.reserved_trailblaze_power"), value: reserve_text(data, ui) }
                         Metric { label: ui.text("dashboard.daily_training"), value: pair(data.current_train_score, data.max_train_score, ui) }
+                        Metric { label: ui.text("dashboard.simulated_universe"), value: pair(data.current_rogue_score, data.max_rogue_score, ui) }
+                        Metric { label: ui.text("dashboard.echo_of_war"), value: remaining(data.weekly_cocoon_cnt, data.weekly_cocoon_limit, ui) }
+                        if data.rogue_tourn_weekly_unlocked == Some(true) {
+                            Metric { label: ui.text("dashboard.divergent_universe"), value: pair(data.rogue_tourn_weekly_cur, data.rogue_tourn_weekly_max, ui) }
+                        }
                     }
                 }
                 if status.game_kind == "genshin" {
-                    ExpeditionList { expeditions: data.expeditions.clone() }
+                    ExpeditionList { expeditions: data.expeditions.clone(), maximum: data.max_expedition_num }
                 }
             }
             if let Some(key) = missing_payload_notice(status.data.as_ref()).filter(|_| status.error_code.is_none()) {
@@ -327,14 +435,11 @@ fn GameStatusCard(status: GameStatus) -> Element {
                     Metric { label: ui.text("dashboard.uid"), value: if status.game_uid.is_empty() { ui.text("dashboard.missing").to_owned() } else { status.game_uid.clone() } }
                     Metric { label: ui.text("dashboard.region"), value: status.region.clone() }
                     Metric { label: ui.text("dashboard.last_fetched"), value: date(&status.fetched_at, ui) }
-                    Metric { label: ui.text("dashboard.stale"), value: yes_no(status.stale) }
-                    Metric { label: ui.text("dashboard.visible"), value: yes_no(status.visible) }
-                    Metric { label: ui.text("dashboard.detected"), value: yes_no(status.detected) }
-                    Metric { label: ui.text("dashboard.error"), value: error_text(status.error_code.as_deref(), ui).to_owned() }
                     if let Some(code) = &status.error_code {
+                        Metric { label: ui.text("dashboard.error"), value: error_text(Some(code), ui).to_owned() }
                         Metric { label: ui.text("dashboard.error_code"), value: code.clone() }
+                        Metric { label: ui.text("dashboard.error_at"), value: date(&status.error_at, ui) }
                     }
-                    Metric { label: ui.text("dashboard.error_at"), value: date(&status.error_at, ui) }
                 }
             }
         }
@@ -349,9 +454,13 @@ fn Resource(
     full_at: Option<String>,
 ) -> Element {
     let ui = use_preferences();
+    let fill = fill_level(current, maximum);
     rsx! {
-        p { class: "resource-label", "{label}" }
-        div { class: "resource",
+        p { class: "resource-label", "{label}"
+            if fill == "full" { span { class: "status warn cap-badge", {ui.text("dashboard.at_cap")} } }
+            else if fill == "near" { span { class: "status warn cap-badge", {ui.text("dashboard.near_cap")} } }
+        }
+        div { class: "resource", "data-fill": fill,
             strong { {number(current, ui)} }
             if let Some(maximum) = maximum { span { "/ {maximum}" } }
         }
@@ -371,17 +480,23 @@ fn Estimate(
     label: &'static str,
     value: Option<String>,
     #[props(default)] numeric: bool,
+    /// Also state the time left, without the numeric display face.
+    #[props(default)]
+    countdown: bool,
+    /// Shown once the estimate has passed.
+    #[props(default = "dashboard.fully_recovered")]
+    reached: &'static str,
 ) -> Element {
     let ui = use_preferences();
     let minute = use_minute_tick();
     let formatted = compact_datetime(value.as_deref());
-    let countdown = numeric
+    let countdown = (numeric || countdown)
         .then(|| {
             let _ = minute();
             seconds_since(value.as_deref())
         })
         .flatten()
-        .map(|elapsed| countdown_text(-elapsed, ui));
+        .map(|elapsed| countdown_text(-elapsed, reached, ui));
     rsx! {
         div { class: "metric",
             dt { "{label}" }
@@ -398,11 +513,34 @@ fn Estimate(
 }
 
 #[component]
-fn ExpeditionList(expeditions: Option<Vec<Expedition>>) -> Element {
+fn ExpeditionList(expeditions: Option<Vec<Expedition>>, maximum: Option<i64>) -> Element {
     let ui = use_preferences();
+    let summary = expeditions
+        .as_ref()
+        .filter(|rows| !rows.is_empty())
+        .map(|rows| {
+            let finished = rows
+                .iter()
+                .filter(|row| expedition_finished(row.status.as_deref()))
+                .count();
+            let total = maximum
+                .and_then(|max| usize::try_from(max).ok())
+                .filter(|max| *max >= rows.len())
+                .unwrap_or(rows.len());
+            ui.format(
+                "dashboard.expeditions_finished",
+                &[
+                    ("finished", &finished.to_string()),
+                    ("total", &total.to_string()),
+                ],
+            )
+        });
     rsx! {
         div { class: "expeditions",
-            h3 { {ui.text("dashboard.expeditions")} }
+            div { class: "expeditions-heading",
+                h3 { {ui.text("dashboard.expeditions")} }
+                if let Some(summary) = summary { span { class: "muted", "{summary}" } }
+            }
             if let Some(rows) = expeditions {
                 if rows.is_empty() { p { {ui.text("dashboard.no_expeditions")} } }
                 ul {
@@ -448,12 +586,12 @@ fn expedition_finished(status: Option<&str>) -> bool {
 }
 
 /// Time left until full recovery, or "fully recovered" once the estimate has passed.
-fn countdown_text(seconds_left: i64, ui: Preferences) -> String {
+fn countdown_text(seconds_left: i64, reached: &str, ui: Preferences) -> String {
     if seconds_left <= 0 {
-        ui.text("dashboard.fully_recovered").to_owned()
+        ui.text(reached).to_owned()
     } else {
         ui.format(
-            "dashboard.recovers_in",
+            "dashboard.in_duration",
             &[("duration", &hours_minutes(seconds_left, ui))],
         )
     }
@@ -536,6 +674,44 @@ fn pair(current: Option<i64>, maximum: Option<i64>, ui: Preferences) -> String {
     current
         .map(|value| count_pair(value, maximum))
         .unwrap_or_else(|| ui.text("common.not_fetched").to_owned())
+}
+
+/// Weekly allowances count down: "2/3 left".
+fn remaining(left: Option<i64>, maximum: Option<i64>, ui: Preferences) -> String {
+    match (left, maximum) {
+        (Some(left), Some(maximum)) => ui.format(
+            "dashboard.remaining_of",
+            &[("left", &left.to_string()), ("max", &maximum.to_string())],
+        ),
+        (Some(left), None) => left.to_string(),
+        _ => ui.text("common.not_fetched").to_owned(),
+    }
+}
+
+fn transformer_text(data: &DailySummary, ui: Preferences) -> String {
+    match (data.transformer_obtained, data.transformer_ready) {
+        (Some(false), _) => ui.text("dashboard.transformer_not_obtained").to_owned(),
+        (_, Some(true)) => ui.text("dashboard.transformer_ready").to_owned(),
+        (_, Some(false)) => seconds_since(data.transformer_ready_at.as_deref())
+            .filter(|elapsed| *elapsed < 0)
+            .map(|elapsed| {
+                ui.format(
+                    "dashboard.in_duration",
+                    &[("duration", &days_hours(-elapsed, ui))],
+                )
+            })
+            .unwrap_or_else(|| ui.text("dashboard.transformer_cooling").to_owned()),
+        _ => ui.text("common.not_fetched").to_owned(),
+    }
+}
+
+fn reserve_text(data: &DailySummary, ui: Preferences) -> String {
+    let value = number(data.current_reserve_stamina, ui);
+    if data.is_reserve_stamina_full == Some(true) {
+        format!("{value} · {}", ui.text("dashboard.at_cap"))
+    } else {
+        value
+    }
 }
 
 fn date(value: &Option<String>, ui: Preferences) -> String {
@@ -646,15 +822,30 @@ mod tests {
     #[test]
     fn recovery_countdown_and_finished_expeditions_show_only_what_is_left() {
         let ui = Preferences::default();
-        assert_eq!(countdown_text(7 * 3600 + 12 * 60, ui), "あと7時間12分");
-        assert_eq!(countdown_text(30, ui), "あと0時間01分");
-        assert_eq!(countdown_text(0, ui), "全回復済み");
-        assert_eq!(countdown_text(-90, ui), "全回復済み");
+        assert_eq!(
+            countdown_text(7 * 3600 + 12 * 60, "dashboard.fully_recovered", ui),
+            "あと7時間12分"
+        );
+        assert_eq!(
+            countdown_text(30, "dashboard.fully_recovered", ui),
+            "あと0時間01分"
+        );
+        assert_eq!(
+            countdown_text(0, "dashboard.fully_recovered", ui),
+            "全回復済み"
+        );
+        assert_eq!(
+            countdown_text(-90, "dashboard.fully_recovered", ui),
+            "全回復済み"
+        );
         let english = Preferences {
             language: crate::i18n::Language::English,
             ..ui
         };
-        assert_eq!(countdown_text(7 * 3600 + 12 * 60, english), "in 7h 12m");
+        assert_eq!(
+            countdown_text(7 * 3600 + 12 * 60, "dashboard.fully_recovered", english),
+            "in 7h 12m"
+        );
         assert!(expedition_finished(Some("Finished")));
         assert!(!expedition_finished(Some("Ongoing")));
         assert!(!expedition_finished(None));

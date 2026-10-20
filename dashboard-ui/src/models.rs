@@ -43,6 +43,8 @@ pub struct CookieStatus {
     pub status: String,
     pub setup_complete: bool,
     pub updated_at: Option<String>,
+    #[serde(default)]
+    pub verified_at: Option<String>,
     pub verification_available: bool,
 }
 
@@ -90,6 +92,21 @@ pub struct DailySummary {
     pub max_train_score: Option<i64>,
     pub stamina_full_at: Option<String>,
     pub expeditions: Option<Vec<Expedition>>,
+    pub remain_resin_discount_num: Option<i64>,
+    pub resin_discount_num_limit: Option<i64>,
+    pub current_expedition_num: Option<i64>,
+    pub max_expedition_num: Option<i64>,
+    pub transformer_obtained: Option<bool>,
+    pub transformer_ready: Option<bool>,
+    pub transformer_ready_at: Option<String>,
+    pub current_rogue_score: Option<i64>,
+    pub max_rogue_score: Option<i64>,
+    pub weekly_cocoon_cnt: Option<i64>,
+    pub weekly_cocoon_limit: Option<i64>,
+    pub is_reserve_stamina_full: Option<bool>,
+    pub rogue_tourn_weekly_unlocked: Option<bool>,
+    pub rogue_tourn_weekly_cur: Option<i64>,
+    pub rogue_tourn_weekly_max: Option<i64>,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -138,9 +155,20 @@ pub struct RewardSetting {
     pub next_run_at: Option<String>,
     pub last_run: Option<LastRun>,
     pub is_sign: Option<bool>,
+    #[serde(default)]
+    pub total_sign_day: Option<i64>,
+    #[serde(default)]
+    pub today_award: Option<DailyAward>,
     pub last_checked_at: Option<String>,
     pub error_code: Option<String>,
     pub error_at: Option<String>,
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct DailyAward {
+    pub name: String,
+    pub count: i64,
+    pub icon: String,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]

@@ -1,4 +1,7 @@
+use crate::app::actions::spawn_root;
+use crate::app::data::load_page_data;
 use crate::app::preferences::{Preferences, use_preferences};
+use crate::app::state::AppState;
 use dioxus::prelude::*;
 
 /// Localized title for a backend `game_kind`; unknown kinds get a generic name.
@@ -20,6 +23,21 @@ pub(super) fn Metric(label: &'static str, value: String) -> Element {
     rsx! { div { class: "metric", dt { "{label}" } dd { "{value}" } } }
 }
 
+/// A failed load with the means to try again: re-requests the current page's data.
+#[component]
+pub(super) fn LoadError(state: Signal<AppState>, message: &'static str) -> Element {
+    let ui = use_preferences();
+    rsx! {
+        div { class: "warning load-error", role: "alert",
+            span { "{message}" }
+            button { r#type: "button", onclick: move |_| {
+                let page = state.read().page;
+                spawn_root(async move { load_page_data(state, page).await; });
+            }, {ui.text("common.retry")} }
+        }
+    }
+}
+
 #[component]
 pub(super) fn Icon(name: &'static str) -> Element {
     let path = match name {
@@ -31,6 +49,7 @@ pub(super) fn Icon(name: &'static str) -> Element {
         "settings" => "M4 7h16M4 17h16M8 4v6M16 14v6",
         "user" => "M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M4 21v-2a8 8 0 0 1 16 0v2",
         "logout" => "M10 4H4v16h6M9 12h12m-4-4 4 4-4 4",
+        "docs" => "M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7",
         "eye" => {
             "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0"
         }

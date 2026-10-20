@@ -1,4 +1,4 @@
-use super::common::{game_name, reset_checked};
+use super::common::{LoadError, game_name, reset_checked};
 use crate::app::actions::{handle_api_error_for, spawn_action};
 use crate::app::data::load_accounts;
 use crate::app::display::datetime_text;
@@ -13,7 +13,7 @@ pub(super) fn UidsPage(state: Signal<AppState>) -> Element {
     rsx! {
         section { class: "panel page-stack",
             h2 { {preferences.text("accounts.game_visibility")} }
-            if let Some(error) = &state.read().accounts_error { p { class: "warning", {preferences.text(error)} } }
+            if let Some(error) = state.read().accounts_error.clone() { LoadError { state, message: preferences.text(&error) } }
             AccountTable { state }
         }
     }

@@ -1,4 +1,4 @@
-use super::common::{Field, ModalDialog, PasswordInput};
+use super::common::{Field, LoadError, ModalDialog, PasswordInput};
 use crate::app::actions::spawn_action;
 use crate::app::credentials::{self, CopyState, CredentialResult};
 use crate::app::data::load_admin_users;
@@ -117,7 +117,7 @@ fn AdminCard(state: Signal<AppState>) -> Element {
             Card {
                 CardHeader { CardTitle { {prefs.text("admin.manage_users")} } }
                 CardContent { class: "form-stack",
-                    if state.read().admin_error.is_some() { p { class: "warning", role: "alert", {prefs.text("admin.could_not_load_users")} } }
+                    if state.read().admin_error.is_some() { LoadError { state, message: prefs.text("admin.could_not_load_users") } }
                     else if state.read().admin_users.is_none() { p { role: "status", {prefs.text("admin.loading_users")} } }
                     else if users.is_empty() { p { {prefs.text("admin.no_users")} } }
                     else {

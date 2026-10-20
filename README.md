@@ -98,6 +98,7 @@ HTTPSリバースプロキシから `http://127.0.0.1:8080` へパスを保持�
 | `/settings/games` / `/settings/bonus` / `/settings/link` / `/settings/security` / `/settings/delete` | 各設定画面（認証必須） |
 | `/admin` | 管理者画面（管理者権限必須） |
 | `/docs` / `/openapi.json` | API仕様の閲覧／OpenAPI JSON |
+| `/manifest.webmanifest` | ホーム画面追加用のWebマニフェスト |
 | `/health` | DB疎通確認。正常時 `{"status":"ok"}` |
 
 ## 開発とUI設計
@@ -124,8 +125,8 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 | `dashboard-ui/src/app/state.rs` | 画面状態、認証・初期設定ゲートと画面データ取得の起動 |
 | `dashboard-ui/src/app/session.rs` | `/me`による起動・再確認、初期設定ゲートのその場での再読み込み、ログアウト |
 | `dashboard-ui/src/app/actions.rs` | 操作の予約（busy）と完了・APIエラー処理。セッション世代とは独立 |
-| `dashboard-ui/src/app/data.rs` | セッション世代に結び付いた画面データの取得（未取得と空を区別、リソースごとに最新の要求の応答だけを反映）、手動実行後の報酬状態のGET追従 |
-| `dashboard-ui/src/app/display.rs` | 数値・ブラウザのローカル時刻による簡潔な月日／24時間表示、データの経過時間、エラーコードの表示文への対応付け |
+| `dashboard-ui/src/app/data.rs` | セッション世代に結び付いた画面データの取得（未取得と空を区別、リソースごとに最新の要求の応答だけを反映）、全ゲームの手動受け取りとその後の報酬状態のGET追従 |
+| `dashboard-ui/src/app/display.rs` | 数値・ブラウザのローカル時刻による簡潔な月日／24時間表示、データの経過時間、上限への近さ、サーバー時刻とブラウザ時刻の換算、エラーコードの表示文への対応付け |
 | `dashboard-ui/src/pages/` | 画面、メニュー、設定、ユーザー管理 |
 | `src/dashboard/games/summary.rs` | 上流ゲーム状態から画面用の要約への写像 |
 
@@ -136,9 +137,9 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 | `src/dashboard/auth/` | ユーザーのライフサイクル、パスワード、セッション、パスキー（アカウントの有無を明かさないログインoptionsを含む）、削除要求と完了（再試行の待機を含む）、ユーザー名ごとのログイン試行制限、ユーザーごとの現在パスワード確認の試行制限 |
 | `src/dashboard/http/` | ルート、DTO、Cookie、Origin・キャッシュの境界、UI配信、報酬・削除のバックグラウンド処理の起動 |
 | `src/dashboard/db/` | `entities/` に保存モデル、`migrations/` にスキーマ変更 |
-| `src/dashboard/hoyolab/` | Cookieの解析・暗号化保存、連携の検証・同期、ユーザー単位の操作ロック |
+| `src/dashboard/hoyolab/` | Cookieの解析・暗号化保存・削除、連携の検証・同期、ユーザー単位の操作ロック |
 | `src/dashboard/games/` | ゲームUID一覧・表示設定・状態キャッシュ |
-| `src/dashboard/rewards/` | 報酬設定・スケジュール・実行、送信不確定時のガード、ユーザー削除前の報酬確認 |
+| `src/dashboard/rewards/` | 報酬設定・スケジュール・実行（定時と遅延実行の区別）、送信不確定時のガード、今月の報酬一覧のキャッシュ、ユーザー削除前の報酬確認 |
 | `src/hoyolab/` | HoYoLAB上流APIの型付きクライアント（ダッシュボードの方針は含めない） |
 
 ## HoYoLAB連携
@@ -147,7 +148,8 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 - 登録には `ltoken_v2`・`ltuid_v2`・`ltmid_v2` の3つが必須です。ブラウザの `Cookie:` ヘッダー行をそのまま貼り付けても構いません（他のCookieや空の要素は無視されます）。旧形式（`ltoken`／`ltuid`）は登録できません。
 - 保存だけでは連携完了になりません。検証後にゲームアカウントを確認してください。
-- **自動受け取りは初期OFF**。画面で時刻を指定して有効にします。
+- **自動受け取りは初期OFF**。画面で時刻を指定して有効にします。時刻はサーバー時刻（`TIMEZONE_OFFSET`）で、ログインボーナスの日付はUTC+8の0時（日本時間1時）に切り替わります。
+- 連携画面の「Cookieを削除」で保存済みCookieを消せます。UIDの紐付け・ゲーム表示・履歴は残り、自動受け取りはすべてOFFになります。再開するには同じHoYoLABアカウントのCookieを登録します。
 - 状態取得にはHoYoLAB側の戦績・リアルタイムノートの公開設定も影響します。Cookie失効・追加認証・HoYoLABの仕様変更により利用できなくなる場合があります。
 
 ## 運用上の制約
@@ -179,7 +181,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 | --- | --- |
 | 認証 | `POST /auth/login`、`POST /auth/logout`、`GET /me`、`PUT /me/password` |
 | パスキー | `GET /me/passkeys`、`POST /me/passkeys/options`・`/me/passkeys/verify`、`DELETE /me/passkeys/{id}`、`POST /auth/passkey/options`・`/auth/passkey/verify` |
-| HoYoLAB | `GET /me/hoyolab`、`PUT /me/hoyolab/cookie`、`POST /me/hoyolab/verify`・`/me/hoyolab/sync` |
+| HoYoLAB | `GET /me/hoyolab`、`PUT`・`DELETE /me/hoyolab/cookie`、`POST /me/hoyolab/verify`・`/me/hoyolab/sync` |
 | ゲーム | `GET /game-accounts`、`PATCH /game-accounts/{id}`、`GET /game-accounts/{id}/status` |
 | 報酬 | `GET /reward-settings`、`PATCH /reward-settings/{id}`、`POST /reward-settings/{id}/run`、`GET /reward-runs` |
 | ユーザー管理 | `GET /admin/users`、`POST /admin/users`、`PATCH /admin/users/{id}`、`PUT /admin/users/{id}/temporary-password` |
@@ -188,7 +190,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 - ゲーム種別は `genshin`／`starrail`。状態レスポンスの `stale` と取得日時を確認してください。
 - 報酬操作の `{id}` は報酬設定のUUIDで、ゲームUIDではありません。検証・同期・手動受け取りのPOSTには `{}` を送ります。
-- 手動受け取りは非同期の `202` 受付です。結果は履歴で確認します。不確定な送信結果は再POSTせず、追加認証が必要ならHoYoLAB側で対応してください。
+- 画面の手動受け取りはダッシュボードの「ログインボーナスを今すぐ受け取る」1つにまとめ、本日分が未受け取りのゲームだけを実行します。APIは報酬設定ごとの非同期 `202` 受付です。結果は履歴で確認します。不確定な送信結果は再POSTせず、追加認証が必要ならHoYoLAB側で対応してください。
 - `POST /auth/passkey/options` は存在しないユーザーやpasskey未登録のユーザーにも同じ形の応答を返し、ログインは `verify` で401になります（アカウントの有無を明かさないため）。
 - 無効化したユーザーを再有効化しても旧セッションは復活せず、そのユーザーの自動受け取りはすべてOFF（次回予定も消去）になります。意図しない報酬POSTの再開を防ぐためで、本人が設定で再度有効にします。
 - 削除も非同期で、受付時に利用停止・セッション失効となります。操作者の現在パスワードと対象ユーザー名の完全一致入力が必要です。最後の有効な管理者は削除できません。

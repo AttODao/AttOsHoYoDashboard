@@ -1,10 +1,14 @@
-use super::common::{Field, Metric};
+use super::common::{Field, LoadError, Metric, ModalDialog};
 use crate::app::actions::{handle_api_error_for, spawn_action};
 use crate::app::display::datetime_text;
 use crate::app::preferences::use_preferences;
 use crate::app::session::refresh_gate;
 use crate::app::state::{AppState, generation_matches, set_status};
 use crate::components::{Button, ButtonVariant};
+
+/// The Cookie names the server requires for a new link.
+const REQUIRED_COOKIES: [&str; 3] = ["ltoken_v2", "ltuid_v2", "ltmid_v2"];
+const HOYOLAB_HOME: &str = "https://www.hoyolab.com/home";
 use dioxus::prelude::*;
 use serde_json::{Value, json};
 
@@ -45,6 +49,7 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
         Some("cookie_invalid" | "invalid") => preferences.text("dashboard.invalid"),
         Some("unreadable") => preferences.text("hoyolab.unreadable"),
         Some("storage_unavailable") => preferences.text("hoyolab.storage_unavailable"),
+        Some("removed") => preferences.text("hoyolab.removed"),
         Some(_) => preferences.text("dashboard.unknown"),
         None => preferences.text("common.not_fetched"),
     }
@@ -57,40 +62,129 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
         (ButtonVariant::Primary, ButtonVariant::Secondary)
     };
     let (step_class, step_key) = step.notice();
+    let mut checked = use_signal(|| false);
+    let missing = missing_cookies(&cookie());
+    let invalid = checked() && !cookie().trim().is_empty() && !missing.is_empty();
+    let mut confirming = use_signal(|| false);
+    let removable = stored && raw_status.as_deref() != Some("removed");
+    let mut submit = move |_: ()| {
+        checked.set(true);
+        if disabled
+            || state.read().busy
+            || !state.read().password_ok()
+            || cookie().trim().is_empty()
+        {
+            return;
+        }
+        if !missing_cookies(&cookie()).is_empty() {
+            super::common::focus_element("hoyolab-cookie");
+            return;
+        }
+        // Keep the pasted value until the server accepts it, so a failed save needs no re-paste.
+        spawn_cookie_action(
+            state,
+            "PUT",
+            "/me/hoyolab/cookie",
+            json!({"cookie": cookie()}),
+            "hoyolab.cookie_save_accepted",
+            Some(cookie),
+        );
+    };
     rsx! {
         div { class: "form-stack",
-            if !password_ok { p { class: "warning", {preferences.text("hoyolab.password_change_required")} } }
-            if let Some(error) = &state.read().hoyolab_error { p { class: "warning", {preferences.text(error)} } }
+            if !password_ok { p { class: "warning", role: "status", {preferences.text("hoyolab.password_change_required")} } }
+            if let Some(error) = state.read().hoyolab_error.clone() { LoadError { state, message: preferences.text(&error) } }
             if password_ok { p { id: "hoyolab-step", class: "notice {step_class}", {preferences.text(step_key)} } }
             dl { class: "metric-list",
                 Metric { label: preferences.text("hoyolab.cookie_status"), value: status }
                 Metric { label: preferences.text("hoyolab.hoyolab_uid"), value: hoyolab.as_ref().and_then(|h| h.hoyolab_uid.clone()).unwrap_or_else(|| preferences.text("common.not_fetched").to_owned()) }
+                Metric { label: preferences.text("hoyolab.verified_at"), value: datetime_text(hoyolab.as_ref().and_then(|h| h.verified_at.as_deref()), preferences) }
                 Metric { label: preferences.text("hoyolab.updated"), value: datetime_text(hoyolab.as_ref().and_then(|h| h.updated_at.as_deref()), preferences) }
             }
-            Field { id: "hoyolab-cookie", label: preferences.text("hoyolab.cookie"),
-                textarea { id: "hoyolab-cookie", autocomplete: "off", spellcheck: "false", disabled, "aria-describedby": "hoyolab-cookie-help", value: "{cookie}", oninput: move |event| cookie.set(event.value()) }
-                p { id: "hoyolab-cookie-help", class: "field-hint", {preferences.text("hoyolab.cookie_help")} }
-            }
-            div { class: "button-row",
-                Button { variant: save_variant, r#type: "button", disabled: disabled || cookie().trim().is_empty(), onclick: move |_| {
-                    if disabled || state.read().busy || !state.read().password_ok() || cookie().trim().is_empty() { return; }
-                    // Keep the pasted value until the server accepts it, so a failed save needs no re-paste.
-                    spawn_cookie_action(state, "PUT", "/me/hoyolab/cookie", json!({"cookie": cookie()}), "hoyolab.cookie_save_accepted", Some(cookie));
-                }, {preferences.text("hoyolab.save")} }
-                Button { variant: verify_variant, r#type: "button", disabled: disabled || !stored, aria_describedby: verify_next.then_some("hoyolab-step"), onclick: move |_| {
-                    if disabled || !stored || !state.read().password_ok() { return; }
-                    spawn_cookie_action(state, "POST", "/me/hoyolab/verify", json!({}), "hoyolab.verification_response_received", None);
-                }, {preferences.text("hoyolab.verify")} }
-                Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: disabled || !complete, aria_describedby: (!complete).then_some("hoyolab-sync-hint"), onclick: move |_| {
-                    if disabled || !complete || !state.read().password_ok() { return; }
-                    spawn_cookie_action(state, "POST", "/me/hoyolab/sync", json!({}), "hoyolab.sync_response_received", None);
-                }, {preferences.text("hoyolab.sync_uids")} }
+            form { class: "form-stack", novalidate: true, onsubmit: move |event| { event.prevent_default(); submit(()); },
+                Field { id: "hoyolab-cookie", label: preferences.text("hoyolab.cookie"),
+                    ol { id: "hoyolab-cookie-help", class: "field-hint cookie-steps",
+                        li { {preferences.text("hoyolab.cookie_step_login")} " " a { href: HOYOLAB_HOME, target: "_blank", rel: "noopener noreferrer", "www.hoyolab.com" } }
+                        li { {preferences.text("hoyolab.cookie_step_devtools")} }
+                        li { {preferences.text("hoyolab.cookie_step_copy")} }
+                        li { {preferences.text("hoyolab.cookie_step_verify")} }
+                    }
+                    textarea { id: "hoyolab-cookie", autocomplete: "off", spellcheck: "false", disabled,
+                        placeholder: "ltoken_v2=…; ltuid_v2=…; ltmid_v2=…",
+                        "aria-describedby": if invalid { "hoyolab-cookie-help hoyolab-cookie-error" } else { "hoyolab-cookie-help" },
+                        "aria-invalid": invalid.then_some("true"),
+                        value: "{cookie}", oninput: move |event| cookie.set(event.value()),
+                        onblur: move |_| if !cookie().trim().is_empty() { checked.set(true) },
+                    }
+                    if invalid {
+                        p { id: "hoyolab-cookie-error", class: "field-error",
+                            {preferences.format("hoyolab.cookie_missing", &[("names", &missing.join(", "))])}
+                        }
+                    }
+                }
+                div { class: "button-row",
+                    Button { variant: save_variant, r#type: "submit", disabled: disabled || cookie().trim().is_empty(), {preferences.text("hoyolab.save")} }
+                    Button { variant: verify_variant, r#type: "button", disabled: disabled || !stored || raw_status.as_deref() == Some("removed"), aria_describedby: verify_next.then_some("hoyolab-step"), onclick: move |_| {
+                        if disabled || !stored || !state.read().password_ok() { return; }
+                        spawn_cookie_action(state, "POST", "/me/hoyolab/verify", json!({}), "hoyolab.verification_succeeded", None);
+                    }, {preferences.text("hoyolab.verify")} }
+                    Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: disabled || !complete, aria_describedby: (!complete).then_some("hoyolab-sync-hint"), onclick: move |_| {
+                        if disabled || !complete || !state.read().password_ok() { return; }
+                        spawn_cookie_action(state, "POST", "/me/hoyolab/sync", json!({}), "hoyolab.sync_succeeded", None);
+                    }, {preferences.text("hoyolab.sync_uids")} }
+                }
             }
             if !complete {
                 p { id: "hoyolab-sync-hint", class: "field-hint", {preferences.text("hoyolab.sync_requires_verification")} }
             }
+            if removable && password_ok {
+                div { class: "danger-note cookie-remove",
+                    p { {preferences.text("hoyolab.remove_hint")} }
+                    Button { variant: ButtonVariant::Destructive, r#type: "button", disabled, onclick: move |_| confirming.set(true), {preferences.text("hoyolab.remove_cookie")} }
+                }
+            }
+            if confirming() {
+                ModalDialog { id: "remove-cookie-dialog", title: preferences.text("hoyolab.remove_cookie"), onclose: move |_| confirming.set(false),
+                    p { {preferences.text("hoyolab.remove_consequences")} }
+                    div { class: "actions",
+                        Button { variant: ButtonVariant::Destructive, r#type: "button", onclick: move |_| {
+                            confirming.set(false);
+                            spawn_action(state, move |generation| async move {
+                                match crate::api::send("DELETE", "/me/hoyolab/cookie", None).await {
+                                    Ok(()) if generation_matches(state, generation) => {
+                                        set_status(state, "hoyolab.cookie_removed", "success");
+                                        refresh_gate(state, generation).await;
+                                    }
+                                    Ok(()) => {}
+                                    Err(error) => handle_api_error_for(state, generation, error),
+                                }
+                            });
+                        }, {preferences.text("hoyolab.remove_cookie")} }
+                        Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| confirming.set(false), {preferences.text("admin.cancel")} }
+                    }
+                }
+            }
         }
     }
+}
+
+/// Required Cookie names absent from pasted text; a `Cookie:` header line is accepted.
+fn missing_cookies(raw: &str) -> Vec<&'static str> {
+    let raw = raw.trim();
+    let raw = raw
+        .strip_prefix("Cookie:")
+        .or_else(|| raw.strip_prefix("cookie:"))
+        .unwrap_or(raw);
+    let present: Vec<&str> = raw
+        .split(';')
+        .filter_map(|part| part.split_once('='))
+        .filter(|(_, value)| !value.trim().is_empty())
+        .map(|(name, _)| name.trim())
+        .collect();
+    REQUIRED_COOKIES
+        .into_iter()
+        .filter(|name| !present.contains(name))
+        .collect()
 }
 
 /// Where the linkage stands, from the user's point of view.
@@ -130,7 +224,8 @@ fn link_step(
         (None, None) => LinkStep::Loading,
         (_, Some("cookie_invalid" | "invalid" | "unreadable")) => LinkStep::Unusable,
         (_, Some("storage_unavailable")) => LinkStep::Unavailable,
-        // Saving only stores the cookie; verification is a separate step.
+        // A removed Cookie starts over; saving only stores, verification is a separate step.
+        (_, Some("removed")) => LinkStep::NeedsCookie,
         _ if stored => LinkStep::NeedsVerification,
         _ => LinkStep::NeedsCookie,
     }
@@ -178,7 +273,24 @@ mod tests {
     }
 
     #[test]
+    fn pasted_cookies_name_each_missing_required_value() {
+        assert_eq!(missing_cookies(""), REQUIRED_COOKIES.to_vec());
+        assert!(missing_cookies("ltoken_v2=a; ltuid_v2=1; ltmid_v2=m").is_empty());
+        assert!(missing_cookies("Cookie: other=x; ltoken_v2=a;ltuid_v2=1; ltmid_v2=m").is_empty());
+        assert_eq!(missing_cookies("ltoken_v2=a; ltuid_v2=1"), vec!["ltmid_v2"]);
+        // Old names and empty values do not count.
+        assert_eq!(
+            missing_cookies("ltoken=a; ltuid=1; ltmid_v2=; ltuid_v2=1"),
+            vec!["ltoken_v2", "ltmid_v2"]
+        );
+    }
+
+    #[test]
     fn saved_but_unverified_cookies_ask_for_verification_next() {
+        assert_eq!(
+            link_step(Some(true), true, false, Some("removed")),
+            LinkStep::NeedsCookie
+        );
         use LinkStep::*;
         assert_eq!(link_step(None, false, false, None), Loading);
         assert_eq!(

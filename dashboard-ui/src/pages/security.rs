@@ -1,4 +1,4 @@
-use super::common::{Field, Metric, ModalDialog, PasswordInput, focus_element};
+use super::common::{Field, LoadError, Metric, ModalDialog, PasswordInput, focus_element};
 use crate::app::actions::{handle_api_error_for, handle_password_error_for, spawn_action};
 use crate::app::data::load_passkeys;
 use crate::app::display::datetime_text;
@@ -166,7 +166,7 @@ pub(super) fn PasskeyCard(mut state: Signal<AppState>) -> Element {
         section { class: "panel",
             h3 { {ui.text("security.passkeys")} }
             if let Some(error) = error {
-                p { class: "warning", {ui.text(&error)} }
+                LoadError { state, message: ui.text(&error) }
             } else if let Some(passkeys) = passkeys {
                 if passkeys.is_empty() {
                     p { {ui.text("security.no_passkeys_registered")} }

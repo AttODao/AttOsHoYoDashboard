@@ -363,30 +363,159 @@ pub(super) fn reward_run_in_flight(state: &str) -> bool {
     matches!(state, "pending" | "queued" | "running" | "retry_wait")
 }
 
-/// Completion announcement (message key, status kind) for a settled run state.
-fn reward_run_finished(state: &str) -> (&'static str, &'static str) {
-    match state {
-        "success" => ("rewards.run_finished_success", "success"),
-        "already_claimed" => ("rewards.run_finished_already_claimed", "success"),
-        "failed" | "stopped" => ("rewards.run_finished_failed", "error"),
-        _ => ("rewards.run_finished_unconfirmed", "error"),
+// UI duplicate/uncertain-send guard only; the backend remains the policy authority.
+// Manual runs are valid even when automation is OFF.
+pub(super) fn run_eligible(auth_status: &str, last_state: Option<&str>) -> bool {
+    auth_status == "ready"
+        && !matches!(
+            last_state,
+            Some("pending" | "queued" | "running" | "retry_wait" | "unknown")
+        )
+}
+
+/// Why the single "claim now" control can or cannot run, from the loaded settings.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum RunAll {
+    /// These settings still need today's claim and may be run.
+    Ready(Vec<Uuid>),
+    /// Message key explaining why nothing is runnable.
+    Blocked(&'static str),
+}
+
+pub(super) fn run_all_targets(settings: &[RewardSetting], posting_available: bool) -> RunAll {
+    if !posting_available {
+        return RunAll::Blocked("rewards.reward_posting_unavailable");
+    }
+    if settings.is_empty() {
+        return RunAll::Blocked("common.not_fetched");
+    }
+    let unclaimed: Vec<_> = settings
+        .iter()
+        .filter(|setting| setting.is_sign != Some(true))
+        .collect();
+    if unclaimed.is_empty() {
+        return RunAll::Blocked("rewards.all_claimed_today");
+    }
+    let ready: Vec<_> = unclaimed
+        .iter()
+        .filter(|setting| {
+            run_eligible(
+                &setting.auth_status,
+                setting.last_run.as_ref().map(|run| run.state.as_str()),
+            )
+        })
+        .map(|setting| setting.id)
+        .collect();
+    if !ready.is_empty() {
+        return RunAll::Ready(ready);
+    }
+    let last = |setting: &&RewardSetting| setting.last_run.as_ref().map(|run| run.state.clone());
+    if unclaimed
+        .iter()
+        .any(|setting| last(setting).is_some_and(|state| reward_run_in_flight(&state)))
+    {
+        RunAll::Blocked("rewards.run_in_progress")
+    } else if unclaimed
+        .iter()
+        .any(|setting| last(setting).as_deref() == Some("unknown"))
+    {
+        RunAll::Blocked("rewards.run_outcome_unknown")
+    } else {
+        RunAll::Blocked("rewards.run_needs_link_check")
     }
 }
 
-/// Follow an accepted manual run for about a minute. Each poll is an ordinary
-/// GET refresh: it never re-sends the POST, skips while an action holds the UI,
+/// Claim every runnable game once. Each POST is sent at most once; a failed
+/// acknowledgement is never retried, only followed by a GET refresh.
+pub(super) fn run_rewards_now(state: Signal<AppState>, page: Page) {
+    let posting = state
+        .read()
+        .me
+        .as_ref()
+        .is_some_and(|me| me.capabilities.reward_posting_available);
+    let RunAll::Ready(targets) = run_all_targets(&state.read().rewards, posting) else {
+        return;
+    };
+    super::actions::spawn_action(state, move |generation| async move {
+        let mut accepted = Vec::new();
+        let mut failure = None;
+        for id in targets {
+            if !super::state::generation_matches(state, generation) {
+                return;
+            }
+            match api::send(
+                "POST",
+                &format!("/reward-settings/{id}/run"),
+                Some(json!({})),
+            )
+            .await
+            {
+                Ok(()) => accepted.push(id),
+                Err(error) => failure = Some(error),
+            }
+        }
+        if !super::state::generation_matches(state, generation) {
+            return;
+        }
+        match failure {
+            Some(error) => handle_api_error_for(state, generation, error),
+            None => set_status(
+                state,
+                "rewards.run_accepted_queued_not_completed",
+                "success",
+            ),
+        }
+        // A failed acknowledgement may still have enqueued work: refresh either way.
+        load_rewards(state).await;
+        if !accepted.is_empty() {
+            start_reward_poll(state, generation, accepted, page);
+        }
+    });
+}
+
+/// Completion announcement (message key, status kind) for settled run states.
+fn reward_runs_finished(states: &[String]) -> (&'static str, &'static str) {
+    let settled = |ok: &[&str]| states.iter().all(|state| ok.contains(&state.as_str()));
+    if settled(&["success"]) {
+        ("rewards.run_finished_success", "success")
+    } else if settled(&["already_claimed"]) {
+        ("rewards.run_finished_already_claimed", "success")
+    } else if settled(&["success", "already_claimed"]) {
+        ("rewards.run_finished_success", "success")
+    } else if states
+        .iter()
+        .any(|state| matches!(state.as_str(), "failed" | "stopped"))
+    {
+        ("rewards.run_finished_failed", "error")
+    } else {
+        ("rewards.run_finished_unconfirmed", "error")
+    }
+}
+
+/// Follow accepted manual runs for about a minute. Each poll is an ordinary
+/// GET refresh: it never re-sends a POST, skips while an action holds the UI,
 /// and stops on completion, page leave, session change or a newer poll.
-pub(super) fn start_reward_poll(mut state: Signal<AppState>, generation: u64, setting: Uuid) {
-    if !current_ready_page_generation(state, generation, Page::Rewards) {
+pub(super) fn start_reward_poll(
+    mut state: Signal<AppState>,
+    generation: u64,
+    settings: Vec<Uuid>,
+    page: Page,
+) {
+    if !current_ready_page_generation(state, generation, page) {
         return;
     }
     let token = NEXT_REWARD_POLL.fetch_add(1, Ordering::Relaxed);
-    state.write().reward_poll = Some(RewardPoll { token, setting });
+    state.write().reward_poll = Some(RewardPoll {
+        token,
+        settings: settings.clone(),
+        page,
+    });
     spawn_root(async move {
-        poll_reward_run(state, generation, token, setting).await;
+        poll_reward_runs(state, generation, token, settings, page).await;
         if state
             .read()
             .reward_poll
+            .as_ref()
             .is_some_and(|poll| poll.token == token)
         {
             state.write().reward_poll = None;
@@ -394,21 +523,38 @@ pub(super) fn start_reward_poll(mut state: Signal<AppState>, generation: u64, se
     });
 }
 
-async fn poll_reward_run(state: Signal<AppState>, generation: u64, token: u64, setting: Uuid) {
+async fn poll_reward_runs(
+    state: Signal<AppState>,
+    generation: u64,
+    token: u64,
+    settings: Vec<Uuid>,
+    page: Page,
+) {
     let following = move || {
-        current_ready_page_generation(state, generation, Page::Rewards)
+        current_ready_page_generation(state, generation, page)
             && state
                 .read()
                 .reward_poll
+                .as_ref()
                 .is_some_and(|poll| poll.token == token)
     };
-    let run_state = move || {
+    let run_states = || -> Option<Vec<String>> {
         let read = state.read();
-        let row = read.rewards.iter().find(|row| row.id == setting)?;
-        row.last_run.as_ref().map(|run| run.state.clone())
+        settings
+            .iter()
+            .map(|id| {
+                let row = read.rewards.iter().find(|row| row.id == *id)?;
+                row.last_run.as_ref().map(|run| run.state.clone())
+            })
+            .collect()
+    };
+    let settled = |states: &Option<Vec<String>>| {
+        states
+            .as_ref()
+            .is_some_and(|states| states.iter().all(|state| !reward_run_in_flight(state)))
     };
     for _ in 0..REWARD_POLL_ATTEMPTS {
-        if run_state().is_some_and(|run| !reward_run_in_flight(&run)) {
+        if settled(&run_states()) {
             break;
         }
         gloo_timers::future::TimeoutFuture::new(REWARD_POLL_INTERVAL_MS).await;
@@ -422,9 +568,9 @@ async fn poll_reward_run(state: Signal<AppState>, generation: u64, token: u64, s
             return;
         }
     }
-    match run_state() {
-        Some(run) if !reward_run_in_flight(&run) => {
-            let (key, kind) = reward_run_finished(&run);
+    match run_states() {
+        Some(states) if settled(&Some(states.clone())) => {
+            let (key, kind) = reward_runs_finished(&states);
             set_status(state, key, kind);
         }
         _ => set_status(state, "rewards.run_still_pending", "info"),
@@ -638,33 +784,107 @@ mod tests {
         ] {
             assert!(!reward_run_in_flight(state), "{state}");
         }
+        let states = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
         assert_eq!(
-            reward_run_finished("success"),
+            reward_runs_finished(&states(&["success"])),
             ("rewards.run_finished_success", "success")
         );
-        assert_eq!(reward_run_finished("stopped").1, "error");
         assert_eq!(
-            reward_run_finished("unknown"),
+            reward_runs_finished(&states(&["success", "already_claimed"])).1,
+            "success"
+        );
+        assert_eq!(
+            reward_runs_finished(&states(&["already_claimed"])).0,
+            "rewards.run_finished_already_claimed"
+        );
+        assert_eq!(
+            reward_runs_finished(&states(&["success", "stopped"])).1,
+            "error"
+        );
+        assert_eq!(
+            reward_runs_finished(&states(&["unknown"])),
             ("rewards.run_finished_unconfirmed", "error")
         );
     }
 
     #[test]
-    fn reward_polling_starts_only_on_the_current_rewards_page() {
+    fn reward_polling_starts_only_on_its_current_page() {
         fn check() -> Element {
             let state = use_signal(ready_state);
-            start_reward_poll(state, 7, Uuid::from_u128(20));
+            let ids = vec![Uuid::from_u128(20)];
+            start_reward_poll(state, 7, ids.clone(), Page::Rewards);
             assert!(
                 state.read().reward_poll.is_none(),
                 "dashboard is not the rewards page"
             );
-            let mut state = state;
-            state.write().page = Page::Rewards;
-            start_reward_poll(state, 6, Uuid::from_u128(20));
+            start_reward_poll(state, 6, ids.clone(), Page::Dashboard);
             assert!(state.read().reward_poll.is_none(), "stale session");
             rsx! {}
         }
         VirtualDom::new(check).rebuild_in_place();
+    }
+
+    fn reward(n: u128, is_sign: Option<bool>, auth: &str, last: Option<&str>) -> RewardSetting {
+        RewardSetting {
+            id: Uuid::from_u128(n),
+            game_kind: "genshin".to_owned(),
+            enabled: false,
+            local_time: "06:00".to_owned(),
+            auth_status: auth.to_owned(),
+            next_run_at: None,
+            last_run: last.map(|state| crate::models::LastRun {
+                id: Uuid::from_u128(n + 100),
+                state: state.to_owned(),
+                ended_at: None,
+            }),
+            is_sign,
+            total_sign_day: None,
+            today_award: None,
+            last_checked_at: None,
+            error_code: None,
+            error_at: None,
+        }
+    }
+
+    #[test]
+    fn claim_now_runs_unclaimed_eligible_games_and_explains_otherwise() {
+        let id = Uuid::from_u128;
+        let open = reward(1, Some(false), "ready", None);
+        let done = reward(2, Some(true), "ready", Some("success"));
+        assert_eq!(
+            run_all_targets(&[open.clone(), done.clone()], true),
+            RunAll::Ready(vec![id(1)])
+        );
+        assert_eq!(
+            run_all_targets(std::slice::from_ref(&open), false),
+            RunAll::Blocked("rewards.reward_posting_unavailable")
+        );
+        assert_eq!(
+            run_all_targets(std::slice::from_ref(&done), true),
+            RunAll::Blocked("rewards.all_claimed_today")
+        );
+        assert_eq!(
+            run_all_targets(
+                &[reward(3, Some(false), "ready", Some("running")), done],
+                true
+            ),
+            RunAll::Blocked("rewards.run_in_progress")
+        );
+        assert_eq!(
+            run_all_targets(&[reward(4, None, "ready", Some("unknown"))], true),
+            RunAll::Blocked("rewards.run_outcome_unknown")
+        );
+        assert_eq!(
+            run_all_targets(&[reward(5, Some(false), "action_required", None)], true),
+            RunAll::Blocked("rewards.run_needs_link_check")
+        );
+        assert_eq!(
+            run_all_targets(&[], true),
+            RunAll::Blocked("common.not_fetched")
+        );
+        // Automation OFF never blocks a manual claim.
+        assert!(run_eligible("ready", Some("failed")));
+        assert!(!run_eligible("ready", Some("retry_wait")));
     }
 
     #[test]

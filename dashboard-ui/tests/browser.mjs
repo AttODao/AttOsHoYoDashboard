@@ -26,13 +26,14 @@ let failCreate=false,adminDeletes=0,loginFailureStatus=0,failPatch=false,passkey
 const rewardPatches=[];
 const avatarIcon='https://act-webstatic.hoyoverse.com/game_record/genshin/character_side_icon/synthetic.png';
 const itemIcon='https://act-upload.hoyolab.com/game_record/hkrpg/item_icon/synthetic.png';
+const awardIcon='https://fastcdn.hoyoverse.com/static-resource-v2/synthetic-award.png';
 const validGenerated=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{24}$/.test(value);
 const loginGate=new Promise(resolve=>{allowLogin=resolve;});
 const settingsGate=new Promise(resolve=>{allowSettings=resolve;});
 const counts=new Map();const failures=[];
 const accounts=[{id:uid(3),visible:false,detected:true,game_uid:'600000003'},{id:uid(4),visible:true,detected:false,game_uid:'600000004'},{id:uid(5),visible:true,detected:true,game_uid:'600000005'}].map(a=>({...a,hoyolab_account_id:uid(2),game_kind:'genshin',region:'os_usa',last_detected_at:new Date().toISOString()}));
 accounts.push(...[{id:uid(6),game_kind:'genshin',game_uid:'600000006'},{id:uid(7),game_kind:'starrail',game_uid:'700000007'},{id:uid(8),game_kind:'starrail',game_uid:'700000008'}].map(a=>({...accounts[2],...a})));
-const rewardSettings=['genshin','starrail'].map((game_kind,i)=>({id:uid(20+i),game_kind,enabled:false,local_time:'06:00',auth_status:'ready',next_run_at:null,last_run:null,is_sign:!!i,last_checked_at:new Date().toISOString(),error_code:null,error_at:null}));
+const rewardSettings=['genshin','starrail'].map((game_kind,i)=>({id:uid(20+i),game_kind,enabled:false,local_time:'06:00',auth_status:'ready',next_run_at:null,last_run:null,is_sign:!!i,total_sign_day:12+i,today_award:i?null:{name:'Primogem',count:20,icon:awardIcon},last_checked_at:new Date().toISOString(),error_code:null,error_at:null}));
 const hoursAgo=h=>new Date(Date.now()-h*3600e3).toISOString();
 // Backend error codes (gateway::error_code) must never be rendered raw in settings.
 const rewardRuns=[{id:uid(40),setting_id:uid(20),game_kind:'genshin',trigger:'scheduled',state:'failed',created_at:hoursAgo(20),ended_at:hoursAgo(19.9),attempt_count:1,attempts:[{number:1,outcome:'failed',error_code:'http:503',started_at:hoursAgo(20),finished_at:hoursAgo(19.9)}]}];
@@ -111,7 +112,7 @@ const server=http.createServer(async(req,res)=>{
    // 7h 12m minus a few seconds: the countdown rounds up to the displayed minute.
    if(account&&statusMode==='recovering')return json(res,{...account,data:{current_stamina:150,max_stamina:300,stamina_full_at:new Date(Date.now()+(7*3600+12*60-5)*1000).toISOString()},fetched_at:new Date().toISOString(),error_code:null,error_at:null,stale:false});
    if(account&&statusMode==='stale')return json(res,{...account,data:{current_stamina:5,max_stamina:300},fetched_at:new Date(Date.now()-6*3600e3-60e3).toISOString(),error_code:'http:503',error_at:new Date().toISOString(),stale:true});
-   if(account){assert.ok(account.visible&&account.detected);return json(res,{...account,data:account.game_kind==='genshin'?{current_resin:actor===user?(account.id===uid(5)?0:31):77,max_resin:200,finished_task_num:0,total_task_num:4,resin_full_at:account.id===uid(5)?'2026-10-17T12:38:00Z':'invalid-date',current_home_coin:510,max_home_coin:2400,home_coin_full_at:'2026-10-19T08:38:40Z',expeditions:[{status:'Ongoing',remained_time:'30354',avatar_side_icon:avatarIcon},{status:'Finished',remained_time:'0',avatar_side_icon:avatarIcon}]}:{current_stamina:account.id===uid(7)?12:24,max_stamina:300,stamina_full_at:account.id===uid(7)?'2026-10-17T16:52:31Z':null,expeditions:account.id===uid(7)?[{name:'Synthetic assignment',status:'Ongoing',remaining_time:1200,item_url:itemIcon}]:[]},fetched_at:new Date().toISOString(),error_code:null,error_at:null,stale:false});}
+   if(account){assert.ok(account.visible&&account.detected);return json(res,{...account,data:account.game_kind==='genshin'?{current_resin:actor===user?(account.id===uid(5)?0:31):77,max_resin:200,finished_task_num:0,total_task_num:4,resin_full_at:account.id===uid(5)?'2026-10-17T12:38:00Z':'invalid-date',current_home_coin:510,max_home_coin:2400,home_coin_full_at:'2026-10-19T08:38:40Z',remain_resin_discount_num:2,resin_discount_num_limit:3,max_expedition_num:5,transformer_obtained:true,transformer_ready:true,expeditions:[{status:'Ongoing',remained_time:'30354',avatar_side_icon:avatarIcon},{status:'Finished',remained_time:'0',avatar_side_icon:avatarIcon}]}:{current_stamina:account.id===uid(7)?12:24,max_stamina:300,weekly_cocoon_cnt:1,weekly_cocoon_limit:3,current_rogue_score:2000,max_rogue_score:14000,stamina_full_at:account.id===uid(7)?'2026-10-17T16:52:31Z':null,expeditions:account.id===uid(7)?[{name:'Synthetic assignment',status:'Ongoing',remaining_time:1200,item_url:itemIcon}]:[]},fetched_at:new Date().toISOString(),error_code:null,error_at:null,stale:false});}
    if(p==='/api/v1/reward-settings'){
     assert.equal(req.method,'GET');
     // Each read after an accepted manual run advances it one state, like the worker would.
@@ -138,12 +139,12 @@ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));origin=`http://
 let browser,page,stage='login';const errors=[];
 try{
  browser=await chromium.launch({headless:true,args:['--no-sandbox']});
- const context=await browser.newContext({viewport:{width:1280,height:900},timezoneId:'Asia/Tokyo',reducedMotion:process.argv.includes('--normal-motion')?'no-preference':'reduce'});
+ const context=await browser.newContext({viewport:{width:1280,height:900},timezoneId:'Asia/Tokyo',colorScheme:'dark',reducedMotion:process.argv.includes('--normal-motion')?'no-preference':'reduce'});
  context.setDefaultTimeout(10000);
  await context.addInitScript(()=>{if(!localStorage.getItem('ahd-language'))localStorage.setItem('ahd-language','en');});
  await context.route('**/*',route=>{
   const url=route.request().url();
-  if(url===avatarIcon||url===itemIcon)return route.fulfill({status:200,contentType:'image/png',body:fs.readFileSync(path.join(root,'dashboard-ui/assets/favicon.png'))});
+  if(url===avatarIcon||url===itemIcon||url===awardIcon)return route.fulfill({status:200,contentType:'image/png',body:fs.readFileSync(path.join(root,'dashboard-ui/assets/favicon.png'))});
   return new URL(url).origin===origin?route.continue():route.abort();
  });
  page=await context.newPage();
@@ -234,7 +235,7 @@ try{
   for(const [username,password] of [['synthetic-missing-user','synthetic-password-123'],[user.username,'synthetic-wrong-password']]){
    await page.locator('#login-username').fill(username);await page.locator('#login-password').fill(password);
    await button(language==='ja'?'ログイン':'Sign in').click();
-   await page.locator('.status.error').getByText(language==='ja'?'ユーザー名かパスワードが違います':'The username or password is incorrect.',{exact:true}).waitFor();
+   await page.locator('.status.error').getByText(language==='ja'?'ユーザー名かパスワードが違います。':'The username or password is incorrect.',{exact:true}).waitFor();
    await idle();assert.equal(await page.locator('#login-username').count(),1);
    assert.equal(await page.locator('#login-username').inputValue(),username,'a failed sign-in keeps the username');
    assert.ok(await page.locator('#login-password').evaluate(e=>e.value===''),'a failed sign-in clears the password');
@@ -323,7 +324,15 @@ try{
  assert.equal(await button('Sync UIDs').getAttribute('aria-describedby'),'hoyolab-sync-hint');
  assert.equal(await page.locator('#hoyolab-sync-hint').innerText(),'Sync UIDs becomes available after verification.');
  assert.equal(await page.getByText('Available',{exact:true}).count(),0,'no unexplained availability metric');
+ // A Cookie missing a required name is caught before it is sent.
  await page.locator('#hoyolab-cookie').fill('ltuid_v2=123; ltoken_v2=synthetic-browser-token');
+ await button('Save').click();
+ assert.equal(await page.locator('#hoyolab-cookie-error').innerText(),'These Cookies are missing: ltmid_v2');
+ assert.equal(await page.locator('#hoyolab-cookie').getAttribute('aria-invalid'),'true');
+ assert.equal(await page.locator('#hoyolab-cookie').getAttribute('aria-describedby'),'hoyolab-cookie-help hoyolab-cookie-error');
+ assert.equal(counts.get('/api/v1/me/hoyolab/cookie')||0,0,'an incomplete Cookie is not sent');
+ await page.locator('#hoyolab-cookie').fill('ltuid_v2=123; ltoken_v2=synthetic-browser-token; ltmid_v2=synthetic-mid');
+ assert.equal(await page.locator('#hoyolab-cookie-error').count(),0,'a complete Cookie clears the error');
  const cookieField=await page.locator('#hoyolab-cookie').elementHandle();
  const meBeforeSave=counts.get('/api/v1/me');
  await button('Save').click();await idle();
@@ -337,7 +346,7 @@ try{
  assert.ok(await cookieField.evaluate(e=>e.isConnected),'refreshing the gate keeps the setup form mounted (no Loading screen)');
  await cookieField.dispose();
  await button('Verify').click();await dashboard();
- await page.locator('.status.success').getByText('Verification response received.',{exact:true}).waitFor();
+ await page.locator('.status.success').getByText('Verified; game accounts are synced.',{exact:true}).waitFor();
  assert.equal(counts.get('/api/v1/me/hoyolab/verify'),1);
  stage='dashboard';
  // Dark desktop renders both real game cards, not a screenshot fixture.
@@ -349,8 +358,16 @@ try{
  assert.equal(await genshin.locator('time.recovery-at').innerText(),'10/17 21:38 JST');
  assert.equal(await starrail.locator('time.recovery-at').innerText(),'10/18 01:52 JST','local date rollover uses 24-hour time');
  assert.match(await genshin.locator('time.recovery-at').evaluate(e=>getComputedStyle(e).fontFamily),/Orbitron/);
- assert.equal(await genshin.locator('.recovery-in').innerText(),'Fully recovered','a passed estimate is not a negative countdown');
- assert.doesNotMatch(await genshin.locator('.recovery-in').evaluate(e=>getComputedStyle(e).fontFamily),/Orbitron/);
+ assert.equal(await genshin.locator('.recovery-in').first().innerText(),'Fully recovered','a passed estimate is not a negative countdown');
+ assert.doesNotMatch(await genshin.locator('.recovery-in').first().evaluate(e=>getComputedStyle(e).fontFamily),/Orbitron/);
+ assert.equal(await genshin.locator('.recovery-in').nth(1).innerText(),'At cap','a passed currency estimate states the cap, not recovery');
+ // Freshness is always visible beside Refresh; weekly allowances and the transformer show beside dailies.
+ assert.equal(await genshin.locator('.freshness').innerText(),'Updated just now');
+ assert.equal(await genshin.locator('.metric').filter({hasText:'Weekly boss discounts'}).locator('dd').innerText(),'2/3 left');
+ assert.equal(await genshin.locator('.metric').filter({hasText:'Parametric Transformer'}).locator('dd').innerText(),'Ready');
+ assert.equal(await starrail.locator('.metric').filter({hasText:'Echo of War'}).locator('dd').innerText(),'1/3 left');
+ assert.equal(await starrail.locator('.metric').filter({hasText:'Simulated Universe'}).locator('dd').innerText(),'2000/14000');
+ assert.equal(await genshin.locator('.expeditions-heading .muted').innerText(),'1/5 done');
  // Card order: UID, primary resource with full recovery, other stats, then the login bonus.
  for(const panel of [genshin,starrail]){
   const order=await panel.evaluate(card=>['.uid-select','.resource','.recovery-at','.metrics','.bonus-section'].map(selector=>card.querySelector(selector)).map((node,i,nodes)=>i===0||Boolean(nodes[i-1].compareDocumentPosition(node)&Node.DOCUMENT_POSITION_FOLLOWING)));
@@ -379,9 +396,9 @@ try{
  assert.equal(await page.locator('#selected-genshin option').count(),2);
  assert.equal(await page.locator('#selected-starrail option').count(),2);
  assert.ok(await genshin.locator('.status-metadata').isHidden(),'technical data is collapsed by default');
- await genshin.getByText('Data details',{exact:true}).click();
+ await genshin.getByText('Fetch details',{exact:true}).click();
  assert.ok(await genshin.locator('.status-metadata').isVisible(),'all stored metadata stays available');
- await genshin.getByText('Data details',{exact:true}).click();
+ await genshin.getByText('Fetch details',{exact:true}).click();
  for(const n of [3,4])assert.equal(counts.get('/api/v1/game-accounts/'+uid(n)+'/status')||0,0);
  await page.locator('#selected-genshin').selectOption(uid(6));
  await genshin.locator('.resource strong').getByText('31',{exact:true}).waitFor();
@@ -446,12 +463,13 @@ try{
  await openMenu();await page.mouse.click(10,100);await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});
  await openMenu();
  const darkToken=await page.locator('html').evaluate(e=>getComputedStyle(e).getPropertyValue('--canvas'));
- await drawer.getByRole('switch',{name:'Dark mode',exact:true}).click();
- await page.waitForFunction(()=>document.documentElement.dataset.theme==='light');
+ assert.equal(await drawer.getByRole('combobox',{name:'Theme',exact:true}).inputValue(),'system','a first visit follows the system color scheme');
+ await drawer.getByRole('combobox',{name:'Theme',exact:true}).selectOption('light');
+ await page.waitForFunction(()=>document.documentElement.dataset.theme==='light'&&document.getElementById('theme-color')?.content==='#F5F4F8');
  assert.notEqual(await page.locator('html').evaluate(e=>getComputedStyle(e).getPropertyValue('--canvas')),darkToken);
  await drawer.getByRole('combobox',{name:'Language',exact:true}).selectOption('ja');
  await page.waitForFunction(()=>document.documentElement.lang==='ja'&&localStorage.getItem('ahd-language')==='ja');
- await drawer.getByRole('switch',{name:'ダークモード',exact:true}).waitFor();
+ await drawer.getByRole('combobox',{name:'テーマ',exact:true}).waitFor();
  assert.equal(await drawer.getAttribute('aria-label'),'アカウントメニュー');
  assert.equal(await page.locator('#ahd-menu-trigger').getAttribute('aria-label'),'メニューを開く');
  assert.equal(await drawer.getByRole('combobox',{name:'言語',exact:true}).inputValue(),'ja');
@@ -463,11 +481,11 @@ try{
  assert.equal(await page.locator('html').getAttribute('data-theme'),'light','theme persists across reload (DOM only)');
  assert.equal(await page.locator('html').getAttribute('lang'),'ja');
  await openMenu();await drawer.getByRole('combobox',{name:'言語',exact:true}).selectOption('en');
- await drawer.getByRole('switch',{name:'Dark mode',exact:true}).waitFor();
+ await drawer.getByRole('combobox',{name:'Theme',exact:true}).waitFor();
  assert.equal(await drawer.getAttribute('aria-label'),'Account menu');
  assert.equal(await page.locator('#ahd-menu-trigger').getAttribute('aria-label'),'Open menu');
  assert.equal(await drawer.getByRole('combobox',{name:'Language',exact:true}).inputValue(),'en');
- await drawer.getByRole('switch',{name:'Dark mode',exact:true}).click();
+ await drawer.getByRole('combobox',{name:'Theme',exact:true}).selectOption('dark');
  await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark'&&localStorage.getItem('ahd-theme')==='dark');
  await page.keyboard.press('Escape');await dashboard();
  // Mobile ARIA tabs: hidden panel, roving focus and keyboard edges.
@@ -515,8 +533,17 @@ try{
  await settings('link');
  const syncsBefore=counts.get('/api/v1/me/hoyolab/sync')||0;
  await button('Sync UIDs').click();await idle();
- await page.locator('.status.success').getByText('Sync response received.',{exact:true}).waitFor();
+ await page.locator('.status.success').getByText('UIDs synced. Choose new UIDs to show under Game display.',{exact:true}).waitFor();
  assert.equal(counts.get('/api/v1/me/hoyolab/sync'),syncsBefore+1);
+ assert.equal(await page.title(),'Link – AHD','the tab names the page');
+ // Removing the Cookie asks first; cancelling sends nothing.
+ await button('Remove Cookie').click();
+ const removeDialog=page.locator('#remove-cookie-dialog');
+ await removeDialog.waitFor();
+ assert.ok((await removeDialog.innerText()).includes('automatic claiming turns OFF'));
+ await removeDialog.getByRole('button',{name:'Cancel',exact:true}).click();
+ await removeDialog.waitFor({state:'detached'});
+ assert.equal(counts.get('/api/v1/me/hoyolab/cookie'),1,'cancelled removal sends no request');
  await page.locator('#settings-tab-link[aria-selected=true]').waitFor();
  await page.locator('#settings-tab-uids').click();await idle();
  const visibleBox=page.locator('#account-visible-'+uid(5));
@@ -529,54 +556,76 @@ try{
  await settings('bonus');
  assert.equal(await page.locator('.settings-tabs [role=tab]').count(),5);
  assert.equal(await page.locator('#settings-panel').getAttribute('aria-labelledby'),'settings-tab-bonus');
- assert.equal(await page.locator('#settings-panel input[type=time],#settings-panel input[type=checkbox]').count(),0);
+ assert.equal(await page.locator('#settings-panel input[type=time]').count(),0);
+ assert.equal(await page.locator('#settings-panel input[role=switch]').count(),2,'each game has its automatic claiming switch here too');
+ assert.ok(await button('Save time').first().isDisabled(),'nothing to save before a change');
  assert.equal(await page.locator('#settings-panel hr.divider').count(),1,'history is separated from bonus settings');
  assert.equal(await page.locator('#reward-hour-'+uid(20)+' option').count(),24);
  assert.equal(await page.locator('#reward-minute-'+uid(20)+' option').count(),60);
  assert.ok((await page.locator('.timezone').first().innerText()).includes('+09:00'));
  await page.locator('#reward-hour-'+uid(20)).selectOption('07');
  await page.locator('#reward-minute-'+uid(20)).selectOption('13');
- await button('Save').first().click();await idle();
+ await page.locator('#reward-unsaved-'+uid(20)).getByText('The time change is not saved yet.',{exact:true}).waitFor();
+ await button('Save time').first().click();await idle();
  assert.deepEqual(rewardPatches.at(-1),{id:uid(20),enabled:true,local_time:'07:13'});
- await button('Save').nth(1).click();await idle();
- assert.deepEqual(rewardPatches.at(-1),{id:uid(21),enabled:false,local_time:'06:00'},'schedule preserves OFF too');
+ assert.equal(await page.locator('#reward-unsaved-'+uid(20)).count(),0,'saving clears the unsaved note');
+ await page.locator('#reward-minute-'+uid(21)).selectOption('05');
+ await button('Save time').nth(1).click();await idle();
+ assert.deepEqual(rewardPatches.at(-1),{id:uid(21),enabled:false,local_time:'06:05'},'schedule preserves OFF too');
+ // Discarding returns to the stored time without a request.
+ const patchesBeforeDiscard=rewardPatches.length;
+ await page.locator('#reward-hour-'+uid(21)).selectOption('09');
+ await button('Discard change').click();
+ assert.equal(await page.locator('#reward-hour-'+uid(21)).inputValue(),'06');
+ assert.equal(rewardPatches.length,patchesBeforeDiscard);
+ assert.equal(await page.locator('#reward-day-note').innerText(),'The login bonus day changes at 01:00 server time. A time between 0:00 and 01:00 claims the previous day\'s bonus.');
  // Settings show compact local times and localized errors, never raw ISO strings or codes.
  const iso=/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
  const bonusText=await page.locator('#settings-panel').innerText();
  assert.doesNotMatch(bonusText,iso);assert.match(bonusText,/\d{2}\/\d{2} \d{2}:\d{2} JST/);
  assert.ok(bonusText.includes('HoYoLAB is temporarily unavailable')&&!bonusText.includes('http:503'),'run history maps error codes');
- const runState=page.locator('#reward-run-state-'+uid(20));
- assert.equal(await runState.innerText(),'Last run: Never');
+ assert.equal(await button('Run now').count(),0,'manual claiming lives in one dashboard control');
+ await page.locator('#history-game').selectOption('starrail');
+ await page.getByText('No runs returned for the last 5 days.',{exact:true}).waitFor();
+ await page.locator('#history-game').selectOption('');
+ assert.equal(await page.locator('#reward-run-state-'+uid(20)).innerText(),'Last run: Never');
+ // One dashboard control claims every game still open today, then follows by GET only.
+ await page.locator('a.wordmark').click();await dashboard();
+ const claim=button('Claim login bonuses now');
+ assert.equal(await page.title(),'Dashboard – AHD');
+ assert.equal(await page.locator('a.skip-link').getAttribute('href'),'#main');
+ assert.equal(await genshin.locator('.award').innerText(),'Next reward: Primogem ×20');
+ assert.match(await genshin.locator('.bonus-today').innerText(),/^Today: Not received · Day 12 this month$/);
+ await page.waitForLoadState('networkidle');
  const settingsReads=counts.get('/api/v1/reward-settings');
- await button('Run now').first().click();await idle();
+ await claim.click();await idle();
  await page.getByText('Run accepted; queued, not completed.',{exact:true}).waitFor();
- assert.ok(await button('Run now').first().isDisabled());
- assert.match(await runState.innerText(),/^Last run: Queued · Checking automatically…$/);
- // The 202 is followed by GET polling only, until the run settles.
- await runState.getByText('Running',{exact:true}).waitFor();
- await runState.getByText('Success',{exact:true}).waitFor();
+ assert.equal(counts.get('/api/v1/reward-settings/'+uid(21)+'/run')||0,0,'an already claimed game is not run');
+ await page.locator('.claim-now').getByText('Checking automatically…',{exact:true}).waitFor();
+ assert.ok(await claim.isDisabled());
  await page.locator('.live-region').getByText('Manual run finished: the login bonus was claimed.',{exact:true}).waitFor();
- assert.doesNotMatch(await runState.innerText(),/Checking automatically/);
- assert.match(await runState.innerText(),/^Last run: Success · \d{2}\/\d{2} \d{2}:\d{2} JST$/);
- assert.equal(counts.get('/api/v1/reward-settings')-settingsReads,3,'one read after the POST, then two polls');
+ // One read after the POST and two polls; the dashboard's minute refresh may add one more.
+ const pollReads=counts.get('/api/v1/reward-settings')-settingsReads;
+ assert.ok(pollReads>=3&&pollReads<=4,'one read after the POST, then two polls');
  assert.equal(counts.get('/api/v1/reward-settings/'+uid(20)+'/run'),1,'polling never re-sends the run');
  // Leaving the page stops a poll for a run that does not settle.
  runPlan=['queued'];
- await button('Run now').first().click();await idle();
- await runState.getByText('Queued',{exact:true}).waitFor();
- await page.locator('#settings-tab-link').click();await idle();
+ await claim.click();await idle();
+ await page.locator('.claim-now').getByText('Checking automatically…',{exact:true}).waitFor();
+ await settings('link');
  const readsAfterLeave=counts.get('/api/v1/reward-settings');
  await page.waitForTimeout(4000);
- assert.equal(counts.get('/api/v1/reward-settings'),readsAfterLeave,'no polling after leaving the bonus page');
+ assert.equal(counts.get('/api/v1/reward-settings'),readsAfterLeave,'no polling after leaving the dashboard');
  assert.doesNotMatch(await page.locator('#settings-panel').innerText(),iso,'HoYoLAB link times are formatted');
  await page.locator('#settings-tab-uids').click();await idle();
  assert.doesNotMatch(await page.locator('#settings-panel').innerText(),iso,'UID detection times are formatted');
- await page.locator('#settings-tab-bonus').click();await idle();
  assert.equal(counts.get('/api/v1/reward-settings/'+uid(20)+'/run'),2);
  rewardSettings[0].last_run={id:uid(30),state:'unknown',ended_at:null};
- await button('Refresh').click();await idle();
- await page.getByText('Unknown outcome',{exact:true}).waitFor();
- assert.ok(await button('Run now').first().isDisabled(),'unknown acknowledgement is not safe to retry');
+ await page.locator('a.wordmark').click();await dashboard();
+ await page.locator('#claim-now-hint').getByText('The last outcome is unconfirmed, so it cannot run again. Check the run history.',{exact:true}).waitFor();
+ assert.ok(await claim.isDisabled(),'unknown acknowledgement is not safe to retry');
+ assert.equal(await claim.getAttribute('aria-describedby'),'claim-now-hint');
+ await settings('bonus');
  await page.locator('#settings-tab-bonus').focus();await page.keyboard.press('End');
  await page.locator('#delete-password').waitFor();
  const consequences=await page.locator('#delete-consequences').innerText();

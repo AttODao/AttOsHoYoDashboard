@@ -7,9 +7,9 @@ use super::hoyolab::LinkPage;
 use super::rewards::RewardsPage;
 use super::security::SecurityPage;
 use crate::app::actions::spawn_action;
-use crate::app::preferences::{Preferences, Theme, use_preferences};
+use crate::app::preferences::{Preferences, use_preferences};
 use crate::app::session::logout;
-use crate::app::state::{AppState, Page, set_page};
+use crate::app::state::{AppState, Page, clear_status, set_page};
 use crate::i18n::Language;
 use dioxus::prelude::*;
 
@@ -37,8 +37,9 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
     let page = state.read().page;
     let is_settings = SETTINGS.iter().any(|(p, ..)| *p == page);
     rsx! {
+        a { class: "skip-link", href: "#main", {ui.text("shell.skip_to_content")} }
         Header { state }
-        main { class: "container",
+        main { class: "container", id: "main", tabindex: "-1",
             Status { state }
             if is_settings {
                 div { class: "page-intro",
@@ -142,16 +143,20 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
                     if me.as_ref().is_some_and(|me| me.is_admin) {
                         button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Admin); }, Icon { name: "user" } {ui.text("shell.administration")} }
                     }
+                    button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Docs); }, Icon { name: "docs" } {ui.text("docs.title")} }
                     div { class: "menu-logout-group",
                         button { class: "menu-logout", r#type: "button", onclick: move |_| { open.set(false); spawn_action(state, move |generation| async move { logout(state, generation).await; }); }, Icon { name: "logout" } {ui.text("shell.sign_out")} }
                     }
                 }
                 div { class: "menu-preferences",
-                    button { class: "mode-switch", r#type: "button", role: "switch", "aria-label": ui.text("shell.dark_mode"),
-                        "aria-checked": (ui.theme == Theme::Dark).to_string(), onclick: move |_| {
-                            let next = if preferences.read().theme == Theme::Dark { Theme::Light } else { Theme::Dark }; preferences.write().theme = next;
-                        },
-                        span { {ui.text("shell.dark_mode")} } span { class: "mode-track", span { class: "mode-thumb" } }
+                    div { class: "language-options",
+                        label { r#for: "menu-theme", {ui.text("shell.theme")} }
+                        select { id: "menu-theme", value: ui.theme_code(),
+                            onchange: move |event| preferences.write().theme = Preferences::theme_from_code(&event.value()),
+                            option { value: "system", {ui.text("shell.theme_system")} }
+                            option { value: "dark", {ui.text("shell.theme_dark")} }
+                            option { value: "light", {ui.text("shell.theme_light")} }
+                        }
                     }
                     div { class: "language-options",
                         label { r#for: "menu-language", {ui.text("shell.language")} }
@@ -175,8 +180,19 @@ pub(super) fn Status(state: Signal<AppState>) -> Element {
         .status
         .clone()
         .filter(|status| status.message_key != "messages.please_sign_in");
+    // Errors stay until dismissed; success and info lines clear themselves (see set_status).
     rsx! { div { class: "live-region", role: "status", "aria-live": "polite",
-        if let Some(status) = status { p { class: "status {status.kind}", {ui.text(status.message_key)} } }
+        if let Some(status) = status {
+            div { class: "status {status.kind}",
+                p { {ui.text(status.message_key)} }
+                if status.kind == "error" {
+                    button { class: "icon-button status-dismiss", r#type: "button", "aria-label": ui.text("shell.dismiss_message"),
+                        onclick: move |_| clear_status(state),
+                        Icon { name: "close" }
+                    }
+                }
+            }
+        }
     } }
 }
 

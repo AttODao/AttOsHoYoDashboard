@@ -136,6 +136,7 @@ pub(super) fn signed_out(mut state: Signal<AppState>, message_key: &'static str)
     next.status = Some(StatusLine {
         message_key,
         kind: "info",
+        serial: 0,
     });
     state.set(next);
 }
