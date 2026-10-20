@@ -14,10 +14,11 @@ use tokio::task::JoinSet;
 use uuid::Uuid;
 
 const SCHEDULE_RETRY: Duration = Duration::minutes(1);
+/// A schedule picked up later than this (downtime, deferral) is recorded as a catch-up run.
+const ON_TIME_WINDOW: Duration = Duration::minutes(5);
 
 impl<G: Gateway> Rewards<G> {
     pub(in crate::dashboard) async fn tick(&self) -> Result<()> {
-        self.cleanup_history().await?;
         self.enqueue_due_schedules().await?;
         let runs = reward_run::Entity::find()
             .filter(reward_run::Column::State.is_in(["pending", "running", "retry_wait"]))
@@ -100,13 +101,13 @@ impl<G: Gateway> Rewards<G> {
             .one(&tx)
             .await?
             .ok_or(Error::NotFound)?;
-        if !setting.enabled
-            || setting.auth_status != "ready"
-            || setting.next_run_at.is_none_or(|due| due > now)
-        {
+        let Some(due) = setting
+            .next_run_at
+            .filter(|due| setting.enabled && setting.auth_status == "ready" && *due <= now)
+        else {
             tx.commit().await?;
             return Ok(());
-        }
+        };
         let next = schedule::next_due(now, &setting.local_time, self.store.timezone)?;
         let guard = reward_guard::Entity::find_by_id(setting.id)
             .one(&tx)
@@ -116,7 +117,12 @@ impl<G: Gateway> Rewards<G> {
         row.next_run_at = Set(ready.as_ref().map(|_| next));
         row.update(&tx).await?;
         if let Some(link) = ready.filter(|_| !unresolved) {
-            let _ = enqueue_in(&tx, &setting, link.credential_version, "catchup").await?;
+            let trigger = if now - due <= ON_TIME_WINDOW {
+                "scheduled"
+            } else {
+                "catchup"
+            };
+            let _ = enqueue_in(&tx, &setting, link.credential_version, trigger).await?;
         }
         tx.commit().await?;
         Ok(())
@@ -135,7 +141,8 @@ impl<G: Gateway> Rewards<G> {
         Ok(())
     }
 
-    async fn cleanup_history(&self) -> Result<()> {
+    /// Periodic maintenance; the runtime calls it far less often than `tick`.
+    pub(in crate::dashboard) async fn cleanup_history(&self) -> Result<()> {
         let cutoff = Utc::now() - Duration::days(HISTORY_DAYS);
         // Preserve interrupted work for confirmation; the attempts FK handles completed history cleanup.
         reward_run::Entity::delete_many()

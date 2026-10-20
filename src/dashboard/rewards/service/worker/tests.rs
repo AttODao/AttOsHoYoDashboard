@@ -241,7 +241,7 @@ async fn interrupted_old_work_is_confirmed_before_history_cleanup() {
             .state,
         "unknown"
     );
-    rewards.tick().await.unwrap();
+    rewards.cleanup_history().await.unwrap();
     assert!(
         reward_run::Entity::find_by_id(run.id)
             .one(&fixture.db)
@@ -462,4 +462,39 @@ async fn schedule_update_waits_for_in_flight_attempt_and_its_stop_is_final() {
     );
     assert_eq!(gateway.daily_calls(), 0);
     assert_eq!(gateway.sign_calls(), 0);
+}
+#[tokio::test]
+async fn on_time_and_late_schedules_record_distinct_triggers() {
+    let fixture = TestDatabase::new().await;
+    let key = key();
+    let mut settings = vec![];
+    for (name, uid, late) in [
+        ("ontime", "201", Duration::seconds(10)),
+        ("late", "202", Duration::hours(3)),
+    ] {
+        let actor = ready_identity(&fixture.db, name).await;
+        let link = verified_link(&fixture.db, &key, actor.user.id, uid).await;
+        let setting = setting(&fixture.db, link.id, "genshin", true).await;
+        let mut row = setting.into_active_model();
+        row.next_run_at = Set(Some(Utc::now() - late));
+        settings.push(row.update(&fixture.db).await.unwrap());
+    }
+    let claimed = || {
+        Ok(DailyState {
+            is_sign: true,
+            total_sign_day: 1,
+        })
+    };
+    let gateway = MockGateway::new([claimed(), claimed()], []);
+    let rewards = service(fixture.db.clone(), key, gateway);
+    rewards.tick().await.unwrap();
+    for (setting, expected) in settings.iter().zip(["scheduled", "catchup"]) {
+        let run = reward_run::Entity::find()
+            .filter(reward_run::Column::SettingId.eq(setting.id))
+            .one(&fixture.db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(run.trigger, expected);
+    }
 }

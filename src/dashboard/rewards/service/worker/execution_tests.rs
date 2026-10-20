@@ -400,7 +400,7 @@ async fn guard_from_previous_reward_day_does_not_block_schedule_or_post() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(run.trigger, "catchup");
+    assert_eq!(run.trigger, "scheduled");
     assert_eq!(run.state, "success");
     assert_eq!(run.send_state, "confirmed");
     assert_eq!(gateway.sign_calls(), 1);
@@ -441,6 +441,7 @@ async fn restart_guard_never_posts_and_survives_history_cleanup() {
     let rewards = service(fixture.db.clone(), key, gateway.clone());
 
     rewards.tick().await.unwrap();
+    rewards.cleanup_history().await.unwrap();
 
     let active = reward_run::Entity::find_by_id(active.id)
         .one(&fixture.db)

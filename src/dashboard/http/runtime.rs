@@ -13,6 +13,7 @@ use tokio::{
 use uuid::Uuid;
 
 const DELETION_TASKS: usize = 32;
+const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(60 * 60);
 
 pub(super) async fn run(app: App, stop: watch::Receiver<bool>) {
     tokio::join!(rewards(app.clone(), stop.clone()), deletions(app, stop));
@@ -24,8 +25,19 @@ async fn rewards(app: App, mut stop: watch::Receiver<bool>) {
     let rewards = std::sync::Arc::new(Rewards::new(cookies.clone()));
     let mut timer = interval(Duration::from_secs(1));
     timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    let mut maintenance = interval(MAINTENANCE_INTERVAL);
+    maintenance.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
-        tokio::select! {_=stop.changed()=>break,_=timer.tick()=>{}}
+        tokio::select! {
+            _ = stop.changed() => break,
+            _ = maintenance.tick() => {
+                if let Err(error) = rewards.cleanup_history().await {
+                    tracing::error!(error = %error, "reward history cleanup failed");
+                }
+                continue;
+            }
+            _ = timer.tick() => {}
+        }
         if let Err(error) = rewards.tick().await {
             tracing::error!(error=%error,"reward worker failed");
         }
