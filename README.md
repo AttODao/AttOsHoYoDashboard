@@ -102,7 +102,7 @@ HTTPSリバースプロキシから `http://127.0.0.1:8080` へパスを保持�
 | `/` | セッション確認後、未ログインなら `/login`、ログイン済みなら `/dashboard` |
 | `/login` / `/dashboard` | ログイン／ダッシュボード。初期設定未完了時は設定ゲートを表示 |
 | `/settings` | `/settings/games` へ308転送 |
-| `/settings/games` / `/settings/bonus` / `/settings/link` / `/settings/security` / `/settings/delete` | 各設定画面（認証必須） |
+| `/settings/games` / `/settings/bonus` / `/settings/link` / `/settings/security` / `/settings/notifications` / `/settings/delete` | 各設定画面（認証必須） |
 | `/admin` | 管理者画面（管理者権限必須） |
 | `/docs` / `/openapi.json` | API仕様の閲覧／OpenAPI JSON |
 | `/manifest.webmanifest` | ホーム画面追加用のWebマニフェスト |

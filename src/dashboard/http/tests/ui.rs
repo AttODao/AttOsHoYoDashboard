@@ -46,6 +46,7 @@ async fn compiled_assets_are_public_local_and_hardened() {
         ("/settings/bonus", "text/html"),
         ("/settings/link", "text/html"),
         ("/settings/security", "text/html"),
+        ("/settings/notifications", "text/html"),
         ("/settings/delete", "text/html"),
         ("/admin", "text/html"),
         ("/assets/app.js", "text/javascript"),

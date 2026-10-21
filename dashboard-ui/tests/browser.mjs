@@ -139,7 +139,7 @@ const server=http.createServer(async(req,res)=>{
   if(p==='/openapi.json'){assert.equal(req.method,'GET');counts.set(p,(counts.get(p)||0)+1);return json(res,JSON.parse(fs.readFileSync(path.join(root,'docs/dashboard-api.json'),'utf8')));}
   let file;
   if(p==='/settings'){res.writeHead(308,{'Location':'/settings/games'});return res.end();}
-  if(['/','/login','/dashboard','/settings/games','/settings/bonus','/settings/link','/settings/security','/settings/delete','/admin','/docs'].includes(p)){file=path.join(publicDir,'index.html');res.setHeader('Content-Type','text/html');res.setHeader('Content-Security-Policy',csp);}
+  if(['/','/login','/dashboard','/settings/games','/settings/bonus','/settings/link','/settings/security','/settings/notifications','/settings/delete','/admin','/docs'].includes(p)){file=path.join(publicDir,'index.html');res.setHeader('Content-Type','text/html');res.setHeader('Content-Security-Policy',csp);}
   else if(p.startsWith('/assets/')){file=path.resolve(publicDir,'.'+p);assert.ok(file.startsWith(path.join(publicDir,'assets')+path.sep));res.setHeader('Content-Type',({'.wasm':'application/wasm','.js':'text/javascript','.css':'text/css','.png':'image/png'})[path.extname(file)]||'application/octet-stream');}
   else {res.writeHead(404);return res.end();}
   res.end(fs.readFileSync(file));
@@ -522,6 +522,11 @@ try{
  await page.goBack();await page.locator('#settings-tab-uids[aria-selected=true]').waitFor();await idle();
  await page.goForward();await page.locator('#settings-tab-security[aria-selected=true]').waitFor();await idle();
  await page.reload();await page.locator('#settings-tab-security[aria-selected=true]').waitFor();await idle();
+ // Every settings tab survives a reload, including notifications.
+ await page.locator('#settings-tab-notifications').click();await idle();
+ await page.waitForURL(origin+'/settings/notifications');
+ await page.reload();await page.locator('#settings-tab-notifications[aria-selected=true]').waitFor();await idle();
+ await page.locator('#webhook-url').waitFor();
  await page.locator('a.wordmark').click();await dashboard();
  assert.equal(new URL(page.url()).pathname,'/dashboard');
  assert.equal(new URL(page.url()).hash,'');

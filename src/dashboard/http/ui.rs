@@ -41,6 +41,7 @@ pub(super) fn routes(app: &App) -> Router<App> {
         .route("/settings/bonus", get(index))
         .route("/settings/link", get(index))
         .route("/settings/security", get(index))
+        .route("/settings/notifications", get(index))
         .route("/settings/delete", get(index))
         .route("/admin", get(index))
         .route("/manifest.webmanifest", get(manifest))
