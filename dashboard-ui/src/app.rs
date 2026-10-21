@@ -20,6 +20,13 @@ use pages::{
 use session::{bootstrap, refresh_me};
 use state::{AppState, Page, Phase, current_ready_page, initial_page};
 
+// The push service worker loads at /assets/push-sw.js; keep its filename stable.
+#[used]
+static PUSH_SW: Asset = asset!(
+    "/assets/push-sw.js",
+    AssetOptions::builder().with_hash_suffix(false)
+);
+
 // External CSS uses these fingerprinted filenames; retain them without a second DX suffix.
 #[used]
 static FONT_JP: Asset = asset!(
