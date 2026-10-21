@@ -95,7 +95,11 @@ const server=http.createServer(async(req,res)=>{
    if(p===`/api/v1/me/passkeys/${uid(11)}`&&req.method==='PATCH'){assert.deepEqual(Object.keys(body),['label']);passkeys[0].label=body.label;res.writeHead(204);return res.end();}
    if(p===`/api/v1/me/passkeys/${uid(11)}`){assert.equal(req.method,'DELETE');passkeyDeletes++;passkeys=[];res.writeHead(204);return res.end();}
    if(p==='/api/v1/me/sessions'){assert.equal(req.method,'GET');return json(res,sessions);}
-   if(p===`/api/v1/me/sessions/${uid(51)}`){assert.equal(req.method,'DELETE');sessions=sessions.filter(row=>row.id!==uid(51));res.writeHead(204);return res.end();}
+   if(p==='/api/v1/me/notifications'&&req.method==='GET')return json(res,{webhook_configured:false,webhook_hint:null,webhook_format:'discord',language:'ja',events:{},last_delivery_at:null,last_delivery_ok:null,resin_warn_hours:2,daily_reminder_time:'21:00',weekly_reminder_time:'15:00',push_public_key:null,push_subscriptions:0});
+   if(p==='/api/v1/me/notifications'&&req.method==='PUT'){assert.ok(body.webhook_format);res.writeHead(204);return res.end();}
+   if(p==='/api/v1/admin/notifications'&&req.method==='GET')return json(res,{webhook_configured:false,webhook_hint:null,webhook_format:'discord',language:'ja',events:{},last_delivery_at:null,last_delivery_ok:null});
+   if(p==='/api/v1/admin/notifications'&&req.method==='PUT'){res.writeHead(204);return res.end();}
+      if(p===`/api/v1/me/sessions/${uid(51)}`){assert.equal(req.method,'DELETE');sessions=sessions.filter(row=>row.id!==uid(51));res.writeHead(204);return res.end();}
    if(p==='/api/v1/me/sessions/revoke-others'){assert.equal(req.method,'POST');assert.deepEqual(body,{});const revoked=sessions.filter(row=>!row.current).length;sessions=sessions.filter(row=>row.current);return json(res,{revoked});}
    if(p==='/api/v1/me/passkeys'){if(passkeyHold)await passkeyHold;return json(res,passkeys);}
    if(p==='/api/v1/server-settings'){await settingsGate;return json(res,{timezone_offset:'+09:00',session_ttl_days:7});}
@@ -560,7 +564,7 @@ try{
  failPatch=false;
  // Settings replaces the removed nav/schedule checkbox/input[type=time].
  await settings('bonus');
- assert.equal(await page.locator('.settings-tabs [role=tab]').count(),5);
+ assert.equal(await page.locator('.settings-tabs [role=tab]').count(),6);
  assert.equal(await page.locator('#settings-panel').getAttribute('aria-labelledby'),'settings-tab-bonus');
  assert.equal(await page.locator('#settings-panel input[type=time]').count(),0);
  assert.equal(await page.locator('#settings-panel input[role=switch]').count(),2,'each game has its automatic claiming switch here too');

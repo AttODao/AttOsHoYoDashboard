@@ -4,6 +4,7 @@ use super::common::{Icon, focus_element, use_modal};
 use super::dashboard::DashboardPage;
 use super::deletion::DeletePage;
 use super::hoyolab::LinkPage;
+use super::notifications::NotificationsPage;
 use super::rewards::RewardsPage;
 use super::security::SecurityPage;
 use crate::app::actions::spawn_action;
@@ -13,7 +14,7 @@ use crate::app::state::{AppState, Page, clear_status, set_page};
 use crate::i18n::Language;
 use dioxus::prelude::*;
 
-const SETTINGS: [(Page, &str, &str, &str); 5] = [
+const SETTINGS: [(Page, &str, &str, &str); 6] = [
     (Page::Uids, "uids", "settings.uids", "dashboard.games"),
     (
         Page::Rewards,
@@ -27,6 +28,12 @@ const SETTINGS: [(Page, &str, &str, &str); 5] = [
         "security",
         "settings.security",
         "settings.security",
+    ),
+    (
+        Page::Notifications,
+        "notifications",
+        "settings.notifications",
+        "settings.notifications_short",
     ),
     (Page::Delete, "delete", "settings.delete", "security.delete"),
 ];
@@ -71,6 +78,7 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
                         Page::Rewards => rsx! { RewardsPage { state } },
                         Page::Link => rsx! { LinkPage { state } },
                         Page::Security => rsx! { SecurityPage { state } },
+                        Page::Notifications => rsx! { NotificationsPage { state } },
                         Page::Delete => rsx! { DeletePage { state } },
                         _ => rsx! {},
                     }

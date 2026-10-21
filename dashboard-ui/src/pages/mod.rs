@@ -6,6 +6,7 @@ mod dashboard;
 mod deletion;
 pub(super) mod docs;
 mod hoyolab;
+mod notifications;
 mod rewards;
 mod security;
 pub(super) mod shell;

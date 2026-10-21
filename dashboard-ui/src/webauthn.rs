@@ -332,6 +332,158 @@ fn passkey_error_key(name: &str, registering: bool) -> &'static str {
     }
 }
 
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub async fn subscribe_push(public_key: &str) -> api::Result<()> {
+    subscribe_push_impl(public_key).await
+}
+
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub async fn unsubscribe_push() -> api::Result<()> {
+    unsubscribe_push_impl().await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
+async fn subscribe_push_impl(_: &str) -> api::Result<()> {
+    Err(api::ApiError::browser(
+        "messages.push_available_only_in_a_browser",
+    ))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
+async fn unsubscribe_push_impl() -> api::Result<()> {
+    Err(api::ApiError::browser(
+        "messages.push_available_only_in_a_browser",
+    ))
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn subscribe_push_impl(public_key: &str) -> api::Result<()> {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_futures::JsFuture;
+    let window = web_sys::window()
+        .ok_or_else(|| api::ApiError::browser("messages.push_available_only_in_a_browser"))?;
+    let navigator = window.navigator();
+    // Service worker scope is same-origin and mounted on the UI serving routes.
+    let sw_container = js_sys::Reflect::get(&navigator, &"serviceWorker".into())
+        .ok()
+        .filter(|value| !value.is_undefined() && !value.is_null())
+        .ok_or_else(|| api::ApiError::browser("messages.push_available_only_in_a_browser"))?;
+    let register_promise = js_sys::Reflect::get(&sw_container, &"register".into())
+        .map_err(|_| api::ApiError::browser("messages.push_available_only_in_a_browser"))?
+        .dyn_into::<js_sys::Function>()
+        .map_err(|_| api::ApiError::browser("messages.push_available_only_in_a_browser"))?;
+    let promise: js_sys::Promise = register_promise
+        .call1(&sw_container, &"/assets/push-sw.js".into())
+        .map_err(|_| api::ApiError::browser("messages.push_subscribe_failed"))?
+        .into();
+    let registration = JsFuture::from(promise)
+        .await
+        .map_err(|_| api::ApiError::browser("messages.push_subscribe_failed"))?;
+    let push_manager = js_sys::Reflect::get(&registration, &"pushManager".into())
+        .map_err(|_| api::ApiError::browser("messages.push_subscribe_failed"))?;
+    let options = js_sys::Object::new();
+    js_sys::Reflect::set(&options, &"userVisibleOnly".into(), &true.into()).unwrap();
+    js_sys::Reflect::set(
+        &options,
+        &"applicationServerKey".into(),
+        &decode_base64url(public_key)?,
+    )
+    .unwrap();
+    let subscribe = js_sys::Reflect::get(&push_manager, &"subscribe".into())
+        .map_err(|_| api::ApiError::browser("messages.push_subscribe_failed"))?
+        .dyn_into::<js_sys::Function>()
+        .map_err(|_| api::ApiError::browser("messages.push_subscribe_failed"))?;
+    let subscription = JsFuture::from(
+        subscribe
+            .call1(&push_manager, &options)
+            .map_err(|_| api::ApiError::browser("messages.push_subscribe_failed"))?
+            .dyn_into::<js_sys::Promise>()
+            .map_err(|_| api::ApiError::browser("messages.push_subscribe_failed"))?,
+    )
+    .await
+    .map_err(|_| api::ApiError::browser("messages.push_permission_denied"))?;
+    let json: String = js_sys::JSON::stringify(&subscription)
+        .ok()
+        .and_then(|value| value.as_string())
+        .ok_or_else(|| api::ApiError::browser("messages.push_subscribe_failed"))?;
+    let value: serde_json::Value = serde_json::from_str(&json)
+        .map_err(|_| api::ApiError::browser("messages.push_subscribe_failed"))?;
+    api::send("POST", "/me/notifications/push", Some(value)).await
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn unsubscribe_push_impl() -> api::Result<()> {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_futures::JsFuture;
+    let navigator = web_sys::window()
+        .ok_or_else(|| api::ApiError::browser("messages.push_available_only_in_a_browser"))?
+        .navigator();
+    let sw_container = js_sys::Reflect::get(&navigator, &"serviceWorker".into())
+        .map_err(|_| api::ApiError::browser("messages.push_available_only_in_a_browser"))?;
+    let ready_promise = js_sys::Reflect::get(&sw_container, &"ready".into())
+        .map_err(|_| api::ApiError::browser("messages.push_available_only_in_a_browser"))?
+        .dyn_into::<js_sys::Promise>()
+        .map_err(|_| api::ApiError::browser("messages.push_available_only_in_a_browser"))?;
+    let registration = JsFuture::from(ready_promise)
+        .await
+        .map_err(|_| api::ApiError::browser("messages.push_unsubscribe_failed"))?;
+    let push_manager = js_sys::Reflect::get(&registration, &"pushManager".into())
+        .map_err(|_| api::ApiError::browser("messages.push_unsubscribe_failed"))?;
+    let get_sub = js_sys::Reflect::get(&push_manager, &"getSubscription".into())
+        .map_err(|_| api::ApiError::browser("messages.push_unsubscribe_failed"))?
+        .dyn_into::<js_sys::Function>()
+        .map_err(|_| api::ApiError::browser("messages.push_unsubscribe_failed"))?;
+    let subscription = JsFuture::from(
+        get_sub
+            .call0(&push_manager)
+            .map_err(|_| api::ApiError::browser("messages.push_unsubscribe_failed"))?
+            .dyn_into::<js_sys::Promise>()
+            .map_err(|_| api::ApiError::browser("messages.push_unsubscribe_failed"))?,
+    )
+    .await
+    .ok();
+    if let Some(subscription) =
+        subscription.filter(|value| !value.is_null() && !value.is_undefined())
+    {
+        let endpoint = js_sys::Reflect::get(&subscription, &"endpoint".into())
+            .map_err(|_| api::ApiError::browser("messages.push_unsubscribe_failed"))?
+            .as_string()
+            .unwrap_or_default();
+        if let Ok(unsubscribe) = js_sys::Reflect::get(&subscription, &"unsubscribe".into())
+            .and_then(|v| v.dyn_into::<js_sys::Function>())
+        {
+            let _ = unsubscribe.call0(&subscription);
+        }
+        if !endpoint.is_empty() {
+            return api::send(
+                "DELETE",
+                "/me/notifications/push",
+                Some(serde_json::json!({"endpoint": endpoint})),
+            )
+            .await;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn decode_base64url(text: &str) -> api::Result<wasm_bindgen::JsValue> {
+    let mut normalized = text.replace("-", "+").replace("_", "/");
+    while !normalized.len().is_multiple_of(4) {
+        normalized.push('=');
+    }
+    let window = web_sys::window()
+        .ok_or_else(|| api::ApiError::browser("messages.push_subscribe_failed"))?;
+    let decoded: String = window
+        .atob(&normalized)
+        .map_err(|_| api::ApiError::browser("messages.push_subscribe_failed"))?;
+    let bytes: Vec<u8> = decoded.chars().map(|c| c as u8).collect();
+    let array = js_sys::Uint8Array::from(bytes.as_slice());
+    Ok(array.into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -219,6 +219,35 @@ pub struct RewardAttempt {
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct NotificationChannelView {
+    pub webhook_configured: bool,
+    pub webhook_hint: Option<String>,
+    pub webhook_format: String,
+    pub language: String,
+    pub events: std::collections::BTreeMap<String, bool>,
+    pub last_delivery_at: Option<String>,
+    pub last_delivery_ok: Option<bool>,
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct PersonalNotificationView {
+    #[serde(flatten)]
+    pub channel: NotificationChannelView,
+    pub resin_warn_hours: i32,
+    pub daily_reminder_time: String,
+    pub weekly_reminder_time: String,
+    pub push_public_key: Option<String>,
+    pub push_subscriptions: u64,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct NotificationTestResult {
+    pub webhook: String,
+    pub push: u64,
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct ServerSettings {
     pub timezone_offset: String,
     #[serde(default)]

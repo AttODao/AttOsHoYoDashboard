@@ -23,6 +23,17 @@ pub(super) fn Metric(label: &'static str, value: String) -> Element {
     rsx! { div { class: "metric", dt { "{label}" } dd { "{value}" } } }
 }
 
+/// A plain section with a title; wraps settings subsections.
+#[component]
+pub(super) fn Card(title: &'static str, children: Element) -> Element {
+    rsx! {
+        section { class: "panel page-stack",
+            h3 { "{title}" }
+            {children}
+        }
+    }
+}
+
 /// A failed load with the means to try again: re-requests the current page's data.
 #[component]
 pub(super) fn LoadError(state: Signal<AppState>, message: &'static str) -> Element {

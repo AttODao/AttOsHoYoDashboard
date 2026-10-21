@@ -8,8 +8,8 @@ use super::state::{
 use crate::{
     api,
     models::{
-        AuditEntry, CookieStatus, GameAccount, GameStatus, PasskeyView, RewardRun, RewardSetting,
-        ServerSettings, SessionView, UserView,
+        AuditEntry, CookieStatus, GameAccount, GameStatus, NotificationChannelView, PasskeyView,
+        PersonalNotificationView, RewardRun, RewardSetting, ServerSettings, SessionView, UserView,
     },
 };
 use dioxus::prelude::*;
@@ -34,9 +34,11 @@ pub(super) async fn load_page_data(state: Signal<AppState>, page: Page) {
             load_passkeys(state).await;
             load_sessions(state).await;
         }
+        Page::Notifications => load_notifications(state).await,
         Page::Admin => {
             load_admin_users(state).await;
             load_admin_audit(state, false).await;
+            load_admin_notifications(state).await;
         }
         Page::Delete => {}
         Page::Docs => {}
@@ -76,9 +78,11 @@ enum Resource {
     ServerSettings,
     AdminAudit,
     AdminUsers,
+    Notifications,
+    AdminNotifications,
 }
 
-const RESOURCES: usize = Resource::AdminUsers as usize + 1;
+const RESOURCES: usize = Resource::AdminNotifications as usize + 1;
 
 /// Latest request issued per resource. Actions keep the session generation, so
 /// an older in-flight GET may finish after a newer refresh; only the reply to the
@@ -659,6 +663,65 @@ pub(super) async fn load_server_settings(mut state: Signal<AppState>) {
     }
 }
 
+pub(super) async fn load_notifications(mut state: Signal<AppState>) {
+    let Some(generation) = password_generation(state) else {
+        return;
+    };
+    let Some(result) = fetch_current::<PersonalNotificationView>(
+        state,
+        Resource::Notifications,
+        "/me/notifications",
+        generation,
+        current_generation,
+    )
+    .await
+    else {
+        return;
+    };
+    let mut write = state.write();
+    match result {
+        Ok(view) => {
+            write.notifications = Some(view);
+            write.notifications_error = None;
+        }
+        Err(key) => {
+            write.notifications = None;
+            write.notifications_error = Some(key.to_owned());
+        }
+    }
+}
+
+pub(super) async fn load_admin_notifications(mut state: Signal<AppState>) {
+    let Some(generation) = password_generation(state) else {
+        return;
+    };
+    if !state.read().me.as_ref().is_some_and(|me| me.is_admin) {
+        return;
+    }
+    let Some(result) = fetch_current::<NotificationChannelView>(
+        state,
+        Resource::AdminNotifications,
+        "/admin/notifications",
+        generation,
+        current_generation,
+    )
+    .await
+    else {
+        return;
+    };
+    let mut write = state.write();
+    match result {
+        Ok(view) => {
+            write.admin_notifications = Some(view);
+            write.admin_notifications_error = None;
+        }
+        Err(key) => {
+            write.admin_notifications = None;
+            write.admin_notifications_error = Some(key.to_owned());
+        }
+    }
+}
+
 pub(super) async fn load_admin_users(mut state: Signal<AppState>) {
     let Some(generation) = password_generation(state) else {
         return;
@@ -856,6 +919,8 @@ mod tests {
             Resource::ServerSettings,
             Resource::AdminAudit,
             Resource::AdminUsers,
+            Resource::Notifications,
+            Resource::AdminNotifications,
         ] {
             let ticket = requests.issue(resource);
             assert!(requests.is_latest(resource, ticket), "{resource:?}");

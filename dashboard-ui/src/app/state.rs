@@ -1,8 +1,9 @@
 use super::actions::spawn_root;
 use super::data::load_page_data;
 use crate::models::{
-    AuditEntry, CookieStatus, GameAccount, GameStatus, MeView, PasskeyView, RewardRun,
-    RewardSetting, ServerSettings, SessionView, UserView,
+    AuditEntry, CookieStatus, GameAccount, GameStatus, MeView, NotificationChannelView,
+    PasskeyView, PersonalNotificationView, RewardRun, RewardSetting, ServerSettings, SessionView,
+    UserView,
 };
 use dioxus::prelude::*;
 use std::collections::BTreeMap;
@@ -27,6 +28,7 @@ pub(super) enum Page {
     Uids,
     Rewards,
     Security,
+    Notifications,
     Admin,
     Delete,
     Docs,
@@ -95,6 +97,10 @@ pub(super) struct AppState {
     pub(super) passkeys_error: Option<String>,
     pub(super) sessions: Option<Vec<SessionView>>,
     pub(super) sessions_error: Option<String>,
+    pub(super) notifications: Option<PersonalNotificationView>,
+    pub(super) notifications_error: Option<String>,
+    pub(super) admin_notifications: Option<NotificationChannelView>,
+    pub(super) admin_notifications_error: Option<String>,
     pub(super) server: Option<ServerSettings>,
     pub(super) admin_users: Option<Vec<UserView>>,
     pub(super) admin_error: Option<String>,
@@ -132,6 +138,10 @@ impl AppState {
             passkeys_error: None,
             sessions: None,
             sessions_error: None,
+            notifications: None,
+            notifications_error: None,
+            admin_notifications: None,
+            admin_notifications_error: None,
             server: None,
             admin_users: None,
             admin_error: None,
@@ -215,6 +225,10 @@ impl AppState {
         self.passkeys_error = None;
         self.sessions = None;
         self.sessions_error = None;
+        self.notifications = None;
+        self.notifications_error = None;
+        self.admin_notifications = None;
+        self.admin_notifications_error = None;
         self.server = None;
         self.admin_users = None;
         self.admin_error = None;

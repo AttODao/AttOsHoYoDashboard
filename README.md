@@ -82,6 +82,7 @@ curl --fail http://127.0.0.1:8080/health
 | `SESSION_TTL_DAYS` | 固定有効日数。正の整数、`7`。アクセスによる延長なし |
 | `TIMEZONE_OFFSET` | 自動受け取りの固定UTCオフセット。`+09:00`。夏時間非対応 |
 | `TIMEZONE` | 任意。IANAタイムゾーン名（例：`Asia/Tokyo`、`Europe/Berlin`）。指定時は `TIMEZONE_OFFSET` より優先し、夏時間に対応 |
+| 通知 | WebhookのURLは `HOYOLAB_COOKIE_KEY` から派生した鍵で保存するため、Cookie鍵と同じバックアップ・ローテーション運用が必要 |
 | `RUST_LOG` / `LOG_FORMAT` | 任意。ログレベル（既定 `info`）／`json` で1行1JSONのログ |
 | `METRICS_TOKEN` | 任意。16文字以上。設定時のみ `/metrics` を `Authorization: Bearer` 付きで公開 |
 | `REWARD_HISTORY_DAYS` | 実行履歴の保持日数。1〜90、既定 `5` |
@@ -146,6 +147,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 | `src/dashboard/db/` | `entities/` に保存モデル、`migrations/` にスキーマ変更 |
 | `src/dashboard/hoyolab/` | Cookieの解析・暗号化保存・削除・鍵の再暗号化（`rekey`）、連携の検証・同期、ユーザー単位の操作ロック |
 | `src/dashboard/games/` | ゲームUID一覧・表示設定・状態キャッシュ |
+| `src/dashboard/notifications/` | ユーザー・管理者のWebhook／ブラウザ通知の設定、条件評価（上限・派遣完了・デイリー・週間など）、送信、重複排除 |
 | `src/dashboard/rewards/` | 報酬設定・スケジュール・実行（定時と遅延実行の区別）、送信不確定時のガード、今月の報酬一覧のキャッシュ、ユーザー削除前の報酬確認 |
 | `src/hoyolab/` | HoYoLAB上流APIの型付きクライアント（ダッシュボードの方針は含めない） |
 
@@ -192,6 +194,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 | HoYoLAB | `GET /me/hoyolab`、`PUT`・`DELETE /me/hoyolab/cookie`、`POST /me/hoyolab/verify`・`/me/hoyolab/sync` |
 | ゲーム | `GET /game-accounts`、`PATCH /game-accounts/{id}`、`GET /game-accounts/{id}/status` |
 | 報酬 | `GET /reward-settings`、`PATCH /reward-settings/{id}`、`POST /reward-settings/{id}/run`、`GET /reward-runs` |
+| 通知 | `GET/PUT /me/notifications`、`POST /me/notifications/test`、`POST/DELETE /me/notifications/push`、`GET/PUT /admin/notifications`、`POST /admin/notifications/test` |
 | ユーザー管理 | `GET /admin/users`（連携状態・自動受け取り数・最終ログインを含む）、`POST /admin/users`、`PATCH /admin/users/{id}`（`active` または `is_admin`）、`PUT /admin/users/{id}/temporary-password`、`GET /admin/audit` |
 | ユーザー削除 | `DELETE /me`、`DELETE /admin/users/{id}` |
 | サーバー設定 | `GET /server-settings` |

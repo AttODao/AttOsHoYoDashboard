@@ -1,4 +1,5 @@
 use super::common::{ConfirmDialog, Field, LoadError, ModalDialog, PasswordInput};
+use super::notifications::AdminChannelCard;
 use crate::app::actions::spawn_action;
 use crate::app::credentials::{self, CopyState, CredentialResult};
 use crate::app::data::{load_admin_audit, load_admin_users};
@@ -179,6 +180,7 @@ fn AdminCard(state: Signal<AppState>) -> Element {
                 }
             }
             AuditCard { state }
+            AdminChannelCard { state }
             if result.read().as_ref().is_some_and(|value| value.generation == generation) {
                 CredentialDialog { state, result }
             }
