@@ -52,6 +52,22 @@ impl std::fmt::Debug for GameStatus {
     }
 }
 
+/// Who a status refresh acts for: a signed-in session, or the owner in background work.
+#[derive(Clone, Copy)]
+enum Requester<'a> {
+    Session(&'a Identity),
+    Owner(Uuid),
+}
+
+impl Requester<'_> {
+    fn owner(self) -> Uuid {
+        match self {
+            Self::Session(actor) => actor.user.id,
+            Self::Owner(owner) => owner,
+        }
+    }
+}
+
 impl<G: Gateway> Games<G> {
     pub(in crate::dashboard) fn new(store: Arc<CookieStore<G>>) -> Self {
         Self { store }
@@ -101,9 +117,31 @@ impl<G: Gateway> Games<G> {
         actor: &Identity,
         id: Uuid,
     ) -> Result<GameStatus> {
-        let _operation = self.store.operations.acquire(actor.user.id).await;
+        self.status_as(Requester::Session(actor), id).await
+    }
+
+    /// The same refresh for background work (notifications), authorized by the owner's
+    /// current readiness and verified link instead of a session.
+    pub(in crate::dashboard) async fn status_for_owner(
+        &self,
+        owner: Uuid,
+        id: Uuid,
+    ) -> Result<GameStatus> {
+        self.status_as(Requester::Owner(owner), id).await
+    }
+
+    async fn status_as(&self, who: Requester<'_>, id: Uuid) -> Result<GameStatus> {
+        let _operation = self.store.operations.acquire(who.owner()).await;
         let now = Utc::now();
-        let (link, cookie) = self.store.ready_link(actor).await?;
+        let (link, cookie) = match who {
+            Requester::Session(actor) => self.store.ready_link(actor).await?,
+            Requester::Owner(owner) => {
+                let tx = self.store.db.begin().await?;
+                let link = self.store.owner_link_in(&tx, owner).await?;
+                tx.commit().await?;
+                link
+            }
+        };
         let account = find_owned_game(&self.store.db, link.id, id)
             .await?
             .ok_or(Error::NotFound)?;
@@ -157,7 +195,7 @@ impl<G: Gateway> Games<G> {
             Ok(raw) => {
                 let fetched_at = Utc::now();
                 let payload = summarize(game, fetched_at, &raw);
-                self.recheck_before_store(actor, link.id, link.credential_version, account.id)
+                self.recheck_before_store(who, link.id, link.credential_version, account.id)
                     .await?;
                 let row = CacheWrite {
                     fetched_at: Some(fetched_at),
@@ -188,7 +226,7 @@ impl<G: Gateway> Games<G> {
                     .filter(|cache| cache.payload_version == CACHE_VERSION);
                 let payload = prior_supported.and_then(|cache| cache.payload.clone());
                 let fetched_at = prior_supported.and_then(|cache| cache.fetched_at);
-                self.recheck_before_store(actor, link.id, link.credential_version, account.id)
+                self.recheck_before_store(who, link.id, link.credential_version, account.id)
                     .await?;
                 let row = CacheWrite {
                     fetched_at,
@@ -199,7 +237,7 @@ impl<G: Gateway> Games<G> {
                 };
                 upsert_cache(&self.store.db, account.id, row).await?;
                 if gateway::cookie_invalid(&error) {
-                    self.store.mark_cookie_invalid(actor.user.id).await?;
+                    self.store.mark_cookie_invalid(who.owner()).await?;
                 }
                 Ok(GameStatus {
                     game_kind: account.game_kind,
@@ -219,14 +257,17 @@ impl<G: Gateway> Games<G> {
 
     async fn recheck_before_store(
         &self,
-        actor: &Identity,
+        who: Requester<'_>,
         link_id: Uuid,
         credential_version: i64,
         game_id: Uuid,
     ) -> Result<()> {
         let tx = self.store.db.begin().await?;
-        let fresh_actor = self.store.actor_locked(&tx, actor).await?;
-        let (fresh_link, _) = self.store.owner_link_in(&tx, fresh_actor.user.id).await?;
+        let owner = match who {
+            Requester::Session(actor) => self.store.actor_locked(&tx, actor).await?.user.id,
+            Requester::Owner(owner) => owner,
+        };
+        let (fresh_link, _) = self.store.owner_link_in(&tx, owner).await?;
         if fresh_link.id != link_id || fresh_link.credential_version != credential_version {
             return Err(Error::Forbidden);
         }

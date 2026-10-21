@@ -51,7 +51,8 @@ async fn migrations_are_ordered_idempotent_and_reversible() {
             "m20261013_000003_hoyolab_accounts",
             "m20261013_000004_dashboard_games",
             "m20261020_000005_hoyolab_cookie_removal",
-            "m20261020_000006_account_activity"
+            "m20261020_000006_account_activity",
+            "m20261020_000007_notifications"
         ]
     );
     migrations::Migrator::down(&fixture.db, None).await.unwrap();

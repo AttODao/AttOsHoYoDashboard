@@ -62,6 +62,14 @@ fn app(accounts: Accounts) -> App {
         operations,
         passkeys: Passkeys::new(&config.rp_id, &config.origin, config.cookie_key.as_deref())
             .unwrap(),
+        notifications: Arc::new(
+            crate::dashboard::notifications::channel::Notifications::new(
+                accounts.db.clone(),
+                config.cookie_key.clone(),
+                config.origin.clone(),
+            ),
+        ),
+        notifier_rewards_games: None,
         accounts,
         heartbeat: super::runtime::Heartbeat::new(),
         config,

@@ -8,7 +8,7 @@ async fn openapi_31_paths_methods_and_refs_match_the_live_router() {
     let app = app(accounts);
     let response = call(&app, request("GET", "/openapi.json", None, None)).await;
     assert_eq!(response.status(), StatusCode::OK);
-    let bytes = to_bytes(response.into_body(), 512 * 1024).await.unwrap();
+    let bytes = to_bytes(response.into_body(), 1_048_576).await.unwrap();
     let spec: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(spec["openapi"], "3.1.0");
     for (template, operations) in spec["paths"].as_object().unwrap() {

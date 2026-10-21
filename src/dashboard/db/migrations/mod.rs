@@ -4,6 +4,7 @@ mod dashboard_games;
 mod hoyolab_accounts;
 mod hoyolab_cookie_removal;
 mod initial_accounts;
+mod notifications;
 mod passkeys;
 
 use sea_orm_migration::prelude::*;
@@ -20,6 +21,7 @@ impl MigratorTrait for Migrator {
             Box::new(dashboard_games::DashboardGames),
             Box::new(hoyolab_cookie_removal::HoyolabCookieRemoval),
             Box::new(account_activity::AccountActivity),
+            Box::new(notifications::Notifications),
         ]
     }
 }

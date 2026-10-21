@@ -4,6 +4,7 @@ mod games;
 mod hoyolab;
 mod metrics;
 mod middleware;
+mod notifications;
 mod passkeys;
 mod response;
 mod rewards;
@@ -39,6 +40,8 @@ struct HttpState {
     accounts: Accounts,
     passkeys: Passkeys,
     cookies: Option<Arc<CookieStore>>,
+    notifications: Arc<crate::dashboard::notifications::channel::Notifications>,
+    notifier_rewards_games: Option<Arc<crate::dashboard::games::service::Games>>,
     operations: super::hoyolab::operations::Operations,
     heartbeat: runtime::Heartbeat,
     config: Config,
@@ -55,10 +58,24 @@ pub(super) async fn serve(accounts: Accounts, config: Config) -> Result<()> {
         Arc::new(store)
     });
     let passkeys = Passkeys::new(&config.rp_id, &config.origin, config.cookie_key.as_deref())?;
+    let notifications = Arc::new(
+        crate::dashboard::notifications::channel::Notifications::new(
+            db.clone(),
+            config.cookie_key.clone(),
+            config.origin.clone(),
+        ),
+    );
+    let notifier_rewards_games = cookies.as_ref().map(|cookies| {
+        Arc::new(crate::dashboard::games::service::Games::new(
+            cookies.clone(),
+        ))
+    });
     let app = Arc::new(HttpState {
         accounts,
         passkeys,
         cookies,
+        notifications,
+        notifier_rewards_games,
         operations,
         heartbeat: runtime::Heartbeat::new(),
         config,
@@ -102,6 +119,7 @@ fn router(app: App) -> Router {
         .merge(games::protected_routes())
         .merge(rewards::protected_routes())
         .merge(passkeys::protected_routes())
+        .merge(notifications::protected_routes())
         .route_layer(from_fn_with_state(app.clone(), middleware::authenticate));
     Router::new()
         .route("/health", get(health))

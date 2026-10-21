@@ -4,9 +4,10 @@ mod cli;
 mod config;
 mod db;
 mod error;
-mod games;
+pub(in crate::dashboard) mod games;
 mod hoyolab;
 mod http;
+mod notifications;
 mod rewards;
 
 #[cfg(test)]

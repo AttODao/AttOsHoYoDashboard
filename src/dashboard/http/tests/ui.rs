@@ -83,7 +83,7 @@ async fn compiled_assets_are_public_local_and_hardened() {
             );
         }
         assert!(
-            !to_bytes(response.into_body(), 128 * 1024)
+            !to_bytes(response.into_body(), 1_048_576)
                 .await
                 .unwrap()
                 .is_empty()
@@ -105,7 +105,7 @@ async fn compiled_assets_are_public_local_and_hardened() {
     ] {
         let response = call(&app, request("GET", path, None, None)).await;
         assert!(!response.status().is_success());
-        let bytes = to_bytes(response.into_body(), 128 * 1024).await.unwrap();
+        let bytes = to_bytes(response.into_body(), 1_048_576).await.unwrap();
         assert!(!String::from_utf8_lossy(&bytes).contains("synthetic-private-marker"));
     }
 }

@@ -105,6 +105,9 @@ impl Accounts {
         let tx = self.db.begin().await?;
         let user = lock_user(&tx, snapshot.id).await?;
         if !valid || !user.active || user.password_hash != snapshot.password_hash {
+            // Attribute a failed sign-in to the known target so notifications can mention it.
+            record(&tx, None, snapshot.id, "sign_in_failed").await?;
+            tx.commit().await?;
             return Err(Error::Unauthorized);
         }
         let token = self.sessions.issue(&tx, user.id).await?;
@@ -452,7 +455,7 @@ pub(in crate::dashboard) fn require_ready(user: &user::Model) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn require_admin(user: &user::Model) -> Result<()> {
+pub(in crate::dashboard) fn require_admin(user: &user::Model) -> Result<()> {
     require_ready(user)?;
     if !user.is_admin {
         return Err(Error::Forbidden);

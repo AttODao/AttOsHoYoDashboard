@@ -1,5 +1,5 @@
 //! User-owned game account selection and status cache policy.
-mod service;
+pub(in crate::dashboard) mod service;
 mod summary;
 
 #[cfg(test)]

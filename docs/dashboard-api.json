@@ -2960,6 +2960,602 @@
           }
         ]
       }
+    },
+    "/api/v1/me/notifications": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "getPersonalNotifications",
+        "summary": "Get the current user's notification channel.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalNotificationView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": []
+      },
+      "put": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "updatePersonalNotifications",
+        "summary": "Update the current user's notification channel.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonalNotificationInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/notifications/test": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "testPersonalNotification",
+        "summary": "Send a test notification through every configured route.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationTestResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyObject"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/notifications/push": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "subscribePush",
+        "summary": "Register this browser for Web Push.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushSubscriptionInput"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "unsubscribePush",
+        "summary": "Remove this browser's push subscription.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushUnsubscription"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/notifications": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "getAdminNotifications",
+        "summary": "Get the administrator notification channel.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": []
+      },
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "updateAdminNotifications",
+        "summary": "Update the administrator notification channel.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/notifications/test": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "testAdminNotification",
+        "summary": "Send a test notification on the administrator channel.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationTestResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyObject"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4268,6 +4864,256 @@
             }
           }
         ]
+      },
+      "NotificationEvents": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "boolean"
+        },
+        "description": "Event names → whether to notify. Unknown keys are rejected."
+      },
+      "ChannelView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "webhook_configured",
+          "webhook_hint",
+          "webhook_format",
+          "language",
+          "events",
+          "last_delivery_at",
+          "last_delivery_ok"
+        ],
+        "properties": {
+          "webhook_configured": {
+            "type": "boolean"
+          },
+          "webhook_hint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Short, non-secret description of the stored URL."
+          },
+          "webhook_format": {
+            "type": "string",
+            "enum": [
+              "discord",
+              "json"
+            ]
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "ja",
+              "en"
+            ]
+          },
+          "events": {
+            "$ref": "#/components/schemas/NotificationEvents"
+          },
+          "last_delivery_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_delivery_ok": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "PersonalNotificationView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ChannelView"
+          },
+          {
+            "type": "object",
+            "required": [
+              "resin_warn_hours",
+              "daily_reminder_time",
+              "weekly_reminder_time",
+              "push_public_key",
+              "push_subscriptions"
+            ],
+            "properties": {
+              "resin_warn_hours": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 24
+              },
+              "daily_reminder_time": {
+                "type": "string",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+              },
+              "weekly_reminder_time": {
+                "type": "string",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+              },
+              "push_public_key": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "VAPID public key (base64url, uncompressed P-256) when the server supports push."
+              },
+              "push_subscriptions": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        ]
+      },
+      "ChannelInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "webhook_format",
+          "language",
+          "events"
+        ],
+        "properties": {
+          "webhook_url": {
+            "description": "Absent keeps the stored URL, null removes it, a string replaces it.",
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "uri",
+                "maxLength": 1024
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "webhook_format": {
+            "type": "string",
+            "enum": [
+              "discord",
+              "json"
+            ]
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "ja",
+              "en"
+            ]
+          },
+          "events": {
+            "$ref": "#/components/schemas/NotificationEvents"
+          }
+        }
+      },
+      "PersonalNotificationInput": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ChannelInput"
+          },
+          {
+            "type": "object",
+            "required": [
+              "resin_warn_hours",
+              "daily_reminder_time",
+              "weekly_reminder_time"
+            ],
+            "properties": {
+              "resin_warn_hours": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 24
+              },
+              "daily_reminder_time": {
+                "type": "string",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+              },
+              "weekly_reminder_time": {
+                "type": "string",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+              }
+            }
+          }
+        ]
+      },
+      "NotificationTestResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "webhook",
+          "push"
+        ],
+        "properties": {
+          "webhook": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "failed",
+              "not_configured"
+            ]
+          },
+          "push": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "PushSubscriptionInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "keys"
+        ],
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "format": "uri"
+          },
+          "keys": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "p256dh",
+              "auth"
+            ],
+            "properties": {
+              "p256dh": {
+                "type": "string",
+                "description": "base64url uncompressed P-256 public key (65 bytes decoded)."
+              },
+              "auth": {
+                "type": "string",
+                "description": "base64url 16-byte authentication secret."
+              }
+            }
+          },
+          "expirationTime": {
+            "nullable": true
+          }
+        }
+      },
+      "PushUnsubscription": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "endpoint"
+        ],
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "EventList": {
+        "type": "string",
+        "description": "Known kinds — personal: reward_failed, reward_claimed, cookie_invalid, signed_in, sign_in_failed, resource_near_cap, resource_full, expeditions_done, transformer_ready, daily_unfinished, weekly_unfinished. Admin: user_attention, worker_stalled, deletion_stuck, sign_in_failed, signed_in."
       }
     }
   }

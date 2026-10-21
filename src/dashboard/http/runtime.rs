@@ -51,8 +51,40 @@ pub(super) async fn run(app: App, stop: watch::Receiver<bool>) {
     tokio::join!(
         rewards(app.clone(), stop.clone()),
         deletions(app.clone(), stop.clone()),
+        notifier(app.clone(), stop.clone()),
         maintenance(app, stop)
     );
+}
+
+/// Scans events and evaluates game conditions once a minute.
+async fn notifier(app: App, mut stop: watch::Receiver<bool>) {
+    let Some(games) = app.notifier_rewards_games.clone() else {
+        return;
+    };
+    let schedule = crate::dashboard::notifications::worker::NotifierSchedule::default();
+    let notifier = crate::dashboard::notifications::worker::Notifier::new(
+        app.notifications.clone(),
+        games,
+        schedule,
+        app.config.timezone,
+        app.config.tuning,
+    );
+    let mut timer = interval(schedule.interval);
+    timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    loop {
+        tokio::select! { _ = stop.changed() => break, _ = timer.tick() => {} }
+        let stall = {
+            let age = app.heartbeat.age_secs();
+            if age > STALLED_AFTER_SECS {
+                Some(age / 60)
+            } else {
+                None
+            }
+        };
+        if let Err(error) = notifier.tick(chrono::Utc::now(), stall).await {
+            tracing::error!(error = %error, "notifier tick failed");
+        }
+    }
 }
 
 /// Hourly housekeeping that no request path depends on.
@@ -81,6 +113,19 @@ async fn rewards(app: App, mut stop: watch::Receiver<bool>) {
             _ = maintenance.tick() => {
                 if let Err(error) = rewards.cleanup_history().await {
                     tracing::error!(error = %error, "reward history cleanup failed");
+                }
+                let games = app.notifier_rewards_games.clone();
+                if let Some(games) = games {
+                    let notifier = crate::dashboard::notifications::worker::Notifier::new(
+                        app.notifications.clone(),
+                        games,
+                        crate::dashboard::notifications::worker::NotifierSchedule::default(),
+                        app.config.timezone,
+                        app.config.tuning,
+                    );
+                    if let Err(error) = notifier.cleanup().await {
+                        tracing::error!(error = %error, "notification log cleanup failed");
+                    }
                 }
                 continue;
             }
