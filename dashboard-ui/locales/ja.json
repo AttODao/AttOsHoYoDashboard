@@ -482,7 +482,9 @@
   "notifications.event_worker_stalled": "自動受け取りの処理停止",
   "notifications.event_deletion_stuck": "ユーザー削除が長時間完了していない",
   "messages.push_available_only_in_a_browser": "ブラウザ通知はブラウザでのみ利用できます。",
-  "messages.push_subscribe_failed": "ブラウザ通知の登録に失敗しました。",
+  "messages.push_subscribe_failed": "ブラウザ通知の登録に失敗しました。しばらく待って再試行してください。",
   "messages.push_unsubscribe_failed": "ブラウザ通知の解除に失敗しました。",
-  "messages.push_permission_denied": "ブラウザ通知の許可が得られませんでした。"
+  "messages.push_permission_denied": "通知の許可を得られませんでした。ブラウザのサイト設定で、このダッシュボードの通知を許可してから再試行してください。",
+  "messages.push_unavailable_on_this_server": "このサーバーはブラウザ通知の鍵が設定されていません。",
+  "messages.push_unavailable_in_this_browser": "このブラウザはプッシュ通知に対応していません。"
 }

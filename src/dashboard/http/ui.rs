@@ -50,13 +50,21 @@ pub(super) fn routes(app: &App) -> Router<App> {
 /// Content-fingerprinted assets are cached forever; anything else revalidates.
 /// HTML, API and error responses keep the boundary's `no-store`.
 async fn asset_cache(request: Request, next: Next) -> Response {
-    let fingerprinted = fingerprinted(request.uri().path());
+    let path = request.uri().path().to_owned();
+    let fingerprinted = fingerprinted(&path);
     let mut response = next.run(request).await;
     if response.status().is_success() || response.status() == StatusCode::NOT_MODIFIED {
         let policy = if fingerprinted { IMMUTABLE } else { "no-cache" };
         response
             .headers_mut()
             .insert(header::CACHE_CONTROL, HeaderValue::from_static(policy));
+        // The Web Push service worker lives under /assets but must control the whole
+        // dashboard; browsers only accept that broader scope when this header allows it.
+        if path == "/assets/push-sw.js" {
+            response
+                .headers_mut()
+                .insert("service-worker-allowed", HeaderValue::from_static("/"));
+        }
     }
     response
 }

@@ -1,4 +1,13 @@
 // Minimal service worker for Web Push: shows the payload and focuses the dashboard.
+// Install/activate hand control to the newest worker immediately so a re-register
+// after an update does not stall in the "waiting" state (which looks, on a page
+// that reloads soon after, like the subscribe call never resolves).
+self.addEventListener('install', (event) => {
+  event.waitUntil(self.skipWaiting());
+});
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
 self.addEventListener('push', (event) => {
   if (!event.data) return;
   let payload;

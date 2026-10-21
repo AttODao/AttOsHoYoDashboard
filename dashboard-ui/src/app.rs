@@ -30,7 +30,7 @@ static PUSH_SW: Asset = asset!(
 // External CSS uses these fingerprinted filenames; retain them without a second DX suffix.
 #[used]
 static FONT_JP: Asset = asset!(
-    "/assets/fonts/noto-sans-jp-6e723936ed2d.woff2",
+    "/assets/fonts/noto-sans-jp-4b8abf06c8f1.woff2",
     AssetOptions::builder().with_hash_suffix(false)
 );
 #[used]

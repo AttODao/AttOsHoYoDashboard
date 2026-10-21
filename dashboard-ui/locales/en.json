@@ -482,7 +482,9 @@
   "notifications.event_worker_stalled": "Reward worker stalled",
   "notifications.event_deletion_stuck": "User deletion not finishing",
   "messages.push_available_only_in_a_browser": "Browser notifications are only available in a browser.",
-  "messages.push_subscribe_failed": "Could not register for browser notifications.",
+  "messages.push_subscribe_failed": "Could not register for browser push. Please wait and try again.",
   "messages.push_unsubscribe_failed": "Could not unregister this browser.",
-  "messages.push_permission_denied": "The browser did not grant notification permission."
+  "messages.push_permission_denied": "The browser notification permission was not granted. In your browser's site settings, allow notifications for this dashboard, then try again.",
+  "messages.push_unavailable_on_this_server": "This server has no browser-push key configured.",
+  "messages.push_unavailable_in_this_browser": "This browser does not support push notifications."
 }
