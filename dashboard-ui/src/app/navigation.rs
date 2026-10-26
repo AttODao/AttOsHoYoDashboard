@@ -1,4 +1,5 @@
-//! Same-origin path history; authentication/onboarding gates remain in App.
+//! Same-origin path history (in-WebView history in the app); authentication/onboarding
+//! gates remain in App.
 use super::state::{AppState, Page, Phase};
 use dioxus::prelude::*;
 
@@ -60,7 +61,9 @@ fn write_path(path: &'static str, replace: bool) {
             }
         }
     }
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "mobile")]
+    crate::mobile::dom::write_path(path, replace);
+    #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
     let _ = (path, replace);
 }
 
@@ -109,7 +112,14 @@ pub(super) fn use_browser_history(state: Signal<AppState>) {
             .ok()?;
         Some(std::rc::Rc::new(HistoryListener { window, callback }))
     });
-    #[cfg(not(target_arch = "wasm32"))]
+    // The app has no address bar; its in-WebView history serves the Android back button.
+    #[cfg(feature = "mobile")]
+    crate::mobile::dom::use_popstate(move |path| {
+        super::state::restore_page(state, page_from_path(&path));
+        let read = state.read();
+        replace_canonical(read.page, read.phase);
+    });
+    #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
     let _ = state;
 }
 

@@ -297,16 +297,13 @@ pub(super) fn set_status(
     // Errors need reading and a decision; they stay until dismissed or replaced.
     if kind != "error" {
         spawn_root(async move {
-            #[cfg(target_arch = "wasm32")]
-            gloo_timers::future::TimeoutFuture::new(STATUS_DISMISS_MS).await;
-            #[cfg(not(target_arch = "wasm32"))]
-            let _ = STATUS_DISMISS_MS;
+            crate::platform::sleep_ms(STATUS_DISMISS_MS).await;
             if state
                 .read()
                 .status
                 .as_ref()
                 .is_some_and(|status| status.serial == serial)
-                && cfg!(target_arch = "wasm32")
+                && cfg!(any(target_arch = "wasm32", feature = "mobile"))
             {
                 state.write().status = None;
             }

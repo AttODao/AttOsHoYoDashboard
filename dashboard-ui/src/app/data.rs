@@ -572,7 +572,7 @@ async fn poll_reward_runs(
         if settled(&run_states()) {
             break;
         }
-        gloo_timers::future::TimeoutFuture::new(REWARD_POLL_INTERVAL_MS).await;
+        crate::platform::sleep_ms(REWARD_POLL_INTERVAL_MS).await;
         if !following() {
             return;
         }

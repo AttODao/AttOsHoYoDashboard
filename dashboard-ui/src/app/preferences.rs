@@ -1,6 +1,10 @@
 use crate::i18n::Language;
 use dioxus::prelude::*;
 
+/// The app's saved language/theme codes, in its private storage.
+#[cfg(feature = "mobile")]
+const APP_PREFERENCES: &str = "preferences.json";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub(super) enum Theme {
     /// Follow the browser's light/dark preference.
@@ -25,7 +29,7 @@ impl Preferences {
         self.language.format(key, arguments)
     }
 
-    #[cfg(any(target_arch = "wasm32", test))]
+    #[cfg(any(target_arch = "wasm32", feature = "mobile", test))]
     pub(super) fn language_code(self) -> &'static str {
         match self.language {
             Language::Japanese => "ja",
@@ -60,7 +64,7 @@ impl Preferences {
     }
 
     /// Saved choices win; without one, the browser language and color scheme decide.
-    #[cfg(any(target_arch = "wasm32", test))]
+    #[cfg(any(target_arch = "wasm32", feature = "mobile", test))]
     fn from_saved(language: Option<&str>, theme: Option<&str>, browser_language: &str) -> Self {
         Self {
             language: match language {
@@ -91,6 +95,21 @@ impl Preferences {
                 &browser,
             );
         }
+        // The app keeps the same two codes in its private storage; without them it
+        // starts in Japanese and the system theme.
+        #[cfg(feature = "mobile")]
+        {
+            let saved: Option<std::collections::BTreeMap<String, String>> =
+                crate::mobile::storage::read(APP_PREFERENCES)
+                    .and_then(|text| serde_json::from_str(&text).ok());
+            let saved = saved.unwrap_or_default();
+            Self::from_saved(
+                saved.get("language").map(String::as_str),
+                saved.get("theme").map(String::as_str),
+                "",
+            )
+        }
+        #[cfg(not(feature = "mobile"))]
         Self::default()
     }
 
@@ -124,6 +143,13 @@ impl Preferences {
                 let _ = storage.set_item("ahd-language", self.language_code());
                 let _ = storage.set_item("ahd-theme", self.theme_code());
             }
+        }
+        #[cfg(feature = "mobile")]
+        {
+            crate::mobile::dom::apply_preferences(self.language_code(), self.theme_code());
+            let saved =
+                serde_json::json!({"language": self.language_code(), "theme": self.theme_code()});
+            let _ = crate::mobile::storage::write(APP_PREFERENCES, &saved.to_string());
         }
     }
 }

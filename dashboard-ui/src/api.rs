@@ -2,12 +2,12 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::fmt;
 
-#[cfg(any(target_arch = "wasm32", test))]
+#[cfg(any(target_arch = "wasm32", feature = "mobile", test))]
 const API_PREFIX: &str = "/api/v1";
 const OPENAPI_PATH: &str = "/openapi.json";
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_arch = "wasm32", feature = "mobile"))]
 const JSON_LIMIT: usize = 1024 * 1024;
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_arch = "wasm32", feature = "mobile"))]
 const ERROR_LIMIT: usize = 16 * 1024;
 
 pub type Result<T> = std::result::Result<T, ApiError>;
@@ -36,12 +36,12 @@ impl ApiError {
         }
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
     fn browser_only() -> Self {
         Self::browser("messages.this_action_is_available_only_in_a_browser")
     }
 
-    #[cfg(any(target_arch = "wasm32", test))]
+    #[cfg(any(target_arch = "wasm32", feature = "mobile", test))]
     fn internal(code: &'static str, message_key: &'static str) -> Self {
         Self {
             status: None,
@@ -50,7 +50,7 @@ impl ApiError {
         }
     }
 
-    #[cfg(any(target_arch = "wasm32", test))]
+    #[cfg(any(target_arch = "wasm32", feature = "mobile", test))]
     fn http(status: u16, code: String) -> Self {
         // Never retain an arbitrary server string in Debug, even if Display is static.
         let code = if matches!(
@@ -103,12 +103,12 @@ pub async fn openapi() -> Result<Value> {
 }
 
 async fn request_unit(method: &str, path: &str, body: Option<Value>) -> Result<()> {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
     {
         let _ = (method, path, body);
         Err(ApiError::browser_only())
     }
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(target_arch = "wasm32", feature = "mobile"))]
     {
         let response = fetch(method, &api_path(path)?, body).await?;
         let status = response.status();
@@ -124,12 +124,12 @@ async fn request_json<T: DeserializeOwned>(
     path: &str,
     body: Option<Value>,
 ) -> Result<T> {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
     {
         let _ = (method, path, body);
         Err(ApiError::browser_only())
     }
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(target_arch = "wasm32", feature = "mobile"))]
     {
         request_json_at(method, &api_path(path)?, body, true).await
     }
@@ -141,12 +141,12 @@ async fn request_json_at<T: DeserializeOwned>(
     body: Option<Value>,
     already_checked_path: bool,
 ) -> Result<T> {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
     {
         let _ = (method, path, body, already_checked_path);
         Err(ApiError::browser_only())
     }
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(target_arch = "wasm32", feature = "mobile"))]
     {
         let url = if already_checked_path {
             path.to_owned()
@@ -185,12 +185,12 @@ async fn request_json_at<T: DeserializeOwned>(
     }
 }
 
-#[cfg(any(target_arch = "wasm32", test))]
+#[cfg(any(target_arch = "wasm32", feature = "mobile", test))]
 fn api_path(path: &str) -> Result<String> {
     checked_relative_path(path).map(|path| format!("{API_PREFIX}{path}"))
 }
 
-#[cfg(any(target_arch = "wasm32", test))]
+#[cfg(any(target_arch = "wasm32", feature = "mobile", test))]
 fn public_path(path: &str) -> Result<String> {
     if path == OPENAPI_PATH {
         Ok(path.to_owned())
@@ -202,7 +202,7 @@ fn public_path(path: &str) -> Result<String> {
     }
 }
 
-#[cfg(any(target_arch = "wasm32", test))]
+#[cfg(any(target_arch = "wasm32", feature = "mobile", test))]
 fn checked_relative_path(path: &str) -> Result<&str> {
     if path.starts_with('/') && !path.starts_with("//") && !path.contains("://") {
         Ok(path)
@@ -214,7 +214,7 @@ fn checked_relative_path(path: &str) -> Result<&str> {
     }
 }
 
-#[cfg(any(target_arch = "wasm32", test))]
+#[cfg(any(target_arch = "wasm32", feature = "mobile", test))]
 fn safe_message(status: u16, code: &str) -> &'static str {
     match code {
         "unauthorized" => "messages.please_sign_in_again",
@@ -234,7 +234,28 @@ fn safe_message(status: u16, code: &str) -> &'static str {
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn fetch(method: &str, url: &str, body: Option<Value>) -> Result<gloo_net::http::Response> {
+type Response = gloo_net::http::Response;
+#[cfg(feature = "mobile")]
+type Response = crate::mobile::http::Response;
+
+/// The app reaches the configured server natively; `url` is a checked absolute path.
+#[cfg(feature = "mobile")]
+async fn fetch(method: &str, url: &str, body: Option<Value>) -> Result<Response> {
+    if !matches!(method, "GET" | "POST" | "PUT" | "PATCH" | "DELETE") {
+        return Err(ApiError::internal(
+            "invalid_method",
+            "messages.the_request_method_is_not_allowed",
+        ));
+    }
+    crate::mobile::http::send(method, url, body.as_ref())
+        .await
+        .map_err(|_| {
+            ApiError::internal("network_error", "messages.the_server_could_not_be_reached")
+        })
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn fetch(method: &str, url: &str, body: Option<Value>) -> Result<Response> {
     use gloo_net::http::Request;
     use web_sys::RequestCredentials;
 
@@ -272,8 +293,8 @@ async fn fetch(method: &str, url: &str, body: Option<Value>) -> Result<gloo_net:
     }
 }
 
-#[cfg(target_arch = "wasm32")]
-async fn error_from_response(response: gloo_net::http::Response) -> ApiError {
+#[cfg(any(target_arch = "wasm32", feature = "mobile"))]
+async fn error_from_response(response: Response) -> ApiError {
     let status = response.status();
     let text = match response.text().await {
         Ok(text) if text.len() <= ERROR_LIMIT => text,

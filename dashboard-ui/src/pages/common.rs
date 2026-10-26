@@ -210,7 +210,8 @@ fn mask_on_visibility_change(
     Some(listener)
 }
 
-/// DOM focus never evaluates JavaScript; callers supply internal element IDs.
+/// Browser DOM focus never evaluates JavaScript; the app passes the internal element ID
+/// JSON-encoded to `document::eval` (see `mobile::dom`).
 pub(super) fn focus_element(id: &str) {
     #[cfg(target_arch = "wasm32")]
     {
@@ -223,6 +224,8 @@ pub(super) fn focus_element(id: &str) {
             let _ = element.focus();
         }
     }
+    #[cfg(feature = "mobile")]
+    crate::mobile::dom::focus(id);
     let _ = id;
 }
 
@@ -240,6 +243,8 @@ pub(super) fn reset_checked(id: &str, checked: bool) {
             input.set_checked(checked);
         }
     }
+    #[cfg(feature = "mobile")]
+    crate::mobile::dom::set_checked(id, checked);
     let _ = (id, checked);
 }
 
@@ -303,7 +308,23 @@ pub(super) fn use_modal(id: String, active: bool, onclose: EventHandler<()>) {
             }
         }));
     }
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "mobile")]
+    {
+        let modal = use_hook(|| {
+            std::rc::Rc::new(std::cell::RefCell::new(None::<crate::mobile::dom::Modal>))
+        });
+        use_effect(use_reactive!(|active, id| {
+            let mut modal = modal.borrow_mut();
+            if active {
+                if modal.is_none() {
+                    *modal = Some(crate::mobile::dom::Modal::open(&id, onclose));
+                }
+            } else {
+                modal.take();
+            }
+        }));
+    }
+    #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
     let _ = (id, active, onclose);
 }
 

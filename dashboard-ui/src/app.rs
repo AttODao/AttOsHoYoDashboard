@@ -84,7 +84,7 @@ pub fn App() -> Element {
     };
     use_future(move || async move {
         loop {
-            gloo_timers::future::TimeoutFuture::new(60_000).await;
+            crate::platform::sleep_ms(60_000).await;
             refresh().await;
         }
     });
@@ -95,6 +95,12 @@ pub fn App() -> Element {
                 spawn(async move { refresh().await });
             }
         })
+    });
+    #[cfg(feature = "mobile")]
+    crate::mobile::dom::use_visibility(move || {
+        if browser::now_ms() - *last_refresh.peek() >= 60_000.0 {
+            spawn(async move { refresh().await });
+        }
     });
 
     let owner_key = state
@@ -172,17 +178,16 @@ mod browser {
                 .and_then(|w| w.document())
                 .is_some_and(|d| d.hidden())
         }
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(feature = "mobile")]
+        {
+            crate::mobile::dom::hidden()
+        }
+        #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
         false
     }
 
     pub(super) fn now_ms() -> f64 {
-        #[cfg(target_arch = "wasm32")]
-        {
-            js_sys::Date::now()
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        0.0
+        crate::platform::now_ms()
     }
 
     /// Keeps a browser listener for the lifetime of the owning hook.
