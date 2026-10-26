@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The app canvas color (DESIGN.md), behind the launcher star. -->
+    <color name="ahd_launcher_background">#0C0B0E</color>
+</resources>

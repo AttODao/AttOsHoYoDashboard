@@ -1,4 +1,6 @@
 # yaml-language-server: $schema=https://devenv.sh/devenv.schema.json
+# Only the opt-in `android` profile uses unfree packages (Android SDK/NDK).
+allowUnfree: true
 inputs:
   nixpkgs:
     url: github:cachix/devenv-nixpkgs/rolling

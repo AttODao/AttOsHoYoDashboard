@@ -7,3 +7,12 @@ title = "AHD"
 
 [web.watcher]
 reload_html = true
+
+# Android app: `devenv --profile android shell -- build-android` (see README).
+[bundle]
+identifier = "cc.attodao.ahd"
+publisher = "AttODao"
+
+[android]
+min_sdk = 24
+target_sdk = 34

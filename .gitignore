@@ -7,6 +7,9 @@
 /devenv.local.nix
 /devenv.local.yaml
 /.direnv/
+# Written by the devenv `android` profile.
+/local.properties
+/.android/
 
 # Runtime caches from the checked-in skill helpers.
 /.agents/skills/**/__pycache__/
