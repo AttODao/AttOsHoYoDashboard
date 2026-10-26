@@ -107,7 +107,7 @@ HTTPSリバースプロキシから `http://127.0.0.1:8080` へパスを保持�
 | `/docs` / `/openapi.json` | API仕様の閲覧／OpenAPI JSON |
 | `/manifest.webmanifest` | ホーム画面追加用のWebマニフェスト |
 | `/health` | DB疎通と報酬ワーカーの生存確認。正常時 `{"status":"ok","worker":"ok"}`、ワーカー停止時は503 |
-| `/metrics` | `METRICS_TOKEN` 設定時のみ。Prometheus形式の件数・ワーカー状態 |
+| `/metrics` | `METRICS_TOKEN` 設定時のみ。Prometheus形式の件数・ワーカー状態・直近24時間に終わった報酬実行の結果・APIトークン数 |
 
 ## 開発とUI設計
 

@@ -1,5 +1,10 @@
 use super::*;
-use crate::dashboard::{auth::sessions::Sessions, test_support::TestDatabase};
+use crate::dashboard::{
+    auth::sessions::Sessions,
+    db::entities::{hoyolab_account, reward_run, reward_setting, user},
+    test_support::TestDatabase,
+};
+use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 
 #[tokio::test]
 async fn origin_requires_one_exact_header_for_every_unsafe_method() {
@@ -212,6 +217,92 @@ async fn metrics_require_the_configured_bearer_token() {
     assert!(text.contains("ahd_up 1"));
     assert!(text.contains("ahd_users{state=\"active\"} 1"));
     assert!(text.contains("ahd_reward_worker_heartbeat_age_seconds "));
+    for state in [
+        "success",
+        "already_claimed",
+        "failed",
+        "action_required",
+        "unknown",
+        "stopped",
+    ] {
+        assert!(text.contains(&format!(
+            "ahd_reward_runs_ended_24h{{state=\"{state}\"}} 0\n"
+        )));
+    }
+    assert!(!text.contains("ahd_api_tokens{"));
+
+    // Only runs that ended within the last 24 hours count; tokens are counted by scope.
+    let owner = app.accounts.db.clone();
+    let admin = user::Entity::find().one(&owner).await.unwrap().unwrap();
+    let link = hoyolab_account::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        owner_user_id: Set(admin.id),
+        hoyolab_uid: Set(Some("123456789".to_owned())),
+        encrypted_credentials: Set(Some(vec![7; 30])),
+        credential_version: Set(1),
+        auth_status: Set("verified".to_owned()),
+        created_at: Set(Utc::now()),
+        updated_at: Set(Utc::now()),
+        verified_at: Set(None),
+    }
+    .insert(&owner)
+    .await
+    .unwrap();
+    let setting = reward_setting::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        hoyolab_account_id: Set(link.id),
+        game_kind: Set("genshin".to_owned()),
+        ..Default::default()
+    }
+    .insert(&owner)
+    .await
+    .unwrap();
+    for ended in [Duration::hours(1), Duration::days(2)] {
+        reward_run::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            setting_id: Set(setting.id),
+            trigger: Set("manual".to_owned()),
+            state: Set("failed".to_owned()),
+            created_at: Set(Utc::now() - ended),
+            updated_at: Set(Utc::now() - ended),
+            ended_at: Set(Some(Utc::now() - ended)),
+            attempt_count: Set(1),
+            credential_version: Set(1),
+            send_state: Set("not_sent".to_owned()),
+            ..Default::default()
+        }
+        .insert(&owner)
+        .await
+        .unwrap();
+    }
+    let actor = Sessions::authenticate(
+        &owner,
+        &crate::dashboard::auth::password::token_hash(
+            cookie(&app, admin.id).await.split_once('=').unwrap().1,
+        )
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+    crate::dashboard::auth::api_tokens::ApiTokens::issue(
+        &owner,
+        &actor,
+        "deck",
+        crate::dashboard::auth::api_tokens::Scope::Run,
+    )
+    .await
+    .unwrap();
+    let response = call(&app, scrape(Some("synthetic-metrics-token"))).await;
+    let text = String::from_utf8(
+        to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(text.contains("ahd_reward_runs_ended_24h{state=\"failed\"} 1\n"));
+    assert!(text.contains("ahd_reward_runs{state=\"failed\"} 2\n"));
+    assert!(text.contains("ahd_api_tokens{scope=\"run\"} 1\n"));
 
     // Without a configured token the endpoint does not exist.
     let mut app = app;
