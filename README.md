@@ -133,6 +133,8 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 - 認証・セキュリティのAPIトークンとパスワード変更（初回／復旧後のパスワード変更もブラウザで行い、アプリでは「設定状況を更新」を選びます）
 - WebAuthnとWeb Pushはブラウザ専用のため、パスキーでのログイン・登録とブラウザ通知もアプリにはありません（登録済みパスキーの一覧・名前変更・削除は可能）
 
+アプリのメニューの「ブラウザで開く」は、表示中の画面に対応するweb版のページ（`AHD_SERVER_URL` のオリジン＋同じパス）を端末の既定のブラウザで開きます（Androidの `Intent.ACTION_VIEW`、`webbrowser` クレート経由）。初回設定のパスワード変更画面と「セキュリティ」設定にも同じボタンがあります。ブラウザを開けなかったときはエラーを表示します。web版にはこのボタンはありません。
+
 アプリはビルド時に指定した1つのサーバーへRust（reqwest、rustls）から直接接続します。ログイン応答のセッションCookieをアプリ専用領域（`getFilesDir()`、他アプリから読めない）に保存し、以後の要求に `Cookie` と、サーバーが要求する `Origin`（＝サーバーのOrigin）を付けます。ログアウトや期限切れで削除されます。サーバー側の変更はありません。
 
 必要なもの：devenvの `android` プロファイル（Android SDK 34・build-tools 34.0.0・NDK・JDK 17。初回は数GBを取得し、Android SDKのライセンスに同意したものとして扱います）と、Gradleが依存を取得するためのネットワーク。Rustの `aarch64-linux-android`／`x86_64-linux-android` targetは `rust-toolchain.toml` で入ります。
@@ -163,7 +165,7 @@ APKは `target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/apk/deb
 | `dashboard-ui/src/app/data.rs` | セッション世代に結び付いた画面データの取得（未取得と空を区別、リソースごとに最新の要求の応答だけを反映）、全ゲームの手動受け取りとその後の報酬状態のGET追従 |
 | `dashboard-ui/src/app/display.rs` | 数値・ブラウザのローカル時刻による簡潔な月日／24時間表示、データの経過時間、上限への近さ、サーバー時刻とブラウザ時刻の換算、エラーコードの表示文への対応付け |
 | `dashboard-ui/src/pages/` | 画面、メニュー、設定、ユーザー管理 |
-| `dashboard-ui/src/platform.rs` | web版とAndroidアプリの切り替え（`APP`）、両方で動くタイマーと時刻 |
+| `dashboard-ui/src/platform.rs` | web版とAndroidアプリの切り替え（`APP`）、両方で動くタイマーと時刻、web版を既定のブラウザで開く処理 |
 | `dashboard-ui/src/mobile/` | Androidアプリ専用：サーバーへの直接接続とセッションCookieの保存（`http.rs`・`session.rs`）、アプリ専用領域のファイル（`storage.rs`）、端末時刻（`time.rs`）、web版がweb-sysで行うDOM操作の `document::eval` 版（`dom.rs`） |
 | `dashboard-ui/android/res/` | Androidのランチャーアイコンとアプリ名（`build-android` が生成プロジェクトへ上書き） |
 | `src/dashboard/games/summary.rs` | 上流ゲーム状態から画面用の要約への写像 |

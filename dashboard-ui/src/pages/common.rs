@@ -61,6 +61,7 @@ pub(super) fn Icon(name: &'static str) -> Element {
         "user" => "M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M4 21v-2a8 8 0 0 1 16 0v2",
         "logout" => "M10 4H4v16h6M9 12h12m-4-4 4 4-4 4",
         "docs" => "M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7",
+        "external" => "M14 4h6v6M20 4l-9 9M18 14v6H4V6h6",
         "eye" => {
             "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0"
         }

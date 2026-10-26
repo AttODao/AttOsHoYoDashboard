@@ -3,9 +3,10 @@ use crate::app::actions::{handle_api_error_for, handle_password_error_for, spawn
 use crate::app::credentials::{self, CopyState, CredentialResult};
 use crate::app::data::{load_api_tokens, load_passkeys, load_sessions};
 use crate::app::display::{browser_label, datetime_text};
+use crate::app::navigation::open_web_version;
 use crate::app::preferences::use_preferences;
 use crate::app::session::refresh_gate;
-use crate::app::state::{AppState, generation_matches, set_status};
+use crate::app::state::{AppState, Page, generation_matches, set_status};
 use crate::components::{Button, ButtonVariant};
 use crate::models::{ApiTokenView, IssuedApiToken, PasskeyView, SessionView};
 use dioxus::prelude::*;
@@ -21,6 +22,11 @@ pub(super) fn SecurityPage(state: Signal<AppState>) -> Element {
             // The app leaves password change and API tokens to the web version.
             if !crate::platform::APP {
                 PasswordCard { state, title: ui.text("auth.change_password") }
+            } else {
+                section { class: "panel page-stack",
+                    p { {ui.text("security.manage_in_browser")} }
+                    Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| open_web_version(state, Page::Security), {ui.text("shell.open_in_browser")} }
+                }
             }
             PasskeyCard { state }
             section { class: "panel page-stack",

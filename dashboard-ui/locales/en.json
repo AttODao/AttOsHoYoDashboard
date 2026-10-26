@@ -1,5 +1,6 @@
 {
   "messages.this_action_is_available_only_in_a_browser": "This action is available only in a browser.",
+  "messages.could_not_open_the_browser": "Could not open the browser.",
   "messages.the_server_response_could_not_be_read": "The server response could not be read.",
   "messages.the_server_returned_no_json_data": "The server returned no JSON data.",
   "messages.the_server_response_was_too_large": "The server response was too large.",
@@ -157,6 +158,7 @@
   "shell.account_menu": "Account menu",
   "shell.menu": "Menu",
   "shell.close_menu": "Close menu",
+  "shell.open_in_browser": "Open in browser",
   "shell.hoyolab_link": "HoYoLAB link",
   "shell.administration": "Administration",
   "shell.language": "Language",
@@ -223,6 +225,7 @@
   "rewards.catch_up": "Catch-up",
   "rewards.loading_run_history": "Loading run history…",
   "security.security": "Security",
+  "security.manage_in_browser": "Change your password and manage API tokens in the dashboard in your browser.",
   "security.invalid_password_change": "Use a matching new password of 12–256 bytes. Ordinary changes also require your current password.",
   "security.password_changed": "Password changed.",
   "security.new_password": "New password",
