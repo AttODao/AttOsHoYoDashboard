@@ -8,8 +8,9 @@ use super::state::{
 use crate::{
     api,
     models::{
-        AuditEntry, CookieStatus, GameAccount, GameStatus, NotificationChannelView, PasskeyView,
-        PersonalNotificationView, RewardRun, RewardSetting, ServerSettings, SessionView, UserView,
+        ApiTokenView, AuditEntry, CookieStatus, GameAccount, GameStatus, NotificationChannelView,
+        PasskeyView, PersonalNotificationView, RewardRun, RewardSetting, ServerSettings,
+        SessionView, UserView,
     },
 };
 use dioxus::prelude::*;
@@ -33,6 +34,7 @@ pub(super) async fn load_page_data(state: Signal<AppState>, page: Page) {
         Page::Security => {
             load_passkeys(state).await;
             load_sessions(state).await;
+            load_api_tokens(state).await;
         }
         Page::Notifications => load_notifications(state).await,
         Page::Admin => {
@@ -75,6 +77,7 @@ enum Resource {
     RewardRuns,
     Passkeys,
     Sessions,
+    ApiTokens,
     ServerSettings,
     AdminAudit,
     AdminUsers,
@@ -613,6 +616,34 @@ pub(super) async fn load_sessions(mut state: Signal<AppState>) {
         Err(key) => {
             write.sessions = None;
             write.sessions_error = Some(key.to_owned());
+        }
+    }
+}
+
+pub(super) async fn load_api_tokens(mut state: Signal<AppState>) {
+    let Some(generation) = password_generation(state) else {
+        return;
+    };
+    let Some(result) = fetch_current::<Vec<ApiTokenView>>(
+        state,
+        Resource::ApiTokens,
+        "/me/api-tokens",
+        generation,
+        current_generation,
+    )
+    .await
+    else {
+        return;
+    };
+    let mut write = state.write();
+    match result {
+        Ok(tokens) => {
+            write.api_tokens = Some(tokens);
+            write.api_tokens_error = None;
+        }
+        Err(key) => {
+            write.api_tokens = None;
+            write.api_tokens_error = Some(key.to_owned());
         }
     }
 }

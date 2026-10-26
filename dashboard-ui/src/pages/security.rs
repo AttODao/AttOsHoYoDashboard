@@ -1,12 +1,13 @@
 use super::common::{Field, LoadError, Metric, ModalDialog, PasswordInput, focus_element};
 use crate::app::actions::{handle_api_error_for, handle_password_error_for, spawn_action};
-use crate::app::data::{load_passkeys, load_sessions};
+use crate::app::credentials::{self, CopyState, CredentialResult};
+use crate::app::data::{load_api_tokens, load_passkeys, load_sessions};
 use crate::app::display::{browser_label, datetime_text};
 use crate::app::preferences::use_preferences;
 use crate::app::session::refresh_gate;
 use crate::app::state::{AppState, generation_matches, set_status};
 use crate::components::{Button, ButtonVariant};
-use crate::models::{PasskeyView, SessionView};
+use crate::models::{ApiTokenView, IssuedApiToken, PasskeyView, SessionView};
 use dioxus::prelude::*;
 use serde_json::{Value, json};
 
@@ -25,6 +26,211 @@ pub(super) fn SecurityPage(state: Signal<AppState>) -> Element {
                     Metric { label: ui.text("shell.session_lifetime"), value: server.as_ref().map(|s| ui.format("session.duration_days", &[("count", &s.session_ttl_days.to_string())])).unwrap_or_else(|| ui.text("common.not_fetched").to_owned()) }
                 }
                 SessionList { state }
+            }
+            ApiTokenCard { state }
+        }
+    }
+}
+
+/// The API rejects names that are empty after trimming, longer than 100 characters, or
+/// contain control characters.
+fn api_token_name_ok(name: &str) -> bool {
+    let name = name.trim();
+    (1..=100).contains(&name.chars().count()) && !name.chars().any(char::is_control)
+}
+
+fn api_token_scope_key(scope: &str) -> &'static str {
+    if scope == "run" {
+        "security.api_token_scope_run"
+    } else {
+        "security.api_token_scope_read"
+    }
+}
+
+/// Personal API tokens for external tools; the plaintext is shown once after issuance.
+#[component]
+fn ApiTokenCard(mut state: Signal<AppState>) -> Element {
+    let ui = use_preferences();
+    let mut name = use_signal(String::new);
+    let mut scope = use_signal(|| "read".to_owned());
+    let mut submitted = use_signal(|| false);
+    let mut issued = use_signal(|| None::<CredentialResult>);
+    let mut revoking = use_signal(|| None::<ApiTokenView>);
+    use_drop(move || {
+        name.write().clear();
+    });
+    let error = state.read().api_tokens_error.clone();
+    let tokens = state.read().api_tokens.clone();
+    let name_error = submitted() && !api_token_name_ok(&name.read());
+    let at_limit = tokens.as_ref().is_some_and(|tokens| tokens.len() >= 10);
+    rsx! {
+        section { class: "panel",
+            h3 { {ui.text("security.api_tokens")} }
+            p { class: "field-hint", {ui.text("security.api_tokens_hint")} }
+            if let Some(error) = error {
+                LoadError { state, message: ui.text(&error) }
+            } else if let Some(tokens) = tokens {
+                if tokens.is_empty() {
+                    p { {ui.text("security.no_api_tokens")} }
+                } else {
+                    ul { class: "item-list",
+                        for token in tokens {
+                            li { key: "{token.id}",
+                                div {
+                                    strong { "{token.name}" }
+                                    " " span { class: "status", {ui.text(api_token_scope_key(&token.scope))} }
+                                    p { class: "field-hint",
+                                        {ui.text("security.created")} " " time { datetime: "{token.created_at}", {datetime_text(Some(&token.created_at), ui)} }
+                                        " · " {ui.text("security.last_used")} " "
+                                        if token.last_used_at.is_some() { {datetime_text(token.last_used_at.as_deref(), ui)} } else { {ui.text("security.never_used")} }
+                                    }
+                                }
+                                Button { variant: ButtonVariant::Destructive, r#type: "button", id: "api-token-revoke-{token.id}",
+                                    "aria-label": ui.format("security.revoke_api_token_label", &[("name", &token.name)]),
+                                    onclick: { let target = token.clone(); move |_| { if !state.read().busy { revoking.set(Some(target.clone())); } } },
+                                    {ui.text("security.revoke")}
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                p { role: "status", {ui.text("security.loading_api_tokens")} }
+            }
+            form { novalidate: true, onsubmit: move |event| {
+                event.prevent_default();
+                if state.read().busy { return; }
+                if !api_token_name_ok(&name.read()) {
+                    submitted.set(true);
+                    focus_element("api-token-name");
+                    return;
+                }
+                let body = json!({"name": name.read().trim(), "scope": scope.read().clone()});
+                name.write().clear();
+                submitted.set(false);
+                spawn_action(state, move |generation| async move {
+                    match crate::api::json::<IssuedApiToken>("POST", "/me/api-tokens", Some(body)).await {
+                        Ok(token) if generation_matches(state, generation) => {
+                            issued.set(Some(CredentialResult { username: token.name, secret: token.token, generation, copy: CopyState::Ready }));
+                            load_api_tokens(state).await;
+                        }
+                        Ok(_) => {}
+                        Err(error) => handle_api_error_for(state, generation, error),
+                    }
+                });
+            },
+                div { class: "form-grid",
+                    Field { id: "api-token-name", label: ui.text("security.api_token_name"),
+                        input { id: "api-token-name", maxlength: "100", autocomplete: "off", value: "{name}",
+                            "aria-describedby": if name_error { "api-token-name-hint api-token-name-error" } else { "api-token-name-hint" },
+                            "aria-invalid": if name_error { "true" } else { "false" },
+                            oninput: move |event| name.set(event.value()) }
+                        p { id: "api-token-name-hint", class: "field-hint", {ui.text("security.api_token_name_hint")} }
+                        if name_error { p { id: "api-token-name-error", class: "field-error", {ui.text("security.api_token_name_error")} } }
+                    }
+                    Field { id: "api-token-scope", label: ui.text("security.api_token_scope"),
+                        select { id: "api-token-scope", value: "{scope}", onchange: move |event| scope.set(event.value()),
+                            option { value: "read", {ui.text("security.api_token_scope_read")} }
+                            option { value: "run", {ui.text("security.api_token_scope_run")} }
+                        }
+                    }
+                }
+                if at_limit { p { class: "field-hint", {ui.text("security.api_token_limit_reached")} } }
+                div { class: "auth-submit",
+                    Button { variant: ButtonVariant::Secondary, r#type: "submit", disabled: at_limit, {ui.text("security.issue_api_token")} }
+                }
+            }
+            if issued.read().is_some() {
+                ApiTokenIssuedDialog { state, issued }
+            }
+            if let Some(token) = revoking() {
+                RevokeApiTokenDialog { state, token, revoking }
+            }
+        }
+    }
+}
+
+#[component]
+fn ApiTokenIssuedDialog(
+    state: Signal<AppState>,
+    mut issued: Signal<Option<CredentialResult>>,
+) -> Element {
+    let ui = use_preferences();
+    // The plaintext leaves memory with the dialog, whichever way it closes.
+    use_drop(move || {
+        if let Ok(mut value) = issued.try_write() {
+            *value = None;
+        }
+    });
+    rsx! {
+        ModalDialog { id: "api-token-issued", title: ui.text("security.api_token_issued"), onclose: move |_| issued.set(None),
+            if let Some(value) = issued.read().as_ref() {
+                dl { class: "metric-list", dt { {ui.text("security.api_token_name")} } dd { "{value.username}" } }
+                Field { id: "api-token-secret", label: ui.text("security.api_token"),
+                    output { id: "api-token-secret", class: "generated-password", "aria-describedby": "api-token-secret-note", "{value.secret}" }
+                    p { id: "api-token-secret-note", class: "field-hint", {ui.text("security.api_token_shown_once")} }
+                }
+                p { role: "status", "aria-live": "polite",
+                    {match value.copy {
+                        CopyState::Ready => "",
+                        CopyState::Pending => ui.text("admin.copying"),
+                        CopyState::Copied => ui.text("admin.copied"),
+                        CopyState::Failed => ui.text("admin.could_not_copy_try_again"),
+                    }}
+                }
+                div { class: "actions",
+                    Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: value.copy == CopyState::Pending, onclick: move |_| {
+                        let generation = state.read().generation;
+                        if !generation_matches(state, generation) { issued.set(None); return; }
+                        let candidate = {
+                            let mut write = issued.write();
+                            let Some(value) = write.as_mut() else { return; };
+                            if value.generation != generation || value.copy == CopyState::Pending { return; }
+                            value.copy = CopyState::Pending;
+                            value.secret.clone()
+                        };
+                        // Scope-bound task is cancelled when this dialog unmounts.
+                        spawn(async move {
+                            let outcome = credentials::copy(&candidate).await;
+                            if !generation_matches(state, generation) { return; }
+                            if let Some(value) = issued.write().as_mut().filter(|value| value.generation == generation) {
+                                value.copy = CopyState::after_write(outcome);
+                            }
+                        });
+                    }, {ui.text("admin.copy")} }
+                    Button { r#type: "button", onclick: move |_| issued.set(None), {ui.text("admin.close")} }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn RevokeApiTokenDialog(
+    state: Signal<AppState>,
+    token: ApiTokenView,
+    mut revoking: Signal<Option<ApiTokenView>>,
+) -> Element {
+    let ui = use_preferences();
+    let id = token.id;
+    rsx! {
+        ModalDialog { id: "api-token-revoke-dialog", title: ui.text("security.revoke_api_token_title"), onclose: move |_| revoking.set(None),
+            p { {ui.format("security.revoke_api_token_consequences", &[("name", &token.name)])} }
+            div { class: "actions",
+                Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| revoking.set(None), {ui.text("admin.cancel")} }
+                Button { variant: ButtonVariant::Destructive, r#type: "button", onclick: move |_| {
+                    revoking.set(None);
+                    spawn_action(state, move |generation| async move {
+                        match crate::api::send("DELETE", &format!("/me/api-tokens/{id}"), None).await {
+                            Ok(()) if generation_matches(state, generation) => {
+                                set_status(state, "security.api_token_revoked", "success");
+                                load_api_tokens(state).await;
+                            }
+                            Ok(()) => {}
+                            Err(error) => handle_api_error_for(state, generation, error),
+                        }
+                    });
+                }, {ui.text("security.revoke")} }
             }
         }
     }
@@ -416,6 +622,18 @@ mod tests {
             "synthetic-new-password".to_owned(),
         );
         assert_eq!(ordinary["current_password"], "synthetic-current");
+    }
+
+    #[test]
+    fn api_token_names_match_the_server_rules() {
+        assert!(api_token_name_ok("deck"));
+        assert!(api_token_name_ok("  deck  "));
+        assert!(api_token_name_ok(&"あ".repeat(100)));
+        assert!(!api_token_name_ok(&"あ".repeat(101)));
+        assert!(!api_token_name_ok("   "));
+        assert!(!api_token_name_ok("line\nbreak"));
+        assert_eq!(api_token_scope_key("run"), "security.api_token_scope_run");
+        assert_eq!(api_token_scope_key("read"), "security.api_token_scope_read");
     }
 
     #[test]

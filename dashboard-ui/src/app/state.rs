@@ -1,9 +1,9 @@
 use super::actions::spawn_root;
 use super::data::load_page_data;
 use crate::models::{
-    AuditEntry, CookieStatus, GameAccount, GameStatus, MeView, NotificationChannelView,
-    PasskeyView, PersonalNotificationView, RewardRun, RewardSetting, ServerSettings, SessionView,
-    UserView,
+    ApiTokenView, AuditEntry, CookieStatus, GameAccount, GameStatus, MeView,
+    NotificationChannelView, PasskeyView, PersonalNotificationView, RewardRun, RewardSetting,
+    ServerSettings, SessionView, UserView,
 };
 use dioxus::prelude::*;
 use std::collections::BTreeMap;
@@ -97,6 +97,8 @@ pub(super) struct AppState {
     pub(super) passkeys_error: Option<String>,
     pub(super) sessions: Option<Vec<SessionView>>,
     pub(super) sessions_error: Option<String>,
+    pub(super) api_tokens: Option<Vec<ApiTokenView>>,
+    pub(super) api_tokens_error: Option<String>,
     pub(super) notifications: Option<PersonalNotificationView>,
     pub(super) notifications_error: Option<String>,
     pub(super) admin_notifications: Option<NotificationChannelView>,
@@ -138,6 +140,8 @@ impl AppState {
             passkeys_error: None,
             sessions: None,
             sessions_error: None,
+            api_tokens: None,
+            api_tokens_error: None,
             notifications: None,
             notifications_error: None,
             admin_notifications: None,
@@ -225,6 +229,8 @@ impl AppState {
         self.passkeys_error = None;
         self.sessions = None;
         self.sessions_error = None;
+        self.api_tokens = None;
+        self.api_tokens_error = None;
         self.notifications = None;
         self.notifications_error = None;
         self.admin_notifications = None;

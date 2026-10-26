@@ -265,6 +265,23 @@ pub struct PasskeyView {
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct ApiTokenView {
+    pub id: Uuid,
+    pub name: String,
+    pub scope: String,
+    pub created_at: String,
+    #[serde(default)]
+    pub last_used_at: Option<String>,
+}
+
+/// The one response that carries an API token's plaintext; never Debug or Serialize it.
+#[derive(Deserialize)]
+pub struct IssuedApiToken {
+    pub name: String,
+    pub token: String,
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionView {
     pub id: Uuid,
     pub created_at: String,
