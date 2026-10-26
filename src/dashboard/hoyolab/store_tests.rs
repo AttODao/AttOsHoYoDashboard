@@ -1,5 +1,6 @@
 use super::*;
 use crate::dashboard::{
+    auth::sessions::Credential,
     db::entities::{audit, user},
     test_support::TestDatabase,
 };
@@ -81,7 +82,9 @@ async fn forged_owner_with_another_users_session_cannot_read_or_write_credential
     let forged = Identity {
         token_hash: hash,
         user: actor.user.clone(),
-        expires_at: token.expires_at,
+        credential: Credential::Session {
+            expires_at: token.expires_at,
+        },
     };
     let store = CookieStore::new(fixture.db.clone(), key());
     store.submit(&actor, RAW).await.unwrap();

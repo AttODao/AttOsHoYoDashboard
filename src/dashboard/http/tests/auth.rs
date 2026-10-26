@@ -174,8 +174,11 @@ async fn public_password_login_rotates_cookie_without_extending_expiry_and_logou
         .await
         .unwrap();
     // PostgreSQL stores microsecond precision; the original deadline may have nanoseconds.
-    assert!(fresh.expires_at <= deadline);
-    assert!(deadline.signed_duration_since(fresh.expires_at) < Duration::milliseconds(1));
+    assert!(fresh.session_expires_at().unwrap() <= deadline);
+    assert!(
+        deadline.signed_duration_since(fresh.session_expires_at().unwrap())
+            < Duration::milliseconds(1)
+    );
     error(
         call(
             &app,

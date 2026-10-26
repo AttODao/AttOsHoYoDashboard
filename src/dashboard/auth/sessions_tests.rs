@@ -82,7 +82,10 @@ async fn issuance_stores_only_hash_and_authentication_keeps_fixed_ttl() {
     let first = Sessions::authenticate(&test.db, &hash).await.unwrap();
     let second = Sessions::authenticate(&test.db, &hash).await.unwrap();
     assert_eq!(first.user.id, admin.user.id);
-    assert_eq!(second.expires_at, first.expires_at);
+    assert_eq!(
+        second.session_expires_at().unwrap(),
+        first.session_expires_at().unwrap()
+    );
     // A different configured TTL applies only to new issuance.
     let later = issue_locked(&test.db, &Sessions::new(Duration::hours(2)), admin.user.id).await;
     assert!(later.expires_at > issued.expires_at);
@@ -90,8 +93,9 @@ async fn issuance_stores_only_hash_and_authentication_keeps_fixed_ttl() {
         Sessions::authenticate(&test.db, &hash)
             .await
             .unwrap()
-            .expires_at,
-        first.expires_at
+            .session_expires_at()
+            .unwrap(),
+        first.session_expires_at().unwrap()
     );
     assert!(matches!(
         Sessions::authenticate(&test.db, &"0".repeat(64)).await,
@@ -194,7 +198,8 @@ async fn issue_until_preserves_deadline_and_sql_owner_fk_cascades() {
         Sessions::authenticate(&test.db, &hash)
             .await
             .unwrap()
-            .expires_at,
+            .session_expires_at()
+            .unwrap(),
         deadline
     );
     assert!(matches!(

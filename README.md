@@ -107,7 +107,7 @@ HTTPSリバースプロキシから `http://127.0.0.1:8080` へパスを保持�
 | `/docs` / `/openapi.json` | API仕様の閲覧／OpenAPI JSON |
 | `/manifest.webmanifest` | ホーム画面追加用のWebマニフェスト |
 | `/health` | DB疎通と報酬ワーカーの生存確認。正常時 `{"status":"ok","worker":"ok"}`、ワーカー停止時は503 |
-| `/metrics` | `METRICS_TOKEN` 設定時のみ。Prometheus形式の件数・ワーカー状態 |
+| `/metrics` | `METRICS_TOKEN` 設定時のみ。Prometheus形式の件数・ワーカー状態・直近24時間に終わった報酬実行の結果・APIトークン数 |
 
 ## 開発とUI設計
 
@@ -142,8 +142,8 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 | パス | 責務 |
 | --- | --- |
-| `src/dashboard/auth/` | ユーザーのライフサイクル、パスワード、セッション（一覧・個別／他端末の失効・最終利用）、パスキー（名前変更・最終利用）（アカウントの有無を明かさないログインoptionsを含む）、削除要求と完了（再試行の待機を含む）、ユーザー名ごとのログイン試行制限、ユーザーごとの現在パスワード確認の試行制限 |
-| `src/dashboard/http/` | ルート、DTO、Cookie、Origin・キャッシュの境界、UI配信、ヘルスチェック・メトリクス、報酬・削除のバックグラウンド処理の起動と保守 |
+| `src/dashboard/auth/` | ユーザーのライフサイクル、パスワード、セッション（一覧・個別／他端末の失効・最終利用）、APIトークン（`api_tokens.rs`。発行・失効・Bearer認証・スコープで通せるルート）、パスキー（名前変更・最終利用）（アカウントの有無を明かさないログインoptionsを含む）、削除要求と完了（再試行の待機を含む）、ユーザー名ごとのログイン試行制限、ユーザーごとの現在パスワード確認の試行制限 |
+| `src/dashboard/http/` | ルート、DTO、Cookie・Bearer APIトークン、Origin・キャッシュの境界、UI配信、ヘルスチェック・メトリクス、報酬・削除のバックグラウンド処理の起動と保守 |
 | `src/dashboard/db/` | `entities/` に保存モデル、`migrations/` にスキーマ変更 |
 | `src/dashboard/hoyolab/` | Cookieの解析・暗号化保存・削除・鍵の再暗号化（`rekey`）、連携の検証・同期、ユーザー単位の操作ロック |
 | `src/dashboard/games/` | ゲームUID一覧・表示設定・状態キャッシュ |
@@ -178,10 +178,17 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 ## API概要
 
-ベースパスは `/api/v1`。同一OriginのWebセッションAPIで、APIキー・Bearer・OAuthは提供しません。詳細は [OpenAPI仕様](docs/dashboard-api.json)または稼働中の `/docs` を参照してください。
+ベースパスは `/api/v1`。ブラウザは同一OriginのWebセッションを使い、外部ツールはユーザーごとのAPIトークンを使えます。OAuthは提供しません。詳細は [OpenAPI仕様](docs/dashboard-api.json)または稼働中の `/docs` を参照してください。
 
 - セッションCookieはHTTPSで `__Host-attos_session`、localhost HTTPで `attos_session`。
-- **ログインを含む状態変更リクエストには、`PUBLIC_ORIGIN` と完全一致する `Origin` が必須**です。
+- **Cookieで認証する状態変更リクエスト（ログインを含む）には、`PUBLIC_ORIGIN` と完全一致する `Origin` が必須**です。
+
+### APIトークン
+
+- 設定の「認証・セキュリティ」で発行・一覧・失効します（1ユーザー10個まで）。平文（`ahd_` ＋16進64文字）は発行時に1回だけ表示し、サーバーにはSHA-256だけを保存します。
+- `Authorization: Bearer ahd_…` を付けて呼びます。Cookieを伴わないBearerの要求には `Origin` は不要です。トークンとセッションCookieを同時に送った要求は401です。
+- スコープ `read` で使えるのは `GET /me`、`/server-settings`、`/me/hoyolab`、`/game-accounts`、`/game-accounts/{id}/status`、`/reward-settings`、`/reward-runs` です。`run` はこれに加えて `POST /reward-settings/{id}/run` を使えます。それ以外（トークン管理を含む）はセッション専用で、トークンでは403になります。
+- 管理者によるパスワード再発行・無効化・削除要求で、そのユーザーのトークンはすべて失効します。本人のパスワード変更では失効しません。
 - 初回／復旧後のパスワード変更前は操作が制限されます。ゲーム・報酬機能にはHoYoLAB連携検証の完了も必要です。
 
 以下のパスは `/api/v1` からの相対パスです。
@@ -191,6 +198,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 | 認証 | `POST /auth/login`、`POST /auth/logout`、`GET /me`、`PUT /me/password` |
 | パスキー | `GET /me/passkeys`、`POST /me/passkeys/options`・`/me/passkeys/verify`、`PATCH`・`DELETE /me/passkeys/{id}`、`POST /auth/passkey/options`・`/auth/passkey/verify` |
 | セッション | `GET /me/sessions`、`DELETE /me/sessions/{id}`、`POST /me/sessions/revoke-others` |
+| APIトークン | `GET`・`POST /me/api-tokens`、`DELETE /me/api-tokens/{id}`（セッション専用） |
 | HoYoLAB | `GET /me/hoyolab`、`PUT`・`DELETE /me/hoyolab/cookie`、`POST /me/hoyolab/verify`・`/me/hoyolab/sync` |
 | ゲーム | `GET /game-accounts`、`PATCH /game-accounts/{id}`、`GET /game-accounts/{id}/status` |
 | 報酬 | `GET /reward-settings`、`PATCH /reward-settings/{id}`、`POST /reward-settings/{id}/run`、`GET /reward-runs` |

@@ -1,4 +1,5 @@
 //! Transport tests use the production router and isolated synthetic PostgreSQL accounts.
+mod api_tokens;
 mod auth;
 mod dashboard;
 mod hoyolab;

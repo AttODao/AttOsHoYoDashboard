@@ -7,7 +7,7 @@ use super::{
 use crate::dashboard::{
     auth::{
         accounts::{lock_user, record, require_ready},
-        sessions::{Identity, Sessions},
+        sessions::{Identity, Sessions, reauthenticate},
     },
     config::Tuning,
     db::entities::{hoyolab_account, reward_setting},
@@ -73,7 +73,7 @@ impl<G: Gateway> CookieStore<G> {
     ) -> Result<Identity> {
         self.require_running()?;
         lock_user(tx, actor.user.id).await?;
-        let fresh = Sessions::authenticate(tx, &actor.token_hash).await?;
+        let fresh = reauthenticate(tx, actor).await?;
         if fresh.user.id != actor.user.id {
             return Err(Error::Unauthorized);
         }
@@ -171,10 +171,7 @@ impl<G: Gateway> CookieStore<G> {
     ) -> Result<Option<hoyolab_account::Model>> {
         let tx = self.db.begin().await?;
         lock_user(&tx, actor.user.id).await?;
-        let fresh = Sessions::authenticate(&tx, &actor.token_hash).await?;
-        if fresh.user.id != actor.user.id {
-            return Err(Error::Unauthorized);
-        }
+        let fresh = reauthenticate(&tx, actor).await?;
         let row = hoyolab_account::Entity::find()
             .filter(hoyolab_account::Column::OwnerUserId.eq(fresh.user.id))
             .one(&tx)

@@ -249,6 +249,8 @@ fn audit_action(action: &str, prefs: crate::app::preferences::Preferences) -> &'
         "signed_in" => "audit.signed_in",
         "password_changed" => "audit.password_changed",
         "password_reset" => "audit.password_reset",
+        "api_token_created" => "audit.api_token_created",
+        "api_token_revoked" => "audit.api_token_revoked",
         "user_created" => "audit.user_created",
         "user_enabled" => "audit.user_enabled",
         "user_disabled" => "audit.user_disabled",

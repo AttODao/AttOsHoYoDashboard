@@ -2,7 +2,10 @@
 #[cfg(test)]
 #[path = "sessions_tests.rs"]
 mod tests;
-use super::password;
+use super::{
+    api_tokens::{ApiTokens, Scope},
+    password,
+};
 use crate::dashboard::{
     db::entities::{session, user},
     error::{Error, Result},
@@ -14,10 +17,42 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
+/// How a request authenticated; `token_hash` in `Identity` is the hash of that secret.
+pub(in crate::dashboard) enum Credential {
+    Session { expires_at: DateTime<Utc> },
+    ApiToken { id: Uuid, scope: Scope },
+}
+
 pub(in crate::dashboard) struct Identity {
     pub(in crate::dashboard) token_hash: String,
     pub(in crate::dashboard) user: user::Model,
-    pub(in crate::dashboard) expires_at: DateTime<Utc>,
+    pub(in crate::dashboard) credential: Credential,
+}
+
+impl Identity {
+    /// The session deadline; API tokens have none and cannot use session-only operations.
+    pub(in crate::dashboard) fn session_expires_at(&self) -> Result<DateTime<Utc>> {
+        match self.credential {
+            Credential::Session { expires_at } => Ok(expires_at),
+            Credential::ApiToken { .. } => Err(Error::Forbidden),
+        }
+    }
+}
+
+/// Fresh re-authentication for the operations an API token may also reach; session-only
+/// operations keep calling `Sessions::authenticate`, which never accepts a token hash.
+pub(in crate::dashboard) async fn reauthenticate(
+    db: &impl ConnectionTrait,
+    actor: &Identity,
+) -> Result<Identity> {
+    let fresh = match actor.credential {
+        Credential::Session { .. } => Sessions::authenticate(db, &actor.token_hash).await?,
+        Credential::ApiToken { .. } => ApiTokens::authenticate(db, &actor.token_hash).await?,
+    };
+    if fresh.user.id != actor.user.id {
+        return Err(Error::Unauthorized);
+    }
+    Ok(fresh)
 }
 
 // The bearer value is transported only in an HttpOnly cookie, never Debug/JSON.
@@ -89,7 +124,9 @@ impl Sessions {
         Ok(Identity {
             token_hash: hash.to_owned(),
             user,
-            expires_at: session.expires_at,
+            credential: Credential::Session {
+                expires_at: session.expires_at,
+            },
         })
     }
 

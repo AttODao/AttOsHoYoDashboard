@@ -45,11 +45,16 @@ The default `DASHBOARD_UI_DIR` is `target/dx/attos-dashboard-ui/release/web/publ
 - Users can remove their stored Cookie from the HoYoLAB link page; the ciphertext is deleted and the link waits for a Cookie from the same HoYoLAB account.
 - Do not read production `.env` or dump secrets for troubleshooting. Use sanitized error codes and local synthetic tests.
 
+## API tokens
+
+- Users issue, list, and revoke their own API tokens (scope `read` or `run`, at most 10) from the security settings; the plaintext `ahd_…` value is shown once and only its SHA-256 is stored. Issuing and revoking need a session; a token can never manage tokens.
+- An administrator's password reissue, disable, or deletion request revokes the user's API tokens with the sessions. The user's own password change keeps them. Revocation deletes the row; `account_audit` records `api_token_created` / `api_token_revoked`.
+
 ## Logging, health, and metrics
 
 - `RUST_LOG` selects log levels (default `info`, e.g. `info,attoshoyodashboard=debug`); `LOG_FORMAT=json` writes one JSON object per line. Logs never include Cookie values, credentials, request payloads, or raw upstream errors.
 - `GET /health` returns `{"status":"ok","worker":"ok"}`. `worker` is `disabled` without `HOYOLAB_COOKIE_KEY`; if the reward worker has not ticked for 120 s the response is 503 with `{"status":"degraded","worker":"stalled"}`.
-- `GET /metrics` exists only when `METRICS_TOKEN` (16+ visible ASCII characters) is set, and requires `Authorization: Bearer <METRICS_TOKEN>`. It reports user, link, reward-run and reward-setting counts and the worker heartbeat age in Prometheus text format.
+- `GET /metrics` exists only when `METRICS_TOKEN` (16+ visible ASCII characters) is set, and requires `Authorization: Bearer <METRICS_TOKEN>`. It reports user, link, reward-run (`ahd_reward_runs{state}`, all retained runs) and reward-setting counts, `ahd_reward_runs_ended_24h{state}` (runs that ended in the last 24 hours, every final state reported, 0 when none), `ahd_api_tokens{scope}`, and the worker heartbeat age in Prometheus text format.
 - Schedules use `TIMEZONE` (IANA name, DST aware; a time skipped by DST runs at the first minute after the gap, a repeated time at its first occurrence) when set, otherwise the fixed `TIMEZONE_OFFSET`.
 - Tuning: `REWARD_HISTORY_DAYS` (1–90, default 5), `STATUS_CACHE_TTL_MINUTES` (1–60, default 5), `REWARD_MAX_ATTEMPTS` (1–4, default 4), `REWARD_RETRY_DELAY_SECONDS` (1–600, default 10).
 
@@ -57,7 +62,7 @@ The default `DASHBOARD_UI_DIR` is `target/dx/attos-dashboard-ui/release/web/publ
 
 - The Dashboard is a single-process, single-instance service. There is no HA or distributed job queue; deployment downtime during update is accepted.
 - SIGINT/SIGTERM stop new operations, mark HoYoLAB work as closing, and drain bounded in-flight work/confirmation before the process exits.
-- Disabling a user blocks new API access/jobs and revokes sessions. Re-enabling does not revive old sessions and turns automatic rewards off.
+- Disabling a user blocks new API access/jobs and revokes sessions and API tokens. Re-enabling does not revive old sessions and turns automatic rewards off.
 
 ## HoYoLAB availability and evidence limits
 

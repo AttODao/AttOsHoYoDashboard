@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use std::fmt::Write;
 
 /// Counts by label from fixed SQL; label values come from CHECK-constrained columns.
-const GROUPS: [(&str, &str, &str); 4] = [
+const GROUPS: [(&str, &str, &str); 5] = [
     (
         "ahd_users",
         "state",
@@ -31,7 +31,23 @@ const GROUPS: [(&str, &str, &str); 4] = [
         "automatic",
         "SELECT CASE WHEN enabled THEN 'on' ELSE 'off' END AS label, count(*) AS n FROM reward_settings GROUP BY 1",
     ),
+    (
+        "ahd_api_tokens",
+        "scope",
+        "SELECT scope AS label, count(*) AS n FROM api_tokens GROUP BY 1",
+    ),
 ];
+
+/// Final reward run states; every one is reported so an absent series never means "none".
+const ENDED_STATES: [&str; 6] = [
+    "success",
+    "already_claimed",
+    "failed",
+    "action_required",
+    "unknown",
+    "stopped",
+];
+const ENDED_24H: &str = "SELECT state AS label, count(*) AS n FROM reward_runs WHERE ended_at >= now() - interval '24 hours' GROUP BY 1";
 
 pub(super) async fn metrics(
     State(app): State<App>,
@@ -67,6 +83,28 @@ pub(super) async fn metrics(
             let count: i64 = row.try_get("", "n")?;
             let _ = writeln!(out, "{name}{{{label}=\"{value}\"}} {count}");
         }
+    }
+    let rows = app
+        .accounts
+        .db
+        .query_all_raw(Statement::from_string(DbBackend::Postgres, ENDED_24H))
+        .await?;
+    let mut ended = std::collections::BTreeMap::new();
+    for row in rows {
+        let state: String = row.try_get("", "label")?;
+        let count: i64 = row.try_get("", "n")?;
+        ended.insert(state, count);
+    }
+    let _ = writeln!(
+        out,
+        "# HELP ahd_reward_runs_ended_24h Reward runs that ended in the last 24 hours, by final state.\n# TYPE ahd_reward_runs_ended_24h gauge"
+    );
+    for state in ENDED_STATES {
+        let count = ended.get(state).copied().unwrap_or(0);
+        let _ = writeln!(
+            out,
+            "ahd_reward_runs_ended_24h{{state=\"{state}\"}} {count}"
+        );
     }
     Ok((
         [(

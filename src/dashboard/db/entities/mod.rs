@@ -1,5 +1,6 @@
 //! Database entities used explicitly by dashboard account and authentication policy.
 pub(in crate::dashboard) mod admin_notification_setting;
+pub(in crate::dashboard) mod api_token;
 pub(in crate::dashboard) mod audit;
 pub(in crate::dashboard) mod deletion_request;
 pub(in crate::dashboard) mod game_account;

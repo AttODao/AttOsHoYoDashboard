@@ -37,6 +37,7 @@ const rewardSettings=['genshin','starrail'].map((game_kind,i)=>({id:uid(20+i),ga
 const hoursAgo=h=>new Date(Date.now()-h*3600e3).toISOString();
 // Backend error codes (gateway::error_code) must never be rendered raw in settings.
 let sessions=[{id:uid(50),created_at:hoursAgo(2),last_seen_at:hoursAgo(0.1),expires_at:hoursAgo(-100),user_agent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36',current:true},{id:uid(51),created_at:hoursAgo(30),last_seen_at:null,expires_at:hoursAgo(-70),user_agent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1',current:false},{id:uid(52),created_at:hoursAgo(50),last_seen_at:null,expires_at:hoursAgo(-50),user_agent:null,current:false}];
+let apiTokens=[];
 const rewardRuns=[{id:uid(40),setting_id:uid(20),game_kind:'genshin',trigger:'scheduled',state:'failed',created_at:hoursAgo(20),ended_at:hoursAgo(19.9),attempt_count:1,attempts:[{number:1,outcome:'failed',error_code:'http:503',started_at:hoursAgo(20),finished_at:hoursAgo(19.9)}]}];
 const json=(res,data,status=200)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
 let origin;
@@ -95,6 +96,9 @@ const server=http.createServer(async(req,res)=>{
    if(p===`/api/v1/me/passkeys/${uid(11)}`&&req.method==='PATCH'){assert.deepEqual(Object.keys(body),['label']);passkeys[0].label=body.label;res.writeHead(204);return res.end();}
    if(p===`/api/v1/me/passkeys/${uid(11)}`){assert.equal(req.method,'DELETE');passkeyDeletes++;passkeys=[];res.writeHead(204);return res.end();}
    if(p==='/api/v1/me/sessions'){assert.equal(req.method,'GET');return json(res,sessions);}
+   if(p==='/api/v1/me/api-tokens'&&req.method==='GET')return json(res,apiTokens);
+   if(p==='/api/v1/me/api-tokens'){assert.equal(req.method,'POST');assert.deepEqual(Object.keys(body),['name','scope']);assert.deepEqual(body,{name:'Stream Deck',scope:'run'});const row={id:uid(60),name:body.name,scope:body.scope,created_at:hoursAgo(0),last_used_at:null};apiTokens=[row,...apiTokens];return json(res,{...row,token:'ahd_'+'5'.repeat(64)},201);}
+   if(p===`/api/v1/me/api-tokens/${uid(60)}`){assert.equal(req.method,'DELETE');apiTokens=apiTokens.filter(row=>row.id!==uid(60));res.writeHead(204);return res.end();}
    if(p==='/api/v1/me/notifications'&&req.method==='GET')return json(res,{webhook_configured:false,webhook_hint:null,webhook_format:'discord',language:'ja',events:{},last_delivery_at:null,last_delivery_ok:null,resin_warn_hours:2,daily_reminder_time:'21:00',weekly_reminder_time:'15:00',push_public_key:null,push_subscriptions:0});
    if(p==='/api/v1/me/notifications'&&req.method==='PUT'){assert.ok(body.webhook_format);res.writeHead(204);return res.end();}
    if(p==='/api/v1/admin/notifications'&&req.method==='GET')return json(res,{webhook_configured:false,webhook_hint:null,webhook_format:'discord',language:'ja',events:{},last_delivery_at:null,last_delivery_ok:null});
@@ -737,6 +741,29 @@ try{
  await page.locator('.status.success').getByText('Other sessions are signed out.',{exact:true}).waitFor();
  assert.equal(await sessionList.locator('li').count(),1);
  assert.equal(await button('Sign out all other sessions').count(),0);
+ // API tokens: the plaintext appears once in a dialog and leaves the page with it.
+ await page.getByText('No API tokens issued.',{exact:true}).waitFor();
+ await button('Issue token').click();
+ await page.locator('#api-token-name-error').waitFor();
+ assert.equal(await page.locator('#api-token-name').getAttribute('aria-invalid'),'true');
+ await page.locator('#api-token-name').fill('Stream Deck');
+ await page.locator('#api-token-scope').selectOption('run');
+ await button('Issue token').click();await idle();
+ const issuedToken=page.locator('#api-token-issued[open]');await issuedToken.waitFor();
+ assert.equal(await page.locator('#api-token-secret').innerText(),'ahd_'+'5'.repeat(64));
+ assert.ok((await issuedToken.innerText()).includes('It cannot be shown again'));
+ await issuedToken.getByRole('button',{name:'Close',exact:true}).last().click();
+ assert.equal(await page.locator('#api-token-secret').count(),0);
+ assert.ok(!(await page.content()).includes('5'.repeat(64)),'the plaintext leaves the DOM with the dialog');
+ await page.locator('#settings-panel').getByText('Stream Deck',{exact:true}).waitFor();
+ assert.ok((await page.locator('#settings-panel').innerText()).includes('Read and manual claim'));
+ assert.equal(await page.locator('#api-token-name').inputValue(),'','the name field clears after issuing');
+ await page.getByRole('button',{name:'Revoke API token "Stream Deck"',exact:true}).click();
+ const revokeToken=page.locator('#api-token-revoke-dialog[open]');await revokeToken.waitFor();
+ assert.ok((await revokeToken.innerText()).includes('Tools using this token will lose access.'));
+ await revokeToken.getByRole('button',{name:'Revoke',exact:true}).click();await idle();
+ await page.locator('.status.success').getByText('API token revoked.',{exact:true}).waitFor();
+ await page.getByText('No API tokens issued.',{exact:true}).waitFor();
  // Deleting a passkey needs confirmation; Cancel and Escape keep it and return focus.
  const deletePasskey=page.getByRole('button',{name:'Delete passkey “Synthetic browser key”',exact:true});
  const passkeyDialog=page.locator('#passkey-delete-dialog');
