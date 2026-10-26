@@ -3,8 +3,8 @@
   "info": {
     "title": "AttOs HoYo Dashboard Web Session API",
     "version": "0.1.0",
-    "summary": "Manual contract for the Dioxus Dashboard UI and cookie-authenticated web session API.",
-    "description": "This contract documents the implemented Dashboard routes. It is a web-session API only: no PAT, OAuth scope, bearer token, or external-client API is provided. The Dioxus build may serve hashed files under /assets as browser-internal static assets, but those generated filenames are not stable API operations.\n\nHoYoLAB integration and manual/scheduled rewards are normal features when Cookie storage encryption is configured and password/verified-Cookie setup is complete. Automatic rewards default OFF and require user opt-in. Availability does not establish live upstream token-to-UID binding or the reward period/POST reflection contract."
+    "summary": "Manual contract for the Dioxus Dashboard UI, the cookie-authenticated web session API, and per-user API tokens.",
+    "description": "This contract documents the implemented Dashboard routes. Browsers use the cookie-authenticated web session. External clients may use a per-user bearer API token (`ahdApiToken`) on the operations that list it; every other operation is session-only. No OAuth is provided. The Dioxus build may serve hashed files under /assets as browser-internal static assets, but those generated filenames are not stable API operations.\n\nHoYoLAB integration and manual/scheduled rewards are normal features when Cookie storage encryption is configured and password/verified-Cookie setup is complete. Automatic rewards default OFF and require user opt-in. Availability does not establish live upstream token-to-UID binding or the reward period/POST reflection contract."
   },
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "servers": [
@@ -587,6 +587,9 @@
         "security": [
           {
             "attosSessionCookie": []
+          },
+          {
+            "ahdApiToken": []
           }
         ]
       },
@@ -1230,6 +1233,9 @@
         "security": [
           {
             "attosSessionCookie": []
+          },
+          {
+            "ahdApiToken": []
           }
         ]
       }
@@ -1695,6 +1701,9 @@
         "security": [
           {
             "attosSessionCookie": []
+          },
+          {
+            "ahdApiToken": []
           }
         ]
       }
@@ -2074,6 +2083,9 @@
         "security": [
           {
             "attosSessionCookie": []
+          },
+          {
+            "ahdApiToken": []
           }
         ]
       }
@@ -2222,6 +2234,9 @@
         "security": [
           {
             "attosSessionCookie": []
+          },
+          {
+            "ahdApiToken": []
           }
         ],
         "parameters": [
@@ -2298,6 +2313,9 @@
         "security": [
           {
             "attosSessionCookie": []
+          },
+          {
+            "ahdApiToken": []
           }
         ]
       }
@@ -2446,18 +2464,21 @@
         "security": [
           {
             "attosSessionCookie": []
+          },
+          {
+            "ahdApiToken": []
           }
         ],
         "parameters": [
           {
             "name": "Origin",
             "in": "header",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string",
               "format": "uri"
             },
-            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+            "description": "Required on cookie-authenticated state-changing requests and must exactly match PUBLIC_ORIGIN; not used with a bearer API token."
           },
           {
             "name": "id",
@@ -2478,7 +2499,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Requires an API token of scope `run` when called with a bearer token; Origin is then not required."
       }
     },
     "/api/v1/reward-runs": {
@@ -2542,6 +2564,9 @@
         "security": [
           {
             "attosSessionCookie": []
+          },
+          {
+            "ahdApiToken": []
           }
         ],
         "parameters": [
@@ -2836,6 +2861,229 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/me/api-tokens": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "operationId": "listApiTokens",
+        "summary": "List the current user's API tokens (never their secrets). Session only.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiTokenView"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "operationId": "issueApiToken",
+        "summary": "Issue an API token; the plaintext is returned once. Session only, at most 10 tokens per user.",
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedApiToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiTokenInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/api-tokens/{id}": {
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "operationId": "revokeApiToken",
+        "summary": "Revoke one of the current user's API tokens. Session only.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
       }
     },
     "/api/v1/admin/audit": {
@@ -3565,6 +3813,11 @@
         "in": "cookie",
         "name": "__Host-attos_session",
         "description": "HttpOnly SameSite=Strict session cookie. HTTPS deployments use __Host-attos_session with Secure; localhost HTTP uses attos_session."
+      },
+      "ahdApiToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Per-user API token (`ahd_` + 64 hex digits) issued from the security settings. Scope `read` reaches only the operations that list it; scope `run` also queues a manual reward run. Bearer requests without a Cookie header need no Origin; a request carrying both a token and the session cookie is rejected."
       }
     },
     "responses": {
@@ -5114,6 +5367,118 @@
       "EventList": {
         "type": "string",
         "description": "Known kinds — personal: reward_failed, reward_claimed, cookie_invalid, signed_in, sign_in_failed, resource_near_cap, resource_full, expeditions_done, transformer_ready, daily_unfinished, weekly_unfinished. Admin: user_attention, worker_stalled, deletion_stuck, sign_in_failed, signed_in."
+      },
+      "ApiTokenView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "scope",
+          "created_at",
+          "last_used_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "read",
+              "run"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Updated at most every five minutes."
+          }
+        }
+      },
+      "IssuedApiToken": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "scope",
+          "created_at",
+          "last_used_at",
+          "token"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "read",
+              "run"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Updated at most every five minutes."
+          },
+          "token": {
+            "type": "string",
+            "pattern": "^ahd_[0-9a-f]{64}$",
+            "description": "The plaintext token. Returned only by this response; only its hash is stored."
+          }
+        }
+      },
+      "ApiTokenInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "scope"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "Trimmed; 1 to 100 characters without control characters."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "read",
+              "run"
+            ],
+            "description": "`read`: dashboard data reads. `run`: reads plus the manual reward run."
+          }
+        }
       }
     }
   }

@@ -15,11 +15,11 @@ HoYoLAB連携・手動報酬受け取り・自動報酬受け取りは通常機�
 | 管理者 | ユーザー作成、無効化・再有効化、管理者権限の付与・解除（自身の権限は変更不可）、仮パスワード復旧、本人または他ユーザーの削除要求、ユーザー一覧（HoYoLAB連携状態・自動受け取りONのゲーム数・最終ログイン）と監査ログの閲覧 |
 | 一般ユーザー | 自身のパスワード変更、任意passkey、HoYoLAB Cookie登録、自身のゲーム状態・報酬設定、自己削除 |
 
-- 招待・自由登録・PAT・Scope・外部クライアントAPIは提供しない。
-- 認証はWebセッションCookieのみ。HTTPSでは `__Host-attos_session`、localhost HTTPでは `attos_session` を使う。Cookieは HttpOnly / SameSite=Strict、HTTPSでは Secure。
+- 招待・自由登録・OAuth・外部クライアント専用のAPIは提供しない。外部ツールは、本人が設定画面で発行するAPIトークン（scope `read`/`run`）で既存の読み取りと手動受け取りのendpointを呼べる。
+- ブラウザの認証はWebセッションCookie。HTTPSでは `__Host-attos_session`、localhost HTTPでは `attos_session` を使う。Cookieは HttpOnly / SameSite=Strict、HTTPSでは Secure。
 - セッションはログイン時から固定期限（既定7日）で、アクセスでは延長しない。本人はセキュリティ画面で有効なセッション（ログイン日時・最終利用（5分単位で記録）・ブラウザ）を一覧でき、他のセッションを個別または一括でログアウトできる。現在のセッションはログアウト操作で終了する。期限切れセッションは1時間ごとに削除する。ログイン成功時に最終ログイン日時とauditを記録し、パスキーは最終利用日時と名前の変更に対応する。パスワード変更は他セッションを失効させ、現在セッションの期限は延長しない。
 - 初回・再発行後の必須パスワード設定は新パスワード＋確認のみを入力し、ログイン時の仮パスワードを保持しない。`PUT /api/v1/me/password` の `current_password` は、ユーザー行lock下で再認証した最新アカウントが `must_change_password=true` の場合のみ省略（またはnull）できる。通常変更は正しい現在パスワードが必須で、明示した不正な値は必須設定時も拒否する。新パスワードは省略時も保存済みパスワードと異なる必要があり、確認入力はクライアントで照合してAPIには送らない。失効・期限切れセッションや競合でhash/必須flagが変わったsnapshotは拒否する。
-- mutationは同一Originを必須とし、`Origin` が `PUBLIC_ORIGIN` と完全一致しなければ拒否する。
+- Cookieで認証するmutationは同一Originを必須とし、`Origin` が `PUBLIC_ORIGIN` と完全一致しなければ拒否する。Cookieを伴わないBearer APIトークンの要求はOrigin確認の対象外とする。
 - JSON DTOは未知fieldを拒否する。エラーは安全な `error` code とsanitized `message` で返し、Cookie・パスワード・セッショントークン・上流raw messageを含めない。
 - ログイン入口（パスワードログイン、passkey options/verify）は、入力されたユーザー名ごとに60秒あたり20回に制限し、超過時は429を返す。reverse proxy経由のためIPは使わない。passkey verifyはchallengeを発行したユーザー名の枠を使い、存在しないchallengeは枠を消費しない。ユーザー名として無効な入力は1つの枠を共有し、枠の表は上限1024件で期限切れ・最古の順に捨てる。全体のCPUはArgon2とpasskeyのworker上限（各4）で抑え、worker枠が満杯の場合は待機列を増やさず503を返す。
 - `POST /auth/passkey/options` はアカウントの有無・passkeyの有無・無効化／仮パスワード状態を区別しない。利用可能なpasskeyがないユーザー名にも200で同じ形のoptions（保存済みだが完了できないchallengeと、ユーザー名からHMACで決めた1件のcredential ID）を返し、verifyは誤ったassertionと同じ401とする。HMAC鍵は `HOYOLAB_COOKIE_KEY` から用途別に導出し（未設定時はプロセスごとの乱数）、同じ名前への再問い合わせでは同じIDになる。複数passkeyを持つユーザーのID件数と、実在IDの長さ・transportsは区別し得る残差として許容する。ユーザー名として無効な入力は従来どおり401。

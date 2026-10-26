@@ -56,7 +56,8 @@ APIとschedulerは同じDB/業務処理を使う。単一process/instance前提�
 ## 2. HTTP境界
 
 - Protected routeはsession cookieをDB上のhashへ照合する。HTTPS時のcookie名は `__Host-attos_session`、localhost非secure時は `attos_session`。
-- Safe method以外は `Origin` headerが `PUBLIC_ORIGIN` と完全一致する必要がある。
+- Safe method以外は `Origin` headerが `PUBLIC_ORIGIN` と完全一致する必要がある。ただし `Authorization: Bearer` がちょうど1つあり `Cookie` headerを持たない要求は除く。CSRFには自動で付く資格情報が要るが、ブラウザはcookieを自動で付けても、Bearer headerはCORS preflightなしにcross-siteで付けない。AHDはpreflightに応じない。
+- `Authorization` headerがある要求はAPIトークンだけで認証し、セッションcookieも持つ要求は401とする（`auth/api_tokens.rs`）。scope `read` はdashboardデータの読み取り7ルート（`GET /me`・`/server-settings`・`/me/hoyolab`・`/game-accounts`・`/game-accounts/{id}/status`・`/reward-settings`・`/reward-runs`）、`run` はそれに `POST /reward-settings/{id}/run` を加える。判定はmiddlewareがrouterのmatched pathで `permits` を呼んで行う。その他のrouteはセッション専用で、業務層の再認証もセッション専用の `Sessions::authenticate` のままにする。トークンで届くroute（`CookieStore::actor_locked`・`status`）だけが `sessions::reauthenticate` で資格情報の種類ごとに再認証する。
 - Responseには `X-Content-Type-Options: nosniff` を付与する。API・HTML shell・error responseは `Cache-Control: no-store`。`/assets` の成功responseのうち、content hash付きの名前（DXの`-dxh<hex>`、self-hosted fontの`-<sha256先頭12桁>`）は `public, max-age=31536000, immutable`、それ以外は `no-cache` とする。Dioxus HTML shellにはCSPも付与する。DX 0.7.10のexternal module loaderを許可し、`script-src 'self' 'wasm-unsafe-eval'`、`style-src 'self'`、`img-src 'self' https://upload-os-bbs.hoyolab.com https://act-upload.hoyolab.com https://act-webstatic.hoyoverse.com`、`connect-src 'self'`、`object-src 'none'`、`frame-ancestors 'none'`、`base-uri 'none'` を使う。`'unsafe-inline'` と一般の `'unsafe-eval'` は使わない。release bundleのCSP・WASM動作はChromiumと合成fixtureで検証済み。
 - Body limitは16KiB。JSON DTOは `serde(deny_unknown_fields)` を使う。
 - Error DTOは `{ "error": code, "message": sanitized }`。上流message、driver source、秘密値は返さない。
@@ -67,6 +68,7 @@ APIとschedulerは同じDB/業務処理を使う。単一process/instance前提�
 |---|---|
 | `users` | username, admin flag, active, must_change_password, password hash |
 | `sessions` | token hash primary key, fixed expiry |
+| `api_tokens` | user、name、scope（`read`/`run`）、token hash unique、created_at、last_used_at。失効は行の削除、履歴はaudit |
 | `passkeys` | WebAuthn credential JSON, credential id, label |
 | `audit` | lifecycle audit; secret/game dataは含めない |
 | `hoyolab_accounts` | owner 1:1、nullable verified UID unique、encrypted credentials、credential_version、auth_status |

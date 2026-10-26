@@ -7,7 +7,7 @@ use super::{
 use crate::dashboard::{
     auth::{
         password::token_hash,
-        sessions::{Identity, Sessions},
+        sessions::{Credential, Identity, Sessions},
     },
     db::entities::{game_account, hoyolab_account, reward_guard, reward_setting},
     error::Error,
@@ -348,7 +348,9 @@ async fn disabling_during_identity_get_prevents_link_promotion() {
         let actor = Identity {
             token_hash: actor.token_hash.clone(),
             user: actor.user.clone(),
-            expires_at: actor.expires_at,
+            credential: Credential::Session {
+                expires_at: actor.session_expires_at().unwrap(),
+            },
         };
         tokio::spawn(async move { store.verify(&actor).await })
     };

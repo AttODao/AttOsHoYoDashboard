@@ -79,7 +79,7 @@ async fn mandatory_password_setup_omits_current_but_rejects_reuse_and_preserves_
         ));
     }
     let ready = identity(&test.db, &issued).await;
-    assert_eq!(ready.expires_at, deadline);
+    assert_eq!(ready.session_expires_at().unwrap(), deadline);
     assert!(matches!(
         accounts
             .change_password(&ready, None, "another-password".into())
@@ -199,7 +199,7 @@ async fn reissued_password_revokes_old_mandatory_session_and_new_login_can_omit_
         .await
         .unwrap();
     assert!(!user.must_change_password);
-    assert_eq!(issued.expires_at, actor.expires_at);
+    assert_eq!(issued.expires_at, actor.session_expires_at().unwrap());
 }
 
 async fn wait_for_lock_waiters(db: &DatabaseConnection, expected: i64) {
@@ -290,7 +290,13 @@ async fn password_rotation_preserves_original_deadline_revokes_others_and_valida
             Err(Error::Unauthorized)
         ));
     }
-    assert_eq!(identity(&test.db, &replacement).await.expires_at, deadline);
+    assert_eq!(
+        identity(&test.db, &replacement)
+            .await
+            .session_expires_at()
+            .unwrap(),
+        deadline
+    );
     assert_eq!(
         session::Entity::find()
             .filter(session::Column::UserId.eq(admin.user.id))
@@ -334,7 +340,7 @@ async fn password_rotation_preserves_original_deadline_revokes_others_and_valida
 async fn password_change_reauthenticates_deadline_instead_of_trusting_live_snapshot() {
     let test = TestDatabase::new().await;
     let (accounts, actor) = test.ready_admin().await;
-    assert!(actor.expires_at > Utc::now());
+    assert!(actor.session_expires_at().unwrap() > Utc::now());
     let tx = test.db.begin().await.unwrap();
     lock_user(&tx, actor.user.id).await.unwrap();
     let (changed, ()) = tokio::join!(
@@ -412,7 +418,7 @@ async fn concurrent_password_changes_from_same_authenticated_snapshot_have_one_w
     };
     let (_, issued) = winner.unwrap();
     assert!(matches!(loser, Err(Error::Unauthorized)));
-    assert_eq!(issued.expires_at, admin.expires_at);
+    assert_eq!(issued.expires_at, admin.session_expires_at().unwrap());
     assert!(identity(&test.db, &issued).await.user.id == admin.user.id);
     assert!(matches!(
         Sessions::authenticate(&test.db, &admin.token_hash).await,

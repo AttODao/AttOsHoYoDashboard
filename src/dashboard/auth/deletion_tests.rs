@@ -5,7 +5,7 @@ use super::*;
 use crate::dashboard::{
     auth::{
         password::token_hash,
-        sessions::{Identity, IssuedSession, Sessions},
+        sessions::{Credential, Identity, IssuedSession, Sessions},
     },
     db::entities::{audit, deletion_request, passkey, user},
     error::Error,
@@ -346,7 +346,9 @@ async fn request_failures_do_not_queue_or_disable_users() {
     let forged = Identity {
         user: admin.user.clone(),
         token_hash: token_owner.token_hash.clone(),
-        expires_at: token_owner.expires_at,
+        credential: Credential::Session {
+            expires_at: token_owner.session_expires_at().unwrap(),
+        },
     };
     assert!(matches!(
         accounts

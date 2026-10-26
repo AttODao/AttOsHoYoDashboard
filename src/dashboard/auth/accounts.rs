@@ -179,13 +179,14 @@ impl Accounts {
                 "new password must differ from current password",
             ));
         }
+        let expires_at = fresh.session_expires_at()?;
         let mut update = fresh.user.into_active_model();
         update.password_hash = Set(password_hash);
         update.must_change_password = Set(false);
         let user = update.update(&tx).await?;
         Sessions::revoke_all(&tx, user.id).await?;
         // Changing a password rotates the secret but never extends its login deadline.
-        let token = Sessions::issue_until(&tx, user.id, fresh.expires_at).await?;
+        let token = Sessions::issue_until(&tx, user.id, expires_at).await?;
         record(&tx, Some(user.id), user.id, "password_changed").await?;
         tx.commit().await?;
         Ok((user, token))
@@ -239,6 +240,7 @@ impl Accounts {
         update.update(&tx).await?;
         Sessions::revoke_all(&tx, target).await?;
         super::passkeys::Passkeys::revoke_all(&tx, target).await?;
+        super::api_tokens::ApiTokens::revoke_all(&tx, target).await?;
         record(&tx, Some(actor.user.id), target, "password_reset").await?;
         tx.commit().await?;
         Ok(())
@@ -265,6 +267,7 @@ impl Accounts {
         update.active = Set(active);
         update.update(&tx).await?;
         Sessions::revoke_all(&tx, target).await?;
+        super::api_tokens::ApiTokens::revoke_all(&tx, target).await?;
         if active {
             use sea_orm::sea_query::Expr;
             if let Some(link) = hoyolab_account::Entity::find()

@@ -1,4 +1,5 @@
 //! HTTP composition and server lifetime; domain rules live outside this directory.
+mod api_tokens;
 mod auth;
 mod games;
 mod hoyolab;
@@ -114,6 +115,7 @@ fn router(app: App) -> Router {
     let protected = Router::new()
         .route("/api/v1/server-settings", get(server_settings))
         .merge(auth::protected_routes())
+        .merge(api_tokens::protected_routes())
         .merge(users::protected_routes())
         .merge(hoyolab::protected_routes())
         .merge(games::protected_routes())

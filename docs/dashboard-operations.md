@@ -45,6 +45,11 @@ The default `DASHBOARD_UI_DIR` is `target/dx/attos-dashboard-ui/release/web/publ
 - Users can remove their stored Cookie from the HoYoLAB link page; the ciphertext is deleted and the link waits for a Cookie from the same HoYoLAB account.
 - Do not read production `.env` or dump secrets for troubleshooting. Use sanitized error codes and local synthetic tests.
 
+## API tokens
+
+- Users issue, list, and revoke their own API tokens (scope `read` or `run`, at most 10) from the security settings; the plaintext `ahd_…` value is shown once and only its SHA-256 is stored. Issuing and revoking need a session; a token can never manage tokens.
+- An administrator's password reissue, disable, or deletion request revokes the user's API tokens with the sessions. The user's own password change keeps them. Revocation deletes the row; `account_audit` records `api_token_created` / `api_token_revoked`.
+
 ## Logging, health, and metrics
 
 - `RUST_LOG` selects log levels (default `info`, e.g. `info,attoshoyodashboard=debug`); `LOG_FORMAT=json` writes one JSON object per line. Logs never include Cookie values, credentials, request payloads, or raw upstream errors.
@@ -57,7 +62,7 @@ The default `DASHBOARD_UI_DIR` is `target/dx/attos-dashboard-ui/release/web/publ
 
 - The Dashboard is a single-process, single-instance service. There is no HA or distributed job queue; deployment downtime during update is accepted.
 - SIGINT/SIGTERM stop new operations, mark HoYoLAB work as closing, and drain bounded in-flight work/confirmation before the process exits.
-- Disabling a user blocks new API access/jobs and revokes sessions. Re-enabling does not revive old sessions and turns automatic rewards off.
+- Disabling a user blocks new API access/jobs and revokes sessions and API tokens. Re-enabling does not revive old sessions and turns automatic rewards off.
 
 ## HoYoLAB availability and evidence limits
 

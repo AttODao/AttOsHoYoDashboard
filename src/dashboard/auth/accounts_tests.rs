@@ -5,7 +5,7 @@ use super::{Accounts, require_admin, require_ready, validate_username};
 use crate::dashboard::{
     auth::{
         password::token_hash,
-        sessions::{Identity, IssuedSession, Sessions},
+        sessions::{Credential, Identity, IssuedSession, Sessions},
     },
     db::entities::{audit, passkey, user},
     error::Error,
@@ -434,7 +434,9 @@ async fn admin_mutations_reauthenticate_instead_of_trusting_snapshot_or_other_ow
     let mixed = Identity {
         user: admin.user.clone(),
         token_hash: member.token_hash.clone(),
-        expires_at: member.expires_at,
+        credential: Credential::Session {
+            expires_at: member.session_expires_at().unwrap(),
+        },
     };
     assert!(matches!(
         accounts
