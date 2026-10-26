@@ -125,6 +125,33 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 エンジンは初回に公開releaseからSHA-256を確認して `.impeccable/cache/` へ取得します（未追跡）。curl／wgetがない場合は既存のNodeを使用します。ユーザー共通設定・スキルは変更しません。Pi向け自動detector hookはないため、UI変更の最後にスキルの指示に従い手動検査します。
 
+### Androidアプリ
+
+`dashboard-ui` はDioxusのmobile機能でAndroidアプリとしてもビルドできます（Cargo feature `mobile`。web版は既定の `web` featureのまま）。画面構成はweb版とほぼ同じですが、次の機能はアプリに含めず、web版でのみ使えます。
+
+- 管理者機能（ユーザー管理・管理者向け通知設定）、APIドキュメント（`/docs`）、ユーザー削除
+- 認証・セキュリティのAPIトークンとパスワード変更（初回／復旧後のパスワード変更もブラウザで行い、アプリでは「設定状況を更新」を選びます）
+- WebAuthnとWeb Pushはブラウザ専用のため、パスキーでのログイン・登録とブラウザ通知もアプリにはありません（登録済みパスキーの一覧・名前変更・削除は可能）
+
+アプリはビルド時に指定した1つのサーバーへRust（reqwest、rustls）から直接接続します。ログイン応答のセッションCookieをアプリ専用領域（`getFilesDir()`、他アプリから読めない）に保存し、以後の要求に `Cookie` と、サーバーが要求する `Origin`（＝サーバーのOrigin）を付けます。ログアウトや期限切れで削除されます。サーバー側の変更はありません。
+
+必要なもの：devenvの `android` プロファイル（Android SDK 34・build-tools 34.0.0・NDK・JDK 17。初回は数GBを取得し、Android SDKのライセンスに同意したものとして扱います）と、Gradleが依存を取得するためのネットワーク。Rustの `aarch64-linux-android`／`x86_64-linux-android` targetは `rust-toolchain.toml` で入ります。
+
+```sh
+# 実機（arm64）向けAPK。AHD_SERVER_URL はHTTPSのOrigin（パスなし）
+AHD_SERVER_URL=https://ahd.example.com devenv --profile android shell -- build-android
+# x86_64エミュレータ向け
+AHD_SERVER_URL=https://ahd.example.com AHD_ANDROID_TARGET=x86_64-linux-android devenv --profile android shell -- build-android
+# 静的検査（clippy、mobile feature、aarch64-linux-android）
+devenv --profile android shell -- check-android
+```
+
+APKは `target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/apk/debug/app-debug.apk` に出力されます（デバッグ署名。`--release` を付けても署名設定がなければデバッグ署名です）。`adb install -r <APK>` で導入します。`build-android` は `dx build --platform android` の後、`dashboard-ui/android/res/` のアイコンとアプリ名「AHD」で生成プロジェクトを上書きしてGradleを再実行します（`dx serve --platform android` ではDioxus既定のアイコン・名前になります）。
+
+- `AHD_SERVER_URL` はHTTPS、またはlocalhostのHTTPのみ。未指定時は `http://localhost:8080` で、開発用サーバー（`PUBLIC_ORIGIN: http://localhost:8080`）に `adb reverse tcp:8080 tcp:8080` でつなぐ想定です。
+- エミュレータは `devenv --profile android --profile android-emulator shell`（x86_64イメージ、KVMが必要）で入ります。
+- パッケージ名 `cc.attodao.ahd`、minSdk 24、targetSdk 34（`dashboard-ui/Dioxus.toml`）。権限はINTERNETのみです。
+
 ### UIモジュール
 
 | パス | 責務 |
@@ -136,6 +163,9 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 | `dashboard-ui/src/app/data.rs` | セッション世代に結び付いた画面データの取得（未取得と空を区別、リソースごとに最新の要求の応答だけを反映）、全ゲームの手動受け取りとその後の報酬状態のGET追従 |
 | `dashboard-ui/src/app/display.rs` | 数値・ブラウザのローカル時刻による簡潔な月日／24時間表示、データの経過時間、上限への近さ、サーバー時刻とブラウザ時刻の換算、エラーコードの表示文への対応付け |
 | `dashboard-ui/src/pages/` | 画面、メニュー、設定、ユーザー管理 |
+| `dashboard-ui/src/platform.rs` | web版とAndroidアプリの切り替え（`APP`）、両方で動くタイマーと時刻 |
+| `dashboard-ui/src/mobile/` | Androidアプリ専用：サーバーへの直接接続とセッションCookieの保存（`http.rs`・`session.rs`）、アプリ専用領域のファイル（`storage.rs`）、端末時刻（`time.rs`）、web版がweb-sysで行うDOM操作の `document::eval` 版（`dom.rs`） |
+| `dashboard-ui/android/res/` | Androidのランチャーアイコンとアプリ名（`build-android` が生成プロジェクトへ上書き） |
 | `src/dashboard/games/summary.rs` | 上流ゲーム状態から画面用の要約への写像 |
 
 ### バックエンドモジュール
