@@ -48,7 +48,14 @@ jobs:
         run: |
           set -eu
           # Registry cache export needs a container builder, not the default docker driver.
-          docker buildx create --use --driver docker-container
+          # The builder runs on the host's Docker daemon and outlives this job, so
+          # remove leftovers of cancelled runs first and our own builder (with its
+          # state volume) on exit. The runner executes one job at a time.
+          docker ps -aq --filter name=buildx_buildkit_ahd- | xargs -r docker rm -f
+          docker volume ls -q --filter name=buildx_buildkit_ahd- | xargs -r docker volume rm
+          builder="ahd-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+          trap 'docker buildx rm --force "$builder" || true' EXIT
+          docker buildx create --name "$builder" --driver docker-container --use
           set --
           for tag in $IMAGE_TAGS; do set -- "$@" --tag "$tag"; done
           docker buildx build \
