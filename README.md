@@ -175,6 +175,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 - runnerはラベル `ubuntu-latest`、ジョブから `docker`／`buildx` でDinDへ接続できること
 - リポジトリSecret `REGISTRY_TOKEN`：タグをpushするユーザーの `write:package` 権限付きアクセストークン
 - ビルドキャッシュは同じイメージの `buildcache` タグに保存
+- ジョブごとに `ahd-<run id>-<attempt>` という名前のdocker-container builderを作り、終了時にstate volumeごと削除します。builderはhostのDocker上で動き、消さないとビルドごとに数GBのキャッシュが残ってrunnerのディスクを埋めるためです。中断されたジョブの残り（`buildx_buildkit_ahd-*`）は次のビルドの開始時に削除します（runnerは1ジョブずつ実行）。
 
 ## API概要
 
