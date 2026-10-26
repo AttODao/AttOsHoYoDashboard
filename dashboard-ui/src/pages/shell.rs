@@ -1,5 +1,6 @@
 use super::accounts::UidsPage;
 use super::admin::AdminPage;
+use super::app_nav::AppNav;
 use super::common::{Icon, focus_element, use_modal};
 use super::dashboard::DashboardPage;
 use super::deletion::DeletePage;
@@ -188,6 +189,8 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
                     }
                 }
             }
+            // Only the Android app renders the bottom navigation.
+            if crate::platform::APP { AppNav { state, open } }
         }
     }
 }

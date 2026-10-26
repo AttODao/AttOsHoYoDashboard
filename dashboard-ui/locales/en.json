@@ -353,6 +353,7 @@
   "shell.theme_light": "Light",
   "shell.skip_to_content": "Skip to content",
   "shell.dismiss_message": "Dismiss message",
+  "shell.app_navigation": "App navigation",
   "common.retry": "Try again",
   "hoyolab.removed": "Removed",
   "hoyolab.verified_at": "Last verified",

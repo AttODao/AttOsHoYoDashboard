@@ -13,6 +13,7 @@ mod pages;
 use data::load_dashboard_data;
 use dioxus::prelude::*;
 use pages::{
+    app_nav::AppHead,
     auth::{LoadingPage, LoginPage, OnboardingPage},
     docs::DocsPage,
     shell::Shell,
@@ -118,6 +119,7 @@ pub fn App() -> Element {
         document::Link { rel: "license", href: asset!("/assets/fonts/orbitron-OFL.txt") }
         document::Stylesheet { href: asset!("/assets/dx-components-theme.css") }
         document::Stylesheet { href: asset!("/assets/dashboard.css") }
+        AppHead {}
         document::Link { rel: "license", href: asset!("/src/components/LICENSE-MIT") }
         fieldset { class: "app-shell", disabled: state.read().busy, "aria-busy": state.read().busy, "aria-label": preferences.read().text("app.dashboard_actions"),
             if state.read().page == Page::Docs && !crate::platform::APP {

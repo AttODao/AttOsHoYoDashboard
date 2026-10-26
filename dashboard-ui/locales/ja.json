@@ -353,6 +353,7 @@
   "shell.theme_light": "ライト",
   "shell.skip_to_content": "本文へ移動",
   "shell.dismiss_message": "メッセージを閉じる",
+  "shell.app_navigation": "アプリのナビゲーション",
   "common.retry": "再試行",
   "hoyolab.removed": "削除済み",
   "hoyolab.verified_at": "最終本人確認",
