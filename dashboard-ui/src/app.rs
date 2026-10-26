@@ -120,7 +120,7 @@ pub fn App() -> Element {
         document::Stylesheet { href: asset!("/assets/dashboard.css") }
         document::Link { rel: "license", href: asset!("/src/components/LICENSE-MIT") }
         fieldset { class: "app-shell", disabled: state.read().busy, "aria-busy": state.read().busy, "aria-label": preferences.read().text("app.dashboard_actions"),
-            if state.read().page == Page::Docs {
+            if state.read().page == Page::Docs && !crate::platform::APP {
                 DocsPage { state }
             } else {
                 match state.read().phase {

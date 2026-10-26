@@ -23,7 +23,10 @@ pub(super) fn NotificationsPage(state: Signal<AppState>) -> Element {
             }
             if let Some(view) = state.read().notifications.clone() {
                 PersonalChannelCard { state, view: view.clone() }
-                PushCard { state, view }
+                // Web Push needs a browser service worker; the app does not offer it.
+                if !crate::platform::APP {
+                    PushCard { state, view }
+                }
             } else if state.read().notifications_error.is_none() {
                 p { role: "status", {ui.text("notifications.loading")} }
             }

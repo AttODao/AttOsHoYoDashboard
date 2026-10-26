@@ -38,6 +38,14 @@ const SETTINGS: [(Page, &str, &str, &str); 6] = [
     (Page::Delete, "delete", "settings.delete", "security.delete"),
 ];
 
+/// Settings tabs in this build; the app leaves account deletion to the web version.
+fn settings_tabs(app: bool) -> Vec<(Page, &'static str, &'static str, &'static str)> {
+    SETTINGS
+        .into_iter()
+        .filter(|(page, ..)| !(app && page.web_only()))
+        .collect()
+}
+
 #[component]
 pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
     let ui = use_preferences();
@@ -54,12 +62,12 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
                     button { r#type: "button", onclick: move |_| set_page(state, Page::Dashboard), {ui.text("shell.dashboard")} }
                 }
                 div { class: "tabs settings-tabs", role: "tablist", "aria-label": ui.text("shell.settings_sections"),
-                    for (target, key, label, short) in SETTINGS {
+                    for (target, key, label, short) in settings_tabs(crate::platform::APP) {
                         button { id: "settings-tab-{key}", r#type: "button", role: "tab", "aria-controls": "settings-panel",
                             "aria-selected": (page == target).to_string(), tabindex: if page == target { "0" } else { "-1" },
                             "aria-label": ui.text(label), onclick: move |_| set_page(state, target),
                             onkeydown: move |event| {
-                                if let Some(next) = next_settings(page, &event.key()) {
+                                if let Some(next) = next_settings(page, &event.key(), crate::platform::APP) {
                                     event.prevent_default(); set_page(state, next);
                                     if let Some((_, key, ..)) = SETTINGS.iter().find(|(p, ..)| *p == next) {
                                         focus_element(&format!("settings-tab-{key}"));
@@ -79,12 +87,12 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
                         Page::Link => rsx! { LinkPage { state } },
                         Page::Security => rsx! { SecurityPage { state } },
                         Page::Notifications => rsx! { NotificationsPage { state } },
-                        Page::Delete => rsx! { DeletePage { state } },
+                        Page::Delete if !crate::platform::APP => rsx! { DeletePage { state } },
                         _ => rsx! {},
                     }
                 }
             } else {
-                if page == Page::Admin {
+                if page == Page::Admin && !crate::platform::APP {
                     AdminPage { state }
                 } else {
                     DashboardPage { state }
@@ -94,16 +102,17 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
     }
 }
 
-fn next_settings(current: Page, key: &Key) -> Option<Page> {
-    let index = SETTINGS.iter().position(|(p, ..)| *p == current)?;
+fn next_settings(current: Page, key: &Key, app: bool) -> Option<Page> {
+    let tabs = settings_tabs(app);
+    let index = tabs.iter().position(|(p, ..)| *p == current)?;
     let next = match key {
-        Key::ArrowRight => (index + 1) % SETTINGS.len(),
-        Key::ArrowLeft => (index + SETTINGS.len() - 1) % SETTINGS.len(),
+        Key::ArrowRight => (index + 1) % tabs.len(),
+        Key::ArrowLeft => (index + tabs.len() - 1) % tabs.len(),
         Key::Home => 0,
-        Key::End => SETTINGS.len() - 1,
+        Key::End => tabs.len() - 1,
         _ => return None,
     };
-    Some(SETTINGS[next].0)
+    Some(tabs[next].0)
 }
 
 #[component]
@@ -148,10 +157,13 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
                 nav { "aria-label": ui.text("shell.account_menu"),
                     a { href: "https://www.hoyolab.com/home", target: "_blank", rel: "noopener noreferrer", Icon { name: "link" } "HoYoLAB" }
                     button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Uids); }, Icon { name: "settings" } {ui.text("shell.settings")} }
-                    if me.as_ref().is_some_and(|me| me.is_admin) {
+                    // The app leaves administration and the API docs to the web version.
+                    if !crate::platform::APP && me.as_ref().is_some_and(|me| me.is_admin) {
                         button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Admin); }, Icon { name: "user" } {ui.text("shell.administration")} }
                     }
-                    button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Docs); }, Icon { name: "docs" } {ui.text("docs.title")} }
+                    if !crate::platform::APP {
+                        button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Docs); }, Icon { name: "docs" } {ui.text("docs.title")} }
+                    }
                     div { class: "menu-logout-group",
                         button { class: "menu-logout", r#type: "button", onclick: move |_| { open.set(false); spawn_action(state, move |generation| async move { logout(state, generation).await; }); }, Icon { name: "logout" } {ui.text("shell.sign_out")} }
                     }
@@ -209,11 +221,28 @@ mod tests {
     use super::*;
     #[test]
     fn settings_tabs_wrap_and_do_not_handle_unrelated_keys() {
-        assert!(next_settings(Page::Uids, &Key::ArrowLeft) == Some(Page::Delete));
-        assert!(next_settings(Page::Delete, &Key::ArrowRight) == Some(Page::Uids));
-        assert!(next_settings(Page::Rewards, &Key::Home) == Some(Page::Uids));
-        assert!(next_settings(Page::Rewards, &Key::End) == Some(Page::Delete));
-        assert!(next_settings(Page::Dashboard, &Key::ArrowRight).is_none());
-        assert!(next_settings(Page::Uids, &Key::Enter).is_none());
+        assert!(next_settings(Page::Uids, &Key::ArrowLeft, false) == Some(Page::Delete));
+        assert!(next_settings(Page::Delete, &Key::ArrowRight, false) == Some(Page::Uids));
+        assert!(next_settings(Page::Rewards, &Key::Home, false) == Some(Page::Uids));
+        assert!(next_settings(Page::Rewards, &Key::End, false) == Some(Page::Delete));
+        assert!(next_settings(Page::Dashboard, &Key::ArrowRight, false).is_none());
+        assert!(next_settings(Page::Uids, &Key::Enter, false).is_none());
+    }
+
+    #[test]
+    fn app_settings_tabs_leave_out_account_deletion() {
+        assert!(
+            settings_tabs(false)
+                .iter()
+                .any(|(page, ..)| *page == Page::Delete)
+        );
+        assert!(
+            !settings_tabs(true)
+                .iter()
+                .any(|(page, ..)| *page == Page::Delete)
+        );
+        assert!(next_settings(Page::Uids, &Key::ArrowLeft, true) == Some(Page::Notifications));
+        assert!(next_settings(Page::Notifications, &Key::ArrowRight, true) == Some(Page::Uids));
+        assert!(next_settings(Page::Delete, &Key::ArrowRight, true).is_none());
     }
 }

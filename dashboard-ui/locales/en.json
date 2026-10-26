@@ -188,6 +188,7 @@
   "auth.step_hoyolab": "HoYoLAB link",
   "auth.step_done": " (done)",
   "auth.change_password": "Change password",
+  "auth.change_password_in_browser": "Change your password in the dashboard in a browser, then choose “Refresh setup status”.",
   "auth.refresh_setup_status": "Refresh setup status",
   "accounts.game_visibility": "Game visibility",
   "accounts.no_game_accounts_returned": "No game accounts returned.",

@@ -18,7 +18,10 @@ pub(super) fn SecurityPage(state: Signal<AppState>) -> Element {
     rsx! {
         div { class: "page-stack",
             h2 { {ui.text("security.security")} }
-            PasswordCard { state, title: ui.text("auth.change_password") }
+            // The app leaves password change and API tokens to the web version.
+            if !crate::platform::APP {
+                PasswordCard { state, title: ui.text("auth.change_password") }
+            }
             PasskeyCard { state }
             section { class: "panel page-stack",
                 h3 { {ui.text("security.sessions")} }
@@ -27,7 +30,9 @@ pub(super) fn SecurityPage(state: Signal<AppState>) -> Element {
                 }
                 SessionList { state }
             }
-            ApiTokenCard { state }
+            if !crate::platform::APP {
+                ApiTokenCard { state }
+            }
         }
     }
 }
@@ -409,29 +414,32 @@ pub(super) fn PasskeyCard(mut state: Signal<AppState>) -> Element {
             } else {
                 p { role: "status", {ui.text("security.loading_passkeys")} }
             }
-            form { onsubmit: move |event| {
-                event.prevent_default();
-                if state.read().busy { return; }
-                // An empty name registers under a generic one the user can rename later.
-                let typed = std::mem::take(&mut *label.write());
-                let label_value = if typed.trim().is_empty() { ui.text("security.default_passkey_label").to_owned() } else { typed };
-                spawn_action(state, move |generation| async move {
-                    match crate::webauthn::register(&label_value).await {
-                        Ok(()) if generation_matches(state, generation) => {
-                            set_status(state, "security.passkey_registered", "success");
-                            load_passkeys(state).await;
+            // WebAuthn needs a browser origin; the app lists, renames and deletes passkeys only.
+            if !crate::platform::APP {
+                form { onsubmit: move |event| {
+                    event.prevent_default();
+                    if state.read().busy { return; }
+                    // An empty name registers under a generic one the user can rename later.
+                    let typed = std::mem::take(&mut *label.write());
+                    let label_value = if typed.trim().is_empty() { ui.text("security.default_passkey_label").to_owned() } else { typed };
+                    spawn_action(state, move |generation| async move {
+                        match crate::webauthn::register(&label_value).await {
+                            Ok(()) if generation_matches(state, generation) => {
+                                set_status(state, "security.passkey_registered", "success");
+                                load_passkeys(state).await;
+                            }
+                            Ok(()) => {}
+                            Err(error) => { handle_api_error_for(state, generation, error); }
                         }
-                        Ok(()) => {}
-                        Err(error) => { handle_api_error_for(state, generation, error); }
+                    });
+                },
+                    Field { id: "passkey-label", label: ui.text("security.new_passkey_label"),
+                        input { id: "passkey-label", maxlength: "100", autocomplete: "off", "aria-describedby": "passkey-label-hint", value: "{label}", oninput: move |event| label.set(event.value()) }
+                        p { id: "passkey-label-hint", class: "field-hint", {ui.text("security.passkey_label_hint")} }
                     }
-                });
-            },
-                Field { id: "passkey-label", label: ui.text("security.new_passkey_label"),
-                    input { id: "passkey-label", maxlength: "100", autocomplete: "off", "aria-describedby": "passkey-label-hint", value: "{label}", oninput: move |event| label.set(event.value()) }
-                    p { id: "passkey-label-hint", class: "field-hint", {ui.text("security.passkey_label_hint")} }
-                }
-                div { class: "auth-submit",
-                    Button { variant: ButtonVariant::Secondary, r#type: "submit", {ui.text("security.register_passkey")} }
+                    div { class: "auth-submit",
+                        Button { variant: ButtonVariant::Secondary, r#type: "submit", {ui.text("security.register_passkey")} }
+                    }
                 }
             }
             if let Some(passkey) = confirming() {

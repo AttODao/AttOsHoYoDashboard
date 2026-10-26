@@ -85,19 +85,22 @@ pub(in crate::app) fn LoginPage(mut state: Signal<AppState>) -> Element {
                     Field { id: "login-username", label: ui.text("admin.username"),
                         input { id: "login-username", autocomplete: "username webauthn", value: "{username}", oninput: move |event| username.set(event.value()) }
                     }
-                    fieldset { class: "auth-method",
-                        legend { {ui.text("auth.sign_in_method")} }
-                        label { r#for: "login-method-password",
-                            input { id: "login-method-password", r#type: "radio", name: "login-method", value: "password", checked: *method.read() == LoginMethod::Password,
-                                onchange: move |_| { password.write().clear(); method.set(LoginMethod::Password); }
+                    // WebAuthn needs a browser origin; the app signs in with a password only.
+                    if !crate::platform::APP {
+                        fieldset { class: "auth-method",
+                            legend { {ui.text("auth.sign_in_method")} }
+                            label { r#for: "login-method-password",
+                                input { id: "login-method-password", r#type: "radio", name: "login-method", value: "password", checked: *method.read() == LoginMethod::Password,
+                                    onchange: move |_| { password.write().clear(); method.set(LoginMethod::Password); }
+                                }
+                                {ui.text("auth.password")}
                             }
-                            {ui.text("auth.password")}
-                        }
-                        label { r#for: "login-method-passkey",
-                            input { id: "login-method-passkey", r#type: "radio", name: "login-method", value: "passkey", checked: *method.read() == LoginMethod::Passkey,
-                                onchange: move |_| { password.write().clear(); method.set(LoginMethod::Passkey); }
+                            label { r#for: "login-method-passkey",
+                                input { id: "login-method-passkey", r#type: "radio", name: "login-method", value: "passkey", checked: *method.read() == LoginMethod::Passkey,
+                                    onchange: move |_| { password.write().clear(); method.set(LoginMethod::Passkey); }
+                                }
+                                {ui.text("auth.passkey")}
                             }
-                            {ui.text("auth.passkey")}
                         }
                     }
                     if *method.read() == LoginMethod::Password {
@@ -136,7 +139,10 @@ pub(in crate::app) fn OnboardingPage(mut state: Signal<AppState>) -> Element {
                     SetupStepItem { number: 2, label: ui.text("auth.step_hoyolab"), step: if password_required { SetupStep::Upcoming } else { SetupStep::Current } }
                 }
             }
-            if password_required {
+            if password_required && crate::platform::APP {
+                // The app leaves password change to the web version.
+                section { class: "panel", p { {ui.text("auth.change_password_in_browser")} } }
+            } else if password_required {
                 PasswordCard { state, title: ui.text("auth.change_password") }
             } else if !cookie_complete {
                 CookieCard { state }

@@ -34,16 +34,18 @@ pub(super) async fn load_page_data(state: Signal<AppState>, page: Page) {
         Page::Security => {
             load_passkeys(state).await;
             load_sessions(state).await;
-            load_api_tokens(state).await;
+            // The app leaves API tokens to the web version.
+            if !crate::platform::APP {
+                load_api_tokens(state).await;
+            }
         }
         Page::Notifications => load_notifications(state).await,
-        Page::Admin => {
+        Page::Admin if !crate::platform::APP => {
             load_admin_users(state).await;
             load_admin_audit(state, false).await;
             load_admin_notifications(state).await;
         }
-        Page::Delete => {}
-        Page::Docs => {}
+        Page::Admin | Page::Delete | Page::Docs => {}
     }
 }
 

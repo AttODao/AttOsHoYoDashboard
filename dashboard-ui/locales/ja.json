@@ -188,6 +188,7 @@
   "auth.step_hoyolab": "HoYoLAB連携",
   "auth.step_done": "（完了）",
   "auth.change_password": "パスワードを変更",
+  "auth.change_password_in_browser": "パスワードの変更はブラウザのダッシュボードで行い、その後「設定状況を更新」を選んでください。",
   "auth.refresh_setup_status": "設定状況を更新",
   "accounts.game_visibility": "ゲーム表示",
   "accounts.no_game_accounts_returned": "ゲームアカウントはありません",
