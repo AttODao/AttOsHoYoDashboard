@@ -543,6 +543,18 @@ try{
  await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark'&&localStorage.getItem('ahd-theme')==='dark');
  await page.keyboard.press('Escape');await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});await page.locator('#ahd-menu').evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});
  await page.locator('.wordmark').click();await dashboard();
+ // A reload opens the menu while slow game status is still loading; only the page data waits.
+ let releaseStatus,heldStatus=0,passedStatus=0;const statusHeld=new Promise(resolve=>releaseStatus=resolve);
+ const slowStatus=url=>/^\/api\/v1\/game-accounts\/[^/]+\/status$/.test(url.pathname);
+ await page.route(slowStatus,async route=>{heldStatus++;await statusHeld;await route.fallback();passedStatus++;});
+ await page.reload();
+ for(let i=0;i<200&&heldStatus===0;i++)await page.waitForTimeout(50);
+ assert.ok(heldStatus>0,'game status is requested and held');
+ await page.waitForFunction(()=>document.getElementById('ahd-menu-trigger')?.matches(':enabled')&&document.querySelector('fieldset.app-shell')?.disabled===false,null,{timeout:3000});
+ assert.equal(passedStatus,0,'game status is still pending');
+ await openMenu();await page.keyboard.press('Escape');await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});
+ releaseStatus();while(passedStatus<heldStatus)await page.waitForTimeout(50);
+ await page.unroute(slowStatus);await page.locator('.resource strong').first().waitFor();await dashboard();
  // Mobile ARIA tabs: hidden panel, roving focus and keyboard edges.
  await page.setViewportSize({width:390,height:844});
  await page.waitForFunction(()=>document.getElementById('game-panel-genshin')?.getAttribute('role')==='tabpanel');

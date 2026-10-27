@@ -31,6 +31,7 @@ pub(super) async fn bootstrap(mut state: Signal<AppState>) {
         write.status = None;
         write.generation
     };
+    let mut page_to_load = None;
     match api::get::<MeView>("/me").await {
         Ok(me) if generation_matches(state, generation) => {
             {
@@ -42,7 +43,7 @@ pub(super) async fn bootstrap(mut state: Signal<AppState>) {
                 write.generation = generation;
                 write.me = Some(me);
             }
-            load_gate_data(state, generation).await;
+            page_to_load = load_gate_shell(state, generation).await;
         }
         Ok(_) => {}
         Err(error) if generation_matches(state, generation) && error.is_unauthorized() => {
@@ -57,23 +58,36 @@ pub(super) async fn bootstrap(mut state: Signal<AppState>) {
     if generation_matches(state, generation) {
         state.write().busy = false;
     }
+    // The shell is usable once its gate is known. Page data (game status can wait
+    // on HoYoLAB for seconds) loads as on any later navigation, without keeping
+    // the header menu and the page controls disabled.
+    if let Some(page) = page_to_load
+        && current_ready_generation(state, generation)
+    {
+        load_page_data(state, page).await;
+    }
 }
 
 // Load only what the current gate renders: onboarding shows the HoYoLAB linkage;
 // the ready shell needs server settings plus the current page.
 async fn load_gate_data(state: Signal<AppState>, generation: u64) {
+    if let Some(page) = load_gate_shell(state, generation).await {
+        load_page_data(state, page).await;
+    }
+}
+
+/// Loads the gate up to the ready shell and returns the page whose data is still
+/// to load, or None when the gate is not the ready shell (or the session changed).
+async fn load_gate_shell(state: Signal<AppState>, generation: u64) -> Option<Page> {
     if !current_generation(state, generation) || state.read().page == Page::Docs {
-        return;
+        return None;
     }
     if !state.read().ready() {
         load_hoyolab(state).await;
-        return;
+        return None;
     }
     load_server_settings(state).await;
-    if current_ready_generation(state, generation) {
-        let page = state.read().page;
-        load_page_data(state, page).await;
-    }
+    current_ready_generation(state, generation).then(|| state.read().page)
 }
 
 /// Re-read /me after a gate-changing mutation and load what the resulting gate
