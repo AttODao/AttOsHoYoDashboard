@@ -8,7 +8,7 @@
 
 - 新しいフロントエンドは作りません。web版と同じDioxus（RSX）コード、同じ画面構成、同じ文言カタログ、同じ `dashboard.css` をそのまま使います。
 - アプリ固有の処理はCargo feature `mobile` の中に閉じ込めます。web版は従来どおり既定の `web` feature でビルドし、アプリのコードはwasmに入りません。
-- サーバー（axum）とAPI契約は変えていません。アプリは既存の `/api/v1` を、ブラウザと同じセッションCookie認証で呼びます。
+- アプリは既存の `/api/v1` を、ブラウザと同じセッションCookie認証で呼びます。サーバーへの追加は、web版の通知をアプリへ届けるための端末登録と受信箱（5.3節）だけです。
 - ブラウザでしか動かない機能（WebAuthn、Web Push）と、アプリに不要な機能（管理者機能など。3節）は、アプリで表示も遷移もしません。必要なときは「ブラウザで開く」（5.1節）でweb版に移ります。
 
 ### 使用したDioxusの仕組み
@@ -80,7 +80,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 | --- | --- | --- |
 | パスキーでのログイン | ログイン画面にログイン方式の選択（パスワード／パスキー）を出さず、パスワードだけにする | `pages/auth.rs` の `auth-method` fieldsetを `!APP` で囲む |
 | パスキーの登録 | 登録フォームを出さない。登録済みパスキーの一覧・名前変更・削除はできる | `pages/security.rs` の `PasskeyCard` 内の登録フォームを `!APP` で囲む |
-| ブラウザのプッシュ通知（Web Push） | カードを出さない。代わりに端末通知（5.2節）を使う | `pages/notifications.rs` の `PushCard` を `!APP` で囲み、説明文を `notifications.personal_hint_app` に切り替える |
+| ブラウザのプッシュ通知（Web Push） | カードを出さない。代わりに端末通知（5.2節・5.3節）で同じ通知を受け取る | `pages/notifications.rs` の `PushCard` を `!APP` で囲み、説明文を `notifications.personal_hint_app` に切り替える |
 
 `Page::web_only` と `reachable` は純関数として単体テストしています（`the_app_never_routes_to_web_only_pages`、`app_settings_tabs_leave_out_account_deletion`）。テスト中は `APP` が `false` になるため、`app` を引数で渡して両方の場合を確認します。
 
@@ -138,7 +138,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 
 ### 設定：通知
 
-- 説明文をアプリ用に変え、「この端末への通知」カード（5.2節）を先頭に置く。Webhookの設定はweb版と同じで、ブラウザのプッシュ通知のカードはない。
+- 説明文をアプリ用に変え、「この端末への通知」カード（5.2節・5.3節）を先頭に置く。Webhookの設定はweb版と同じで、ブラウザのプッシュ通知のカードはない。「通知する内容」の下に、選んだ内容がWebhookとこの端末の両方に使われることを示す説明を出す。
 - Webhook URLと樹脂の警告値の入力欄は、上記のとおり48pxにした（幅によらず）。
 
 確認した画面サイズ：エミュレータ（API 34）で、360/412/430dp（日本語・ライト）、360dpの文字130%（英語・ダーク）、360dpの文字200%。いずれも横方向のはみ出しはなく、44px未満のタップ領域もなかった。
@@ -159,9 +159,9 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 - ブラウザ側にはアプリのセッションがないので、web版のログイン画面から入ります。アプリとブラウザのセッションは別物です。
 - web版にはこのボタンはありません（`APP` で分岐。web版では `open_external` は常に失敗を返します）。
 
-### 5.2 通知（端末へのローカル通知）
+### 5.2 通知（予測によるローカル通知）
 
-サーバーから送るのではなく、アプリが読み込んだゲームの状態から通知時刻を予測し、Androidのアラームで端末内に通知を出します。サーバーは変更していません。
+アプリが読み込んだゲームの状態から通知時刻を予測し、Androidのアラームで端末内に通知を出します。web版と同じ通知をサーバーから受け取る仕組みは5.3節にあります。
 
 **通知の種類**（`mobile/reminders.rs`。原神とスターレイルの表示中アカウントが対象）
 
@@ -176,10 +176,10 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 
 **設定画面**（設定 › 通知の「この端末への通知」カード。`pages/device_notifications.rs`）
 
-- 全体のON/OFF（既定はOFF）と、種類ごとのON/OFF（既定はすべてON。全体がOFFの間は操作できない）。
+- 全体のON/OFF（既定はOFF。5.3節のサーバーからの通知と共通）と、「時刻を予測する通知」の種類ごとのON/OFF（既定はすべてON。全体がOFFの間は操作できない）。
 - ONにしたとき、Android 13以降で通知が許可されていなければ `POST_NOTIFICATIONS` の許可を求める。拒否された場合は警告と、「通知を許可する」「端末の通知設定を開く」のボタンを表示する。
 - 予定している通知の件数を表示する。
-- 「テスト通知を表示」で、その場で1件通知する。
+- 「テスト通知を表示」で、その場で1件通知する。「サーバーからテスト通知を送る」は5.3節。
 
 **動作**（`app/device_notifications.rs`、`mobile/notify.rs`、`android/MainActivity.kt`）
 
@@ -187,6 +187,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 - Kotlinは `AlarmManager.setAndAllowWhileIdle`（不正確なアラーム）で予約します。正確なアラームの権限は不要です。発火すると `AhdAlarmReceiver` が通知を出すので、アプリのプロセスが終了していても届きます。
 - 通知チャンネルは `game_status`（名前「ゲームの状態」、重要度は既定）。通知アイコンは `res/drawable/ic_stat_ahd.xml` です。
 - 通知をタップすると、既存のタスクを作り直さずにアプリを前面に出し、ダッシュボードを表示します（`CLEAR_TOP|SINGLE_TOP`）。
+- 通知にはタグ「ゲームアカウントID:種類」を付けます。サーバーの同じ状態の通知（5.3節）と同じタグなので、片方が2時間以内に表示済みなら、もう片方は表示しません。
 - 端末の再起動後とアプリの更新後は、`AhdBootReceiver`（`BOOT_COMPLETED`、`MY_PACKAGE_REPLACED`）が予約を戻します。
 - 予約は配信済みのものを再び出さないようにしています。時刻を過ぎた予定も1時間は保持し、遅れて届くアラームを取り消さないようにしています。
 - 予定を消すのは、ログアウト、セッションの期限切れ・失効（401）、ユーザー削除のときだけです。オフラインで起動した場合など、それ以外の理由でサインアウト状態になったときは予定を残します。別のユーザーでログインすると、前のユーザーの予定は消えます。
@@ -199,7 +200,46 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 | `files/notification-schedule.json` | 予測した予定（所有ユーザー、アカウント、種類、時刻） |
 | SharedPreferences `ahd_notifications` | Kotlin側の予約済み一覧とチャンネル名（再起動後の復元用） |
 
-対象外：デイリー／週間任務の未完了、ログインボーナスの結果、Cookieの失効。これらは時刻を予測できず、通知の時点で最新の状態を取得し直さないと誤った通知になるため、今回は扱いません。サーバーのWebhook通知は従来どおり使えます。
+デイリー／週間任務の未完了、ログインボーナスの結果、Cookieの失効、ログインなどは時刻を予測できないため、予測通知では扱いません。これらは5.3節のサーバーからの通知で届きます。
+
+### 5.3 通知（web版と同じ通知をサーバーから受け取る）
+
+web版がWebhookとブラウザのプッシュ通知へ送る個人の通知を、すべてアプリでも受け取れます。管理者専用の通知は除きます。通知ごとの条件・内容・受信者と、移植・除外の一覧は [notifications-inventory.md](notifications-inventory.md) にあります。
+
+**仕組み**
+
+- 「この端末に通知する」をONにすると、アプリはサーバーに端末を登録します（`POST /api/v1/me/notifications/app-devices`）。サーバーは、Webhook・Web Pushへ送るのと同じ箇所（`Notifier::deliver`）で、同じ通知をそのユーザーの受信箱に入れます。条件、「通知する内容」の選択、重複排除、文面（通知設定の言語）はWebhookと同じです。
+- Kotlinの `AhdInbox`（`android/MainActivity.kt`）が、アプリ専用領域のセッションCookie（`files/session-cookies.json`）で受信箱を読み（`GET …/app-devices/{id}/inbox?after=…`）、Androidの通知を出します。読む時機は、JobSchedulerの定期ジョブ（15分ごと、ネットワーク接続時、アプリを閉じていても・再起動後も）、アプリの表示中の1分ごと、アプリに戻ったとき、登録直後とテスト送信直後です。
+- 外部のプッシュサービス（FCMなど）は使いません。サーバーに外部サービスの資格情報が要らず、Googleのサービスがない端末でも動きます。その代わり、アプリを開いていないときは届くまで最大15分程度（Dozeではさらに遅れることがある）かかります。
+- 通知チャンネルは5.2節と同じ「ゲームの状態」です。サーバーの重複排除キーをタグにし、同じタグの通知は置き換えます。
+- タップすると、通知を扱う画面を開きます：ログインボーナスの結果 → 設定 › 報酬、Cookieの失効 → 設定 › 連携、ログイン・ログイン失敗 → 設定 › 認証・セキュリティ、テスト → 設定 › 通知、ゲームの状態 → ダッシュボード（`navigation::notification_target`）。
+- 通知の許可は5.2節と同じです（ONにしたときにAndroid 13以降なら `POST_NOTIFICATIONS` を求め、拒否されたら警告と設定へのボタンを出す）。
+- 設定カードに登録の状態（受け取っている／登録している／登録できなかった）を出します。登録に失敗した場合は、全体をOFFにしてONに戻すと再試行します。
+- 「サーバーからテスト通知を送る」は `POST /me/notifications/test` を呼びます（Webhookを設定していればWebhookにも届く。web版の「テスト送信」と同じ）。
+- OFFにすると端末の登録を消します（`DELETE …/app-devices/{id}`）。ログアウト、セッションの期限切れ・失効、ユーザー削除では端末側の受信だけを止めます（セッションがないためサーバーの登録は消せず、30日間読まれなければサーバーが消す）。別のユーザーでログインすると、そのユーザーで登録し直します。サーバーが端末を忘れていた（404）ときは受信を止め、次にアプリを開いたときに登録し直します。
+
+**保存先**
+
+| 場所 | 内容 |
+| --- | --- |
+| SharedPreferences `ahd_inbox` | 端末ID、所有ユーザー、サーバーのOrigin、読んだ位置、User-Agent |
+| SharedPreferences `ahd_notifications` の `recent` | 直近2時間に表示したタグと出所（予測／サーバー） |
+| サーバーの `app_devices`・`app_notifications` | 登録した端末と、端末向けに作った通知（3日で削除） |
+
+**エミュレータでの確認**（API 34、x86_64、合成データのバックエンド。外部への通信は遮断）
+
+サーバーの受信箱（`app_notifications`）に入った通知と、`dumpsys notification`・`cmd notification list` に出た通知を照合し、タップで開いた画面をスクリーンショットで確認しました。
+
+| 操作 | 結果 |
+| --- | --- |
+| 天然樹脂・開拓力を上限にした状態キャッシュ（アプリ表示中） | `resource_full`（原神・スターレイル）と `daily_unfinished` が受信箱に入り、1分以内に表示された。同じタグの予測通知とは重ならなかった |
+| web版のログインAPIへ誤ったパスワードを送る | `sign_in_failed` が表示され、タップで 設定 › セキュリティ が開いた |
+| 失敗したログインボーナス実行を入れる（アプリはホーム画面へ移した状態） | `reward_failed` が受信箱に入り、`cmd jobscheduler run -f` で定期ジョブを動かすと、アプリが前面にないまま表示された。タップで 設定 › ボーナス が開いた |
+| HoYoLAB連携を `cookie_invalid` にする（同上） | `cookie_invalid` が同じジョブで表示された。タップすると、連携が無効なのでアプリは初期設定のHoYoLAB連携の画面を出した（web版と同じく、連携が使えない間は初期設定へ誘導する） |
+| `POST_NOTIFICATIONS` を取り消してから通知設定を開く | 警告と「通知を許可する」が出て、押すとAndroidの許可ダイアログが出た。許可すると「サーバーからの通知を受け取っています」に戻った |
+| 「この端末に通知する」をOFF→ON | OFFでサーバーの端末登録が消え、アプリ側の登録とジョブも消えた。ONで新しい端末IDで登録し直した |
+
+同じアプリの通知が4件以上になると、Androidが自動でグループにまとめます。確認では、まとめたグループをタップしたときにグループ内の通知がすべて消え、先頭の通知（`cookie_invalid`）の画面が開きました。アプリは通知を個別に出しているだけなので、この動作はAndroidによるものです。
 
 ## 6. web版との共通化と分岐
 
