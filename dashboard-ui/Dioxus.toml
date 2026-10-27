@@ -1,6 +1,7 @@
 [application]
 name = "attos-dashboard-ui"
 default_platform = "web"
+android_main_activity = "android/MainActivity.kt"
 
 [web.app]
 title = "AHD"

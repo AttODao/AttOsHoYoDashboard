@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Android APK for the dashboard UI (`mobile` feature); run inside `devenv --profile android shell`.
-# dx generates and assembles the Gradle project; then the AHD launcher icon and label
-# (dashboard-ui/android/res) replace Dioxus' defaults and Gradle assembles again.
+# dx generates and assembles the Gradle project; then the AHD launcher icon, label and theme
+# (dashboard-ui/android/res) replace Dioxus' defaults, the activity keeps itself across
+# configuration changes, and Gradle assembles again.
 set -euo pipefail
 cd "${DEVENV_ROOT:?run inside the devenv android profile}"
 
@@ -32,6 +33,16 @@ dx build --package attos-dashboard-ui --platform android --target "$target" "$@"
 test -d "$res"
 rm -f "$res"/mipmap-*/ic_launcher.webp
 cp -R "$overlay/." "$res/"
+# tao/wry abort the process when the activity is destroyed or a second instance starts: one
+# instance (singleTask), not recreated for dark mode, font size, display size, locale or
+# keyboard changes (dashboard-ui/android/MainActivity.kt).
+manifest="$project/app/src/main/AndroidManifest.xml"
+config_changes='orientation|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|fontWeightAdjustment|locale|layoutDirection|mcc|mnc|touchscreen|colorMode'
+sed -i "s/android:configChanges=\"[^\"]*\"/android:configChanges=\"$config_changes\"/" "$manifest"
+grep -qF "android:configChanges=\"$config_changes\"" "$manifest"
+grep -q 'android:launchMode=' "$manifest" \
+  || sed -i 's/<activity android:configChanges=/<activity android:launchMode="singleTask" android:configChanges=/' "$manifest"
+grep -qF 'android:launchMode="singleTask"' "$manifest"
 (cd "$project" && ./gradlew --quiet assembleDebug)
 
 apk="$project/app/build/outputs/apk/debug/app-debug.apk"

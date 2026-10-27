@@ -146,11 +146,12 @@ AHD_SERVER_URL=https://ahd.example.com AHD_ANDROID_TARGET=x86_64-linux-android d
 devenv --profile android shell -- check-android
 ```
 
-APKは `target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/apk/debug/app-debug.apk` に出力されます（デバッグ署名。`--release` を付けても署名設定がなければデバッグ署名です）。`adb install -r <APK>` で導入します。`build-android` は `dx build --platform android` の後、`dashboard-ui/android/res/` のアイコンとアプリ名「AHD」で生成プロジェクトを上書きしてGradleを再実行します（`dx serve --platform android` ではDioxus既定のアイコン・名前になります）。
+APKは `target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/apk/debug/app-debug.apk` に出力されます（デバッグ署名。`--release` を付けても署名設定がなければデバッグ署名です）。`adb install -r <APK>` で導入します。`build-android` は `dx build --platform android` の後、`dashboard-ui/android/res/` のアイコン・アプリ名「AHD」・テーマで生成プロジェクトを上書きし、AndroidManifestの `configChanges` を広げてGradleを再実行します（`dx serve --platform android` ではDioxus既定のアイコン・名前になり、ダークモードや文字サイズの変更でアプリが終了します）。
 
 - `AHD_SERVER_URL` はHTTPS、またはlocalhostのHTTPのみ。未指定時は `http://localhost:8080` で、開発用サーバー（`PUBLIC_ORIGIN: http://localhost:8080`）に `adb reverse tcp:8080 tcp:8080` でつなぐ想定です。
 - エミュレータは `devenv --profile android --profile android-emulator shell`（x86_64イメージ、KVMが必要）で入ります。
 - パッケージ名 `cc.attodao.ahd`、minSdk 24、targetSdk 34（`dashboard-ui/Dioxus.toml`）。権限はINTERNETのみです。
+- tao/wryはActivityの破棄・再生成や二つ目の起動に対応しておらず、その場合プロセスが異常終了します。そのためActivityは1つだけ（`singleTask`）で、最初の画面での戻る操作はアプリを閉じずにバックグラウンドへ移し（ホームと同じ）、ダークモード・文字サイズ・表示サイズ・言語・キーボードなどの変更はActivityを作り直さずにその場で反映します。最近使ったアプリから消すなどで破棄されたときはプロセスをそのまま終了し、次回は新しく起動します（`dashboard-ui/android/MainActivity.kt`）。テーマ「システム」は端末のダークモードに追従します。
 
 ### UIモジュール
 
@@ -165,7 +166,8 @@ APKは `target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/apk/deb
 | `dashboard-ui/src/pages/` | 画面、メニュー、設定、ユーザー管理 |
 | `dashboard-ui/src/platform.rs` | web版とAndroidアプリの切り替え（`APP`）、両方で動くタイマーと時刻 |
 | `dashboard-ui/src/mobile/` | Androidアプリ専用：サーバーへの直接接続とセッションCookieの保存（`http.rs`・`session.rs`）、アプリ専用領域のファイル（`storage.rs`）、端末時刻（`time.rs`）、web版がweb-sysで行うDOM操作の `document::eval` 版（`dom.rs`） |
-| `dashboard-ui/android/res/` | Androidのランチャーアイコンとアプリ名（`build-android` が生成プロジェクトへ上書き） |
+| `dashboard-ui/android/res/` | Androidのランチャーアイコン、アプリ名、DayNightテーマ（`build-android` が生成プロジェクトへ上書き） |
+| `dashboard-ui/android/MainActivity.kt` | AndroidのActivity（`Dioxus.toml` の `android_main_activity`）：ルートでの戻るをバックグラウンド化、設定変更時の文字サイズ反映、破棄時のプロセス終了 |
 | `src/dashboard/games/summary.rs` | 上流ゲーム状態から画面用の要約への写像 |
 
 ### バックエンドモジュール

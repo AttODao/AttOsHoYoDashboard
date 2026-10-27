@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- DayNight instead of Dioxus' Light theme: the WebView's prefers-color-scheme follows
+         the system dark mode, also when it changes while the app runs. -->
+    <style name="AppTheme" parent="@style/Theme.AppCompat.DayNight.NoActionBar" />
+</resources>
