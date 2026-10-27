@@ -5,6 +5,11 @@ icon and the crate name as the app label. `build-android` (devenv `android` prof
 copies `res/` over the generated project and assembles the APK again, so the app shows
 as "AHD" with the dashboard icon.
 
+`res/drawable/ic_stat_ahd.xml` is the white bell notification icon. Dioxus copies
+`MainActivity.kt` for the permission/JNI bridge, alarms and notification receivers;
+`build-android` inserts `AndroidManifest.application.xml` into the generated manifest
+so alarms and boot/package-update restoration work in the final APK.
+
 The PNGs are generated from `../assets/dashboard-icon.png` (legacy icons on the app
 canvas color, adaptive-icon foregrounds at 108dp with the star inside the safe zone):
 

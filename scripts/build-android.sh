@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Android APK for the dashboard UI (`mobile` feature); run inside `devenv --profile android shell`.
-# dx generates and assembles the Gradle project; then the AHD launcher icon and label
-# (dashboard-ui/android/res) replace Dioxus' defaults and Gradle assembles again.
+# dx generates and assembles the Gradle project; then the AHD launcher/notification resources
+# and manifest receivers are overlaid before Gradle assembles again.
 set -euo pipefail
 cd "${DEVENV_ROOT:?run inside the devenv android profile}"
 
@@ -32,6 +32,18 @@ dx build --package attos-dashboard-ui --platform android --target "$target" "$@"
 test -d "$res"
 rm -f "$res"/mipmap-*/ic_launcher.webp
 cp -R "$overlay/." "$res/"
+manifest="$project/app/src/main/AndroidManifest.xml"
+if ! grep -q AhdAlarmReceiver "$manifest"; then
+  awk '
+    /<\/application>/ {
+      while ((getline line < "dashboard-ui/android/AndroidManifest.application.xml") > 0) print line
+      close("dashboard-ui/android/AndroidManifest.application.xml")
+    }
+    { print }
+  ' "$manifest" > "$manifest.tmp"
+  mv "$manifest.tmp" "$manifest"
+fi
+grep -q AhdBootReceiver "$manifest"
 (cd "$project" && ./gradlew --quiet assembleDebug)
 
 apk="$project/app/build/outputs/apk/debug/app-debug.apk"

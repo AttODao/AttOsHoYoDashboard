@@ -1,6 +1,8 @@
 mod actions;
 mod credentials;
 mod data;
+#[cfg(feature = "mobile")]
+mod device_notifications;
 mod display;
 mod navigation;
 mod preferences;
@@ -54,6 +56,8 @@ pub fn App() -> Element {
     let _system_theme = use_hook(move || browser::on_system_theme_change(preferences));
     let state = use_signal(|| AppState::new(initial_page()));
     navigation::use_browser_history(state);
+    #[cfg(feature = "mobile")]
+    device_notifications::use_device_notifications(state);
     use_effect(move || {
         let read = state.read();
         let title = page_title(read.page, read.phase, read.ready(), *preferences.read());
