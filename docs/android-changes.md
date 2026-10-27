@@ -85,7 +85,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 
 ## 4. レイアウトの変更点（画面ごと）
 
-アプリ専用の見た目は `dashboard-ui/assets/mobile.css` にまとめました。このファイルは `AppHead` が `cfg(feature = "mobile")` のときだけ `dashboard.css` の後に読み込みます。web版のdistには含まれず、`dashboard.css` も変更していません。ヘッダー、下部ナビゲーション、ボトムシート、設定タブ、本文の余白の変更は、幅600px以下の場合だけです。600pxを超える場合（横向きやタブレット）は、web版と同じヘッダーのメニューボタンと右側のドロワーを使います。「幅によらず」と書いた項目は、すべての幅で適用します。
+アプリ専用の見た目は `dashboard-ui/assets/mobile.css` にまとめました。このファイルは `AppHead` が `cfg(feature = "mobile")` のときだけ `dashboard.css` の後に読み込みます。web版のdistには含まれず、`dashboard.css` も変更していません。ヘッダー、下部ナビゲーション、ボトムシート、設定タブ、本文の余白の変更は、幅600px以下の場合だけです。600pxを超える場合（横向きやタブレット）は、web版と同じヘッダーのメニューボタンと右側のドロワーを使い、アプリではヘッダーのメニューボタンの左に設定アイコンボタンも表示します。「幅によらず」と書いた項目は、すべての幅で適用します。
 
 ### 全画面共通
 
@@ -96,7 +96,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 
 ### ヘッダーと下部ナビゲーション（新規）
 
-- ヘッダーの高さを56pxにし、ロゴを少し小さくした（web版の600px以下では72px）。ヘッダーのメニューボタンは下部バーへ移したので隠す。
+- ヘッダーの高さを56pxにし、ロゴを少し小さくした（web版の600px以下では72px）。ヘッダーのメニューボタンは下部バーへ移したので隠す。下部バーに「設定」があるため、ヘッダーの設定ボタンも隠す。
 - 画面下に「ダッシュボード／設定／メニュー」の3項目を並べた下部ナビゲーション（`AppNav`、高さ64px）を追加した。現在の画面は `aria-current="page"` とシアンのインジケータで示し、設定の各タブはすべて「設定」に該当する。「設定」を押すとUIDタブを開く。
 - テキストを入力している間は、キーボードと重ならないよう下部バーを隠す。
 - 文字が極端に大きい場合、下部バーのラベルは途中で改行せず「…」で省略する（支援技術には全文が伝わる）。
@@ -104,7 +104,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 ### メニュー
 
 - 右からのドロワーを、画面下から出るボトムシートに変えた。上側だけ角丸にし、つまみを付けた。表示時は下からスライドする。
-- 中身はweb版と同じ（HoYoLAB、設定、このアプリについて、ログアウト、テーマ、言語）。ただし「管理者設定」と「APIドキュメント」はなく、「ブラウザで開く」がある（3節・5.1節）。「このアプリについて」はweb版ではAPIドキュメントの直下、アプリでは「ブラウザで開く」の直下に置く。
+- 中身はweb版と異なり、アプリのメニューは上から「ブラウザで開く」、HoYoLAB、「このアプリについて」、ログアウト、テーマ、言語。「設定」「管理者設定」「APIドキュメント」はない。設定へは下部ナビゲーション（幅600px以下）か、ヘッダーの設定ボタン（600pxを超える場合）から移動する。web版のメニューは変えていない。
 
 ### ログイン・初回設定
 
@@ -148,7 +148,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 
 | 場所 | 開くページ |
 | --- | --- |
-| メニューの「ブラウザで開く」（「設定」の下、外部リンクのアイコン） | いま表示している画面に対応するweb版のページ（例：ダッシュボード → `/dashboard`、セキュリティ → `/settings/security`） |
+| メニューの「ブラウザで開く」（メニューの先頭、外部リンクのアイコン） | いま表示している画面に対応するweb版のページ（例：ダッシュボード → `/dashboard`、セキュリティ → `/settings/security`） |
 | 設定 › 認証・セキュリティ | `/settings/security`（パスワード変更とAPIトークン） |
 | 初回設定でパスワード変更が必須の画面 | `/dashboard`（web版がログイン後に初回設定へ転送する） |
 
@@ -313,7 +313,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/app/data.rs` | APIトークン・管理者データを読み込まない分岐、`platform::sleep_ms` |
 | `dashboard-ui/src/app/display.rs` | 時刻表示のアプリ分岐 |
 | `dashboard-ui/src/app/preferences.rs` | 言語とテーマの保存のアプリ分岐 |
-| `dashboard-ui/src/pages/shell.rs` | `settings_tabs`、メニュー項目の分岐、`AppNav` |
+| `dashboard-ui/src/pages/shell.rs` | `settings_tabs`、メニュー項目の分岐、ヘッダーの設定ボタン、`AppNav` |
 | `dashboard-ui/src/pages/auth.rs` | パスキーのログイン方式の除外、パスワード変更の案内 |
 | `dashboard-ui/src/pages/security.rs` | パスワード変更・APIトークン・パスキー登録の除外、「ブラウザで開く」 |
 | `dashboard-ui/src/pages/notifications.rs` | 端末通知カード、説明文の切り替え |

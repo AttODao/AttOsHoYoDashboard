@@ -14,8 +14,9 @@ body button[data-style][data-size]{max-width:100%}
 /* At large font scales the tab strip scrolls on its own instead of widening the page. */
 .settings-tabs{overflow-x:auto;scrollbar-width:none}.settings-tabs::-webkit-scrollbar{display:none}.settings-tabs [role=tab]{flex:1 0 auto}
 .topbar{height:56px}.topbar-inner{padding:0 16px}.wordmark{font-size:22px}.wordmark img{width:32px;height:32px}
-/* The menu trigger moves to the bottom bar. */
+/* The menu and settings triggers move to the bottom bar. */
 .topbar .menu{display:none}
+.topbar .app-settings{display:none}
 /* Settings: the bottom bar already leads back to the dashboard. */
 main>.page-intro>button{display:none}
 main.container{padding-bottom:calc(var(--app-nav) + var(--safe-bottom) + 32px)}

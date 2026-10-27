@@ -28,19 +28,18 @@ enum MenuItem {
     About,
 }
 
-/// Admin, API docs, password change and the rest live in the web version, so the app
-/// shows "Open in browser" instead; About sits directly below the API docs (in the app,
-/// where the API docs would be).
+/// The web menu puts About directly below the API docs. The app leaves admin and API
+/// docs to the web version and starts with "Open in browser"; it has no Settings entry
+/// because the bottom navigation (<=600px) and the header settings button (wider) lead there.
 fn menu_items(app: bool, admin: bool) -> Vec<MenuItem> {
-    let mut items = vec![MenuItem::HoYoLab, MenuItem::Settings];
     if app {
-        items.push(MenuItem::OpenInBrowser);
-    } else {
-        if admin {
-            items.push(MenuItem::Administration);
-        }
-        items.push(MenuItem::Docs);
+        return vec![MenuItem::OpenInBrowser, MenuItem::HoYoLab, MenuItem::About];
     }
+    let mut items = vec![MenuItem::HoYoLab, MenuItem::Settings];
+    if admin {
+        items.push(MenuItem::Administration);
+    }
+    items.push(MenuItem::Docs);
     items.push(MenuItem::About);
     items
 }
@@ -172,6 +171,11 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
                     if let Some(me) = me.clone() {
                         span { class: "muted account-name", "{me.username}" }
                         if ready {
+                            if crate::platform::APP {
+                                button { id: "ahd-settings-trigger", class: "icon-button app-settings", r#type: "button", "aria-label": ui.text("shell.settings"),
+                                    onclick: move |_| set_page(state, Page::Uids), Icon { name: "settings" }
+                                }
+                            }
                             button { id: "ahd-menu-trigger", class: "menu", r#type: "button", "aria-label": ui.text("shell.open_menu"),
                                 "aria-controls": "ahd-menu", "aria-expanded": open().to_string(), onclick: move |_| open.set(true), Icon { name: "menu" }
                             }
@@ -256,7 +260,7 @@ pub(super) fn Status(state: Signal<AppState>) -> Element {
 mod tests {
     use super::*;
     #[test]
-    fn about_follows_the_api_docs_on_the_web_and_takes_their_place_in_the_app() {
+    fn app_menu_starts_with_open_in_browser_and_has_no_settings_while_the_web_menu_is_unchanged() {
         use MenuItem::*;
         assert_eq!(
             menu_items(false, true),
@@ -266,14 +270,8 @@ mod tests {
             menu_items(false, false),
             vec![HoYoLab, Settings, Docs, About]
         );
-        assert_eq!(
-            menu_items(true, true),
-            vec![HoYoLab, Settings, OpenInBrowser, About]
-        );
-        assert_eq!(
-            menu_items(true, false),
-            vec![HoYoLab, Settings, OpenInBrowser, About]
-        );
+        assert_eq!(menu_items(true, true), vec![OpenInBrowser, HoYoLab, About]);
+        assert_eq!(menu_items(true, false), vec![OpenInBrowser, HoYoLab, About]);
     }
     #[test]
     fn settings_tabs_wrap_and_do_not_handle_unrelated_keys() {
