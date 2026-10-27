@@ -1,0 +1,7 @@
+            <!-- Browser sign-in callback: cc.attodao.ahd://login?code=… (app/browser_login.rs) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="cc.attodao.ahd" android:host="login" />
+            </intent-filter>

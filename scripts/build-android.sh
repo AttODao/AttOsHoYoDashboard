@@ -2,8 +2,8 @@
 # Android APK for the dashboard UI (`mobile` feature); run inside `devenv --profile android shell`.
 # dx generates and assembles the Gradle project; then the AHD launcher/notification resources,
 # label, theme and network security config (dashboard-ui/android/res) replace Dioxus' defaults,
-# the activity keeps itself across configuration changes, the manifest receivers and the inbox
-# job service are inserted, and Gradle assembles again.
+# the activity keeps itself across configuration changes, the manifest receivers, the inbox
+# job service and browser sign-in callbacks are inserted, and Gradle assembles again.
 set -euo pipefail
 cd "${DEVENV_ROOT:?run inside the devenv android profile}"
 
@@ -56,6 +56,18 @@ if ! grep -q AhdInboxJob "$manifest"; then
 fi
 grep -q AhdBootReceiver "$manifest"
 grep -q AhdInboxJob "$manifest"
+if ! grep -qF 'android:scheme="cc.attodao.ahd"' "$manifest"; then
+  awk '
+    /<\/activity>/ && !inserted {
+      while ((getline line < "dashboard-ui/android/AndroidManifest.activity.xml") > 0) print line
+      close("dashboard-ui/android/AndroidManifest.activity.xml")
+      inserted = 1
+    }
+    { print }
+  ' "$manifest" > "$manifest.tmp"
+  mv "$manifest.tmp" "$manifest"
+fi
+grep -qF 'android:scheme="cc.attodao.ahd"' "$manifest"
 # Android only installs an update when versionCode does not go down; dx always writes 1.
 gradle="$project/app/build.gradle.kts"
 version=$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"[[:space:]]*$/\1/p' "$gradle")

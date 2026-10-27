@@ -536,5 +536,17 @@
   "notifications.event_weekly_unfinished": "週末 週間タスク未完了",
   "notifications.event_user_attention": "ユーザーの対応が必要",
   "notifications.event_worker_stalled": "自動受け取りの処理停止",
-  "notifications.event_deletion_stuck": "ユーザー削除が長時間完了していない"
+  "notifications.event_deletion_stuck": "ユーザー削除が長時間完了していない",
+  "auth.app_login_title": "アプリにログイン",
+  "auth.app_login_as": "{username} としてAHDアプリにログインします。",
+  "auth.app_login_warning": "この画面をAHDアプリから開いたときだけ続けてください。自分で開いていないときはキャンセルしてください。",
+  "auth.app_login_approve": "ログインを許可",
+  "auth.app_login_cancel": "キャンセル",
+  "auth.app_login_ready": "2分以内に、次のボタンでアプリに戻ってください。",
+  "auth.app_login_open_app": "アプリに戻る",
+  "auth.app_login_after_sign_in": "ログインすると、AHDアプリへのログインを確認する画面に進みます。",
+  "auth.passkey_in_browser": "ブラウザでパスキーを使う",
+  "auth.passkey_in_browser_hint": "パスキーでログインするときは、ブラウザでログインしてからアプリに戻ります。",
+  "messages.continue_in_browser": "ブラウザでログインを続けてください。",
+  "messages.app_login_expired": "ログインの要求が無効か期限切れです。もう一度お試しください。"
 }

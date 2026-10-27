@@ -17,6 +17,7 @@ const publicDir=path.resolve(process.env.BUILD_DIR || path.join(root,'target/dx/
 assert.ok(fs.existsSync(path.join(publicDir,'index.html')),'build the Dioxus release UI first');
 const csp=fs.readFileSync(path.join(root,'src/dashboard/http/ui.rs'),'utf8').match(/const CSP: &str = "([^"]+)"/)[1];
 const uid=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
+const appLoginChallenge='E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
 const user={id:uid(1),username:'synthetic-admin',is_admin:true,active:true,must_change_password:true};
 const other={...user,id:uid(9),username:'synthetic-other',is_admin:false,active:false,must_change_password:false};
 let runPlan=['queued','running','success'];
@@ -65,6 +66,12 @@ const server=http.createServer(async(req,res)=>{
     assert.ok(body.response.response.clientDataJSON);assert.ok(body.response.response.authenticatorData);assert.ok(body.response.response.signature);
     assert.ok(body.response.response.userHandle===null||typeof body.response.response.userHandle==='string');
     res.setHeader('Set-Cookie','attos_session=synthetic-a; HttpOnly; SameSite=Strict; Path=/');return json(res,user);
+   }
+   if(p==='/api/v1/me/app-login'){
+    assert.equal(req.method,'POST');
+    if(!actor||sessionExpired)return json(res,{error:'unauthorized'},401);
+    assert.deepEqual(Object.keys(body),['code_challenge']);assert.equal(body.code_challenge,appLoginChallenge);
+    return json(res,{code:'0123456789abcdef'.repeat(4)});
    }
    if(!actor||sessionExpired)return json(res,{error:'unauthorized'},401);
    if(p==='/api/v1/me'&&req.method==='DELETE'){assert.deepEqual(body,{current_password:'wrong-synthetic-password',confirmation:user.username});return json(res,{error:'unauthorized'},401);}
@@ -144,7 +151,7 @@ const server=http.createServer(async(req,res)=>{
   if(p==='/openapi.json'){assert.equal(req.method,'GET');counts.set(p,(counts.get(p)||0)+1);return json(res,JSON.parse(fs.readFileSync(path.join(root,'docs/dashboard-api.json'),'utf8')));}
   let file;
   if(p==='/settings'){res.writeHead(308,{'Location':'/settings/games'});return res.end();}
-  if(['/','/login','/dashboard','/settings/games','/settings/bonus','/settings/link','/settings/security','/settings/notifications','/settings/delete','/admin','/about','/docs'].includes(p)){file=path.join(publicDir,'index.html');res.setHeader('Content-Type','text/html');res.setHeader('Content-Security-Policy',csp);}
+  if(['/','/login','/app-login','/dashboard','/settings/games','/settings/bonus','/settings/link','/settings/security','/settings/notifications','/settings/delete','/admin','/about','/docs'].includes(p)){file=path.join(publicDir,'index.html');res.setHeader('Content-Type','text/html');res.setHeader('Content-Security-Policy',csp);}
   else if(p.startsWith('/assets/')){file=path.resolve(publicDir,'.'+p);assert.ok(file.startsWith(path.join(publicDir,'assets')+path.sep));res.setHeader('Content-Type',({'.wasm':'application/wasm','.js':'text/javascript','.css':'text/css','.png':'image/png'})[path.extname(file)]||'application/octet-stream');}
   else {res.writeHead(404);return res.end();}
   res.end(fs.readFileSync(file));
@@ -957,6 +964,14 @@ try{
  await page.locator('#login-username').fill(user.username);await page.locator('#login-method-passkey').check();
  await button('Use passkey').click();await dashboard();
  assert.equal(counts.get('/api/v1/auth/passkey/options'),1);assert.equal(counts.get('/api/v1/auth/passkey/verify'),1);
+ stage='app login';
+ const challenge=appLoginChallenge;
+ await page.goto(origin+'/app-login?challenge='+challenge);
+ await page.getByRole('heading',{name:'Sign in to the app',exact:true}).waitFor();
+ await page.getByText(`Sign in to the AHD app as ${user.username}.`,{exact:true}).waitFor();
+ await button('Allow sign-in').click();await button('Return to the app').waitFor();
+ assert.equal(counts.get('/api/v1/me/app-login'),1);
+ await button('Cancel').click();await dashboard();
  // Reissued, verified/readable account goes straight from mandatory change to ready.
  await menu('Sign out');user.must_change_password=true;
  await signIn(user);await page.locator('#new-password').waitFor();await idle();

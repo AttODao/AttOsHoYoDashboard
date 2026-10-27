@@ -3,6 +3,51 @@
 use super::state::{AppState, Page, Phase};
 use dioxus::prelude::*;
 
+#[cfg(any(target_arch = "wasm32", test))]
+fn app_login_challenge(path: &str, search: &str) -> Option<String> {
+    if path != "/app-login" {
+        return None;
+    }
+    let search = search.strip_prefix('?').unwrap_or(search);
+    let mut pairs = search.split('&');
+    let value = pairs.next()?.strip_prefix("challenge=")?;
+    if pairs.next().is_some()
+        || value.len() != 43
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    {
+        return None;
+    }
+    Some(value.to_owned())
+}
+
+pub(super) fn app_login_request() -> Option<String> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let location = web_sys::window()?.location();
+        app_login_challenge(&location.pathname().ok()?, &location.search().ok()?)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        None
+    }
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+pub(super) fn app_callback_url(code: &str) -> String {
+    format!("cc.attodao.ahd://login?code={code}")
+}
+
+pub(super) fn open_app_callback(code: &str) {
+    #[cfg(target_arch = "wasm32")]
+    if let Some(window) = web_sys::window() {
+        let _ = window.location().set_href(&app_callback_url(code));
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = code;
+}
+
 fn page_path(page: Page) -> &'static str {
     match page {
         Page::Dashboard => "/dashboard",
@@ -186,6 +231,42 @@ mod tests {
         assert!(notification_target("/settings/security") == Page::Security);
         assert!(notification_target("/settings/notifications") == Page::Notifications);
         assert!(notification_target("unknown") == Page::Dashboard);
+    }
+
+    #[test]
+    fn app_handoff_requires_one_exact_url_safe_challenge() {
+        let challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+        for prefix in ["", "?"] {
+            assert_eq!(
+                app_login_challenge("/app-login", &format!("{prefix}challenge={challenge}")),
+                Some(challenge.into())
+            );
+        }
+        for path in ["/", "/login", "/app-login/", "/other"] {
+            assert_eq!(
+                app_login_challenge(path, &format!("challenge={challenge}")),
+                None
+            );
+        }
+        for search in [
+            "".into(),
+            "challenge=short".into(),
+            format!("challenge={challenge}x"),
+            format!("challenge={challenge}&challenge={challenge}"),
+            format!("challenge={challenge}&other=x"),
+            format!("other=x&challenge={challenge}"),
+            format!("challenge={challenge}&"),
+            format!("challenge={}!", &challenge[..42]),
+            format!("challenge={}=", &challenge[..42]),
+            format!("challenge={}%", &challenge[..42]),
+            format!("other={challenge}"),
+        ] {
+            assert_eq!(app_login_challenge("/app-login", &search), None, "{search}");
+        }
+        assert_eq!(
+            app_callback_url("0123456789abcdef"),
+            "cc.attodao.ahd://login?code=0123456789abcdef"
+        );
     }
 
     #[test]

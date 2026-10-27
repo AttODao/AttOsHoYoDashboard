@@ -297,6 +297,11 @@ pub struct PasskeyChallenge {
     pub options: Value,
 }
 
+#[derive(Clone, PartialEq, Deserialize)]
+pub struct AppLoginCode {
+    pub code: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

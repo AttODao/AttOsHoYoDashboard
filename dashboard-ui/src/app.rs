@@ -1,4 +1,5 @@
 mod actions;
+mod browser_login;
 mod credentials;
 mod data;
 #[cfg(feature = "mobile")]
@@ -15,6 +16,7 @@ mod pages;
 use data::load_dashboard_data;
 use dioxus::prelude::*;
 use pages::{
+    app_login::AppLoginPage,
     app_nav::AppHead,
     auth::{LoadingPage, LoginPage, OnboardingPage},
     docs::DocsPage,
@@ -49,9 +51,12 @@ pub fn App() -> Element {
     #[cfg(target_arch = "wasm32")]
     let _system_theme = use_hook(move || browser::on_system_theme_change(preferences));
     let state = use_signal(|| AppState::new(initial_page()));
+    let app_login = use_signal(navigation::app_login_request);
     navigation::use_browser_history(state);
     #[cfg(feature = "mobile")]
     device_notifications::use_device_notifications(state);
+    #[cfg(feature = "mobile")]
+    browser_login::use_browser_login(state);
     use_effect(move || {
         let read = state.read();
         let title = page_title(read.page, read.phase, read.ready(), *preferences.read());
@@ -124,9 +129,11 @@ pub fn App() -> Element {
             } else {
                 match state.read().phase {
                     Phase::Unchecked | Phase::Loading => rsx! { LoadingPage {} },
-                    Phase::SignedOut => rsx! { LoginPage { state } },
+                    Phase::SignedOut => rsx! { LoginPage { state, app_login: app_login.read().is_some() } },
                     Phase::SignedIn => rsx! {
-                        if !state.read().ready() {
+                        if app_login.read().is_some() {
+                            AppLoginPage { key: "{owner_key}", state, request: app_login }
+                        } else if !state.read().ready() {
                             OnboardingPage { key: "{owner_key}", state }
                         } else {
                             Shell { key: "{owner_key}", state }

@@ -35,7 +35,7 @@ pub(in crate::app) fn LoadingPage() -> Element {
 }
 
 #[component]
-pub(in crate::app) fn LoginPage(mut state: Signal<AppState>) -> Element {
+pub(in crate::app) fn LoginPage(mut state: Signal<AppState>, app_login: bool) -> Element {
     let ui = use_preferences();
     let mut username = use_signal(String::new);
     let mut password = use_signal(String::new);
@@ -51,6 +51,9 @@ pub(in crate::app) fn LoginPage(mut state: Signal<AppState>) -> Element {
             section { class: "panel auth-panel",
                 h1 { {ui.text("auth.sign_in")} }
                 Status { state }
+                if app_login {
+                    p { {ui.text("auth.app_login_after_sign_in")} }
+                }
                 if state.read().logout_unconfirmed {
                     Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| {
                         password.write().clear();
@@ -86,7 +89,7 @@ pub(in crate::app) fn LoginPage(mut state: Signal<AppState>) -> Element {
                     Field { id: "login-username", label: ui.text("admin.username"),
                         input { id: "login-username", autocomplete: "username webauthn", value: "{username}", oninput: move |event| username.set(event.value()) }
                     }
-                    // WebAuthn needs a browser origin; the app signs in with a password only.
+                    // WebAuthn needs a browser origin; the app uses the browser handoff for passkeys.
                     if !crate::platform::APP {
                         fieldset { class: "auth-method",
                             legend { {ui.text("auth.sign_in_method")} }
@@ -112,6 +115,16 @@ pub(in crate::app) fn LoginPage(mut state: Signal<AppState>) -> Element {
                     div { class: "auth-submit",
                         Button { r#type: "submit",
                             {if *method.read() == LoginMethod::Password { ui.text("auth.sign_in") } else { ui.text("auth.use_passkey") }}
+                        }
+                    }
+                }
+                if crate::platform::APP {
+                    section { class: "app-passkey",
+                        p { {ui.text("auth.passkey_in_browser_hint")} }
+                        div { class: "auth-submit",
+                            Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| crate::app::browser_login::start(state),
+                                {ui.text("auth.passkey_in_browser")}
+                            }
                         }
                     }
                 }

@@ -45,7 +45,10 @@ class MainActivity : WryActivity() {
     private var webView: WebView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        if (savedInstanceState == null) AhdNotifications.rememberOpenTarget(intent)
+        if (savedInstanceState == null) {
+            AhdNotifications.rememberOpenTarget(intent)
+            AhdBrowserLogin.remember(intent)
+        }
         super.onCreate(savedInstanceState)
         // WryActivity.onKeyDown still goes back in the WebView history first.
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -63,10 +66,16 @@ class MainActivity : WryActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (AhdNotifications.rememberOpenTarget(intent)) notifyPage("open")
+        if (AhdBrowserLogin.remember(intent)) notifyBrowserLogin()
     }
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == AhdNotifications.PERMISSION_REQUEST) notifyPage("permission")
+    }
+    private fun notifyBrowserLogin() {
+        webView?.post {
+            webView?.evaluateJavascript("window.__ahdBrowserLoginEvent && window.__ahdBrowserLoginEvent()", null)
+        }
     }
     private fun notifyPage(kind: String) {
         webView?.post {
@@ -86,6 +95,16 @@ class MainActivity : WryActivity() {
         // The WebView takes the system font size only when it is created.
         webView?.settings?.textZoom = (newConfig.fontScale * 100).roundToInt()
     }
+}
+
+// Browser sign-in callback (cc.attodao.ahd://login?code=…); Rust takes it once and validates it.
+object AhdBrowserLogin {
+    private var callback: String? = null
+    @JvmStatic @Synchronized fun remember(intent: Intent?): Boolean = try {
+        val data = intent?.data
+        if (intent?.action == Intent.ACTION_VIEW && data?.scheme == "cc.attodao.ahd" && data.host == "login") { callback = data.toString(); true } else false
+    } catch (error: Throwable) { false }
+    @JvmStatic @Synchronized fun takeCallback(): String? { val value = callback; callback = null; return value }
 }
 
 object AhdNotifications {

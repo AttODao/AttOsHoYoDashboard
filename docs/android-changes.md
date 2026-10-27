@@ -78,7 +78,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 
 | 機能 | アプリでの扱い | 方法 |
 | --- | --- | --- |
-| パスキーでのログイン | ログイン画面にログイン方式の選択（パスワード／パスキー）を出さず、パスワードだけにする | `pages/auth.rs` の `auth-method` fieldsetを `!APP` で囲む |
+| パスキーでのログイン | アプリ内の方式選択は出さず、「ブラウザでパスキーを使う」からブラウザで認証し、確認後にアプリへ戻る（5.3節） | `pages/auth.rs` の `auth-method` fieldsetを `!APP` で囲み、`app/browser_login.rs` でハンドオフする |
 | パスキーの登録 | 登録フォームを出さない。登録済みパスキーの一覧・名前変更・削除はできる | `pages/security.rs` の `PasskeyCard` 内の登録フォームを `!APP` で囲む |
 
 `Page::web_only` と `reachable` は純関数として単体テストしています（`the_app_never_routes_to_web_only_pages`、`app_settings_tabs_leave_out_account_deletion`）。テスト中は `APP` が `false` になるため、`app` を引数で渡して両方の場合を確認します。
@@ -108,7 +108,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 
 ### ログイン・初回設定
 
-- ログイン方式の選択がなく、ユーザー名とパスワードだけを入力する（3節）。
+- アプリ内にはユーザー名とパスワードのフォームを置き、その下に「ブラウザでパスキーを使う」を表示する（3節・5.3節）。
 - パスワード変更が必須の場合は、変更フォームの代わりに案内文と「ブラウザで開く」を表示する。
 - レイアウトはweb版の600px以下と同じ。
 
@@ -240,6 +240,28 @@ web版がWebhookへ送る個人の通知を、すべてアプリでも受け取�
 
 同じアプリの通知が4件以上になると、Androidが自動でグループにまとめます。確認では、まとめたグループをタップしたときにグループ内の通知がすべて消え、先頭の通知（`cookie_invalid`）の画面が開きました。アプリは通知を個別に出しているだけなので、この動作はAndroidによるものです。
 
+### 5.3 ブラウザ経由のパスキーログイン
+
+- アプリは32バイトの乱数からPKCE S256のverifierとchallengeを作り、verifierと作成時刻だけをアプリ専用の `files/browser-login.json` に保存します。保存した要求の有効期間は10分です。
+- ブラウザで `/app-login?challenge=…` を開きます。未ログインなら通常のログインを行い、ログイン済みのユーザー名と警告を表示してから、明示的な許可で `POST /api/v1/me/app-login` を呼びます。
+- 「アプリに戻る」で `cc.attodao.ahd://login?code=…` を開きます。コードは単回使用・120秒有効で、verifierをURLには含めません。キャンセルすると通常のダッシュボードまたは初回設定に戻ります。
+- `AhdBrowserLogin` が起動時または `onNewIntent` でコールバックを受け取り、`mobile/login_intent.rs` がJNIとWebViewイベントで一度だけ取り出します。`mobile/browser_login.rs` がURLと保存要求の期限を検査し、`app/browser_login.rs` が起動時のセッション確認完了を待って保存要求を消費し、`POST /api/v1/auth/app-login/exchange` にコードとverifierを送ります。
+- `dashboard-ui/android/AndroidManifest.activity.xml` のintent-filterは `scripts/build-android.sh` が最初のactivity内へ一度だけ挿入します。既存のsingleTask・Activity寿命の対策は維持します。
+- 安全性：verifierは端末から出ず、URLに載るのはchallengeと単回使用のコードだけです。コードは120秒で失効し、交換時に先に消費されるため、誤ったverifierでの再試行もできません。外部から開かれた `cc.attodao.ahd://login` は、アプリが保存した要求がなければ無視されます（攻撃者のコードは攻撃者のchallengeに結び付いているため、こちらのverifierでは交換できません）。カスタムschemeは他のアプリも登録できるため、許可画面ではログインするユーザー名と「AHDアプリから開いたときだけ続ける」警告を出し、ユーザーの明示的な操作でだけコードを発行します。交換時には許可したブラウザのセッションがまだ有効なことを確かめるので、ブラウザでのログアウトや管理者による復旧・無効化の後は未交換のコードも使えません。
+- ログイン画面では、パスワードのフォームとブラウザ経由のパスキーの欄を区切り線で分けます（`mobile.css` の `.app-passkey`）。
+- PKCE・コールバック・保存形式・期限の純粋関数は通常のネイティブ単体テストで検査します。ブラウザ回帰テストは許可とキャンセルまでを検査し、headless Chromiumではカスタムschemeを開きません。
+
+#### ネイティブのパスキーAPIを使わなかった理由
+
+Android Credential Manager（`androidx.credentials`）でアプリ内からパスキーを使う方法も調べましたが、今回はブラウザ経由にしました。
+
+- Credential Managerでweb版と同じパスキー（RP ID＝サーバーのドメイン）を使うには、RP IDのドメインの `/.well-known/assetlinks.json` に、アプリの署名証明書のSHA-256と `delegate_permission/common.get_login_creds` を載せる必要があります。署名鍵はCIのsecret（`ANDROID_KEYSTORE_*`）で、デバッグビルドの鍵は環境ごとに違います。各サーバーの運用者が配布APKの証明書フィンガープリントを設定する仕組みが要ります。
+- アプリからのassertionのoriginは `android:apk-key-hash:<証明書のハッシュ>` になります。webauthn-rs（0.5）は追加のoriginを完全一致で許可できるので技術的には対応できますが、サーバーに新しい設定（証明書ハッシュ）とassetlinks.jsonの配信を加える必要があります。
+- Digital Asset Linksの検証はGoogleのサービスがインターネット越しに取得するため、localhostの検証環境では確認できません。エミュレータでもGoogleアカウント（Googleパスワードマネージャー）か別のパスキープロバイダが必要で、実際に動くことをこの環境で確かめられません。
+- dxが生成するGradleプロジェクトに `androidx.credentials` の依存を後から足す必要があり、ビルドスクリプトの書き換えが増えます。
+
+ブラウザ経由なら、既存のweb版のWebAuthn処理をそのまま使え、ブラウザが対応する方法（端末のパスキー、セキュリティキー、別端末のQRコード）がすべて使え、サーバーごとの証明書設定も要りません。代わりにブラウザとの往復が1回増えます。
+
 ## 6. web版との共通化と分岐
 
 ### 共通のまま使うもの
@@ -273,7 +295,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | 言語とテーマの保存 | `localStorage` | `files/preferences.json` | `app/preferences.rs` |
 | 外部URL | （なし） | `webbrowser` | `platform::open_external` |
 
-`mobile/session.rs`・`mobile/time.rs`・`mobile/reminders.rs` は端末やI/Oに依存しないため、通常の `cargo test` でもコンパイルしてテストします（`main.rs` の `cfg(any(feature = "mobile", test))`）。
+`mobile/browser_login.rs`・`mobile/session.rs`・`mobile/time.rs`・`mobile/reminders.rs` は端末やI/Oに依存しないため、通常の `cargo test` でもコンパイルしてテストします（`main.rs` の `cfg(any(feature = "mobile", test))`）。
 
 ### 変更したファイル
 
@@ -290,12 +312,16 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/mobile/dom.rs` | `document::eval` によるDOM操作 |
 | `dashboard-ui/src/mobile/reminders.rs` | 通知時刻の予測、設定と予定の保存形式、通知文（テストあり） |
 | `dashboard-ui/src/mobile/notify.rs` | Kotlinの通知処理を呼ぶJNIブリッジ |
+| `dashboard-ui/src/mobile/browser_login.rs` | ブラウザ経由ログインのPKCE・コールバックURL・保存要求の規則（I/Oなし、テストあり） |
+| `dashboard-ui/src/mobile/login_intent.rs` | Kotlinが受け取ったコールバックを一度だけ取り出すJNIブリッジとWebViewイベント |
+| `dashboard-ui/src/app/browser_login.rs` | ブラウザ経由ログインの開始と、コールバック受信後のコード交換 |
 | `dashboard-ui/src/app/device_notifications.rs` | 端末通知の予定の更新、通知タップ時の画面遷移 |
 | `dashboard-ui/src/pages/device_notifications.rs` | 「この端末への通知」カード |
 | `dashboard-ui/src/pages/app_nav.rs` | 下部ナビゲーション `AppNav` と `AppHead`（モジュールは両ビルドでコンパイルするが、web版では描画しない） |
 | `dashboard-ui/assets/mobile.css` | アプリ専用のスタイル |
 | `dashboard-ui/android/MainActivity.kt` | `MainActivity`（ルートでの戻る、設定変更のその場反映、破棄時のプロセス終了、通知タップの受け取り）、`AhdNotifications`、`AhdAlarmReceiver`、`AhdBootReceiver` |
 | `dashboard-ui/android/AndroidManifest.application.xml` | 生成manifestに挿入するreceiver |
+| `dashboard-ui/android/AndroidManifest.activity.xml` | 生成manifestのactivityに挿入する `cc.attodao.ahd://login` のintent-filter |
 | `dashboard-ui/android/res/**` | ランチャーアイコン、通知アイコン、アプリ名、色、DayNightテーマ（`values/styles.xml`） |
 | `dashboard-ui/android/README.md` | リソースの作り方 |
 | `scripts/build-android.sh` | APKのビルド（2節）。生成manifestへの `launchMode="singleTask"`・`configChanges` の書き換えとreceiverの挿入も行う |
@@ -314,7 +340,8 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/app/display.rs` | 時刻表示のアプリ分岐 |
 | `dashboard-ui/src/app/preferences.rs` | 言語とテーマの保存のアプリ分岐 |
 | `dashboard-ui/src/pages/shell.rs` | `settings_tabs`、メニュー項目の分岐、ヘッダーの設定ボタン、`AppNav` |
-| `dashboard-ui/src/pages/auth.rs` | パスキーのログイン方式の除外、パスワード変更の案内 |
+| `dashboard-ui/src/pages/auth.rs` | パスキーのログイン方式の除外、パスワード変更の案内、「ブラウザでパスキーを使う」とweb版の許可画面への案内文 |
+| `dashboard-ui/src/pages/app_login.rs` | web版の `/app-login` 許可画面（アプリのログイン要求を承認してコードを発行する） |
 | `dashboard-ui/src/pages/security.rs` | パスワード変更・APIトークン・パスキー登録の除外、「ブラウザで開く」 |
 | `dashboard-ui/src/pages/notifications.rs` | 端末通知カード、説明文の切り替え |
 | `dashboard-ui/src/pages/common.rs` | `external` アイコン、DOM操作・モーダルのアプリ分岐 |
