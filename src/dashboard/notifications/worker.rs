@@ -1,6 +1,6 @@
 //! Scans for new events and periodically evaluates game status, then delivers.
 use super::{
-    Notice, PERSONAL_EVENTS,
+    Notice,
     channel::{ADMIN_SCOPE, Channel, Notifications},
     conditions::{self, Game, Outcome, Rules},
     messages::word,
@@ -19,7 +19,6 @@ use chrono::{DateTime, Duration, Utc};
 use sea_orm::{
     ColumnTrait, Condition, EntityTrait, QueryFilter, QueryOrder, Set, sea_query::OnConflict,
 };
-use serde_json::Value;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -287,29 +286,9 @@ impl<G: crate::dashboard::hoyolab::gateway::Gateway> Notifier<G> {
             .all(&self.notifications.db)
             .await?;
         for setting in settings {
-            let channel = Channel {
-                url: setting.webhook_url.as_deref().and_then(|blob| {
-                    self.notifications
-                        .key
-                        .as_deref()
-                        .and_then(|key| super::secret::open(key, setting.user_id, blob).ok())
-                }),
-                format: setting.webhook_format.clone(),
-                language: setting.language.clone(),
-                events: PERSONAL_EVENTS
-                    .iter()
-                    .map(|(kind, default)| {
-                        (
-                            (*kind).to_owned(),
-                            setting
-                                .events
-                                .get(*kind)
-                                .and_then(Value::as_bool)
-                                .unwrap_or(*default),
-                        )
-                    })
-                    .collect(),
-            };
+            let channel = self
+                .notifications
+                .personal_from(setting.user_id, Some(&setting));
             // Nothing to notify about: skip the HoYoLAB GET entirely.
             if channel.url.is_none() && !self.notifications.has_app_device(setting.user_id).await? {
                 continue;
@@ -388,18 +367,24 @@ impl<G: crate::dashboard::hoyolab::gateway::Gateway> Notifier<G> {
         Ok(())
     }
 
+    /// Sends a notice once per key to every route that chose its kind: the webhook by
+    /// `events`, a user's app inbox by `app_events`.
     async fn deliver(&self, user: Option<Uuid>, channel: &Channel, notice: &Notice) -> Result<()> {
-        if !channel.wants(notice.kind) {
+        let webhook = channel.wants(notice.kind);
+        let app = user.filter(|_| channel.wants_app(notice.kind));
+        if !webhook && app.is_none() {
             return Ok(());
         }
         let scope = user.unwrap_or(ADMIN_SCOPE);
         if self.already_sent(scope, &notice.key).await? {
             return Ok(());
         }
-        self.notifications
-            .send_webhook(user, channel, notice)
-            .await?;
-        if let Some(user) = user {
+        if webhook {
+            self.notifications
+                .send_webhook(user, channel, notice)
+                .await?;
+        }
+        if let Some(user) = app {
             self.notifications
                 .send_to_app(user, notice, &channel.language)
                 .await?;

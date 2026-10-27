@@ -1,5 +1,7 @@
 use super::channel::{ChannelInput, Notifications, PersonalInput};
-use crate::dashboard::{hoyolab::credentials::CookieKey, test_support::TestDatabase};
+use crate::dashboard::{
+    auth::sessions::Identity, hoyolab::credentials::CookieKey, test_support::TestDatabase,
+};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -89,6 +91,102 @@ async fn personal_settings_round_trip_webhook_url_and_require_valid_fields() {
         };
         assert!(notifications.update_personal(&actor, input).await.is_err());
     }
+}
+
+#[tokio::test]
+async fn app_event_choices_are_separate_from_the_webhook_and_kept_when_absent() {
+    let fixture = TestDatabase::new().await;
+    let (_, actor) = fixture.ready_admin().await;
+    let notifications = Notifications::new(
+        fixture.db.clone(),
+        Some(Arc::new(CookieKey::from_hex(&"11".repeat(32)).unwrap())),
+    );
+    let personal = |extra: Value| -> PersonalInput {
+        let mut body = json!({
+            "webhook_format": "discord",
+            "language": "ja",
+            "events": {"reward_claimed": true, "resource_full": false},
+            "resin_warn_hours": 2,
+            "daily_reminder_time": "21:00",
+            "weekly_reminder_time": "15:00",
+        });
+        body.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        serde_json::from_value(body).unwrap()
+    };
+    async fn app_events(notifications: &Notifications, actor: &Identity) -> Value {
+        serde_json::to_value(notifications.personal_view(actor).await.unwrap()).unwrap()["app_events"]
+            .clone()
+    }
+
+    // Unsaved: every personal kind with the webhook defaults.
+    let defaults = app_events(&notifications, &actor).await;
+    assert_eq!(
+        defaults.as_object().unwrap().len(),
+        super::PERSONAL_EVENTS.len()
+    );
+    assert_eq!(defaults["reward_failed"], true);
+    assert_eq!(defaults["reward_claimed"], false);
+    assert_eq!(defaults["signed_in"], false);
+
+    // A first save without app_events (older clients) copies the webhook choices.
+    notifications
+        .update_personal(&actor, personal(json!({})))
+        .await
+        .unwrap();
+    let copied = app_events(&notifications, &actor).await;
+    assert_eq!(copied["reward_claimed"], true);
+    assert_eq!(copied["resource_full"], false);
+
+    // Explicit app choices are stored apart from the webhook ones.
+    notifications
+        .update_personal(
+            &actor,
+            personal(json!({"app_events": {"resource_full": true, "reward_claimed": false, "weekly_unfinished": false}})),
+        )
+        .await
+        .unwrap();
+    let view = serde_json::to_value(notifications.personal_view(&actor).await.unwrap()).unwrap();
+    assert_eq!(view["app_events"]["resource_full"], true);
+    assert_eq!(view["app_events"]["reward_claimed"], false);
+    assert_eq!(view["app_events"]["weekly_unfinished"], false);
+    assert_eq!(
+        view["app_events"]["cookie_invalid"], true,
+        "unknown kinds take defaults"
+    );
+    assert_eq!(view["events"]["resource_full"], false);
+    assert_eq!(view["events"]["reward_claimed"], true);
+
+    // Saving the webhook side alone keeps them.
+    notifications
+        .update_personal(&actor, personal(json!({"events": {}})))
+        .await
+        .unwrap();
+    let kept = app_events(&notifications, &actor).await;
+    assert_eq!(kept["resource_full"], true);
+    assert_eq!(kept["weekly_unfinished"], false);
+
+    // Administrator-only kinds and unknown kinds are rejected for the app.
+    for bad in [
+        json!({"app_events": {"worker_stalled": true}}),
+        json!({"app_events": {"user_attention": true}}),
+        json!({"app_events": {"test": true}}),
+    ] {
+        assert!(matches!(
+            notifications.update_personal(&actor, personal(bad)).await,
+            Err(crate::dashboard::error::Error::Invalid(_))
+        ));
+    }
+    assert!(
+        serde_json::from_value::<PersonalInput>(json!({
+            "webhook_format": "json", "language": "ja", "events": {}, "app_events": [],
+            "resin_warn_hours": 2, "daily_reminder_time": "06:00", "weekly_reminder_time": "15:00",
+        }))
+        .is_err()
+    );
+    let admin_view = serde_json::to_value(notifications.admin_view(&actor).await.unwrap()).unwrap();
+    assert!(admin_view.get("app_events").is_none());
 }
 
 #[tokio::test]
