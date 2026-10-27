@@ -1,4 +1,4 @@
-//! Username-first passkey login with current credential checks and atomic session issuance.
+//! Username-first and discoverable passkey login with current credential checks and atomic session issuance.
 #[cfg(test)]
 #[path = "authentication_tests.rs"]
 mod tests;
@@ -22,10 +22,10 @@ use sea_orm::{
 };
 use std::time::Instant;
 use uuid::Uuid;
-use webauthn_rs::prelude::PublicKeyCredential;
+use webauthn_rs::prelude::{AuthenticationResult, DiscoverableKey, PublicKeyCredential};
 
 impl Passkeys {
-    /// Username-first login, not discoverable/username-less credentials.
+    /// Username-first login for an explicitly supplied name.
     ///
     /// Names without a usable passkey get decoy options of the same shape and status, so
     /// this endpoint does not reveal which accounts exist or have passkeys.
@@ -91,6 +91,29 @@ impl Passkeys {
         })
     }
 
+    /// Username-less modal login; the bounded pending map is the only start limit.
+    pub(in crate::dashboard) async fn discoverable_authentication_start(
+        &self,
+    ) -> Result<AuthenticationChallenge> {
+        let (mut options, state) = self
+            .run_cpu(|webauthn| {
+                webauthn
+                    .start_discoverable_authentication()
+                    .map_err(|_| Error::Internal)
+            })
+            .await?;
+        options.mediation = None;
+        let challenge_id = self.insert_pending(Pending {
+            owner: Uuid::nil(),
+            expires_at: Instant::now() + CHALLENGE_TTL,
+            ceremony: Ceremony::DiscoverableAuthentication { state },
+        })?;
+        Ok(AuthenticationChallenge {
+            challenge_id,
+            options,
+        })
+    }
+
     pub(in crate::dashboard) async fn authentication_finish(
         &self,
         accounts: &Accounts,
@@ -109,6 +132,45 @@ impl Passkeys {
                 accounts.admit_login(&username)?;
                 return Err(Error::Unauthorized);
             }
+            Ceremony::DiscoverableAuthentication { state } => {
+                // Identification is an untrusted hint: only cheap lookups precede admission.
+                let (owner, credential_id) = self
+                    .webauthn
+                    .identify_discoverable_authentication(&response)
+                    .map_err(|_| Error::Unauthorized)?;
+                let user = user::Entity::find_by_id(owner)
+                    .one(&accounts.db)
+                    .await?
+                    .ok_or(Error::Unauthorized)?;
+                accounts::require_ready(&user).map_err(|_| Error::Unauthorized)?;
+                let row = load_credentials(&accounts.db, owner)
+                    .await?
+                    .into_iter()
+                    .find(|row| row.credential_id == credential_id)
+                    .ok_or(Error::Unauthorized)?;
+                accounts.admit_login(&user.username)?;
+                let (result, offered) = self
+                    .run_cpu(move |webauthn| {
+                        let key = decode_credential(&row)?;
+                        let offered = OfferedCredential {
+                            id: row.id,
+                            credential_id: row.credential_id,
+                            fingerprint: credential_fingerprint(&row.credential)?,
+                        };
+                        let result = webauthn
+                            .finish_discoverable_authentication(
+                                &response,
+                                state,
+                                &[DiscoverableKey::from(&key)],
+                            )
+                            .map_err(|_| Error::Unauthorized)?;
+                        Ok((result, offered))
+                    })
+                    .await?;
+                return self
+                    .finish_verified(accounts, owner, pending.expires_at, offered, result)
+                    .await;
+            }
             Ceremony::Registration { .. } => return Err(Error::Unauthorized),
         };
         // An unknown challenge costs no verification work; a known one spends its user's budget.
@@ -124,9 +186,22 @@ impl Passkeys {
             .into_iter()
             .find(|key| key.credential_id.as_slice() == result.cred_id().as_ref())
             .ok_or(Error::Unauthorized)?;
+        self.finish_verified(accounts, pending.owner, pending.expires_at, offered, result)
+            .await
+    }
+
+    /// Shared atomic issuance tail; verification and counter updates stay outside the lock.
+    async fn finish_verified(
+        &self,
+        accounts: &Accounts,
+        owner: Uuid,
+        expires_at: Instant,
+        offered: OfferedCredential,
+        result: AuthenticationResult,
+    ) -> Result<(user::Model, IssuedSession)> {
         // Compute the counter/flag update from an unlocked snapshot so no CPU work runs while
         // the user row is locked. The locked re-check below makes the snapshot authoritative.
-        let snapshot = find_offered(&accounts.db, pending.owner, &offered).await?;
+        let snapshot = find_offered(&accounts.db, owner, &offered).await?;
         let fingerprint = offered.fingerprint;
         let updated = self
             .run_cpu(move |_| {
@@ -149,15 +224,13 @@ impl Passkeys {
             .await?;
         Sessions::purge_expired(&accounts.db).await?;
         let tx = accounts.db.begin().await?;
-        let user = accounts::lock_user(&tx, pending.owner)
-            .await
-            .map_err(|error| {
-                if matches!(error, Error::NotFound) {
-                    Error::Unauthorized
-                } else {
-                    error
-                }
-            })?;
+        let user = accounts::lock_user(&tx, owner).await.map_err(|error| {
+            if matches!(error, Error::NotFound) {
+                Error::Unauthorized
+            } else {
+                error
+            }
+        })?;
         accounts::require_ready(&user).map_err(|_| Error::Unauthorized)?;
         // All deletion, recovery, and credential updates use this same user lock.
         // Row UUID also rejects deletion followed by re-registration of the same key.
@@ -167,7 +240,7 @@ impl Passkeys {
         if credential_fingerprint(&row.credential)? != offered.fingerprint {
             return Err(Error::Unauthorized);
         }
-        if Instant::now() >= pending.expires_at {
+        if Instant::now() >= expires_at {
             return Err(Error::Unauthorized);
         }
         let mut update = row.into_active_model();

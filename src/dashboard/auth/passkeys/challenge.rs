@@ -6,7 +6,9 @@ use super::{Passkeys, credential::OfferedCredential};
 use crate::dashboard::error::{Error, Result};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
-use webauthn_rs::prelude::{PasskeyAuthentication, PasskeyRegistration};
+use webauthn_rs::prelude::{
+    DiscoverableAuthentication, PasskeyAuthentication, PasskeyRegistration,
+};
 
 pub(super) const CHALLENGE_TTL: Duration = Duration::from_secs(300);
 const MAX_PENDING: usize = 128;
@@ -29,6 +31,9 @@ pub(super) enum Ceremony {
         username: String,
         offered: Vec<OfferedCredential>,
         state: PasskeyAuthentication,
+    },
+    DiscoverableAuthentication {
+        state: DiscoverableAuthentication,
     },
     /// Issued for a name without a usable passkey; finishing it always fails.
     Decoy {

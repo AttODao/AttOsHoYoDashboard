@@ -150,3 +150,33 @@ async fn public_login_routes_still_require_exact_origin_before_login_budget() {
     }
     assert_eq!(app.accounts.login_attempts("synthetic"), 0);
 }
+
+#[tokio::test]
+async fn discoverable_options_accept_empty_object_but_reject_unknown_fields() {
+    let app = disconnected_app().await;
+    let response = call(
+        &app,
+        request(
+            "POST",
+            "/api/v1/auth/passkey/options",
+            None,
+            Some(json!({})),
+        ),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let options = body(response).await;
+    assert!(Uuid::parse_str(options["challenge_id"].as_str().unwrap()).is_ok());
+    assert!(options["options"].get("mediation").is_none());
+    let response = call(
+        &app,
+        request(
+            "POST",
+            "/api/v1/auth/passkey/options",
+            None,
+            Some(json!({"unknown": true})),
+        ),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}

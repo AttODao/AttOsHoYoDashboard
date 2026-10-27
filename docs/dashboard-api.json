@@ -374,8 +374,8 @@
           "auth"
         ],
         "operationId": "startPasskeyLogin",
-        "summary": "Start username-first passkey login.",
-        "description": "Does not reveal whether the account exists, is usable, or has passkeys: a valid username without a usable passkey receives the same 200 response shape with one deterministic decoy credential ID and a challenge that verify always rejects with 401. Invalid usernames return 401.",
+        "summary": "Start username-first or discoverable passkey login.",
+        "description": "When username is supplied, starts username-first login without revealing whether the account exists, is usable, or has passkeys: a valid username without a usable passkey receives the same 200 response shape with one deterministic decoy credential ID and a challenge that verify always rejects with 401. Invalid usernames return 401. When username is omitted ({}), starts discoverable login without account lookup or login budget consumption; verify identifies the user from userHandle and spends that user's login budget before signature verification. Pending challenges are bounded; capacity returns 503.",
         "responses": {
           "200": {
             "description": "Passkey request options, real or decoy.",
@@ -430,7 +430,13 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UsernameInput"
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "username": {
+                    "type": "string"
+                  }
+                }
               }
             }
           }
