@@ -17,7 +17,7 @@
 | --- | --- |
 | `dioxus` の `mobile` feature（0.7.10） | `mobile = ["dioxus/mobile", …]`。Android ActivityのWebView上でRSXを描画する（wry/tao）。web版は `web = ["dioxus/web"]`（既定） |
 | `dx build --platform android` | Gradleプロジェクトの生成とAPKのビルド。`Dioxus.toml` の `[bundle]`・`[android]`・`[android.permissions]` を使う |
-| `Dioxus.toml` の `[application] android_main_activity` | 独自の `MainActivity.kt`（`WryActivity` を継承）をそのままコピーさせる。通知の権限要求・アラーム・receiverをここに置く |
+| `Dioxus.toml` の `[application] android_main_activity` | 独自の `MainActivity.kt`（`WryActivity` を継承）をそのままコピーさせる。Activityの寿命の扱い（7節）と、通知の権限要求・アラーム・receiverをここに置く |
 | `document::eval` | web版がweb-sysで行うDOM操作（フォーカス、`<dialog>`、`matchMedia`、History API、テーマ適用、`visibilitychange`）を、アプリではJavaScriptの評価で行う（`mobile/dom.rs`） |
 | `asset!` / `document::Stylesheet` / `document::Meta` | アプリ専用のCSSとviewportを `cfg(feature = "mobile")` の中だけで読み込む（`pages/app_nav.rs` の `AppHead`） |
 | dioxus mobileの外部リンク処理 | `<a href="https://…" target="_blank">` のクリックを既定のブラウザへ送る。HoYoLABリンクは追加のコードなしで動く |
@@ -254,11 +254,11 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/pages/device_notifications.rs` | 「この端末への通知」カード |
 | `dashboard-ui/src/pages/app_nav.rs` | 下部ナビゲーション `AppNav` と `AppHead`（モジュールは両ビルドでコンパイルするが、web版では描画しない） |
 | `dashboard-ui/assets/mobile.css` | アプリ専用のスタイル |
-| `dashboard-ui/android/MainActivity.kt` | `MainActivity`、`AhdNotifications`、`AhdAlarmReceiver`、`AhdBootReceiver` |
+| `dashboard-ui/android/MainActivity.kt` | `MainActivity`（ルートでの戻る、設定変更のその場反映、破棄時のプロセス終了、通知タップの受け取り）、`AhdNotifications`、`AhdAlarmReceiver`、`AhdBootReceiver` |
 | `dashboard-ui/android/AndroidManifest.application.xml` | 生成manifestに挿入するreceiver |
-| `dashboard-ui/android/res/**` | ランチャーアイコン、通知アイコン、アプリ名、色 |
+| `dashboard-ui/android/res/**` | ランチャーアイコン、通知アイコン、アプリ名、色、DayNightテーマ（`values/styles.xml`） |
 | `dashboard-ui/android/README.md` | リソースの作り方 |
-| `scripts/build-android.sh` | APKのビルド（2節） |
+| `scripts/build-android.sh` | APKのビルド（2節）。生成manifestへの `launchMode="singleTask"`・`configChanges` の書き換えとreceiverの挿入も行う |
 | `docs/android-changes.md` | 本書 |
 
 変更（web版と共有）：
@@ -306,7 +306,12 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 
 ### 動作の制約
 
-- **ネイティブクラッシュ**：ルート画面で戻るボタンを押したときと、表示密度や文字サイズ（おそらくダークモードの切り替えも）の変更でActivityが作り直されるときに、プロセスが `FORTIFY: pthread_mutex_lock called on a destroyed mutex` で異常終了します。tao/wryがActivityの破棄・再生成に対応していないためで、修正は別タスクで進めており、本書の範囲には含みません。
+- **Activityは1つだけ**：tao/wryはActivityの破棄・再生成と2つ目のインスタンスに対応しておらず、そのままだとプロセスが `FORTIFY: pthread_mutex_lock called on a destroyed mutex` で異常終了します。そのため次のようにしています（`android/MainActivity.kt`、`scripts/build-android.sh`）。
+  - `launchMode="singleTask"` で、ランチャー・通知・`am start` のどこから開いても同じインスタンスを使います。通知のタップは `onNewIntent` で受け取ります。
+  - 最初の画面で戻るボタンを押すと、アプリを閉じずにバックグラウンドへ移します（ホームボタンと同じ）。それ以外の画面では、従来どおり前の画面へ戻ります。
+  - ダークモード、文字サイズ、表示サイズ、太字、言語、キーボードなどの変更では、Activityを作り直さずにその場で反映します（`configChanges`）。WebViewは文字サイズを作成時にしか読まないため、変更時に `textZoom` を設定し直します。
+  - 最近使ったアプリから消すなどでActivityが破棄されたときは、ネイティブの後始末を行わずにプロセスを終了します。次に開くと新しく起動します。
+  - テーマはDayNightなので、アプリのテーマ「システム」は端末のダークモードに追従します（以前は常にライトでした）。
 - **ダイアログと戻るボタン**：確認ダイアログを開いたまま戻るボタンを押すと、ダイアログが閉じるのではなく前の画面に戻ります（ダイアログは片付きます）。
 - **サーバーはビルド時に固定**：接続先は `AHD_SERVER_URL` の1つだけです。変えるにはビルドし直します。
 - **セッションCookieの保存**：アプリ専用領域に平文で保存します（Android Keystoreは使っていません）。他のアプリからは読めませんが、root化した端末やバックアップでは読める可能性があります。
@@ -324,13 +329,14 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 ### 未確認の項目
 
 - 実機では確認していません（API 34のx86_64エミュレータだけで確認）。
+- アプリのプロセスが生きたままシステムがActivityだけを破棄する場合は、エミュレータの「アクティビティを保持しない」設定が効かなかったため、最近使ったアプリから消す操作でしか確認していません。
+- ステータスバーは、ライト・ダークどちらのテーマでもAppCompatの既定の灰色のままです。
 - 実機のIMEでの入力は確認していません。adbで高速に入力すると文字が落ちることがあります。
 - 初回設定の画面は、レイアウトの検査で確認していません（合成データに該当するユーザーがいないため）。
 - API 34イメージのWebView 113では、ボトムシートの表示アニメーション（`@starting-style`）が動きません。新しいWebViewでの見え方は確認していません。
 
 ### 今後の課題
 
-- Activityの破棄・再生成時のクラッシュを直す（別タスクで対応中）。
 - ダイアログが開いているときは、戻るボタンでダイアログを閉じる。
 - release署名と配布方法（ストア、または直接配布）を決める。
 - セッションCookieをAndroid Keystoreで暗号化して保存する。
