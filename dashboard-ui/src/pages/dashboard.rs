@@ -92,6 +92,12 @@ fn ClaimNow(state: Signal<AppState>) -> Element {
 }
 
 // One media listener, removed on unmount. CSS and semantics use the same 900px boundary.
+#[cfg(feature = "mobile")]
+fn use_mobile_dashboard() -> Signal<bool> {
+    crate::mobile::dom::use_media_query("(max-width:900px)")
+}
+
+#[cfg(not(feature = "mobile"))]
 fn use_mobile_dashboard() -> Signal<bool> {
     let mut mobile = use_signal(|| false);
     #[cfg(target_arch = "wasm32")]
@@ -600,14 +606,14 @@ fn countdown_text(seconds_left: i64, reached: &str, ui: Preferences) -> String {
 /// A counter that changes once a minute in the browser, for countdown re-renders.
 fn use_minute_tick() -> Signal<u64> {
     let mut tick = use_signal(|| 0u64);
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(target_arch = "wasm32", feature = "mobile"))]
     use_future(move || async move {
         loop {
-            gloo_timers::future::TimeoutFuture::new(60_000).await;
+            crate::platform::sleep_ms(60_000).await;
             tick += 1;
         }
     });
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
     let _ = &mut tick;
     tick
 }

@@ -61,7 +61,11 @@ pub(super) fn browser_offset_minutes() -> Option<i32> {
     {
         Some(-(js_sys::Date::new_0().get_timezone_offset() as i32))
     }
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "mobile")]
+    {
+        Some(crate::mobile::time::offset_minutes())
+    }
+    #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
     None
 }
 
@@ -143,8 +147,12 @@ pub(super) fn compact_datetime(value: Option<&str>) -> Option<String> {
             String::from(clock)
         ))
     }
-    // The dashboard is browser-only; native tests must not invoke JS bindings.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "mobile")]
+    {
+        crate::mobile::time::compact_datetime(value)
+    }
+    // Native tests must not invoke JS bindings.
+    #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
     {
         let _ = value;
         None
@@ -177,7 +185,11 @@ pub(super) fn seconds_since(value: Option<&str>) -> Option<i64> {
         then.is_finite()
             .then(|| ((js_sys::Date::now() - then) / 1000.0) as i64)
     }
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "mobile")]
+    {
+        crate::mobile::time::seconds_since(value)
+    }
+    #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
     {
         let _ = value;
         None

@@ -1,6 +1,8 @@
 mod actions;
 mod credentials;
 mod data;
+#[cfg(feature = "mobile")]
+mod device_notifications;
 mod display;
 mod navigation;
 mod preferences;
@@ -13,6 +15,7 @@ mod pages;
 use data::load_dashboard_data;
 use dioxus::prelude::*;
 use pages::{
+    app_nav::AppHead,
     auth::{LoadingPage, LoginPage, OnboardingPage},
     docs::DocsPage,
     shell::Shell,
@@ -54,6 +57,8 @@ pub fn App() -> Element {
     let _system_theme = use_hook(move || browser::on_system_theme_change(preferences));
     let state = use_signal(|| AppState::new(initial_page()));
     navigation::use_browser_history(state);
+    #[cfg(feature = "mobile")]
+    device_notifications::use_device_notifications(state);
     use_effect(move || {
         let read = state.read();
         let title = page_title(read.page, read.phase, read.ready(), *preferences.read());
@@ -84,7 +89,7 @@ pub fn App() -> Element {
     };
     use_future(move || async move {
         loop {
-            gloo_timers::future::TimeoutFuture::new(60_000).await;
+            crate::platform::sleep_ms(60_000).await;
             refresh().await;
         }
     });
@@ -95,6 +100,12 @@ pub fn App() -> Element {
                 spawn(async move { refresh().await });
             }
         })
+    });
+    #[cfg(feature = "mobile")]
+    crate::mobile::dom::use_visibility(move || {
+        if browser::now_ms() - *last_refresh.peek() >= 60_000.0 {
+            spawn(async move { refresh().await });
+        }
     });
 
     let owner_key = state
@@ -112,9 +123,10 @@ pub fn App() -> Element {
         document::Link { rel: "license", href: asset!("/assets/fonts/orbitron-OFL.txt") }
         document::Stylesheet { href: asset!("/assets/dx-components-theme.css") }
         document::Stylesheet { href: asset!("/assets/dashboard.css") }
+        AppHead {}
         document::Link { rel: "license", href: asset!("/src/components/LICENSE-MIT") }
         fieldset { class: "app-shell", disabled: state.read().busy, "aria-busy": state.read().busy, "aria-label": preferences.read().text("app.dashboard_actions"),
-            if state.read().page == Page::Docs {
+            if state.read().page == Page::Docs && !crate::platform::APP {
                 DocsPage { state }
             } else {
                 match state.read().phase {
@@ -172,17 +184,16 @@ mod browser {
                 .and_then(|w| w.document())
                 .is_some_and(|d| d.hidden())
         }
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(feature = "mobile")]
+        {
+            crate::mobile::dom::hidden()
+        }
+        #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
         false
     }
 
     pub(super) fn now_ms() -> f64 {
-        #[cfg(target_arch = "wasm32")]
-        {
-            js_sys::Date::now()
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        0.0
+        crate::platform::now_ms()
     }
 
     /// Keeps a browser listener for the lifetime of the owning hook.

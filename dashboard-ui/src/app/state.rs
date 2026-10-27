@@ -244,10 +244,29 @@ impl AppState {
     }
 }
 
+impl Page {
+    /// The Android app leaves administration, the API docs and account deletion to the
+    /// web version; it never routes to them.
+    pub(super) fn web_only(self) -> bool {
+        matches!(self, Page::Admin | Page::Docs | Page::Delete)
+    }
+}
+
+/// The page actually shown for a request: web-only pages fall back to the dashboard
+/// in the app.
+fn reachable(page: Page, app: bool) -> Page {
+    if app && page.web_only() {
+        Page::Dashboard
+    } else {
+        page
+    }
+}
+
 pub(super) fn set_page(state: Signal<AppState>, page: Page) {
     if state.read().busy {
         return;
     }
+    let page = reachable(page, crate::platform::APP);
     if state.read().phase != Phase::SignedOut || page == Page::Docs {
         super::navigation::push_page(page);
     }
@@ -255,6 +274,7 @@ pub(super) fn set_page(state: Signal<AppState>, page: Page) {
 }
 
 pub(super) fn restore_page(mut state: Signal<AppState>, page: Page) {
+    let page = reachable(page, crate::platform::APP);
     let page = if state.read().phase == Phase::SignedOut && page != Page::Docs {
         Page::Dashboard
     } else {
@@ -297,16 +317,13 @@ pub(super) fn set_status(
     // Errors need reading and a decision; they stay until dismissed or replaced.
     if kind != "error" {
         spawn_root(async move {
-            #[cfg(target_arch = "wasm32")]
-            gloo_timers::future::TimeoutFuture::new(STATUS_DISMISS_MS).await;
-            #[cfg(not(target_arch = "wasm32"))]
-            let _ = STATUS_DISMISS_MS;
+            crate::platform::sleep_ms(STATUS_DISMISS_MS).await;
             if state
                 .read()
                 .status
                 .as_ref()
                 .is_some_and(|status| status.serial == serial)
-                && cfg!(target_arch = "wasm32")
+                && cfg!(any(target_arch = "wasm32", feature = "mobile"))
             {
                 state.write().status = None;
             }
@@ -406,7 +423,7 @@ pub(super) fn visible_detected_accounts(accounts: &[GameAccount]) -> Vec<GameAcc
 }
 
 pub(super) fn initial_page() -> Page {
-    super::navigation::initial_page()
+    reachable(super::navigation::initial_page(), crate::platform::APP)
 }
 
 #[cfg(test)]
@@ -416,6 +433,24 @@ mod tests {
 
     fn uuid(n: u128) -> Uuid {
         Uuid::from_u128(n)
+    }
+
+    #[test]
+    fn the_app_never_routes_to_web_only_pages() {
+        for page in [Page::Admin, Page::Docs, Page::Delete] {
+            assert!(reachable(page, true) == Page::Dashboard);
+            assert!(reachable(page, false) == page);
+        }
+        for page in [
+            Page::Dashboard,
+            Page::Uids,
+            Page::Rewards,
+            Page::Link,
+            Page::Security,
+            Page::Notifications,
+        ] {
+            assert!(reachable(page, true) == page);
+        }
     }
 
     #[test]

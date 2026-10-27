@@ -1,4 +1,5 @@
-//! Same-origin path history; authentication/onboarding gates remain in App.
+//! Same-origin path history (in-WebView history in the app); authentication/onboarding
+//! gates remain in App.
 use super::state::{AppState, Page, Phase};
 use dioxus::prelude::*;
 
@@ -27,6 +28,26 @@ fn page_from_path(path: &str) -> Page {
         "/admin" => Page::Admin,
         "/docs" => Page::Docs,
         _ => Page::Dashboard,
+    }
+}
+
+/// The web version's URL for `page` on the server at `origin` (scheme://host[:port]).
+fn web_page_url(origin: &str, page: Page) -> String {
+    format!("{origin}{}", page_path(page))
+}
+
+/// Opens the web version of `page` in the device's default browser (app only); shows an
+/// error line when no browser could be opened or the server URL is unusable.
+pub(super) fn open_web_version(state: Signal<AppState>, page: Page) {
+    #[cfg(feature = "mobile")]
+    let origin = crate::mobile::http::server_origin();
+    #[cfg(not(feature = "mobile"))]
+    let origin: Option<&str> = None;
+    let opened = origin
+        .ok_or(())
+        .and_then(|origin| crate::platform::open_external(&web_page_url(origin, page)));
+    if opened.is_err() {
+        super::state::set_status(state, "messages.could_not_open_the_browser", "error");
     }
 }
 
@@ -60,7 +81,9 @@ fn write_path(path: &'static str, replace: bool) {
             }
         }
     }
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "mobile")]
+    crate::mobile::dom::write_path(path, replace);
+    #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
     let _ = (path, replace);
 }
 
@@ -109,7 +132,14 @@ pub(super) fn use_browser_history(state: Signal<AppState>) {
             .ok()?;
         Some(std::rc::Rc::new(HistoryListener { window, callback }))
     });
-    #[cfg(not(target_arch = "wasm32"))]
+    // The app has no address bar; its in-WebView history serves the Android back button.
+    #[cfg(feature = "mobile")]
+    crate::mobile::dom::use_popstate(move |path| {
+        super::state::restore_page(state, page_from_path(&path));
+        let read = state.read();
+        replace_canonical(read.page, read.phase);
+    });
+    #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
     let _ = state;
 }
 
@@ -133,6 +163,22 @@ impl Drop for HistoryListener {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn web_version_urls_join_the_server_origin_and_the_page_path() {
+        assert_eq!(
+            web_page_url("https://ahd.example.com", Page::Dashboard),
+            "https://ahd.example.com/dashboard"
+        );
+        assert_eq!(
+            web_page_url("http://localhost:18080", Page::Security),
+            "http://localhost:18080/settings/security"
+        );
+        assert_eq!(
+            web_page_url("https://ahd.example.com", Page::Notifications),
+            "https://ahd.example.com/settings/notifications"
+        );
+    }
 
     #[test]
     fn canonical_routes_follow_auth_without_discarding_loading_deep_links() {

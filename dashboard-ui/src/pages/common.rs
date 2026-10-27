@@ -61,6 +61,7 @@ pub(super) fn Icon(name: &'static str) -> Element {
         "user" => "M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M4 21v-2a8 8 0 0 1 16 0v2",
         "logout" => "M10 4H4v16h6M9 12h12m-4-4 4 4-4 4",
         "docs" => "M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7",
+        "external" => "M14 4h6v6M20 4l-9 9M18 14v6H4V6h6",
         "eye" => {
             "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0"
         }
@@ -210,7 +211,8 @@ fn mask_on_visibility_change(
     Some(listener)
 }
 
-/// DOM focus never evaluates JavaScript; callers supply internal element IDs.
+/// Browser DOM focus never evaluates JavaScript; the app passes the internal element ID
+/// JSON-encoded to `document::eval` (see `mobile::dom`).
 pub(super) fn focus_element(id: &str) {
     #[cfg(target_arch = "wasm32")]
     {
@@ -223,6 +225,8 @@ pub(super) fn focus_element(id: &str) {
             let _ = element.focus();
         }
     }
+    #[cfg(feature = "mobile")]
+    crate::mobile::dom::focus(id);
     let _ = id;
 }
 
@@ -240,6 +244,8 @@ pub(super) fn reset_checked(id: &str, checked: bool) {
             input.set_checked(checked);
         }
     }
+    #[cfg(feature = "mobile")]
+    crate::mobile::dom::set_checked(id, checked);
     let _ = (id, checked);
 }
 
@@ -303,7 +309,23 @@ pub(super) fn use_modal(id: String, active: bool, onclose: EventHandler<()>) {
             }
         }));
     }
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "mobile")]
+    {
+        let modal = use_hook(|| {
+            std::rc::Rc::new(std::cell::RefCell::new(None::<crate::mobile::dom::Modal>))
+        });
+        use_effect(use_reactive!(|active, id| {
+            let mut modal = modal.borrow_mut();
+            if active {
+                if modal.is_none() {
+                    *modal = Some(crate::mobile::dom::Modal::open(&id, onclose));
+                }
+            } else {
+                modal.take();
+            }
+        }));
+    }
+    #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
     let _ = (id, active, onclose);
 }
 

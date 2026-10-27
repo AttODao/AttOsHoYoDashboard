@@ -1,0 +1,8 @@
+        <!-- AHD device notifications (dashboard-ui/android/MainActivity.kt) -->
+        <receiver android:name="dev.dioxus.main.AhdAlarmReceiver" android:exported="false" />
+        <receiver android:name="dev.dioxus.main.AhdBootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>

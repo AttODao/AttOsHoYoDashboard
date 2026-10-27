@@ -1,0 +1,124 @@
+# Build the Android APK for every version tag and attach it to the Forgejo release.
+# The container image is built and published by image.yml.
+name: android
+on:
+  push:
+    tags: ['v*']
+
+env:
+  NIX_CONFIG: "experimental-features = nix-command flakes"
+
+jobs:
+  apk:
+    runs-on: docker
+    timeout-minutes: 180
+    container:
+      image: nixos/nix:2.35.3@sha256:ff480dbb23511aa1c10710aa068ceea5b93fed9bfce5f5379f3a6b07282cbc7b
+    steps:
+      - name: Clone exact revision
+        run: |
+          set -eu
+          git clone -q "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" .
+          git checkout -q "$GITHUB_SHA"
+      - name: Verify version
+        run: |
+          set -eu
+          VERSION=$(nix eval --raw --impure --expr '(builtins.fromTOML (builtins.readFile ./Cargo.toml)).package.version')
+          UI_VERSION=$(nix eval --raw --impure --expr '(builtins.fromTOML (builtins.readFile ./dashboard-ui/Cargo.toml)).package.version')
+          if [ "$VERSION" != "${GITHUB_REF_NAME#v}" ] || [ "$UI_VERSION" != "$VERSION" ]; then
+            echo "Tag $GITHUB_REF_NAME must match both package versions ($VERSION, $UI_VERSION)" >&2
+            exit 1
+          fi
+          if ! printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Version must be X.Y.Z: $VERSION" >&2
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Install devenv
+        run: |
+          set -eu
+          nix profile add github:NixOS/nixpkgs/3ec636362e1816bc2f0888fa0fa2c69f1bc9e504#devenv
+          devenv version
+      - name: Build APK
+        env:
+          AHD_SERVER_URL: ${{ vars.AHD_SERVER_URL || 'https://hoyo.attodao.cc' }}
+          CARGO_BUILD_JOBS: '2'
+        run: devenv --profile android shell -- build-android --release
+      - name: Sign and package
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          # build-tools are not on the android profile's PATH.
+          apksigner() {
+            # shellcheck disable=SC2016 # expanded by the inner bash
+            devenv --profile android shell -- bash -c 'exec "$ANDROID_HOME/build-tools/34.0.0/apksigner" "$@"' apksigner "$@"
+          }
+          apk=target/dx/attos-dashboard-ui/release/android/app/app/build/outputs/apk/debug/app-debug.apk
+          NAME="ahd-android-${VERSION}-arm64"
+          install -d -m755 dist
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            ks_dir=${RUNNER_TEMP:-$(mktemp -d)}
+            ks="$ks_dir/release.jks"
+            trap 'rm -f "$ks"' EXIT
+            (umask 077; printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ks")
+            apksigner sign --ks "$ks" \
+              --ks-pass env:ANDROID_KEYSTORE_PASSWORD --ks-key-alias "$ANDROID_KEY_ALIAS" \
+              --out "dist/$NAME.apk" "$apk"
+            echo SIGNING=release >> "$GITHUB_ENV"
+          else
+            install -m644 "$apk" "dist/$NAME.apk"
+            echo SIGNING=debug >> "$GITHUB_ENV"
+            echo '::warning::APK is debug-signed with a key created for this build; it cannot be installed as an update over a previous build.'
+          fi
+          apksigner verify --print-certs "dist/$NAME.apk"
+          chmod 644 "dist/$NAME.apk"
+          (cd dist && sha256sum "$NAME.apk" > "$NAME.apk.sha256")
+          echo "APK_NAME=$NAME.apk" >> "$GITHUB_ENV"
+      - name: Publish release and replace matching assets
+        env:
+          FORGEJO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AHD_SERVER_URL: ${{ vars.AHD_SERVER_URL || 'https://hoyo.attodao.cc' }}
+        run: |
+          nix shell github:NixOS/nixpkgs/3ec636362e1816bc2f0888fa0fa2c69f1bc9e504#curl github:NixOS/nixpkgs/3ec636362e1816bc2f0888fa0fa2c69f1bc9e504#jq -c bash -euo pipefail <<'SH'
+          TAG=${GITHUB_REF#refs/tags/}
+          API="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY"
+          STATUS=$(curl -sS -o release.json -w '%{http_code}' \
+            -H "Authorization: token $FORGEJO_TOKEN" "$API/releases/tags/$TAG")
+          case "$STATUS" in
+            200) ;;
+            404)
+              BODY="Androidアプリ: $APK_NAME（サーバー $AHD_SERVER_URL 向け、arm64）。"
+              if [ "$SIGNING" = debug ]; then
+                BODY="$BODY このビルド専用のデバッグ鍵で署名されています。以前のAPKからは上書き更新できないため、アンインストールしてから入れてください。"
+              fi
+              jq -n --arg tag "$TAG" --arg body "$BODY" \
+                '{tag_name:$tag,name:$tag,body:$body,draft:false,prerelease:false}' > release-request.json
+              curl --fail-with-body -sS -X POST -H "Authorization: token $FORGEJO_TOKEN" \
+                -H 'Content-Type: application/json' --data-binary @release-request.json \
+                "$API/releases" > release.json
+              ;;
+            *) cat release.json; echo "Release lookup failed: HTTP $STATUS" >&2; exit 1 ;;
+          esac
+          ID=$(jq -er '.id' release.json)
+          curl --fail-with-body -sS -H "Authorization: token $FORGEJO_TOKEN" \
+            "$API/releases/$ID/assets" > assets.json
+          for ASSET in "dist/$APK_NAME" "dist/$APK_NAME.sha256"; do
+            NAME=${ASSET##*/}
+            for ASSET_ID in $(jq -r --arg name "$NAME" '.[] | select(.name == $name) | .id' assets.json); do
+              curl --fail-with-body -sS -X DELETE -H "Authorization: token $FORGEJO_TOKEN" \
+                "$API/releases/$ID/assets/$ASSET_ID"
+            done
+            curl --fail-with-body -sS -X POST -H "Authorization: token $FORGEJO_TOKEN" \
+              -F "attachment=@$ASSET" "$API/releases/$ID/assets?name=$NAME"
+          done
+          # Read back the exact release and assert that both assets were published.
+          curl --fail-with-body -sS -H "Authorization: token $FORGEJO_TOKEN" \
+            "$API/releases/tags/$TAG" > published-release.json
+          for ASSET in "dist/$APK_NAME" "dist/$APK_NAME.sha256"; do
+            jq -e --arg name "${ASSET##*/}" '.assets | any(.name == $name)' published-release.json
+          done
+          SH

@@ -1,0 +1,39 @@
+/* Android app only: loaded by AppHead when the `mobile` feature is on. The web build never links this file. */
+:root{--app-nav:64px;--safe-top:env(safe-area-inset-top,0px);--safe-right:env(safe-area-inset-right,0px);--safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px);-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{padding:var(--safe-top) var(--safe-right) 0 var(--safe-left);-webkit-tap-highlight-color:transparent}
+.app-nav{display:none}
+/* Match text fields for input types not styled by the shared stylesheet. */
+input:is([type=url],[type=number],[type=email],[type=search],[type=tel]){width:100%;min-width:0;min-height:48px;background:var(--elevated);border:1px solid var(--line);border-radius:8px;padding:10px 14px;color:var(--text)}
+/* Component buttons do not shrink (flex-shrink:0); cap them to their row so long labels wrap at large font scales. */
+body button[data-style][data-size]{max-width:100%}
+/* Give the inline HoYoLAB link a 48px touch area without moving its text. */
+.cookie-steps a{padding-block:12px}
+@media(max-width:600px){
+/* Let bonus history controls wrap within the narrow viewport. */
+.history-tools{flex-wrap:wrap}.history-tools select{flex:1 1 10rem}
+/* At large font scales the tab strip scrolls on its own instead of widening the page. */
+.settings-tabs{overflow-x:auto;scrollbar-width:none}.settings-tabs::-webkit-scrollbar{display:none}.settings-tabs [role=tab]{flex:1 0 auto}
+.topbar{height:56px}.topbar-inner{padding:0 16px}.wordmark{font-size:22px}.wordmark img{width:32px;height:32px}
+/* The menu trigger moves to the bottom bar. */
+.topbar .menu{display:none}
+/* Settings: the bottom bar already leads back to the dashboard. */
+main>.page-intro>button{display:none}
+main.container{padding-bottom:calc(var(--app-nav) + var(--safe-bottom) + 32px)}
+.app-nav{position:fixed;left:0;right:0;bottom:0;z-index:15;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));padding:0 var(--safe-right) var(--safe-bottom) var(--safe-left);background:var(--surface);border-top:1px solid var(--decorative)}
+.app-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:0;min-height:var(--app-nav);padding:8px 4px;border:0;border-radius:0;background:transparent;color:var(--muted);font-size:12px;font-weight:500;line-height:1.3}
+.app-nav button:hover:not(:disabled){background:transparent;color:var(--text)}
+.app-nav button:focus-visible{outline-offset:-4px}
+.app-nav-icon{display:flex;align-items:center;justify-content:center;width:56px;height:28px;border-radius:14px;transition:background-color 150ms ease-out}
+/* At very large font scales a label ends in an ellipsis instead of breaking mid-word; the full text stays in the accessibility tree. */
+.app-nav-label{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.app-nav [aria-current=page]{color:var(--text)}.app-nav [aria-current=page] .app-nav-icon{background:#163C42;color:var(--cyan)}
+/* The keyboard needs the room; the bar returns when the field loses focus. */
+body:has(:is(input:not([type=checkbox]):not([type=radio]),textarea):focus) .app-nav{display:none}
+/* Menu: a bottom sheet within thumb reach instead of the right-hand drawer. */
+.menu-drawer{inset:auto 0 0 0;width:100%;max-width:none;height:auto;max-height:calc(100dvh - var(--safe-top) - 24px);border-left:0;border-top:1px solid var(--decorative);border-radius:20px 20px 0 0;padding:12px calc(20px + var(--safe-right)) calc(20px + var(--safe-bottom)) calc(20px + var(--safe-left));box-shadow:0 -12px 40px #0003;transform:translateY(100%)}
+.menu-drawer[open]{transform:translateY(0)}
+.menu-drawer::before{content:"";display:block;width:32px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 12px}
+.drawer-heading{margin-bottom:12px}
+}
+@starting-style{@media(max-width:600px){.menu-drawer[open]{transform:translateY(100%)}}}
+[data-theme=light] .app-nav [aria-current=page] .app-nav-icon{background:#D3EEF1}

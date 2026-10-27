@@ -1,9 +1,23 @@
 [application]
 name = "attos-dashboard-ui"
 default_platform = "web"
+android_main_activity = "android/MainActivity.kt"
 
 [web.app]
 title = "AHD"
 
 [web.watcher]
 reload_html = true
+
+# Android app: `devenv --profile android shell -- build-android` (see README).
+[bundle]
+identifier = "cc.attodao.ahd"
+publisher = "AttODao"
+
+[android]
+min_sdk = 24
+target_sdk = 34
+
+[android.permissions]
+"android.permission.POST_NOTIFICATIONS" = { description = "Device notifications for game status" }
+"android.permission.RECEIVE_BOOT_COMPLETED" = { description = "Restore scheduled notifications after a restart" }
