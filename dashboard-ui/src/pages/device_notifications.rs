@@ -1,8 +1,10 @@
-//! Device notifications use Android permission/settings, independently of Webhooks.
+//! Device notifications use Android permission/settings, independently of Webhooks: server
+//! notices (the events chosen below, like the Webhook) plus predicted local reminders.
 use crate::app::{
-    device_notifications::use_device_context,
+    actions::{handle_api_error_for, spawn_action},
+    device_notifications::{Server, use_device_context},
     preferences::use_preferences,
-    state::{AppState, set_status},
+    state::{AppState, generation_matches, set_status},
 };
 use crate::{
     components::{Button, ButtonVariant},
@@ -12,11 +14,13 @@ use crate::{
     },
 };
 use dioxus::prelude::*;
+use serde_json::{Value, json};
 #[component]
 pub(super) fn DeviceNotificationsCard(state: Signal<AppState>) -> Element {
     let ui = use_preferences();
     let mut device = use_device_context();
     let enabled = device.settings.read().enabled;
+    let server = (device.server)();
     rsx! {
         section { class: "panel page-stack",
             h3 { {ui.text("notifications.device_title")} }
@@ -37,6 +41,16 @@ pub(super) fn DeviceNotificationsCard(state: Signal<AppState>) -> Element {
                     Button { r#type: "button", variant: ButtonVariant::Secondary, onclick: move |_| notify::open_settings(), {ui.text("notifications.device_open_settings")} }
                 }
             }
+            if enabled {
+                match server {
+                    Server::Active => rsx! { p { class: "status", role: "status", {ui.text("notifications.device_server_active")} } },
+                    Server::Registering => rsx! { p { role: "status", {ui.text("notifications.device_server_pending")} } },
+                    Server::Failed => rsx! { p { class: "warning", role: "status", {ui.text("notifications.device_server_failed")} } },
+                    Server::Off => rsx! {},
+                }
+            }
+            h3 { {ui.text("notifications.device_predicted_title")} }
+            p { class: "field-hint", {ui.text("notifications.device_predicted_hint")} }
             div { class: "event-list",
                 KindToggle { kind: Kind::ResourceFull, label: "notifications.event_resource_full" }
                 KindToggle { kind: Kind::RealmCurrencyFull, label: "notifications.device_kind_realm_currency" }
@@ -50,11 +64,27 @@ pub(super) fn DeviceNotificationsCard(state: Signal<AppState>) -> Element {
                         set_status(state, "notifications.device_permission_denied", "error");
                         notify::request_permission();
                     } else {
-                        let entry = Outgoing { id: TEST_NOTIFICATION_ID, at: crate::platform::now_ms() as i64, title: ui.text("notifications.device_test_title").into(), body: ui.text("notifications.device_test_body").into() };
+                        let entry = Outgoing { id: TEST_NOTIFICATION_ID, at: crate::platform::now_ms() as i64, title: ui.text("notifications.device_test_title").into(), body: ui.text("notifications.device_test_body").into(), tag: String::new() };
                         if notify::show_now(ui.text("notifications.device_channel"), &entry) { set_status(state, "notifications.device_test_sent", "success"); }
                         else { set_status(state, "notifications.device_test_failed", "error"); }
                     }
                 }, {ui.text("notifications.device_test")} }
+                Button { r#type: "button", variant: ButtonVariant::Secondary, disabled: server != Server::Active, onclick: move |_| {
+                    spawn_action(state, move |generation| async move {
+                        match crate::api::json::<Value>("POST", "/me/notifications/test", Some(json!({}))).await {
+                            Ok(result) if generation_matches(state, generation) => {
+                                if result.get("app").and_then(Value::as_bool) == Some(true) {
+                                    notify::inbox_poll_now();
+                                    set_status(state, "notifications.device_server_test_sent", "success");
+                                } else {
+                                    set_status(state, "notifications.device_server_test_unregistered", "error");
+                                }
+                            }
+                            Ok(_) => {}
+                            Err(error) => handle_api_error_for(state, generation, error),
+                        }
+                    });
+                }, {ui.text("notifications.device_server_test")} }
             }
         }
     }

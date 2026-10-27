@@ -104,6 +104,9 @@ fn PersonalChannelCard(
                 }
             }
             h3 { {ui.text("notifications.events")} }
+            if crate::platform::APP {
+                p { class: "field-hint", {ui.text("notifications.events_hint_app")} }
+            }
             div { class: "event-list",
                 PersonalEventToggles { events }
             }

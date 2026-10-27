@@ -31,6 +31,17 @@ fn page_from_path(path: &str) -> Page {
     }
 }
 
+/// The page a tapped notification opens: a dashboard path from the server ("/settings/bonus"),
+/// or "dashboard" from the app's own predicted notices.
+#[cfg_attr(not(feature = "mobile"), allow(dead_code))]
+pub(super) fn notification_target(target: &str) -> Page {
+    page_from_path(if target == "dashboard" {
+        "/dashboard"
+    } else {
+        target
+    })
+}
+
 /// The web version's URL for `page` on the server at `origin` (scheme://host[:port]).
 fn web_page_url(origin: &str, page: Page) -> String {
     format!("{origin}{}", page_path(page))
@@ -163,6 +174,17 @@ impl Drop for HistoryListener {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notification_targets_open_their_screens() {
+        assert!(notification_target("dashboard") == Page::Dashboard);
+        assert!(notification_target("/dashboard") == Page::Dashboard);
+        assert!(notification_target("/settings/bonus") == Page::Rewards);
+        assert!(notification_target("/settings/link") == Page::Link);
+        assert!(notification_target("/settings/security") == Page::Security);
+        assert!(notification_target("/settings/notifications") == Page::Notifications);
+        assert!(notification_target("unknown") == Page::Dashboard);
+    }
 
     #[test]
     fn web_version_urls_join_the_server_origin_and_the_page_path() {

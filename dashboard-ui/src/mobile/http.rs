@@ -16,7 +16,8 @@ const SERVER_URL: &str = match option_env!("AHD_SERVER_URL") {
 const COOKIE_FILE: &str = "session-cookies.json";
 /// Larger bodies are cut here; `api` rejects anything over its own limits.
 const BODY_LIMIT: usize = 1024 * 1024 + 1;
-const USER_AGENT: &str = concat!("AHD-Android/", env!("CARGO_PKG_VERSION"), " (Android)");
+pub(crate) const USER_AGENT: &str =
+    concat!("AHD-Android/", env!("CARGO_PKG_VERSION"), " (Android)");
 
 pub(crate) struct Response {
     status: u16,

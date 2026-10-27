@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Replaces dx's default: cleartext HTTP only for a development server on this device
+     (AHD_SERVER_URL accepts http only for localhost / 127.0.0.1, see mobile/session.rs).
+     The inbox poller (MainActivity.kt, AhdInbox) uses the platform HTTP stack, which
+     enforces this file; the Rust client does not. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

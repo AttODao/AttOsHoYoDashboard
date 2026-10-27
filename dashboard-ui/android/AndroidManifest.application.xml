@@ -6,3 +6,6 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+        <!-- Polls the server's notification inbox every 15 minutes (AhdInbox). -->
+        <service android:name="dev.dioxus.main.AhdInboxJob" android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
