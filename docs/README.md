@@ -9,6 +9,7 @@
 | [実装計画・検証課題](plans/AttOsHoYoDashboard.md) | 実装済み範囲、残る上流実証、検証ギャップを確認する |
 | [Dashboard OpenAPI 3.1](dashboard-api.json) | WebセッションAPIの手書き契約を機械可読で確認する |
 | [Dashboard運用手順](dashboard-operations.md) | migration、bootstrap、TLS/Origin、秘密鍵、バックアップ、shutdownを確認する |
+| [Androidアプリ：web版からの変更点](android-changes.md) | Androidアプリで除外した機能、レイアウト、追加機能、web版と分岐したコードと影響を確認する |
 | [UIデザイン案](ui-design/README.md) | 旧略称AGD時代のR2ローカルプレビュー、設定集約案、旧Penpot案、反映待ち事項を確認する |
 
 ## HoYoLABクライアント

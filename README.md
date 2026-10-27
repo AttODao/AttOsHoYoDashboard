@@ -156,7 +156,9 @@ APKは `target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/apk/deb
 
 - `AHD_SERVER_URL` はHTTPS、またはlocalhostのHTTPのみ。未指定時は `http://localhost:8080` で、開発用サーバー（`PUBLIC_ORIGIN: http://localhost:8080`）に `adb reverse tcp:8080 tcp:8080` でつなぐ想定です。
 - エミュレータは `devenv --profile android --profile android-emulator shell`（x86_64イメージ、KVMが必要）で入ります。
-- パッケージ名 `cc.attodao.ahd`、minSdk 24、targetSdk 34（`dashboard-ui/Dioxus.toml`）。権限はINTERNETのみです。
+- パッケージ名 `cc.attodao.ahd`、minSdk 24、targetSdk 34（`dashboard-ui/Dioxus.toml`）。権限はINTERNET（dx既定）、通知用の `POST_NOTIFICATIONS` と `RECEIVE_BOOT_COMPLETED` です。
+
+web版からの変更点（除外した機能とその方法、画面ごとのレイアウト、追加機能の仕様、共通化と分岐、web版への影響、既知の制約）は [docs/android-changes.md](docs/android-changes.md) にまとめています。
 
 ### UIモジュール
 
