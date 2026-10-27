@@ -14,10 +14,21 @@ use std::collections::BTreeMap;
 #[component]
 pub(super) fn NotificationsPage(state: Signal<AppState>) -> Element {
     let ui = use_preferences();
+    let device = {
+        #[cfg(feature = "mobile")]
+        {
+            rsx! { super::device_notifications::DeviceNotificationsCard { state } }
+        }
+        #[cfg(not(feature = "mobile"))]
+        {
+            rsx! {}
+        }
+    };
     rsx! {
         div { class: "page-stack",
             h2 { {ui.text("notifications.personal_title")} }
-            p { class: "field-hint", {ui.text("notifications.personal_hint")} }
+            p { class: "field-hint", {ui.text(if crate::platform::APP { "notifications.personal_hint_app" } else { "notifications.personal_hint" })} }
+            {device}
             if let Some(error) = state.read().notifications_error.clone() {
                 LoadError { state, message: ui.text(&error) }
             }
