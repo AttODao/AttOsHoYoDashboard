@@ -152,7 +152,9 @@ AHD_SERVER_URL=https://ahd.example.com AHD_ANDROID_TARGET=x86_64-linux-android d
 devenv --profile android shell -- check-android
 ```
 
-APKは `target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/apk/debug/app-debug.apk` に出力されます（デバッグ署名。`--release` を付けても署名設定がなければデバッグ署名です）。`adb install -r <APK>` で導入します。`build-android` は `dx build --platform android` の後、`dashboard-ui/android/res/` のアイコン・アプリ名「AHD」・テーマで生成プロジェクトを上書きし、AndroidManifestの `configChanges` を広げてGradleを再実行します（`dx serve --platform android` ではDioxus既定のアイコン・名前になり、ダークモードや文字サイズの変更でアプリが終了します）。
+APKは `target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/apk/debug/app-debug.apk` に出力されます（デバッグ署名。`--release` を付けても署名設定がなければデバッグ署名です）。`adb install -r <APK>` で導入します。`build-android` は `dx build --platform android` の後、`dashboard-ui/android/res/` のアイコン・アプリ名「AHD」・テーマで生成プロジェクトを上書きし、AndroidManifestの `configChanges` を広げ、バージョンから `versionCode` を設定してGradleを再実行します（`dx serve --platform android` ではDioxus既定のアイコン・名前になり、ダークモードや文字サイズの変更でアプリが終了します）。
+
+`v*` タグをpushすると `.forgejo/workflows/android.yml` がarm64のAPKを `--release` でビルドし、そのタグのForgejoリリースに `ahd-android-X.Y.Z-arm64.apk` と `.sha256` を添付します。接続先はリポジトリ変数 `AHD_SERVER_URL`（未設定なら `https://hoyo.attodao.cc`）です。リポジトリのsecret `ANDROID_KEYSTORE_BASE64`（base64のkeystore）・`ANDROID_KEYSTORE_PASSWORD`・`ANDROID_KEY_ALIAS` があれば同じ鍵で署名し直して更新インストールできます。なければビルドごとのデバッグ鍵になり、上書き更新できません。`versionCode` は `X*10000+Y*100+Z`（Y・Zは100未満）を `build-android` が設定します。
 
 - `AHD_SERVER_URL` はHTTPS、またはlocalhostのHTTPのみ。未指定時は `http://localhost:8080` で、開発用サーバー（`PUBLIC_ORIGIN: http://localhost:8080`）に `adb reverse tcp:8080 tcp:8080` でつなぐ想定です。
 - エミュレータは `devenv --profile android --profile android-emulator shell`（x86_64イメージ、KVMが必要）で入ります。
@@ -212,6 +214,8 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 ## リリースイメージ
 
 `v*` タグのpushで `.forgejo/workflows/image.yml` がlinux/amd64イメージをビルドし、Forgejoのコンテナレジストリ（`<Forgejoホスト>/<owner>/<repo>`、小文字）へ公開します。CIではテストを実行しないため、タグ付け前に `devenv test` を通してください。
+
+同じタグで `.forgejo/workflows/android.yml` も起動し、Android APKとチェックサムをForgejoリリースに添付します。
 
 - `v1.2.3` → `1.2.3`・`1.2`・`latest`。`v1.2.3-rc.1` などはそのタグのみ
 - runnerはラベル `ubuntu-latest`、ジョブから `docker`／`buildx` でDinDへ接続できること

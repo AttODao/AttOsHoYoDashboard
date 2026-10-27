@@ -56,6 +56,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
   4. `dashboard-ui/android/AndroidManifest.application.xml` のreceiverを、生成された `AndroidManifest.xml` の `<application>` に挿入する。
   5. Gradleで組み直す。
 - APKはデバッグ署名です。`--release` を付けても、署名設定がなければデバッグ署名になります。
+- `v*` タグのCI（`.forgejo/workflows/android.yml`）はarm64のrelease APKとチェックサムをForgejoリリースへ添付し、署名用secretがあれば同じ鍵で署名し直します。`build-android` はバージョン `X.Y.Z` から `versionCode = X*10000+Y*100+Z`（Y・Zは100未満）を設定します。
 - パッケージ名は `cc.attodao.ahd`、minSdk 24、targetSdk 34です。権限は、dxが既定で付けるINTERNETに加えて、`POST_NOTIFICATIONS` と `RECEIVE_BOOT_COMPLETED` を使います（`Dioxus.toml`）。
 - 開発用サーバーにつなぐ場合：`AHD_SERVER_URL` を省略すると `http://localhost:8080` になります。`adb reverse tcp:8080 tcp:8080` でホストの開発サーバー（`PUBLIC_ORIGIN=http://localhost:8080`）へつなぎます。ただし `build-android` では `AHD_SERVER_URL` が必須なので、`AHD_SERVER_URL=http://localhost:8080` と明示します。
 - エミュレータは `devenv --profile android --profile android-emulator shell` で入ります（x86_64イメージ、KVMが必要）。
@@ -324,7 +325,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
   - 強制停止やアプリの更新でOSがアラームを消します。次にアプリを起動したとき、またはパッケージ更新時のreceiverで戻ります。
   - 通知をタップしてダッシュボードへ移っても、スクロール位置はそのままです。
   - `dx serve` のAPKにはreceiverが入りません。
-- **ビルド**：release署名を設定していません（デバッグ署名だけ）。`dx serve` ではDioxusの既定のアイコンと名前になります。
+- **ビルド**：release署名にはCIの署名用secretが必要です（未設定ならビルドごとのデバッグ署名）。`dx serve` ではDioxusの既定のアイコンと名前になります。
 
 ### 未確認の項目
 

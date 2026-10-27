@@ -54,6 +54,23 @@ if ! grep -q AhdAlarmReceiver "$manifest"; then
   mv "$manifest.tmp" "$manifest"
 fi
 grep -q AhdBootReceiver "$manifest"
+# Android only installs an update when versionCode does not go down; dx always writes 1.
+gradle="$project/app/build.gradle.kts"
+version=$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"[[:space:]]*$/\1/p' "$gradle")
+if [[ ! "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+  echo "Invalid Android versionName: $version (expected X.Y.Z)" >&2
+  exit 1
+fi
+major=$((10#${BASH_REMATCH[1]}))
+minor=$((10#${BASH_REMATCH[2]}))
+patch=$((10#${BASH_REMATCH[3]}))
+if ((minor >= 100 || patch >= 100)); then
+  echo "Android versionName minor and patch must be below 100: $version" >&2
+  exit 1
+fi
+code=$((major * 10000 + minor * 100 + patch))
+sed -i "s/^\([[:space:]]*\)versionCode = [0-9][0-9]*[[:space:]]*$/\1versionCode = $code/" "$gradle"
+grep -qF "versionCode = $code" "$gradle"
 (cd "$project" && ./gradlew --quiet assembleDebug)
 
 apk="$project/app/build/outputs/apk/debug/app-debug.apk"
