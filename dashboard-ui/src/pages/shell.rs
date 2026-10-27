@@ -1,3 +1,4 @@
+use super::about::AboutPage;
 use super::accounts::UidsPage;
 use super::admin::AdminPage;
 use super::app_nav::AppNav;
@@ -15,6 +16,34 @@ use crate::app::session::logout;
 use crate::app::state::{AppState, Page, clear_status, set_page};
 use crate::i18n::Language;
 use dioxus::prelude::*;
+
+/// Entries of the account menu above the sign-out group, in display order.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum MenuItem {
+    HoYoLab,
+    Settings,
+    OpenInBrowser,
+    Administration,
+    Docs,
+    About,
+}
+
+/// Admin, API docs, password change and the rest live in the web version, so the app
+/// shows "Open in browser" instead; About sits directly below the API docs (in the app,
+/// where the API docs would be).
+fn menu_items(app: bool, admin: bool) -> Vec<MenuItem> {
+    let mut items = vec![MenuItem::HoYoLab, MenuItem::Settings];
+    if app {
+        items.push(MenuItem::OpenInBrowser);
+    } else {
+        if admin {
+            items.push(MenuItem::Administration);
+        }
+        items.push(MenuItem::Docs);
+    }
+    items.push(MenuItem::About);
+    items
+}
 
 const SETTINGS: [(Page, &str, &str, &str); 6] = [
     (Page::Uids, "uids", "settings.uids", "dashboard.games"),
@@ -96,6 +125,8 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
             } else {
                 if page == Page::Admin && !crate::platform::APP {
                     AdminPage { state }
+                } else if page == Page::About {
+                    AboutPage {}
                 } else {
                     DashboardPage { state }
                 }
@@ -157,18 +188,15 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
                     button { class: "icon-button", r#type: "button", "aria-label": ui.text("shell.close_menu"), onclick: move |_| open.set(false), Icon { name: "close" } }
                 }
                 nav { "aria-label": ui.text("shell.account_menu"),
-                    a { href: "https://www.hoyolab.com/home", target: "_blank", rel: "noopener noreferrer", Icon { name: "link" } "HoYoLAB" }
-                    button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Uids); }, Icon { name: "settings" } {ui.text("shell.settings")} }
-                    // Admin, API docs, password change and the rest live in the web version.
-                    if crate::platform::APP {
-                        button { r#type: "button", onclick: move |_| { open.set(false); let page = state.read().page; open_web_version(state, page); }, Icon { name: "external" } {ui.text("shell.open_in_browser")} }
-                    }
-                    // The app leaves administration and the API docs to the web version.
-                    if !crate::platform::APP && me.as_ref().is_some_and(|me| me.is_admin) {
-                        button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Admin); }, Icon { name: "user" } {ui.text("shell.administration")} }
-                    }
-                    if !crate::platform::APP {
-                        button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Docs); }, Icon { name: "docs" } {ui.text("docs.title")} }
+                    for item in menu_items(crate::platform::APP, me.as_ref().is_some_and(|me| me.is_admin)) {
+                        match item {
+                            MenuItem::HoYoLab => rsx! { a { href: "https://www.hoyolab.com/home", target: "_blank", rel: "noopener noreferrer", Icon { name: "link" } "HoYoLAB" } },
+                            MenuItem::Settings => rsx! { button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Uids); }, Icon { name: "settings" } {ui.text("shell.settings")} } },
+                            MenuItem::OpenInBrowser => rsx! { button { r#type: "button", onclick: move |_| { open.set(false); let page = state.read().page; open_web_version(state, page); }, Icon { name: "external" } {ui.text("shell.open_in_browser")} } },
+                            MenuItem::Administration => rsx! { button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Admin); }, Icon { name: "user" } {ui.text("shell.administration")} } },
+                            MenuItem::Docs => rsx! { button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Docs); }, Icon { name: "docs" } {ui.text("docs.title")} } },
+                            MenuItem::About => rsx! { button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::About); }, Icon { name: "info" } {ui.text("about.title")} } },
+                        }
                     }
                     div { class: "menu-logout-group",
                         button { class: "menu-logout", r#type: "button", onclick: move |_| { open.set(false); spawn_action(state, move |generation| async move { logout(state, generation).await; }); }, Icon { name: "logout" } {ui.text("shell.sign_out")} }
@@ -227,6 +255,26 @@ pub(super) fn Status(state: Signal<AppState>) -> Element {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn about_follows_the_api_docs_on_the_web_and_takes_their_place_in_the_app() {
+        use MenuItem::*;
+        assert_eq!(
+            menu_items(false, true),
+            vec![HoYoLab, Settings, Administration, Docs, About]
+        );
+        assert_eq!(
+            menu_items(false, false),
+            vec![HoYoLab, Settings, Docs, About]
+        );
+        assert_eq!(
+            menu_items(true, true),
+            vec![HoYoLab, Settings, OpenInBrowser, About]
+        );
+        assert_eq!(
+            menu_items(true, false),
+            vec![HoYoLab, Settings, OpenInBrowser, About]
+        );
+    }
     #[test]
     fn settings_tabs_wrap_and_do_not_handle_unrelated_keys() {
         assert!(next_settings(Page::Uids, &Key::ArrowLeft, false) == Some(Page::Delete));

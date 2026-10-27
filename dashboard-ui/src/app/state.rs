@@ -32,6 +32,7 @@ pub(super) enum Page {
     Admin,
     Delete,
     Docs,
+    About,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -448,6 +449,7 @@ mod tests {
             Page::Link,
             Page::Security,
             Page::Notifications,
+            Page::About,
         ] {
             assert!(reachable(page, true) == page);
         }

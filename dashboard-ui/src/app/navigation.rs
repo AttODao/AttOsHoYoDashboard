@@ -14,6 +14,7 @@ fn page_path(page: Page) -> &'static str {
         Page::Delete => "/settings/delete",
         Page::Admin => "/admin",
         Page::Docs => "/docs",
+        Page::About => "/about",
     }
 }
 
@@ -27,6 +28,7 @@ fn page_from_path(path: &str) -> Page {
         "/settings/delete" => Page::Delete,
         "/admin" => Page::Admin,
         "/docs" => Page::Docs,
+        "/about" => Page::About,
         _ => Page::Dashboard,
     }
 }
@@ -204,7 +206,7 @@ mod tests {
 
     #[test]
     fn canonical_routes_follow_auth_without_discarding_loading_deep_links() {
-        for page in [Page::Dashboard, Page::Security, Page::Admin] {
+        for page in [Page::Dashboard, Page::Security, Page::Admin, Page::About] {
             assert_eq!(canonical_path(page, Phase::Unchecked), None);
             assert_eq!(canonical_path(page, Phase::Loading), None);
             assert_eq!(canonical_path(page, Phase::SignedOut), Some("/login"));
@@ -235,6 +237,7 @@ mod tests {
             Page::Delete,
             Page::Admin,
             Page::Docs,
+            Page::About,
         ] {
             let path = page_path(page);
             assert!(page_from_path(path) == page);

@@ -11,6 +11,7 @@ import {fileURLToPath} from 'node:url';
 const require=createRequire(import.meta.url);
 const {chromium}=require(process.env.ATTOS_TEST_PLAYWRIGHT_MODULE || 'playwright');
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
+const uiManifest=fs.readFileSync(path.join(root,'dashboard-ui/Cargo.toml'),'utf8');const uiVersion=uiManifest.match(/^version = "(.+)"$/m)[1];const uiLicense=uiManifest.match(/^license = "(.+)"$/m)?.[1]??'Not specified';
 // BUILD_DIR is the compiled public directory (containing index.html and assets/).
 const publicDir=path.resolve(process.env.BUILD_DIR || path.join(root,'target/dx/attos-dashboard-ui/release/web/public'));
 assert.ok(fs.existsSync(path.join(publicDir,'index.html')),'build the Dioxus release UI first');
@@ -143,7 +144,7 @@ const server=http.createServer(async(req,res)=>{
   if(p==='/openapi.json'){assert.equal(req.method,'GET');counts.set(p,(counts.get(p)||0)+1);return json(res,JSON.parse(fs.readFileSync(path.join(root,'docs/dashboard-api.json'),'utf8')));}
   let file;
   if(p==='/settings'){res.writeHead(308,{'Location':'/settings/games'});return res.end();}
-  if(['/','/login','/dashboard','/settings/games','/settings/bonus','/settings/link','/settings/security','/settings/notifications','/settings/delete','/admin','/docs'].includes(p)){file=path.join(publicDir,'index.html');res.setHeader('Content-Type','text/html');res.setHeader('Content-Security-Policy',csp);}
+  if(['/','/login','/dashboard','/settings/games','/settings/bonus','/settings/link','/settings/security','/settings/notifications','/settings/delete','/admin','/about','/docs'].includes(p)){file=path.join(publicDir,'index.html');res.setHeader('Content-Type','text/html');res.setHeader('Content-Security-Policy',csp);}
   else if(p.startsWith('/assets/')){file=path.resolve(publicDir,'.'+p);assert.ok(file.startsWith(path.join(publicDir,'assets')+path.sep));res.setHeader('Content-Type',({'.wasm':'application/wasm','.js':'text/javascript','.css':'text/css','.png':'image/png'})[path.extname(file)]||'application/octet-stream');}
   else {res.writeHead(404);return res.end();}
   res.end(fs.readFileSync(file));
@@ -502,6 +503,37 @@ try{
  await drawer.getByRole('combobox',{name:'Theme',exact:true}).selectOption('dark');
  await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark'&&localStorage.getItem('ahd-theme')==='dark');
  await page.keyboard.press('Escape');await dashboard();
+ // About sits directly below the API docs and shows build metadata from Cargo.toml.
+ await openMenu();
+ const menuEntries=await page.locator('#ahd-menu nav > :is(button,a)').evaluateAll(items=>items.map(item=>item.textContent.trim()));
+ assert.deepEqual(menuEntries.slice(-2),['API documentation','About'],'About is the entry right below the API docs');
+ await page.keyboard.press('Escape');await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});await page.locator('#ahd-menu').evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});
+ await menu('About');
+ await page.waitForURL(origin+'/about');
+ await page.getByRole('heading',{name:'About',exact:true,level:1}).waitFor();
+ assert.equal(await page.title(),'About – AHD');
+ const aboutFacts=await page.locator('.about-facts > div').evaluateAll(rows=>rows.map(row=>[row.querySelector('dt').textContent.trim(),row.querySelector('dd').textContent.trim()]));
+ assert.deepEqual(aboutFacts,[['Author','AttODao'],['Version',uiVersion],['License',uiLicense],['Source code','git.attodao.cc/AttODao/AttOsHoYoDashboard']]);
+ const repoLink=page.locator('.about-facts a');
+ assert.equal(await repoLink.getAttribute('href'),'https://git.attodao.cc/AttODao/AttOsHoYoDashboard');
+ assert.equal(await repoLink.getAttribute('target'),'_blank');
+ assert.equal(await page.locator('.about-licenses li').count(),4);
+ assert.equal(await page.getByRole('link',{name:'Open Cargo.lock',exact:true}).getAttribute('href'),`https://git.attodao.cc/AttODao/AttOsHoYoDashboard/src/tag/v${uiVersion}/Cargo.lock`);
+ for(const link of await page.locator('.about-page a').all())assert.ok((await link.boundingBox()).height>=48,'about links keep a 48px target');
+ await page.screenshot({path:path.join(root,'target/ui-about-desktop-dark.png'),fullPage:true});
+ await openMenu();await page.locator('#ahd-menu').getByRole('combobox',{name:'Theme',exact:true}).selectOption('light');
+ await page.waitForFunction(()=>document.documentElement.dataset.theme==='light');
+ await page.keyboard.press('Escape');await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});await page.locator('#ahd-menu').evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});
+ await page.screenshot({path:path.join(root,'target/ui-about-desktop-light.png'),fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ assert.ok(await page.locator('.about-facts a').evaluate(link=>{const r=link.getBoundingClientRect();return r.right<=link.closest('.panel').getBoundingClientRect().right;}),'repository link stays inside its panel');
+ assert.ok(await page.locator('main.container').evaluate(e=>e.scrollWidth<=e.clientWidth),'about fits a narrow screen');
+ await page.screenshot({path:path.join(root,'target/ui-about-mobile-light.png'),fullPage:true});
+ await page.setViewportSize({width:1280,height:900});
+ await openMenu();await page.locator('#ahd-menu').getByRole('combobox',{name:'Theme',exact:true}).selectOption('dark');
+ await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark'&&localStorage.getItem('ahd-theme')==='dark');
+ await page.keyboard.press('Escape');await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});await page.locator('#ahd-menu').evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});
+ await page.locator('.wordmark').click();await dashboard();
  // Mobile ARIA tabs: hidden panel, roving focus and keyboard edges.
  await page.setViewportSize({width:390,height:844});
  await page.waitForFunction(()=>document.getElementById('game-panel-genshin')?.getAttribute('role')==='tabpanel');

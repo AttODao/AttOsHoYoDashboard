@@ -45,7 +45,7 @@ pub(super) async fn load_page_data(state: Signal<AppState>, page: Page) {
             load_admin_audit(state, false).await;
             load_admin_notifications(state).await;
         }
-        Page::Admin | Page::Delete | Page::Docs => {}
+        Page::Admin | Page::Delete | Page::Docs | Page::About => {}
     }
 }
 

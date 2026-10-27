@@ -1,6 +1,8 @@
 [package]
 name = "attos-dashboard-ui"
 version = "1.4.0"
+authors = ["AttODao"]
+repository = "https://git.attodao.cc/AttODao/AttOsHoYoDashboard"
 edition = "2024"
 publish = false
 

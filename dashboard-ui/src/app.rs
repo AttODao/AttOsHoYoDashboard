@@ -152,6 +152,7 @@ fn page_title(page: Page, phase: Phase, ready: bool, ui: preferences::Preference
         (Phase::SignedIn, Page::Security) => Some("settings.security"),
         (Phase::SignedIn, Page::Delete) => Some("settings.delete"),
         (Phase::SignedIn, Page::Admin) => Some("admin.admin_settings"),
+        (Phase::SignedIn, Page::About) => Some("about.title"),
         _ => None,
     };
     match key {
@@ -257,6 +258,10 @@ mod tests {
     #[test]
     fn tab_titles_name_the_page_then_the_product() {
         let ui = preferences::Preferences::default();
+        assert_eq!(
+            page_title(Page::About, Phase::SignedIn, true, ui),
+            "このアプリについて – AHD"
+        );
         assert_eq!(
             page_title(Page::Dashboard, Phase::SignedIn, true, ui),
             "ダッシュボード – AHD"

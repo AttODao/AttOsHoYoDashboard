@@ -1,3 +1,4 @@
+mod about;
 mod accounts;
 mod admin;
 pub(super) mod app_nav;
