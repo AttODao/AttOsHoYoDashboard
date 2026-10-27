@@ -10,14 +10,13 @@ async fn personal_settings_round_trip_webhook_url_and_require_valid_fields() {
     let notifications = Notifications::new(
         fixture.db.clone(),
         Some(Arc::new(CookieKey::from_hex(&"11".repeat(32)).unwrap())),
-        "https://ahd.example.test".to_owned(),
     );
     let view = notifications.personal_view(&actor).await.unwrap();
     let json = serde_json::to_value(&view).unwrap();
     assert_eq!(json["webhook_configured"], false);
     assert_eq!(json["webhook_hint"], Value::Null);
     assert_eq!(json["resin_warn_hours"], 2);
-    assert!(json["push_public_key"].is_string());
+    assert!(json.get("push_public_key").is_none() && json.get("push_subscriptions").is_none());
 
     let input: PersonalInput = serde_json::from_value(json!({
         "webhook_url": "https://discord.com/api/webhooks/1/synthetic-token",
@@ -99,7 +98,6 @@ async fn admin_channel_requires_an_administrator_and_shares_a_single_row() {
     let notifications = Notifications::new(
         fixture.db.clone(),
         Some(Arc::new(CookieKey::from_hex(&"11".repeat(32)).unwrap())),
-        "https://ahd.example.test".to_owned(),
     );
     let input: ChannelInput = serde_json::from_value(json!({
         "webhook_url": "https://discord.com/api/webhooks/9/admin-token",

@@ -99,7 +99,7 @@ const server=http.createServer(async(req,res)=>{
    if(p==='/api/v1/me/api-tokens'&&req.method==='GET')return json(res,apiTokens);
    if(p==='/api/v1/me/api-tokens'){assert.equal(req.method,'POST');assert.deepEqual(Object.keys(body),['name','scope']);assert.deepEqual(body,{name:'Stream Deck',scope:'run'});const row={id:uid(60),name:body.name,scope:body.scope,created_at:hoursAgo(0),last_used_at:null};apiTokens=[row,...apiTokens];return json(res,{...row,token:'ahd_'+'5'.repeat(64)},201);}
    if(p===`/api/v1/me/api-tokens/${uid(60)}`){assert.equal(req.method,'DELETE');apiTokens=apiTokens.filter(row=>row.id!==uid(60));res.writeHead(204);return res.end();}
-   if(p==='/api/v1/me/notifications'&&req.method==='GET')return json(res,{webhook_configured:false,webhook_hint:null,webhook_format:'discord',language:'ja',events:{},last_delivery_at:null,last_delivery_ok:null,resin_warn_hours:2,daily_reminder_time:'21:00',weekly_reminder_time:'15:00',push_public_key:null,push_subscriptions:0});
+   if(p==='/api/v1/me/notifications'&&req.method==='GET')return json(res,{webhook_configured:false,webhook_hint:null,webhook_format:'discord',language:'ja',events:{},last_delivery_at:null,last_delivery_ok:null,resin_warn_hours:2,daily_reminder_time:'21:00',weekly_reminder_time:'15:00'});
    if(p==='/api/v1/me/notifications'&&req.method==='PUT'){assert.ok(body.webhook_format);res.writeHead(204);return res.end();}
    if(p==='/api/v1/admin/notifications'&&req.method==='GET')return json(res,{webhook_configured:false,webhook_hint:null,webhook_format:'discord',language:'ja',events:{},last_delivery_at:null,last_delivery_ok:null});
    if(p==='/api/v1/admin/notifications'&&req.method==='PUT'){res.writeHead(204);return res.end();}

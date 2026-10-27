@@ -1,5 +1,5 @@
 //! Notifier ticks against an isolated database: the app inbox gets exactly the notices
-//! the web channels (Webhook and browser push) are sent, under the same conditions.
+//! the web channel (Webhook) is sent, under the same conditions.
 use super::{
     channel::Notifications,
     worker::{Notifier, NotifierSchedule},
@@ -85,11 +85,7 @@ struct Fixture {
 async fn fixture() -> Fixture {
     let fixture = TestDatabase::new().await;
     let key = key();
-    let notifications = Arc::new(Notifications::new(
-        fixture.db.clone(),
-        Some(key.clone()),
-        "https://ahd.example.test".to_owned(),
-    ));
+    let notifications = Arc::new(Notifications::new(fixture.db.clone(), Some(key.clone())));
     let games = Arc::new(Games::new(Arc::new(CookieStore::for_test(
         fixture.db.clone(),
         key,

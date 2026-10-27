@@ -54,7 +54,8 @@ async fn migrations_are_ordered_idempotent_and_reversible() {
             "m20261020_000006_account_activity",
             "m20261020_000007_notifications",
             "m20261027_000008_api_tokens",
-            "m20261028_000009_app_notifications"
+            "m20261028_000009_app_notifications",
+            "m20261028_000010_remove_web_push"
         ]
     );
     migrations::Migrator::down(&fixture.db, None).await.unwrap();

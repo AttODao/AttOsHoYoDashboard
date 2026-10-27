@@ -46,7 +46,7 @@ async fn app_devices_register_read_the_inbox_and_unregister_with_a_session() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         body(response).await,
-        json!({"webhook": "not_configured", "push": 0, "app": true})
+        json!({"webhook": "not_configured", "app": true})
     );
 
     // A background poll is a plain GET with the cookie (no Origin needed).
@@ -106,4 +106,25 @@ async fn app_devices_register_read_the_inbox_and_unregister_with_a_session() {
         "not_found",
     )
     .await;
+}
+
+#[tokio::test]
+async fn retired_browser_push_routes_are_not_found() {
+    let db = TestDatabase::new().await;
+    let (accounts, admin) = db.ready_admin().await;
+    let app = app(accounts);
+    let session = cookie(&app, admin.user.id).await;
+    for method in ["POST", "DELETE"] {
+        let response = call(
+            &app,
+            request(
+                method,
+                "/api/v1/me/notifications/push",
+                Some(&session),
+                Some(json!({})),
+            ),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
 }

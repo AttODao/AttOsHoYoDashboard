@@ -9,7 +9,7 @@
 - 新しいフロントエンドは作りません。web版と同じDioxus（RSX）コード、同じ画面構成、同じ文言カタログ、同じ `dashboard.css` をそのまま使います。
 - アプリ固有の処理はCargo feature `mobile` の中に閉じ込めます。web版は従来どおり既定の `web` feature でビルドし、アプリのコードはwasmに入りません。
 - アプリは既存の `/api/v1` を、ブラウザと同じセッションCookie認証で呼びます。サーバーへの追加は、web版の通知をアプリへ届けるための端末登録と受信箱（5.3節）だけです。
-- ブラウザでしか動かない機能（WebAuthn、Web Push）と、アプリに不要な機能（管理者機能など。3節）は、アプリで表示も遷移もしません。必要なときは「ブラウザで開く」（5.1節）でweb版に移ります。
+- ブラウザでしか動かない機能（WebAuthn）と、アプリに不要な機能（管理者機能など。3節）は、アプリで表示も遷移もしません。必要なときは「ブラウザで開く」（5.1節）でweb版に移ります。
 
 ### 使用したDioxusの仕組み
 
@@ -80,7 +80,6 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 | --- | --- | --- |
 | パスキーでのログイン | ログイン画面にログイン方式の選択（パスワード／パスキー）を出さず、パスワードだけにする | `pages/auth.rs` の `auth-method` fieldsetを `!APP` で囲む |
 | パスキーの登録 | 登録フォームを出さない。登録済みパスキーの一覧・名前変更・削除はできる | `pages/security.rs` の `PasskeyCard` 内の登録フォームを `!APP` で囲む |
-| ブラウザのプッシュ通知（Web Push） | カードを出さない。代わりに端末通知（5.2節・5.3節）で同じ通知を受け取る | `pages/notifications.rs` の `PushCard` を `!APP` で囲み、説明文を `notifications.personal_hint_app` に切り替える |
 
 `Page::web_only` と `reachable` は純関数として単体テストしています（`the_app_never_routes_to_web_only_pages`、`app_settings_tabs_leave_out_account_deletion`）。テスト中は `APP` が `false` になるため、`app` を引数で渡して両方の場合を確認します。
 
@@ -138,7 +137,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 
 ### 設定：通知
 
-- 説明文をアプリ用に変え、「この端末への通知」カード（5.2節・5.3節）を先頭に置く。Webhookの設定はweb版と同じで、ブラウザのプッシュ通知のカードはない。「通知する内容」の下に、選んだ内容がWebhookとこの端末の両方に使われることを示す説明を出す。
+- 説明文をアプリ用に変え、「この端末への通知」カード（5.2節・5.3節）を先頭に置く。Webhookの設定はweb版と同じ。「通知する内容」の下に、選んだ内容がWebhookとこの端末の両方に使われることを示す説明を出す。
 - Webhook URLと樹脂の警告値の入力欄は、上記のとおり48pxにした（幅によらず）。
 
 確認した画面サイズ：エミュレータ（API 34）で、360/412/430dp（日本語・ライト）、360dpの文字130%（英語・ダーク）、360dpの文字200%。いずれも横方向のはみ出しはなく、44px未満のタップ領域もなかった。
@@ -204,11 +203,11 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 
 ### 5.3 通知（web版と同じ通知をサーバーから受け取る）
 
-web版がWebhookとブラウザのプッシュ通知へ送る個人の通知を、すべてアプリでも受け取れます。管理者専用の通知は除きます。通知ごとの条件・内容・受信者と、移植・除外の一覧は [notifications-inventory.md](notifications-inventory.md) にあります。
+web版がWebhookへ送る個人の通知を、すべてアプリでも受け取れます。管理者専用の通知は除きます。通知ごとの条件・内容・受信者と、移植・除外の一覧は [notifications-inventory.md](notifications-inventory.md) にあります。
 
 **仕組み**
 
-- 「この端末に通知する」をONにすると、アプリはサーバーに端末を登録します（`POST /api/v1/me/notifications/app-devices`）。サーバーは、Webhook・Web Pushへ送るのと同じ箇所（`Notifier::deliver`）で、同じ通知をそのユーザーの受信箱に入れます。条件、「通知する内容」の選択、重複排除、文面（通知設定の言語）はWebhookと同じです。
+- 「この端末に通知する」をONにすると、アプリはサーバーに端末を登録します（`POST /api/v1/me/notifications/app-devices`）。サーバーは、Webhookへ送るのと同じ箇所（`Notifier::deliver`）で、同じ通知をそのユーザーの受信箱に入れます。条件、「通知する内容」の選択、重複排除、文面（通知設定の言語）はWebhookと同じです。
 - Kotlinの `AhdInbox`（`android/MainActivity.kt`）が、アプリ専用領域のセッションCookie（`files/session-cookies.json`）で受信箱を読み（`GET …/app-devices/{id}/inbox?after=…`）、Androidの通知を出します。読む時機は、JobSchedulerの定期ジョブ（15分ごと、ネットワーク接続時、アプリを閉じていても・再起動後も）、アプリの表示中の1分ごと、アプリに戻ったとき、登録直後とテスト送信直後です。
 - 外部のプッシュサービス（FCMなど）は使いません。サーバーに外部サービスの資格情報が要らず、Googleのサービスがない端末でも動きます。その代わり、アプリを開いていないときは届くまで最大15分程度（Dozeではさらに遅れることがある）かかります。
 - 通知チャンネルは5.2節と同じ「ゲームの状態」です。サーバーの重複排除キーをタグにし、同じタグの通知は置き換えます。
@@ -317,7 +316,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/pages/shell.rs` | `settings_tabs`、メニュー項目の分岐、`AppNav` |
 | `dashboard-ui/src/pages/auth.rs` | パスキーのログイン方式の除外、パスワード変更の案内 |
 | `dashboard-ui/src/pages/security.rs` | パスワード変更・APIトークン・パスキー登録の除外、「ブラウザで開く」 |
-| `dashboard-ui/src/pages/notifications.rs` | 端末通知カード、Web Pushの除外、説明文の切り替え |
+| `dashboard-ui/src/pages/notifications.rs` | 端末通知カード、説明文の切り替え |
 | `dashboard-ui/src/pages/common.rs` | `external` アイコン、DOM操作・モーダルのアプリ分岐 |
 | `dashboard-ui/src/pages/dashboard.rs` | `matchMedia` と1分ごとの再描画のアプリ分岐 |
 | `dashboard-ui/src/pages/mod.rs` | 新しいモジュールの宣言 |

@@ -1,13 +1,10 @@
-//! Personal and administrator notification channels, browser push subscriptions and the
+//! Personal and administrator notification channels and the
 //! app installations' inbox.
 use super::App;
 use crate::dashboard::{
     auth::sessions::Identity,
     error::Result,
-    notifications::{
-        channel::{ChannelInput, PersonalInput},
-        push::{SubscriptionInput, Unsubscription},
-    },
+    notifications::channel::{ChannelInput, PersonalInput},
 };
 use axum::{
     Json, Router,
@@ -23,10 +20,6 @@ pub(super) fn protected_routes() -> Router<App> {
     Router::new()
         .route("/api/v1/me/notifications", get(me_view).put(me_update))
         .route("/api/v1/me/notifications/test", post(me_test))
-        .route(
-            "/api/v1/me/notifications/push",
-            post(subscribe).delete(unsubscribe),
-        )
         .route(
             "/api/v1/me/notifications/app-devices",
             post(register_app_device),
@@ -76,24 +69,6 @@ async fn me_test(
     Ok(Json(
         serde_json::to_value(service(&app).test_personal(&actor).await?).unwrap_or(Value::Null),
     ))
-}
-
-async fn subscribe(
-    State(app): State<App>,
-    Extension(actor): Extension<Arc<Identity>>,
-    Json(input): Json<SubscriptionInput>,
-) -> Result<StatusCode> {
-    service(&app).subscribe(&actor, input).await?;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-async fn unsubscribe(
-    State(app): State<App>,
-    Extension(actor): Extension<Arc<Identity>>,
-    Json(input): Json<Unsubscription>,
-) -> Result<StatusCode> {
-    service(&app).unsubscribe(&actor, input).await?;
-    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn register_app_device(

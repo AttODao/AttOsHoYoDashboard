@@ -131,7 +131,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 - 管理者機能（ユーザー管理・管理者向け通知設定）、APIドキュメント（`/docs`）、ユーザー削除
 - 認証・セキュリティのAPIトークンとパスワード変更（初回／復旧後のパスワード変更もブラウザで行い、アプリでは「設定状況を更新」を選びます）
-- WebAuthnとWeb Pushはブラウザ専用のため、パスキーでのログイン・登録とブラウザのプッシュ通知の登録はアプリにはありません（登録済みパスキーの一覧・名前変更・削除は可能。通知は下記の受信箱で同じものを受け取ります）
+- WebAuthnはブラウザ専用のため、パスキーでのログイン・登録はアプリにはありません（登録済みパスキーの一覧・名前変更・削除は可能）
 
 アプリのメニューの「ブラウザで開く」は、表示中の画面に対応するweb版のページ（`AHD_SERVER_URL` のオリジン＋同じパス）を端末の既定のブラウザで開きます（Androidの `Intent.ACTION_VIEW`、`webbrowser` クレート経由）。初回設定のパスワード変更画面と「セキュリティ」設定にも同じボタンがあります。ブラウザを開けなかったときはエラーを表示します。web版にはこのボタンはありません。
 
@@ -139,7 +139,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 #### 通知
 
-「通知」ページの「この端末に通知する」をONにすると、web版のWebhook・ブラウザのプッシュ通知と同じ個人の通知（ログインボーナスの結果、Cookieの失効、ログイン、樹脂・開拓力、派遣、参量物質変化器、デイリー・週間）を、選んだ「通知する内容」に従ってこの端末に表示します。アプリはサーバーに端末を登録し、受信箱（`/me/notifications/app-devices/{id}/inbox`）をセッションCookieで15分ごと（JobScheduler。アプリの表示中は1分ごと）に読みます。外部のプッシュサービスは使いません。タップすると通知を扱う画面（報酬・連携・セキュリティ・ダッシュボード）を開きます。管理者専用の通知は対象外です。一覧は [docs/notifications-inventory.md](docs/notifications-inventory.md) にあります。
+「通知」ページの「この端末に通知する」をONにすると、web版のWebhookと同じ個人の通知（ログインボーナスの結果、Cookieの失効、ログイン、樹脂・開拓力、派遣、参量物質変化器、デイリー・週間）を、選んだ「通知する内容」に従ってこの端末に表示します。アプリはサーバーに端末を登録し、受信箱（`/me/notifications/app-devices/{id}/inbox`）をセッションCookieで15分ごと（JobScheduler。アプリの表示中は1分ごと）に読みます。外部のプッシュサービスは使いません。タップすると通知を扱う画面（報酬・連携・セキュリティ・ダッシュボード）を開きます。管理者専用の通知は対象外です。一覧は [docs/notifications-inventory.md](docs/notifications-inventory.md) にあります。
 
 これとは別に、樹脂・開拓力と洞天宝銭の上限到達、派遣完了、参量物質変化器は、取得した状態から予測した時刻にAndroidのローカルアラームでも通知できます（同じ内容のサーバーの通知が2時間以内に届いた場合は片方だけを表示）。アラームは不正確でDozeにより遅れる場合があり、予測の更新はアプリが状態を読み込んだときだけです。強制停止すると次にアプリを起動するまでアラームと受信箱の確認は止まります。`dx serve` のAPKにはreceiverとジョブが入らないため、通知には `build-android` のAPKを使います。
 
@@ -193,7 +193,7 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | `src/dashboard/db/` | `entities/` に保存モデル、`migrations/` にスキーマ変更 |
 | `src/dashboard/hoyolab/` | Cookieの解析・暗号化保存・削除・鍵の再暗号化（`rekey`）、連携の検証・同期、ユーザー単位の操作ロック |
 | `src/dashboard/games/` | ゲームUID一覧・表示設定・状態キャッシュ |
-| `src/dashboard/notifications/` | ユーザー・管理者のWebhook／ブラウザ通知の設定、条件評価（上限・派遣完了・デイリー・週間など）、送信、重複排除、Androidアプリの端末登録と受信箱（`app.rs`） |
+| `src/dashboard/notifications/` | ユーザー・管理者のWebhookの設定、条件評価（上限・派遣完了・デイリー・週間など）、送信、重複排除、Androidアプリの端末登録と受信箱（`app.rs`） |
 | `src/dashboard/rewards/` | 報酬設定・スケジュール・実行（定時と遅延実行の区別）、送信不確定時のガード、今月の報酬一覧のキャッシュ、ユーザー削除前の報酬確認 |
 | `src/hoyolab/` | HoYoLAB上流APIの型付きクライアント（ダッシュボードの方針は含めない） |
 
@@ -251,7 +251,7 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | HoYoLAB | `GET /me/hoyolab`、`PUT`・`DELETE /me/hoyolab/cookie`、`POST /me/hoyolab/verify`・`/me/hoyolab/sync` |
 | ゲーム | `GET /game-accounts`、`PATCH /game-accounts/{id}`、`GET /game-accounts/{id}/status` |
 | 報酬 | `GET /reward-settings`、`PATCH /reward-settings/{id}`、`POST /reward-settings/{id}/run`、`GET /reward-runs` |
-| 通知 | `GET/PUT /me/notifications`、`POST /me/notifications/test`、`POST/DELETE /me/notifications/push`、`POST /me/notifications/app-devices`、`DELETE /me/notifications/app-devices/{id}`、`GET /me/notifications/app-devices/{id}/inbox`、`GET/PUT /admin/notifications`、`POST /admin/notifications/test` |
+| 通知 | `GET/PUT /me/notifications`、`POST /me/notifications/test`、`POST /me/notifications/app-devices`、`DELETE /me/notifications/app-devices/{id}`、`GET /me/notifications/app-devices/{id}/inbox`、`GET/PUT /admin/notifications`、`POST /admin/notifications/test` |
 | ユーザー管理 | `GET /admin/users`（連携状態・自動受け取り数・最終ログインを含む）、`POST /admin/users`、`PATCH /admin/users/{id}`（`active` または `is_admin`）、`PUT /admin/users/{id}/temporary-password`、`GET /admin/audit` |
 | ユーザー削除 | `DELETE /me`、`DELETE /admin/users/{id}` |
 | サーバー設定 | `GET /server-settings` |

@@ -236,15 +236,14 @@ pub struct PersonalNotificationView {
     pub resin_warn_hours: i32,
     pub daily_reminder_time: String,
     pub weekly_reminder_time: String,
-    pub push_public_key: Option<String>,
-    pub push_subscriptions: u64,
 }
 
 #[allow(dead_code)]
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct NotificationTestResult {
     pub webhook: String,
-    pub push: u64,
+    #[serde(default)]
+    pub app: bool,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]

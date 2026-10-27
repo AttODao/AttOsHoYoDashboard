@@ -1,4 +1,4 @@
-//! Webhook, browser-push and app notifications: channels, conditions and delivery.
+//! Webhook and app notifications: channels, conditions and delivery.
 pub(super) mod app;
 pub(super) mod channel;
 #[cfg(test)]
@@ -7,7 +7,6 @@ mod channel_tests;
 mod conditions;
 mod delivery;
 mod messages;
-pub(super) mod push;
 mod secret;
 pub(super) mod worker;
 #[cfg(test)]

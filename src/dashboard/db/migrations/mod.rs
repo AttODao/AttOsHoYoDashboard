@@ -8,6 +8,7 @@ mod hoyolab_cookie_removal;
 mod initial_accounts;
 mod notifications;
 mod passkeys;
+mod remove_web_push;
 
 use sea_orm_migration::prelude::*;
 
@@ -26,6 +27,7 @@ impl MigratorTrait for Migrator {
             Box::new(notifications::Notifications),
             Box::new(api_tokens::ApiTokens),
             Box::new(app_notifications::AppNotifications),
+            Box::new(remove_web_push::RemoveWebPush),
         ]
     }
 }

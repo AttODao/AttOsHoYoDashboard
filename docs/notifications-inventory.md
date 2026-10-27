@@ -7,16 +7,16 @@ web版が出しているすべての通知について、発生条件・内容�
 | 経路 | 受信者 | 実装 | アプリ |
 | --- | --- | --- | --- |
 | Webhook（個人） | 各ユーザー | `notifications/delivery.rs`。Discord形式またはJSON。設定 › 通知でURL・形式・言語・出来事を選ぶ | サーバー側の機能なので、アプリからも設定できる（従来どおり） |
-| ブラウザのプッシュ通知（Web Push） | 各ユーザー（登録したブラウザ） | `notifications/push.rs`、`assets/push-sw.js`。Webhookと同じ出来事・言語を使い、タップで `/dashboard` を開く | ブラウザ専用。代わりに下の「アプリの受信箱」で同じ通知を届ける |
+| ブラウザのプッシュ通知（Web Push） | — | 削除済み（`push.rs`・`push_subscriptions`・`push-sw.js`・`/me/notifications/push`）。同じ通知はWebhookとアプリの受信箱で届く。登録済みのブラウザは、web版を開いたときに古いService Workerの登録を解除する（`dashboard-ui/src/retired_push.rs`） | — |
 | Webhook（管理者） | 管理者チャンネル（1つ） | `notifications/channel.rs` の管理者チャンネル。管理者設定で設定 | 管理者専用のため除外 |
-| アプリの受信箱（今回追加） | 各ユーザー（登録したアプリ） | `notifications/app.rs`。Web Pushと同じ箇所（`Notifier::deliver`）で、同じ通知を受信箱へ入れる。アプリがポーリングして端末に表示する | 移植先 |
+| アプリの受信箱（今回追加） | 各ユーザー（登録したアプリ） | `notifications/app.rs`。Webhookと同じ箇所（`Notifier::deliver`）で、同じ通知を受信箱へ入れる。アプリがポーリングして端末に表示する | 移植先 |
 | 画面内の表示 | 操作中のユーザー | 保存完了やエラーなどの1行表示（`set_status`）と各画面の状態表示 | web版と同じコードなので、アプリにもそのままある。通知機能ではないので対象外 |
 
 メール、SMS、ブラウザ内のトースト通知（Notification APIを直接使うもの）はありません。
 
 ## 2. 個人の通知（すべて移植）
 
-受信者は、その出来事に関係するユーザー本人です。「既定」は通知設定を保存していないときの選択状態です。アプリは「通知する内容」の選択（Webhookと共通）に従い、Webhook・Web Pushに送られた通知だけを、同じ重複排除キーで受け取ります。
+受信者は、その出来事に関係するユーザー本人です。「既定」は通知設定を保存していないときの選択状態です。アプリは「通知する内容」の選択（Webhookと共通）に従い、Webhookと同じ通知だけを、同じ重複排除キーで受け取ります（Webhook URLが未設定でも届きます）。
 
 | 種類（`kind`） | 発生条件 | 内容（日本語の例） | 既定 | アプリでタップしたときの画面 |
 | --- | --- | --- | --- | --- |
@@ -33,13 +33,13 @@ web版が出しているすべての通知について、発生条件・内容�
 | `weekly_unfinished` | 日曜の「週間の通知時刻」（既定15:00）以降に、週ボスの割引・歴戦余韻・模擬宇宙が残っている。ISO週ごとに1回 | 「週間項目が残っています」「{ゲーム} UID {uid}: {項目}。週の切り替わり前に済ませましょう。」 | ON | ダッシュボード |
 | `test` | 設定 › 通知の「テスト送信」、またはアプリの「サーバーからテスト通知を送る」 | 「テスト通知」「AHDからの通知を受け取れます。」 | — | 設定 › 通知 |
 
-ゲームの状態による通知（`resource_*`・`expeditions_done`・`transformer_ready`・`daily_unfinished`・`weekly_unfinished`）は、HoYoLAB連携が `verified` で、表示中かつ検出済みのゲームアカウントが対象です。サーバーは1分ごとに条件を評価し、状態は15分より古ければ取り直します。この取得は、Webhook・Web Push・アプリのいずれかがあるユーザーだけに行います。
+ゲームの状態による通知（`resource_*`・`expeditions_done`・`transformer_ready`・`daily_unfinished`・`weekly_unfinished`）は、HoYoLAB連携が `verified` で、表示中かつ検出済みのゲームアカウントが対象です。サーバーは1分ごとに条件を評価し、状態は15分より古ければ取り直します。この取得は、Webhook・アプリのいずれかがあるユーザーだけに行います。
 
-web版のWeb Pushはどの通知でも `/dashboard` を開きます。アプリでは、上の表のとおり通知を扱う画面を開きます。
+アプリでは、上の表のとおり通知を扱う画面を開きます。
 
 ## 3. 管理者専用の通知（除外）
 
-管理者チャンネルのWebhookだけに送られ、受信者は管理者チャンネル（サーバーに1つ）です。Web Pushにも個人の受信箱にも送られません。アプリは管理者機能を持たない（[android-changes.md](android-changes.md) 3節）ため、移植していません。管理者は引き続き管理者設定のWebhookで受け取れます。
+管理者チャンネルのWebhookだけに送られ、受信者は管理者チャンネル（サーバーに1つ）です。個人の受信箱には送られません。アプリは管理者機能を持たない（[android-changes.md](android-changes.md) 3節）ため、移植していません。管理者は引き続き管理者設定のWebhookで受け取れます。
 
 | 種類 | 発生条件 | 内容 | 除外の理由 |
 | --- | --- | --- | --- |
@@ -55,7 +55,7 @@ web版のWeb Pushはどの通知でも `/dashboard` を開きます。アプリ�
 ### サーバー側（`src/dashboard/notifications/app.rs`）
 
 - アプリは、通知をONにしたときに `POST /api/v1/me/notifications/app-devices` で端末を登録します（1ユーザー10台まで）。応答は端末IDと、読み始める位置（登録前の通知は届けない）です。
-- `Notifier::deliver` は、Webhook・Web Pushへ送るのと同じ通知を、登録済みの端末があるユーザーの受信箱（`app_notifications`）へ入れます。文面は通知設定の言語で作り、重複排除キーをタグとして保存します。発生条件・選択・重複排除はWebhook・Web Pushと完全に同じ処理を通ります。
+- `Notifier::deliver` は、Webhookへ送るのと同じ通知を、登録済みの端末があるユーザーの受信箱（`app_notifications`）へ入れます。文面は通知設定の言語で作り、重複排除キーをタグとして保存します。発生条件・選択・重複排除はWebhookと完全に同じ処理を通ります。
 - アプリは `GET /api/v1/me/notifications/app-devices/{id}/inbox?after={位置}` で新しい通知を読みます（1回50件まで）。読むたびに端末の最終確認時刻を更新します。
 - 受信箱の通知は3日、30日間読みに来ない端末は削除します（毎時の保守処理）。通知をOFFにすると `DELETE /api/v1/me/notifications/app-devices/{id}` で登録を消します。
 - FCMなどの外部プッシュサービスは使いません。サーバーに秘密の資格情報を置かずに済み、Googleのサービスがない端末でも動きます。その代わり、届くまでに最大15分程度（Dozeでさらに遅れることがある）かかります。
@@ -63,7 +63,7 @@ web版のWeb Pushはどの通知でも `/dashboard` を開きます。アプリ�
 ### アプリ側
 
 - `AhdInbox`（`dashboard-ui/android/MainActivity.kt`）が、アプリ専用領域に保存したセッションCookieで受信箱を読み、Androidの通知として表示します。JobSchedulerで15分ごと（ネットワーク接続時、アプリを閉じていても、再起動後も）に読み、アプリの表示中は1分ごとと、アプリに戻ったときにも読みます。
-- 通知の表示・タップは端末通知と同じ仕組みです。チャンネル「ゲームの状態」を使い、タップするとアプリを前面に出して、2節の表の画面を開きます。同じタグの通知は置き換えます（Web Pushの `tag` と同じ扱い）。
+- 通知の表示・タップは端末通知と同じ仕組みです。チャンネル「ゲームの状態」を使い、タップするとアプリを前面に出して、2節の表の画面を開きます。同じタグの通知は置き換えます。
 - 通知の許可：「この端末に通知する」をONにしたとき、Android 13以降で許可がなければ `POST_NOTIFICATIONS` を求めます。拒否された場合は警告と「通知を許可する」「端末の通知設定を開く」を表示します。
 - アプリの予測通知（樹脂・開拓力・洞天宝銭の上限、派遣、参量物質変化器。[android-changes.md](android-changes.md) 5.2節）は残しています。同じ状態について、予測通知とサーバーの通知の両方が2時間以内に届いた場合は、後から来たほうを表示しません（タグ「ゲームアカウント:種類」が一致するもの）。
 - ログアウトやセッションの失効で、端末の受信を止めます。サーバー側の登録は30日後に消えます。別のユーザーでログインすると、そのユーザーで登録し直します。
@@ -71,7 +71,7 @@ web版のWeb Pushはどの通知でも `/dashboard` を開きます。アプリ�
 ## 5. 検証
 
 - `src/dashboard/notifications/worker_tests.rs`（隔離したPostgreSQL）
-  - 1回の評価で、個人の通知10種類（`test` 以外）がすべて受信箱に入り、そのタグの集合がWebhook・Web Pushの配信記録（`notification_log`）と一致すること。文面・タグ・開く画面。2回目の評価では増えないこと。
+  - 1回の評価で、個人の通知10種類（`test` 以外）がすべて受信箱に入り、そのタグの集合がWebhookの配信記録（`notification_log`）と一致すること。文面・タグ・開く画面。2回目の評価では増えないこと。
   - 既定の選択（`reward_claimed`・`signed_in` はOFF）に従い、端末を登録していないユーザーには入らないこと。
   - `cookie_invalid` がCookieの版ごとに1回だけ入ること。
   - 端末の所有者の確認、10台の上限、登録解除、テスト送信、古い通知と端末の削除。
@@ -81,6 +81,8 @@ web版のWeb Pushはどの通知でも `/dashboard` を開きます。アプリ�
 
 ## 6. web版への影響と後続作業
 
-- web版のWebhook・Web Pushの動作は変えていません。サーバーは、アプリの端末を登録したユーザーについても、Webhook・Web Pushと同じ条件でゲームの状態を取得するようになりました。
-- 個人のテスト送信の応答に `app`（受信箱へ入れたか）を追加しました。
-- web版のWebhook以外の通知機能を削除する後続作業では、Web Push（`push.rs`、`push_subscriptions`、`push-sw.js`、`webauthn.rs` の購読処理、`PushCard`、`/me/notifications/push`）を削除できます。アプリが使う通知の評価（`worker.rs`・`conditions.rs`・`messages.rs`）、通知設定（`notification_settings` の出来事・言語・通知時刻）、`app.rs` と `/me/notifications/app-devices` は残す必要があります。
+- web版のWebhook以外の通知（Web Push）は削除しました。サーバーは配信時と「テスト送信」でWebhookとアプリの受信箱だけに送ります。テスト送信の応答は `{webhook, app}` です。
+- 削除したもの：`notifications/push.rs`、テーブル `push_subscriptions`（マイグレーション `m20261028_000010_remove_web_push` で削除。downで元に戻せる）、`assets/push-sw.js`、`PushCard`、`POST/DELETE /me/notifications/push`、`GET /me/notifications` の `push_public_key`・`push_subscriptions`。
+- 残したもの：通知の評価（`worker.rs`・`conditions.rs`・`messages.rs`）、`notification_settings`、`app.rs` と `/me/notifications/app-devices`（アプリが使う）、Webhook（個人・管理者）。
+- 管理者専用の通知（3節）は、もともと管理者チャンネルのWebhookだけに送られていたので、そのまま残しました。Web Pushには送られていなかったため、管理者が受け取れなくなる通知はありません。
+- v1.4.0のアプリは `GET /me/notifications` の `push_subscriptions` を必須として読むため、このサーバーでは「通知」ページのWebhook設定を読み込めません。アプリをv1.5.0へ更新してください（端末の予測通知は影響を受けません）。

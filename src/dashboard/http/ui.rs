@@ -59,13 +59,6 @@ async fn asset_cache(request: Request, next: Next) -> Response {
         response
             .headers_mut()
             .insert(header::CACHE_CONTROL, HeaderValue::from_static(policy));
-        // The Web Push service worker lives under /assets but must control the whole
-        // dashboard; browsers only accept that broader scope when this header allows it.
-        if path == "/assets/push-sw.js" {
-            response
-                .headers_mut()
-                .insert("service-worker-allowed", HeaderValue::from_static("/"));
-        }
     }
     response
 }

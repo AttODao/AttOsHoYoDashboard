@@ -10,7 +10,10 @@ mod i18n;
 mod mobile;
 mod models;
 mod platform;
+mod retired_push;
 mod webauthn;
 fn main() {
+    #[cfg(target_arch = "wasm32")]
+    crate::retired_push::retire();
     dioxus::launch(app::App);
 }
