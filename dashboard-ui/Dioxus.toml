@@ -21,3 +21,4 @@ target_sdk = 34
 [android.permissions]
 "android.permission.POST_NOTIFICATIONS" = { description = "Device notifications for game status" }
 "android.permission.RECEIVE_BOOT_COMPLETED" = { description = "Restore scheduled notifications after a restart" }
+"android.permission.ACCESS_NETWORK_STATE" = { description = "Check the server for notifications only when a network is available" }

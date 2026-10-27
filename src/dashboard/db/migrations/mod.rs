@@ -1,12 +1,14 @@
 //! Ordered migration registry; names and schema live in their individual migrations.
 mod account_activity;
 mod api_tokens;
+mod app_notifications;
 mod dashboard_games;
 mod hoyolab_accounts;
 mod hoyolab_cookie_removal;
 mod initial_accounts;
 mod notifications;
 mod passkeys;
+mod remove_web_push;
 
 use sea_orm_migration::prelude::*;
 
@@ -24,6 +26,8 @@ impl MigratorTrait for Migrator {
             Box::new(account_activity::AccountActivity),
             Box::new(notifications::Notifications),
             Box::new(api_tokens::ApiTokens),
+            Box::new(app_notifications::AppNotifications),
+            Box::new(remove_web_push::RemoveWebPush),
         ]
     }
 }

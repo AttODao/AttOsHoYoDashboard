@@ -104,6 +104,7 @@ HTTPSリバースプロキシから `http://127.0.0.1:8080` へパスを保持�
 | `/settings` | `/settings/games` へ308転送 |
 | `/settings/games` / `/settings/bonus` / `/settings/link` / `/settings/security` / `/settings/notifications` / `/settings/delete` | 各設定画面（認証必須） |
 | `/admin` | 管理者画面（管理者権限必須） |
+| `/about` | このアプリについて：作者・バージョン・ライセンス・Forgejoリポジトリへのリンク（認証必須） |
 | `/docs` / `/openapi.json` | API仕様の閲覧／OpenAPI JSON |
 | `/manifest.webmanifest` | ホーム画面追加用のWebマニフェスト |
 | `/health` | DB疎通と報酬ワーカーの生存確認。正常時 `{"status":"ok","worker":"ok"}`、ワーカー停止時は503 |
@@ -131,7 +132,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 - 管理者機能（ユーザー管理・管理者向け通知設定）、APIドキュメント（`/docs`）、ユーザー削除
 - 認証・セキュリティのAPIトークンとパスワード変更（初回／復旧後のパスワード変更もブラウザで行い、アプリでは「設定状況を更新」を選びます）
-- WebAuthnとWeb Pushはブラウザ専用のため、パスキーでのログイン・登録とブラウザ通知もアプリにはありません（登録済みパスキーの一覧・名前変更・削除は可能）
+- WebAuthnはブラウザ専用のため、パスキーでのログイン・登録はアプリにはありません（登録済みパスキーの一覧・名前変更・削除は可能）
 
 アプリのメニューの「ブラウザで開く」は、表示中の画面に対応するweb版のページ（`AHD_SERVER_URL` のオリジン＋同じパス）を端末の既定のブラウザで開きます（Androidの `Intent.ACTION_VIEW`、`webbrowser` クレート経由）。初回設定のパスワード変更画面と「セキュリティ」設定にも同じボタンがあります。ブラウザを開けなかったときはエラーを表示します。web版にはこのボタンはありません。
 
@@ -139,7 +140,9 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 #### 通知
 
-「通知」ページで、この端末の樹脂・開拓力と洞天宝銭の上限到達、派遣完了、参量物質変化器の通知を設定できます。サーバー送信ではなく、取得した状態から予測した時刻にAndroidのローカルアラームで通知します。アラームは不正確でDozeにより遅れる場合があり、予測の更新はアプリが状態を読み込んだときだけです。強制停止すると次にアプリを起動するまでアラームは解除されます。`dx serve` のAPKにはreceiverが入らないため、通知には `build-android` のAPKを使います。
+「通知」ページの「この端末に通知する」をONにすると、web版のWebhookと同じ個人の通知（ログインボーナスの結果、Cookieの失効、ログイン、樹脂・開拓力、派遣、参量物質変化器、デイリー・週間）を、選んだ「通知する内容」に従ってこの端末に表示します。アプリはサーバーに端末を登録し、受信箱（`/me/notifications/app-devices/{id}/inbox`）をセッションCookieで15分ごと（JobScheduler。アプリの表示中は1分ごと）に読みます。外部のプッシュサービスは使いません。タップすると通知を扱う画面（報酬・連携・セキュリティ・ダッシュボード）を開きます。管理者専用の通知は対象外です。一覧は [docs/notifications-inventory.md](docs/notifications-inventory.md) にあります。
+
+これとは別に、樹脂・開拓力と洞天宝銭の上限到達、派遣完了、参量物質変化器は、取得した状態から予測した時刻にAndroidのローカルアラームでも通知できます（同じ内容のサーバーの通知が2時間以内に届いた場合は片方だけを表示）。アラームは不正確でDozeにより遅れる場合があり、予測の更新はアプリが状態を読み込んだときだけです。強制停止すると次にアプリを起動するまでアラームと受信箱の確認は止まります。`dx serve` のAPKにはreceiverとジョブが入らないため、通知には `build-android` のAPKを使います。
 
 必要なもの：devenvの `android` プロファイル（Android SDK 34・build-tools 34.0.0・NDK・JDK 17。初回は数GBを取得し、Android SDKのライセンスに同意したものとして扱います）と、Gradleが依存を取得するためのネットワーク。Rustの `aarch64-linux-android`／`x86_64-linux-android` targetは `rust-toolchain.toml` で入ります。
 
@@ -158,7 +161,7 @@ APKは `target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/apk/deb
 
 - `AHD_SERVER_URL` はHTTPS、またはlocalhostのHTTPのみ。未指定時は `http://localhost:8080` で、開発用サーバー（`PUBLIC_ORIGIN: http://localhost:8080`）に `adb reverse tcp:8080 tcp:8080` でつなぐ想定です。
 - エミュレータは `devenv --profile android --profile android-emulator shell`（x86_64イメージ、KVMが必要）で入ります。
-- パッケージ名 `cc.attodao.ahd`、minSdk 24、targetSdk 34（`dashboard-ui/Dioxus.toml`）。権限はINTERNET（dx既定）、通知用の `POST_NOTIFICATIONS` と `RECEIVE_BOOT_COMPLETED` です。
+- パッケージ名 `cc.attodao.ahd`、minSdk 24、targetSdk 34（`dashboard-ui/Dioxus.toml`）。権限はINTERNET（dx既定）、通知用の `POST_NOTIFICATIONS` と `RECEIVE_BOOT_COMPLETED`（再起動後のアラームと受信箱ジョブの復元）です。
 - tao/wryはActivityの破棄・再生成や二つ目の起動に対応しておらず、その場合プロセスが異常終了します。そのためActivityは1つだけ（`singleTask`）で、最初の画面での戻る操作はアプリを閉じずにバックグラウンドへ移し（ホームと同じ）、ダークモード・文字サイズ・表示サイズ・言語・キーボードなどの変更はActivityを作り直さずにその場で反映します。最近使ったアプリから消すなどで破棄されたときはプロセスをそのまま終了し、次回は新しく起動します（`dashboard-ui/android/MainActivity.kt`）。テーマ「システム」は端末のダークモードに追従します。
 
 web版からの変更点（除外した機能とその方法、画面ごとのレイアウト、追加機能の仕様、共通化と分岐、web版への影響、既知の制約）は [docs/android-changes.md](docs/android-changes.md) にまとめています。
@@ -173,13 +176,13 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | `dashboard-ui/src/app/actions.rs` | 操作の予約（busy）と完了・APIエラー処理。セッション世代とは独立 |
 | `dashboard-ui/src/app/data.rs` | セッション世代に結び付いた画面データの取得（未取得と空を区別、リソースごとに最新の要求の応答だけを反映）、全ゲームの手動受け取りとその後の報酬状態のGET追従 |
 | `dashboard-ui/src/app/display.rs` | 数値・ブラウザのローカル時刻による簡潔な月日／24時間表示、データの経過時間、上限への近さ、サーバー時刻とブラウザ時刻の換算、エラーコードの表示文への対応付け |
-| `dashboard-ui/src/pages/` | 画面、メニュー、設定、ユーザー管理 |
+| `dashboard-ui/src/pages/` | 画面、メニュー、設定、ユーザー管理、このアプリについて |
 | `dashboard-ui/src/platform.rs` | web版とAndroidアプリの切り替え（`APP`）、両方で動くタイマーと時刻、web版を既定のブラウザで開く処理 |
-| `dashboard-ui/src/mobile/` | Androidアプリ専用：サーバーへの直接接続とセッションCookieの保存（`http.rs`・`session.rs`）、アプリ専用領域のファイル（`storage.rs`）、端末時刻（`time.rs`）、通知予測とJNIブリッジ（`reminders.rs`・`notify.rs`）、web版がweb-sysで行うDOM操作の `document::eval` 版（`dom.rs`） |
-| `dashboard-ui/src/app/device_notifications.rs` | 端末通知の設定・予定の保存、状態変更時の再計算、通知からの画面遷移 |
+| `dashboard-ui/src/mobile/` | Androidアプリ専用：サーバーへの直接接続とセッションCookieの保存（`http.rs`・`session.rs`）、アプリ専用領域のファイル（`storage.rs`）、端末時刻（`time.rs`）、通知予測とJNIブリッジ（`reminders.rs`・`notify.rs`）、サーバーの受信箱への登録の判断（`inbox.rs`）、web版がweb-sysで行うDOM操作の `document::eval` 版（`dom.rs`） |
+| `dashboard-ui/src/app/device_notifications.rs` | 端末通知の設定・予定の保存、状態変更時の再計算、サーバーの受信箱への端末登録と解除、表示中の確認、通知からの画面遷移 |
 | `dashboard-ui/src/pages/device_notifications.rs` | アプリの端末通知設定カード |
-| `dashboard-ui/android/res/` | ランチャーと通知のアイコン、アプリ名、DayNightテーマ（`build-android` が生成プロジェクトへ上書き） |
-| `dashboard-ui/android/MainActivity.kt` | AndroidのActivity（`Dioxus.toml` の `android_main_activity`）：ルートでの戻るをバックグラウンド化、設定変更時の文字サイズ反映、破棄時のプロセス終了、通知の権限要求・アラーム・receiver（receiver設定は `android/AndroidManifest.application.xml` を生成manifestへ挿入） |
+| `dashboard-ui/android/res/` | ランチャーと通知のアイコン、アプリ名、DayNightテーマ、開発用サーバー（localhost）へのHTTPを許可するnetwork security config（`build-android` が生成プロジェクトへ上書き） |
+| `dashboard-ui/android/MainActivity.kt` | AndroidのActivity（`Dioxus.toml` の `android_main_activity`）：ルートでの戻るをバックグラウンド化、設定変更時の文字サイズ反映、破棄時のプロセス終了、通知の権限要求・アラーム・receiver、サーバーの受信箱を読む `AhdInbox` とそのジョブ（receiverとジョブの設定は `android/AndroidManifest.application.xml` を生成manifestへ挿入） |
 | `src/dashboard/games/summary.rs` | 上流ゲーム状態から画面用の要約への写像 |
 
 ### バックエンドモジュール
@@ -187,11 +190,13 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | パス | 責務 |
 | --- | --- |
 | `src/dashboard/auth/` | ユーザーのライフサイクル、パスワード、セッション（一覧・個別／他端末の失効・最終利用）、APIトークン（`api_tokens.rs`。発行・失効・Bearer認証・スコープで通せるルート）、パスキー（名前変更・最終利用）（アカウントの有無を明かさないログインoptionsを含む）、削除要求と完了（再試行の待機を含む）、ユーザー名ごとのログイン試行制限、ユーザーごとの現在パスワード確認の試行制限 |
+| `src/dashboard/auth/app_logins.rs` | ブラウザからアプリへのPKCE（S256）ワンタイムコード承認・交換 |
+| `src/dashboard/http/app_login.rs` | アプリログイン承認・交換のHTTPペイロードとルート |
 | `src/dashboard/http/` | ルート、DTO、Cookie・Bearer APIトークン、Origin・キャッシュの境界、UI配信、ヘルスチェック・メトリクス、報酬・削除のバックグラウンド処理の起動と保守 |
 | `src/dashboard/db/` | `entities/` に保存モデル、`migrations/` にスキーマ変更 |
 | `src/dashboard/hoyolab/` | Cookieの解析・暗号化保存・削除・鍵の再暗号化（`rekey`）、連携の検証・同期、ユーザー単位の操作ロック |
 | `src/dashboard/games/` | ゲームUID一覧・表示設定・状態キャッシュ |
-| `src/dashboard/notifications/` | ユーザー・管理者のWebhook／ブラウザ通知の設定、条件評価（上限・派遣完了・デイリー・週間など）、送信、重複排除 |
+| `src/dashboard/notifications/` | ユーザー・管理者のWebhookの設定、条件評価（上限・派遣完了・デイリー・週間など）、送信、重複排除、Androidアプリの端末登録と受信箱（`app.rs`） |
 | `src/dashboard/rewards/` | 報酬設定・スケジュール・実行（定時と遅延実行の区別）、送信不確定時のガード、今月の報酬一覧のキャッシュ、ユーザー削除前の報酬確認 |
 | `src/hoyolab/` | HoYoLAB上流APIの型付きクライアント（ダッシュボードの方針は含めない） |
 
@@ -244,12 +249,13 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | --- | --- |
 | 認証 | `POST /auth/login`、`POST /auth/logout`、`GET /me`、`PUT /me/password` |
 | パスキー | `GET /me/passkeys`、`POST /me/passkeys/options`・`/me/passkeys/verify`、`PATCH`・`DELETE /me/passkeys/{id}`、`POST /auth/passkey/options`・`/auth/passkey/verify` |
+| アプリログイン | `POST /me/app-login`（セッション専用）、`POST /auth/app-login/exchange`（PKCE S256、120秒・1回限りのコードを新しいセッションに交換） |
 | セッション | `GET /me/sessions`、`DELETE /me/sessions/{id}`、`POST /me/sessions/revoke-others` |
 | APIトークン | `GET`・`POST /me/api-tokens`、`DELETE /me/api-tokens/{id}`（セッション専用） |
 | HoYoLAB | `GET /me/hoyolab`、`PUT`・`DELETE /me/hoyolab/cookie`、`POST /me/hoyolab/verify`・`/me/hoyolab/sync` |
 | ゲーム | `GET /game-accounts`、`PATCH /game-accounts/{id}`、`GET /game-accounts/{id}/status` |
 | 報酬 | `GET /reward-settings`、`PATCH /reward-settings/{id}`、`POST /reward-settings/{id}/run`、`GET /reward-runs` |
-| 通知 | `GET/PUT /me/notifications`、`POST /me/notifications/test`、`POST/DELETE /me/notifications/push`、`GET/PUT /admin/notifications`、`POST /admin/notifications/test` |
+| 通知 | `GET/PUT /me/notifications`、`POST /me/notifications/test`、`POST /me/notifications/app-devices`、`DELETE /me/notifications/app-devices/{id}`、`GET /me/notifications/app-devices/{id}/inbox`、`GET/PUT /admin/notifications`、`POST /admin/notifications/test` |
 | ユーザー管理 | `GET /admin/users`（連携状態・自動受け取り数・最終ログインを含む）、`POST /admin/users`、`PATCH /admin/users/{id}`（`active` または `is_admin`）、`PUT /admin/users/{id}/temporary-password`、`GET /admin/audit` |
 | ユーザー削除 | `DELETE /me`、`DELETE /admin/users/{id}` |
 | サーバー設定 | `GET /server-settings` |
@@ -257,6 +263,10 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 - ゲーム種別は `genshin`／`starrail`。状態レスポンスの `stale` と取得日時を確認してください。
 - 報酬操作の `{id}` は報酬設定のUUIDで、ゲームUIDではありません。検証・同期・手動受け取りのPOSTには `{}` を送ります。
 - 画面の手動受け取りはダッシュボードの「ログインボーナスを今すぐ受け取る」1つにまとめ、本日分が未受け取りのゲームだけを実行します。APIは報酬設定ごとの非同期 `202` 受付です。結果は履歴で確認します。不確定な送信結果は再POSTせず、追加認証が必要ならHoYoLAB側で対応してください。
-- `POST /auth/passkey/options` は存在しないユーザーやpasskey未登録のユーザーにも同じ形の応答を返し、ログインは `verify` で401になります（アカウントの有無を明かさないため）。
+- `POST /auth/passkey/options` は `{"username":"..."}` でユーザー名指定、`{}` でユーザー名なしのdiscoverableログインを開始します。ユーザー名指定では存在しないユーザーやpasskey未登録のユーザーにも同じ形の応答を返し、ログインは `verify` で401になります（アカウントの有無を明かさないため）。ユーザー名なしの開始はアカウント検索・試行枠の消費をせず、verifyでuserHandleから特定したユーザーの枠を署名検証前に消費します。新規登録はresident keyをpreferredで要求します。
 - 無効化したユーザーを再有効化しても旧セッションは復活せず、そのユーザーの自動受け取りはすべてOFF（次回予定も消去）になります。意図しない報酬POSTの再開を防ぐためで、本人が設定で再度有効にします。
 - 削除も非同期で、受付時に利用停止・セッション失効となります。操作者の現在パスワードと対象ユーザー名の完全一致入力が必要です。最後の有効な管理者は削除できません。
+
+## ライセンス
+
+GNU General Public License v3.0 以降（`GPL-3.0-or-later`）。全文は [`LICENSE`](LICENSE) にあります。依存クレートとUIに同梱するフォントのライセンスは、アプリの「このアプリについて」画面と `Cargo.lock` で確認できます。

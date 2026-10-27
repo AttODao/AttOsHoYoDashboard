@@ -49,7 +49,8 @@ struct Registration {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Username {
-    username: String,
+    #[serde(default)]
+    username: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -115,11 +116,15 @@ async fn authentication_start(
     State(app): State<App>,
     Json(input): Json<Username>,
 ) -> Result<Json<AuthenticationChallenge>> {
-    Ok(Json(
-        app.passkeys
-            .authentication_start(&app.accounts, input.username)
-            .await?,
-    ))
+    let challenge = match input.username {
+        Some(username) => {
+            app.passkeys
+                .authentication_start(&app.accounts, username)
+                .await?
+        }
+        None => app.passkeys.discoverable_authentication_start().await?,
+    };
+    Ok(Json(challenge))
 }
 
 async fn authentication_finish(

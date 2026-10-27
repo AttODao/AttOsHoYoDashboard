@@ -1,5 +1,7 @@
+mod about;
 mod accounts;
 mod admin;
+pub(super) mod app_login;
 pub(super) mod app_nav;
 pub(super) mod auth;
 mod common;

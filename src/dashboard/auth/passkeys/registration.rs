@@ -26,6 +26,7 @@ use sea_orm::{
 use std::time::Instant;
 use uuid::Uuid;
 use webauthn_rs::prelude::RegisterPublicKeyCredential;
+use webauthn_rs_proto::ResidentKeyRequirement;
 
 impl Passkeys {
     pub(in crate::dashboard) async fn registration_start(
@@ -43,7 +44,7 @@ impl Passkeys {
         }
         let owner = fresh.user.id;
         let username = fresh.user.username;
-        let (options, state) = self
+        let (mut options, state) = self
             .run_cpu(move |webauthn| {
                 let exclude = rows
                     .into_iter()
@@ -54,6 +55,10 @@ impl Passkeys {
                     .map_err(|_| Error::Internal)
             })
             .await?;
+        if let Some(selection) = options.public_key.authenticator_selection.as_mut() {
+            selection.resident_key = Some(ResidentKeyRequirement::Preferred);
+            selection.require_resident_key = false;
+        }
         let challenge_id = self.insert_pending(Pending {
             owner,
             expires_at: Instant::now() + CHALLENGE_TTL,

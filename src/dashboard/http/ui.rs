@@ -32,6 +32,7 @@ pub(super) fn routes(app: &App) -> Router<App> {
         .route("/", get(index))
         .route("/docs", get(index))
         .route("/login", get(index))
+        .route("/app-login", get(index))
         .route("/dashboard", get(index))
         .route(
             "/settings",
@@ -44,6 +45,7 @@ pub(super) fn routes(app: &App) -> Router<App> {
         .route("/settings/notifications", get(index))
         .route("/settings/delete", get(index))
         .route("/admin", get(index))
+        .route("/about", get(index))
         .route("/manifest.webmanifest", get(manifest))
         .merge(assets)
 }
@@ -59,13 +61,6 @@ async fn asset_cache(request: Request, next: Next) -> Response {
         response
             .headers_mut()
             .insert(header::CACHE_CONTROL, HeaderValue::from_static(policy));
-        // The Web Push service worker lives under /assets but must control the whole
-        // dashboard; browsers only accept that broader scope when this header allows it.
-        if path == "/assets/push-sw.js" {
-            response
-                .headers_mut()
-                .insert("service-worker-allowed", HeaderValue::from_static("/"));
-        }
     }
     response
 }

@@ -11,14 +11,13 @@ use crate::components::{Button, ButtonVariant};
 use dioxus::prelude::*;
 use serde_json::json;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum LoginMethod {
-    Password,
-    Passkey,
+fn password_fields_complete(username: &str, password: &str) -> bool {
+    !username.trim().is_empty() && !password.is_empty()
 }
 
-fn login_fields_complete(method: LoginMethod, username: &str, password: &str) -> bool {
-    !username.trim().is_empty() && (method == LoginMethod::Passkey || !password.is_empty())
+fn passkey_username(username: &str) -> Option<&str> {
+    let username = username.trim();
+    (!username.is_empty()).then_some(username)
 }
 
 #[component]
@@ -35,11 +34,10 @@ pub(in crate::app) fn LoadingPage() -> Element {
 }
 
 #[component]
-pub(in crate::app) fn LoginPage(mut state: Signal<AppState>) -> Element {
+pub(in crate::app) fn LoginPage(mut state: Signal<AppState>, app_login: bool) -> Element {
     let ui = use_preferences();
     let mut username = use_signal(String::new);
     let mut password = use_signal(String::new);
-    let mut method = use_signal(|| LoginMethod::Password);
     use_drop(move || {
         username.write().clear();
         password.write().clear();
@@ -51,6 +49,9 @@ pub(in crate::app) fn LoginPage(mut state: Signal<AppState>) -> Element {
             section { class: "panel auth-panel",
                 h1 { {ui.text("auth.sign_in")} }
                 Status { state }
+                if app_login {
+                    p { {ui.text("auth.app_login_after_sign_in")} }
+                }
                 if state.read().logout_unconfirmed {
                     Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| {
                         password.write().clear();
@@ -63,20 +64,16 @@ pub(in crate::app) fn LoginPage(mut state: Signal<AppState>) -> Element {
                     // Keep the username for a retry; only the secret is cleared.
                     let user = username.read().clone();
                     let pass = std::mem::take(&mut *password.write());
-                    let selected = *method.read();
-                    if !login_fields_complete(selected, &user, &pass) {
+                    if !password_fields_complete(&user, &pass) {
                         set_status(state, "auth.enter_your_username_and_credentials", "error");
                         return;
                     }
                     spawn_action(state, move |generation| async move {
-                        let result = match selected {
-                            LoginMethod::Password => crate::api::send("POST", "/auth/login", Some(json!({"username": user, "password": pass}))).await,
-                            LoginMethod::Passkey => crate::webauthn::login(&user).await,
-                        };
+                        let result = crate::api::send("POST", "/auth/login", Some(json!({"username": user, "password": pass}))).await;
                         match result {
                             Ok(()) if generation_matches(state, generation) => complete_login(state, generation).await,
                             Ok(()) => {}
-                            Err(error) if selected == LoginMethod::Password && error.is_unauthorized() && generation_matches(state, generation) => {
+                            Err(error) if error.is_unauthorized() && generation_matches(state, generation) => {
                                 set_status(state, "messages.the_username_or_password_is_incorrect", "error");
                             }
                             Err(error) => { handle_api_error_for(state, generation, error); }
@@ -86,33 +83,37 @@ pub(in crate::app) fn LoginPage(mut state: Signal<AppState>) -> Element {
                     Field { id: "login-username", label: ui.text("admin.username"),
                         input { id: "login-username", autocomplete: "username webauthn", value: "{username}", oninput: move |event| username.set(event.value()) }
                     }
-                    // WebAuthn needs a browser origin; the app signs in with a password only.
-                    if !crate::platform::APP {
-                        fieldset { class: "auth-method",
-                            legend { {ui.text("auth.sign_in_method")} }
-                            label { r#for: "login-method-password",
-                                input { id: "login-method-password", r#type: "radio", name: "login-method", value: "password", checked: *method.read() == LoginMethod::Password,
-                                    onchange: move |_| { password.write().clear(); method.set(LoginMethod::Password); }
-                                }
-                                {ui.text("auth.password")}
-                            }
-                            label { r#for: "login-method-passkey",
-                                input { id: "login-method-passkey", r#type: "radio", name: "login-method", value: "passkey", checked: *method.read() == LoginMethod::Passkey,
-                                    onchange: move |_| { password.write().clear(); method.set(LoginMethod::Passkey); }
-                                }
-                                {ui.text("auth.passkey")}
-                            }
-                        }
-                    }
-                    if *method.read() == LoginMethod::Password {
-                        Field { id: "login-password", label: ui.text("auth.password"),
-                            PasswordInput { id: "login-password", value: password, autocomplete: "current-password" }
-                        }
+                    Field { id: "login-password", label: ui.text("auth.password"),
+                        PasswordInput { id: "login-password", value: password, autocomplete: "current-password" }
                     }
                     div { class: "auth-submit",
                         Button { r#type: "submit",
-                            {if *method.read() == LoginMethod::Password { ui.text("auth.sign_in") } else { ui.text("auth.use_passkey") }}
+                            {ui.text("auth.sign_in")}
                         }
+                    }
+                }
+                div { class: "auth-alternatives",
+                    Button { id: "login-passkey", variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| {
+                        if state.read().busy { return; }
+                        password.write().clear();
+                        if crate::platform::APP {
+                            crate::app::browser_login::start(state);
+                            return;
+                        }
+                        let user = username.read().clone();
+                        spawn_action(state, move |generation| async move {
+                            match crate::webauthn::login(passkey_username(&user)).await {
+                                Ok(()) if generation_matches(state, generation) => complete_login(state, generation).await,
+                                Ok(()) => {},
+                                Err(error) => { handle_api_error_for(state, generation, error); }
+                            }
+                        });
+                    }, {ui.text("auth.use_passkey")} }
+                    if crate::platform::APP {
+                        Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| crate::app::browser_login::start(state),
+                            {ui.text("auth.sign_in_in_browser")}
+                        }
+                        p { {ui.text("auth.passkey_in_browser_hint")} }
                     }
                 }
             }
@@ -195,24 +196,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn passkey_is_username_first_and_password_method_requires_both_fields() {
-        for method in [LoginMethod::Password, LoginMethod::Passkey] {
-            assert!(!login_fields_complete(method, "  ", "synthetic-password"));
-        }
-        assert!(login_fields_complete(
-            LoginMethod::Passkey,
-            "synthetic-user",
-            ""
-        ));
-        assert!(!login_fields_complete(
-            LoginMethod::Password,
-            "synthetic-user",
-            ""
-        ));
-        assert!(login_fields_complete(
-            LoginMethod::Password,
+    fn password_submit_requires_both_fields() {
+        assert!(!password_fields_complete("  ", "synthetic-password"));
+        assert!(!password_fields_complete("synthetic-user", ""));
+        assert!(password_fields_complete(
             "synthetic-user",
             "synthetic-password"
         ));
+    }
+
+    #[test]
+    fn passkey_uses_trimmed_username_only_when_filled() {
+        assert_eq!(passkey_username(""), None);
+        assert_eq!(passkey_username("  "), None);
+        assert_eq!(
+            passkey_username("  synthetic-user  "),
+            Some("synthetic-user")
+        );
     }
 }

@@ -21,8 +21,9 @@ HoYoLAB連携・手動報酬受け取り・自動報酬受け取りは通常機�
 - 初回・再発行後の必須パスワード設定は新パスワード＋確認のみを入力し、ログイン時の仮パスワードを保持しない。`PUT /api/v1/me/password` の `current_password` は、ユーザー行lock下で再認証した最新アカウントが `must_change_password=true` の場合のみ省略（またはnull）できる。通常変更は正しい現在パスワードが必須で、明示した不正な値は必須設定時も拒否する。新パスワードは省略時も保存済みパスワードと異なる必要があり、確認入力はクライアントで照合してAPIには送らない。失効・期限切れセッションや競合でhash/必須flagが変わったsnapshotは拒否する。
 - Cookieで認証するmutationは同一Originを必須とし、`Origin` が `PUBLIC_ORIGIN` と完全一致しなければ拒否する。Cookieを伴わないBearer APIトークンの要求はOrigin確認の対象外とする。
 - JSON DTOは未知fieldを拒否する。エラーは安全な `error` code とsanitized `message` で返し、Cookie・パスワード・セッショントークン・上流raw messageを含めない。
-- ログイン入口（パスワードログイン、passkey options/verify）は、入力されたユーザー名ごとに60秒あたり20回に制限し、超過時は429を返す。reverse proxy経由のためIPは使わない。passkey verifyはchallengeを発行したユーザー名の枠を使い、存在しないchallengeは枠を消費しない。ユーザー名として無効な入力は1つの枠を共有し、枠の表は上限1024件で期限切れ・最古の順に捨てる。全体のCPUはArgon2とpasskeyのworker上限（各4）で抑え、worker枠が満杯の場合は待機列を増やさず503を返す。
-- `POST /auth/passkey/options` はアカウントの有無・passkeyの有無・無効化／仮パスワード状態を区別しない。利用可能なpasskeyがないユーザー名にも200で同じ形のoptions（保存済みだが完了できないchallengeと、ユーザー名からHMACで決めた1件のcredential ID）を返し、verifyは誤ったassertionと同じ401とする。HMAC鍵は `HOYOLAB_COOKIE_KEY` から用途別に導出し（未設定時はプロセスごとの乱数）、同じ名前への再問い合わせでは同じIDになる。複数passkeyを持つユーザーのID件数と、実在IDの長さ・transportsは区別し得る残差として許容する。ユーザー名として無効な入力は従来どおり401。
+- ログイン入口（パスワードログイン、passkey options/verify）は、入力されたユーザー名ごとに60秒あたり20回に制限し、超過時は429を返す。reverse proxy経由のためIPは使わない。ユーザー名指定のpasskey verifyはchallengeを発行したユーザー名の枠を使い、存在しないchallengeは枠を消費しない。ユーザー名なしのdiscoverable optionsは枠を消費せず（pending上限で503）、verifyはuserHandleから特定したユーザーの枠を署名検証前に消費する。ユーザー名として無効な入力は1つの枠を共有し、枠の表は上限1024件で期限切れ・最古の順に捨てる。全体のCPUはArgon2とpasskeyのworker上限（各4）で抑え、worker枠が満杯の場合は待機列を増やさず503を返す。
+- Androidアプリはパスキーをブラウザ経由で使う。アプリがPKCE（S256）のchallengeを付けて `/app-login` をブラウザで開き、ブラウザのセッション（パスワードまたはパスキーでログイン）で本人が明示的に許可すると、`POST /me/app-login` が120秒・1回限りのコードを返す。コードは `cc.attodao.ahd://login` でアプリに渡り、アプリは `POST /auth/app-login/exchange` でコードとverifierを新しいセッションに交換する。交換は許可したブラウザのセッションがまだ有効なことを確かめ、成功時は通常のログインと同じく最終ログイン日時とauditを記録する。APIトークンでは許可できない。
+- `POST /auth/passkey/options` は `username` 省略時（`{}`）にアカウント情報を含まないdiscoverable optionsを返す。新規登録はresident keyをpreferredで要求する。`username` 指定時はアカウントの有無・passkeyの有無・無効化／仮パスワード状態を区別しない。利用可能なpasskeyがないユーザー名にも200で同じ形のoptions（保存済みだが完了できないchallengeと、ユーザー名からHMACで決めた1件のcredential ID）を返し、verifyは誤ったassertionと同じ401とする。HMAC鍵は `HOYOLAB_COOKIE_KEY` から用途別に導出し（未設定時はプロセスごとの乱数）、同じ名前への再問い合わせでは同じIDになる。複数passkeyを持つユーザーのID件数と、実在IDの長さ・transportsは区別し得る残差として許容する。ユーザー名として無効な入力は従来どおり401。
 - ログイン中の現在パスワード確認（パスワード変更、本人・管理者による削除要求）は、操作者のユーザーIDごとに60秒あたり20回に制限し、超過時は429を返す。ログインの枠とは別に数えるため、奪われたセッションからの総当たりが本人のログインを止めることはない。
 
 ## 3. 初期設定と通常利用ゲート
@@ -106,8 +107,8 @@ OpenAPI 3.1 の正本は [`../dashboard-api.json`](../dashboard-api.json)。現�
 主なroute群:
 
 - public: `/health`, `/`, `/docs`, `/openapi.json`（hash付き `/assets/{...}` はDioxus内部assetで、OpenAPI pathではない）
-- auth: login/logout、passkey login start/finish
-- me: `/api/v1/me`, password, passkeys, deletion
+- auth: login/logout、passkey login start/finish、app-login exchange
+- me: `/api/v1/me`, password, passkeys, app-login approval, deletion
 - admin: user list/create/active/reset/delete
 - HoYoLAB: status/cookie/verify/sync
 - games: game accounts list/visibility/status

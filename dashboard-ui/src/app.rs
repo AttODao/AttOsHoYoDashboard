@@ -1,4 +1,5 @@
 mod actions;
+mod browser_login;
 mod credentials;
 mod data;
 #[cfg(feature = "mobile")]
@@ -15,6 +16,7 @@ mod pages;
 use data::load_dashboard_data;
 use dioxus::prelude::*;
 use pages::{
+    app_login::AppLoginPage,
     app_nav::AppHead,
     auth::{LoadingPage, LoginPage, OnboardingPage},
     docs::DocsPage,
@@ -22,13 +24,6 @@ use pages::{
 };
 use session::{bootstrap, refresh_me};
 use state::{AppState, Page, Phase, current_ready_page, initial_page};
-
-// The push service worker loads at /assets/push-sw.js; keep its filename stable.
-#[used]
-static PUSH_SW: Asset = asset!(
-    "/assets/push-sw.js",
-    AssetOptions::builder().with_hash_suffix(false)
-);
 
 // External CSS uses these fingerprinted filenames; retain them without a second DX suffix.
 #[used]
@@ -56,9 +51,12 @@ pub fn App() -> Element {
     #[cfg(target_arch = "wasm32")]
     let _system_theme = use_hook(move || browser::on_system_theme_change(preferences));
     let state = use_signal(|| AppState::new(initial_page()));
+    let app_login = use_signal(navigation::app_login_request);
     navigation::use_browser_history(state);
     #[cfg(feature = "mobile")]
     device_notifications::use_device_notifications(state);
+    #[cfg(feature = "mobile")]
+    browser_login::use_browser_login(state);
     use_effect(move || {
         let read = state.read();
         let title = page_title(read.page, read.phase, read.ready(), *preferences.read());
@@ -131,9 +129,11 @@ pub fn App() -> Element {
             } else {
                 match state.read().phase {
                     Phase::Unchecked | Phase::Loading => rsx! { LoadingPage {} },
-                    Phase::SignedOut => rsx! { LoginPage { state } },
+                    Phase::SignedOut => rsx! { LoginPage { state, app_login: app_login.read().is_some() } },
                     Phase::SignedIn => rsx! {
-                        if !state.read().ready() {
+                        if app_login.read().is_some() {
+                            AppLoginPage { key: "{owner_key}", state, request: app_login }
+                        } else if !state.read().ready() {
                             OnboardingPage { key: "{owner_key}", state }
                         } else {
                             Shell { key: "{owner_key}", state }
@@ -159,6 +159,7 @@ fn page_title(page: Page, phase: Phase, ready: bool, ui: preferences::Preference
         (Phase::SignedIn, Page::Security) => Some("settings.security"),
         (Phase::SignedIn, Page::Delete) => Some("settings.delete"),
         (Phase::SignedIn, Page::Admin) => Some("admin.admin_settings"),
+        (Phase::SignedIn, Page::About) => Some("about.title"),
         _ => None,
     };
     match key {
@@ -264,6 +265,10 @@ mod tests {
     #[test]
     fn tab_titles_name_the_page_then_the_product() {
         let ui = preferences::Preferences::default();
+        assert_eq!(
+            page_title(Page::About, Phase::SignedIn, true, ui),
+            "このアプリについて – AHD"
+        );
         assert_eq!(
             page_title(Page::Dashboard, Phase::SignedIn, true, ui),
             "ダッシュボード – AHD"

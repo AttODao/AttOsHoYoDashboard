@@ -1,19 +1,16 @@
 //! Notification channels: per-user and administrator settings, sealed URLs and test sends.
-use super::{ADMIN_EVENTS, Notice, PERSONAL_EVENTS, delivery, push, secret};
+use super::{ADMIN_EVENTS, Notice, PERSONAL_EVENTS, delivery, secret};
 use crate::dashboard::{
     auth::{
         accounts::{require_admin, require_ready},
         sessions::{Identity, Sessions},
     },
-    db::entities::{admin_notification_setting, notification_setting, push_subscription},
+    db::entities::{admin_notification_setting, notification_setting},
     error::{Error, Result},
     hoyolab::credentials::CookieKey,
 };
 use chrono::{DateTime, NaiveTime, Utc};
-use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, Set,
-    TransactionTrait,
-};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::BTreeMap, sync::Arc};
@@ -55,9 +52,6 @@ pub(in crate::dashboard) struct PersonalView {
     resin_warn_hours: i32,
     daily_reminder_time: String,
     weekly_reminder_time: String,
-    /// VAPID public key for browser push, when the server can send push.
-    push_public_key: Option<String>,
-    push_subscriptions: u64,
 }
 
 /// `webhook_url`: absent keeps the stored URL, null removes it, a string replaces it.
@@ -94,15 +88,13 @@ pub(in crate::dashboard) struct PersonalInput {
 pub(in crate::dashboard) struct TestResult {
     /// "sent", "failed" or "not_configured".
     webhook: &'static str,
-    /// Browsers that accepted a push message.
-    push: usize,
+    /// Whether the notice was queued for the user's registered app installations.
+    app: bool,
 }
 
 pub(in crate::dashboard) struct Notifications {
     pub(super) db: DatabaseConnection,
     pub(super) key: Option<Arc<CookieKey>>,
-    /// PUBLIC_ORIGIN, the VAPID contact subject.
-    pub(super) origin: String,
 }
 
 fn merged(stored: &Value, known: &[(&str, bool)]) -> BTreeMap<String, bool> {
@@ -182,12 +174,8 @@ impl ChannelInput {
 }
 
 impl Notifications {
-    pub(in crate::dashboard) fn new(
-        db: DatabaseConnection,
-        key: Option<Arc<CookieKey>>,
-        origin: String,
-    ) -> Self {
-        Self { db, key, origin }
+    pub(in crate::dashboard) fn new(db: DatabaseConnection, key: Option<Arc<CookieKey>>) -> Self {
+        Self { db, key }
     }
 
     async fn ready(&self, actor: &Identity) -> Result<Identity> {
@@ -276,10 +264,6 @@ impl Notifications {
     ) -> Result<PersonalView> {
         let fresh = self.ready(actor).await?;
         let (channel, row) = self.personal_channel(fresh.user.id).await?;
-        let subscriptions = push_subscription::Entity::find()
-            .filter(push_subscription::Column::UserId.eq(fresh.user.id))
-            .count(&self.db)
-            .await?;
         Ok(PersonalView {
             channel: Self::view(
                 &channel,
@@ -294,11 +278,6 @@ impl Notifications {
                 || "15:00".to_owned(),
                 |row| row.weekly_reminder_time.clone(),
             ),
-            push_public_key: self
-                .key
-                .as_deref()
-                .and_then(|key| push::public_key(key).ok()),
-            push_subscriptions: subscriptions,
         })
     }
 
@@ -432,8 +411,10 @@ impl Notifications {
         let webhook = self
             .send_webhook(Some(fresh.user.id), &channel, &notice)
             .await?;
-        let push = push::send_to_user(self, fresh.user.id, &notice, &channel.language).await?;
-        Ok(TestResult { webhook, push })
+        let app = self
+            .send_to_app(fresh.user.id, &notice, &channel.language)
+            .await?;
+        Ok(TestResult { webhook, app })
     }
 
     pub(in crate::dashboard) async fn test_admin(&self, actor: &Identity) -> Result<TestResult> {
@@ -442,7 +423,10 @@ impl Notifications {
         let webhook = self
             .send_webhook(None, &channel, &Notice::new("test", "test"))
             .await?;
-        Ok(TestResult { webhook, push: 0 })
+        Ok(TestResult {
+            webhook,
+            app: false,
+        })
     }
 
     /// Posts to the channel's webhook and records the outcome for the settings page.

@@ -218,6 +218,9 @@ pub(crate) struct Outgoing {
     pub(crate) at: i64,
     pub(crate) title: String,
     pub(crate) body: String,
+    /// "<game account>:<kind>", the server's key for the same condition: Android shows only
+    /// one of a predicted and a server notice with the same tag (MainActivity.kt).
+    pub(crate) tag: String,
 }
 pub(crate) fn render(reminders: &[&Reminder], language: Language) -> Vec<Outgoing> {
     reminders
@@ -252,6 +255,7 @@ pub(crate) fn render(reminders: &[&Reminder], language: Language) -> Vec<Outgoin
             Outgoing {
                 id: notification_id(r),
                 at: r.at_ms,
+                tag: format!("{}:{}", r.account, r.kind.code()),
                 title,
                 body: language.format(
                     "notifications.device_body",
@@ -514,6 +518,7 @@ mod tests {
             };
             let out = render(&[&r], Language::English);
             assert_eq!(out[0].title, format!("{resource} is full"));
+            assert_eq!(out[0].tag, format!("{}:{}", Uuid::nil(), kind.code()));
             assert!(out[0].body.contains("123"));
         }
     }

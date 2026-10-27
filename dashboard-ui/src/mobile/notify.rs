@@ -1,6 +1,9 @@
 //! JNI entry points; app classes must use the activity's class loader.
 use super::reminders::Outgoing;
 
+const NOTIFICATIONS: &str = "dev.dioxus.main.AhdNotifications";
+const INBOX: &str = "dev.dioxus.main.AhdInbox";
+
 #[cfg(target_os = "android")]
 mod android {
     use jni::{
@@ -16,6 +19,7 @@ mod android {
         }
     }
     pub(super) fn call(
+        class: &str,
         name: &str,
         signature: &str,
         texts: Option<(&str, &str)>,
@@ -36,7 +40,7 @@ mod android {
                     &[],
                 );
                 let loader = checked(env, value)?.l().ok()?;
-                let value = env.new_string("dev.dioxus.main.AhdNotifications");
+                let value = env.new_string(class);
                 let class_name = checked(env, value)?;
                 let value = env.call_method(
                     &loader,
@@ -75,7 +79,8 @@ mod android {
         .flatten()
     }
 }
-fn call(
+fn call_on(
+    class: &str,
     name: &str,
     signature: &str,
     texts: Option<(&str, &str)>,
@@ -83,13 +88,21 @@ fn call(
 ) -> Option<String> {
     #[cfg(target_os = "android")]
     {
-        android::call(name, signature, texts, activity)
+        android::call(class, name, signature, texts, activity)
     }
     #[cfg(not(target_os = "android"))]
     {
-        let _ = (name, signature, texts, activity);
+        let _ = (class, name, signature, texts, activity);
         None
     }
+}
+fn call(
+    name: &str,
+    signature: &str,
+    texts: Option<(&str, &str)>,
+    activity: bool,
+) -> Option<String> {
+    call_on(NOTIFICATIONS, name, signature, texts, activity)
 }
 pub(crate) fn permission_granted() -> bool {
     call(
@@ -135,4 +148,35 @@ pub(crate) fn show_now(channel: &str, entry: &Outgoing) -> bool {
 }
 pub(crate) fn take_open_target() -> Option<String> {
     call("takeOpenTarget", "()Ljava/lang/String;", None, false)
+}
+/// `{"device","owner"}` of the installation registered for server notices, if any.
+pub(crate) fn inbox_state() -> Option<String> {
+    call_on(
+        INBOX,
+        "state",
+        "(Landroid/content/Context;)Ljava/lang/String;",
+        None,
+        true,
+    )
+}
+/// Starts (or keeps) polling the server inbox for `config`, then polls once now.
+pub(crate) fn inbox_configure(channel: &str, config: &super::inbox::Config) -> bool {
+    let Ok(json) = serde_json::to_string(config) else {
+        return false;
+    };
+    call_on(
+        INBOX,
+        "configure",
+        "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)Z",
+        Some((channel, &json)),
+        true,
+    )
+    .as_deref()
+        == Some("true")
+}
+pub(crate) fn inbox_stop() {
+    let _ = call_on(INBOX, "stop", "(Landroid/content/Context;)Z", None, true);
+}
+pub(crate) fn inbox_poll_now() {
+    let _ = call_on(INBOX, "pollNow", "(Landroid/content/Context;)Z", None, true);
 }

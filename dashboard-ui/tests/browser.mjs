@@ -11,11 +11,13 @@ import {fileURLToPath} from 'node:url';
 const require=createRequire(import.meta.url);
 const {chromium}=require(process.env.ATTOS_TEST_PLAYWRIGHT_MODULE || 'playwright');
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
+const uiManifest=fs.readFileSync(path.join(root,'dashboard-ui/Cargo.toml'),'utf8');const uiVersion=uiManifest.match(/^version = "(.+)"$/m)[1];const uiLicense=uiManifest.match(/^license = "(.+)"$/m)[1];
 // BUILD_DIR is the compiled public directory (containing index.html and assets/).
 const publicDir=path.resolve(process.env.BUILD_DIR || path.join(root,'target/dx/attos-dashboard-ui/release/web/public'));
 assert.ok(fs.existsSync(path.join(publicDir,'index.html')),'build the Dioxus release UI first');
 const csp=fs.readFileSync(path.join(root,'src/dashboard/http/ui.rs'),'utf8').match(/const CSP: &str = "([^"]+)"/)[1];
 const uid=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
+const appLoginChallenge='E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
 const user={id:uid(1),username:'synthetic-admin',is_admin:true,active:true,must_change_password:true};
 const other={...user,id:uid(9),username:'synthetic-other',is_admin:false,active:false,must_change_password:false};
 let runPlan=['queued','running','success'];
@@ -37,7 +39,7 @@ const rewardSettings=['genshin','starrail'].map((game_kind,i)=>({id:uid(20+i),ga
 const hoursAgo=h=>new Date(Date.now()-h*3600e3).toISOString();
 // Backend error codes (gateway::error_code) must never be rendered raw in settings.
 let sessions=[{id:uid(50),created_at:hoursAgo(2),last_seen_at:hoursAgo(0.1),expires_at:hoursAgo(-100),user_agent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36',current:true},{id:uid(51),created_at:hoursAgo(30),last_seen_at:null,expires_at:hoursAgo(-70),user_agent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1',current:false},{id:uid(52),created_at:hoursAgo(50),last_seen_at:null,expires_at:hoursAgo(-50),user_agent:null,current:false}];
-let apiTokens=[];
+let apiTokens=[],passkeyOptionsBody;
 const rewardRuns=[{id:uid(40),setting_id:uid(20),game_kind:'genshin',trigger:'scheduled',state:'failed',created_at:hoursAgo(20),ended_at:hoursAgo(19.9),attempt_count:1,attempts:[{number:1,outcome:'failed',error_code:'http:503',started_at:hoursAgo(20),finished_at:hoursAgo(19.9)}]}];
 const json=(res,data,status=200)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
 let origin;
@@ -58,12 +60,24 @@ const server=http.createServer(async(req,res)=>{
     await loginGate;sessionExpired=false;res.setHeader('Set-Cookie',`attos_session=synthetic-${loginUser===user?'a':'b'}; HttpOnly; SameSite=Strict; Path=/`);return json(res,loginUser);
    }
    if(p==='/api/v1/auth/logout'){if(failLogout)return json(res,{error:'unavailable'},503);res.setHeader('Set-Cookie','attos_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');return json(res,{});}
-   if(p==='/api/v1/auth/passkey/options'){assert.equal(body.username,user.username);assert.ok(credentialId);return json(res,{challenge_id:uid(13),options:{publicKey:{challenge:Buffer.from('synthetic-assertion-challenge-32-bytes').toString('base64url'),rpId:'localhost',allowCredentials:[{type:'public-key',id:credentialId,transports:['internal']}],userVerification:'required',timeout:60000}}});}
+   if(p==='/api/v1/auth/passkey/options'){
+    assert.equal(req.method,'POST');assert.ok(credentialId);passkeyOptionsBody=body;
+    const publicKey={challenge:Buffer.from('synthetic-assertion-challenge-32-bytes').toString('base64url'),rpId:'localhost',userVerification:'required',timeout:60000};
+    if(Object.hasOwn(body,'username')){assert.deepEqual(Object.keys(body),['username']);assert.equal(body.username,user.username);publicKey.allowCredentials=[{type:'public-key',id:credentialId,transports:['internal']}];}
+    else assert.equal(Object.keys(body).length,0);
+    return json(res,{challenge_id:uid(13),options:{publicKey}});
+   }
    if(p==='/api/v1/auth/passkey/verify'){
     assert.equal(body.response.type,'public-key');assert.equal(body.response.id,credentialId);assert.equal(body.response.rawId,credentialId);
     assert.ok(body.response.response.clientDataJSON);assert.ok(body.response.response.authenticatorData);assert.ok(body.response.response.signature);
     assert.ok(body.response.response.userHandle===null||typeof body.response.response.userHandle==='string');
     res.setHeader('Set-Cookie','attos_session=synthetic-a; HttpOnly; SameSite=Strict; Path=/');return json(res,user);
+   }
+   if(p==='/api/v1/me/app-login'){
+    assert.equal(req.method,'POST');
+    if(!actor||sessionExpired)return json(res,{error:'unauthorized'},401);
+    assert.deepEqual(Object.keys(body),['code_challenge']);assert.equal(body.code_challenge,appLoginChallenge);
+    return json(res,{code:'0123456789abcdef'.repeat(4)});
    }
    if(!actor||sessionExpired)return json(res,{error:'unauthorized'},401);
    if(p==='/api/v1/me'&&req.method==='DELETE'){assert.deepEqual(body,{current_password:'wrong-synthetic-password',confirmation:user.username});return json(res,{error:'unauthorized'},401);}
@@ -99,7 +113,7 @@ const server=http.createServer(async(req,res)=>{
    if(p==='/api/v1/me/api-tokens'&&req.method==='GET')return json(res,apiTokens);
    if(p==='/api/v1/me/api-tokens'){assert.equal(req.method,'POST');assert.deepEqual(Object.keys(body),['name','scope']);assert.deepEqual(body,{name:'Stream Deck',scope:'run'});const row={id:uid(60),name:body.name,scope:body.scope,created_at:hoursAgo(0),last_used_at:null};apiTokens=[row,...apiTokens];return json(res,{...row,token:'ahd_'+'5'.repeat(64)},201);}
    if(p===`/api/v1/me/api-tokens/${uid(60)}`){assert.equal(req.method,'DELETE');apiTokens=apiTokens.filter(row=>row.id!==uid(60));res.writeHead(204);return res.end();}
-   if(p==='/api/v1/me/notifications'&&req.method==='GET')return json(res,{webhook_configured:false,webhook_hint:null,webhook_format:'discord',language:'ja',events:{},last_delivery_at:null,last_delivery_ok:null,resin_warn_hours:2,daily_reminder_time:'21:00',weekly_reminder_time:'15:00',push_public_key:null,push_subscriptions:0});
+   if(p==='/api/v1/me/notifications'&&req.method==='GET')return json(res,{webhook_configured:false,webhook_hint:null,webhook_format:'discord',language:'ja',events:{},last_delivery_at:null,last_delivery_ok:null,resin_warn_hours:2,daily_reminder_time:'21:00',weekly_reminder_time:'15:00'});
    if(p==='/api/v1/me/notifications'&&req.method==='PUT'){assert.ok(body.webhook_format);res.writeHead(204);return res.end();}
    if(p==='/api/v1/admin/notifications'&&req.method==='GET')return json(res,{webhook_configured:false,webhook_hint:null,webhook_format:'discord',language:'ja',events:{},last_delivery_at:null,last_delivery_ok:null});
    if(p==='/api/v1/admin/notifications'&&req.method==='PUT'){res.writeHead(204);return res.end();}
@@ -143,7 +157,7 @@ const server=http.createServer(async(req,res)=>{
   if(p==='/openapi.json'){assert.equal(req.method,'GET');counts.set(p,(counts.get(p)||0)+1);return json(res,JSON.parse(fs.readFileSync(path.join(root,'docs/dashboard-api.json'),'utf8')));}
   let file;
   if(p==='/settings'){res.writeHead(308,{'Location':'/settings/games'});return res.end();}
-  if(['/','/login','/dashboard','/settings/games','/settings/bonus','/settings/link','/settings/security','/settings/notifications','/settings/delete','/admin','/docs'].includes(p)){file=path.join(publicDir,'index.html');res.setHeader('Content-Type','text/html');res.setHeader('Content-Security-Policy',csp);}
+  if(['/','/login','/app-login','/dashboard','/settings/games','/settings/bonus','/settings/link','/settings/security','/settings/notifications','/settings/delete','/admin','/about','/docs'].includes(p)){file=path.join(publicDir,'index.html');res.setHeader('Content-Type','text/html');res.setHeader('Content-Security-Policy',csp);}
   else if(p.startsWith('/assets/')){file=path.resolve(publicDir,'.'+p);assert.ok(file.startsWith(path.join(publicDir,'assets')+path.sep));res.setHeader('Content-Type',({'.wasm':'application/wasm','.js':'text/javascript','.css':'text/css','.png':'image/png'})[path.extname(file)]||'application/octet-stream');}
   else {res.writeHead(404);return res.end();}
   res.end(fs.readFileSync(file));
@@ -235,11 +249,11 @@ try{
  assert.ok(await button('Sign in').evaluate(e=>getComputedStyle(e).backgroundImage.includes('linear-gradient')),'stable data attributes style the CSS-module button');
  assert.equal(await page.locator('#login-username').count(),1,'both methods share one username');
  await eyes(['login-password']);
- await page.locator('#login-password').fill('synthetic-method-clear');
- await page.locator('#login-method-passkey').check();
- assert.equal(await page.locator('#login-password').count(),0);
- await page.locator('#login-method-password').check();
- assert.ok(await page.locator('#login-password').evaluate(e=>e.value===''));
+ const passkeyButton=page.locator('#login-passkey');
+ assert.equal(await passkeyButton.count(),1);
+ const passkeyBox=await passkeyButton.boundingBox();
+ assert.ok(passkeyBox.y>submitBox.y+submitBox.height,'passkey alternative is below Sign in');
+ assert.ok(Math.abs(passkeyBox.width-submitBox.width)<1,'passkey alternative is full width');
  // Unknown usernames and wrong passwords share one non-enumerating error.
  for(const language of ['en','ja']){
   if(language==='ja'){
@@ -270,7 +284,7 @@ try{
  const loginRequest=page.waitForRequest(origin+'/api/v1/auth/login');
  await button('Sign in').click();await loginRequest;
  assert.ok(await button('Sign in').isDisabled());
- assert.ok(await page.locator('#login-method-passkey').isDisabled());
+ assert.ok(await page.locator('#login-passkey').isDisabled());
  // Native disabled controls plus the synchronous submission reservation.
  await page.locator('form').dispatchEvent('submit');
  const metadataRequest=page.waitForRequest(origin+'/api/v1/me/hoyolab');allowLogin();await metadataRequest;
@@ -502,6 +516,51 @@ try{
  await drawer.getByRole('combobox',{name:'Theme',exact:true}).selectOption('dark');
  await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark'&&localStorage.getItem('ahd-theme')==='dark');
  await page.keyboard.press('Escape');await dashboard();
+ // About sits directly below the API docs and shows build metadata from Cargo.toml.
+ await openMenu();
+ const menuEntries=await page.locator('#ahd-menu nav > :is(button,a)').evaluateAll(items=>items.map(item=>item.textContent.trim()));
+ assert.deepEqual(menuEntries.slice(-2),['API documentation','About'],'About is the entry right below the API docs');
+ await page.keyboard.press('Escape');await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});await page.locator('#ahd-menu').evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});
+ await menu('About');
+ await page.waitForURL(origin+'/about');
+ await page.getByRole('heading',{name:'About',exact:true,level:1}).waitFor();
+ assert.equal(await page.title(),'About – AHD');
+ const aboutFacts=await page.locator('.about-facts > div').evaluateAll(rows=>rows.map(row=>[row.querySelector('dt').textContent.trim(),row.querySelector('dd').textContent.trim()]));
+ assert.deepEqual(aboutFacts,[['Author','AttODao'],['Version',uiVersion],['License',uiLicense],['Source code','git.attodao.cc/AttODao/AttOsHoYoDashboard']]);
+ assert.equal(uiLicense,'GPL-3.0-or-later');
+ assert.equal(await page.locator('.about-facts a').first().getAttribute('href'),'https://git.attodao.cc/AttODao/AttOsHoYoDashboard/src/branch/main/LICENSE');
+ const repoLink=page.locator('.about-facts a').last();
+ assert.equal(await repoLink.getAttribute('href'),'https://git.attodao.cc/AttODao/AttOsHoYoDashboard');
+ assert.equal(await repoLink.getAttribute('target'),'_blank');
+ assert.equal(await page.locator('.about-licenses li').count(),4);
+ assert.equal(await page.getByRole('link',{name:'Open Cargo.lock',exact:true}).getAttribute('href'),`https://git.attodao.cc/AttODao/AttOsHoYoDashboard/src/tag/v${uiVersion}/Cargo.lock`);
+ for(const link of await page.locator('.about-page a').all())assert.ok((await link.boundingBox()).height>=48,'about links keep a 48px target');
+ await page.screenshot({path:path.join(root,'target/ui-about-desktop-dark.png'),fullPage:true});
+ await openMenu();await page.locator('#ahd-menu').getByRole('combobox',{name:'Theme',exact:true}).selectOption('light');
+ await page.waitForFunction(()=>document.documentElement.dataset.theme==='light');
+ await page.keyboard.press('Escape');await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});await page.locator('#ahd-menu').evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});
+ await page.screenshot({path:path.join(root,'target/ui-about-desktop-light.png'),fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ assert.ok(await page.locator('.about-facts a').last().evaluate(link=>{const r=link.getBoundingClientRect();return r.right<=link.closest('.panel').getBoundingClientRect().right;}),'repository link stays inside its panel');
+ assert.ok(await page.locator('main.container').evaluate(e=>e.scrollWidth<=e.clientWidth),'about fits a narrow screen');
+ await page.screenshot({path:path.join(root,'target/ui-about-mobile-light.png'),fullPage:true});
+ await page.setViewportSize({width:1280,height:900});
+ await openMenu();await page.locator('#ahd-menu').getByRole('combobox',{name:'Theme',exact:true}).selectOption('dark');
+ await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark'&&localStorage.getItem('ahd-theme')==='dark');
+ await page.keyboard.press('Escape');await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});await page.locator('#ahd-menu').evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});
+ await page.locator('.wordmark').click();await dashboard();
+ // A reload opens the menu while slow game status is still loading; only the page data waits.
+ let releaseStatus,heldStatus=0,passedStatus=0;const statusHeld=new Promise(resolve=>releaseStatus=resolve);
+ const slowStatus=url=>/^\/api\/v1\/game-accounts\/[^/]+\/status$/.test(url.pathname);
+ await page.route(slowStatus,async route=>{heldStatus++;await statusHeld;await route.fallback();passedStatus++;});
+ await page.reload();
+ for(let i=0;i<200&&heldStatus===0;i++)await page.waitForTimeout(50);
+ assert.ok(heldStatus>0,'game status is requested and held');
+ await page.waitForFunction(()=>document.getElementById('ahd-menu-trigger')?.matches(':enabled')&&document.querySelector('fieldset.app-shell')?.disabled===false,null,{timeout:3000});
+ assert.equal(passedStatus,0,'game status is still pending');
+ await openMenu();await page.keyboard.press('Escape');await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});
+ releaseStatus();while(passedStatus<heldStatus)await page.waitForTimeout(50);
+ await page.unroute(slowStatus);await page.locator('.resource strong').first().waitFor();await dashboard();
  // Mobile ARIA tabs: hidden panel, roving focus and keyboard edges.
  await page.setViewportSize({width:390,height:844});
  await page.waitForFunction(()=>document.getElementById('game-panel-genshin')?.getAttribute('role')==='tabpanel');
@@ -662,6 +721,12 @@ try{
  await page.locator('#settings-tab-uids').focus();await page.keyboard.press('ArrowRight');
  await page.locator('#settings-tab-bonus[aria-selected=true]').waitFor();
  await page.locator('#settings-tab-security').click();await idle();
+ // Side-by-side fields keep their controls on one line when only one of them has a hint.
+ const pairBoxes=ids=>page.evaluate(ids=>ids.map(id=>{const r=document.getElementById(id).getBoundingClientRect();return {top:Math.round(r.top),height:Math.round(r.height)};}),ids);
+ const [currentBox,newBox]=await pairBoxes(['current-password','new-password']);
+ assert.deepEqual(currentBox,newBox,`password inputs line up: ${JSON.stringify({currentBox,newBox})}`);
+ const [tokenName,tokenScope]=await pairBoxes(['api-token-name','api-token-scope']);
+ assert.deepEqual(tokenScope,tokenName,`token scope select lines up with the name input: ${JSON.stringify({tokenScope,tokenName})}`);
  await eyes(['current-password','new-password','confirm-password']);
  await change('wrong-synthetic-password');
  await page.getByText('The current password was not accepted. Please try again.',{exact:true}).waitFor();
@@ -920,9 +985,18 @@ try{
  await menu('Sign out');await button('Retry server logout').waitFor();failLogout=false;
  await button('Retry server logout').click();await button('Sign in').waitFor();
  assert.equal((await context.cookies()).filter(c=>c.name==='attos_session').length,0);
- await page.locator('#login-username').fill(user.username);await page.locator('#login-method-passkey').check();
- await button('Use passkey').click();await dashboard();
+ await page.locator('#login-username').fill('');
+ await page.locator('#login-passkey').click();await dashboard();
+ assert.deepEqual(passkeyOptionsBody,{});
  assert.equal(counts.get('/api/v1/auth/passkey/options'),1);assert.equal(counts.get('/api/v1/auth/passkey/verify'),1);
+ stage='app login';
+ const challenge=appLoginChallenge;
+ await page.goto(origin+'/app-login?challenge='+challenge);
+ await page.getByRole('heading',{name:'Sign in to the app',exact:true}).waitFor();
+ await page.getByText(`Sign in to the AHD app as ${user.username}.`,{exact:true}).waitFor();
+ await button('Allow sign-in').click();await button('Return to the app').waitFor();
+ assert.equal(counts.get('/api/v1/me/app-login'),1);
+ await button('Cancel').click();await dashboard();
  // Reissued, verified/readable account goes straight from mandatory change to ready.
  await menu('Sign out');user.must_change_password=true;
  await signIn(user);await page.locator('#new-password').waitFor();await idle();

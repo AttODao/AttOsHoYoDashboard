@@ -1,9 +1,11 @@
 //! Transport tests use the production router and isolated synthetic PostgreSQL accounts.
 mod api_tokens;
+mod app_login;
 mod auth;
 mod dashboard;
 mod hoyolab;
 mod middleware;
+mod notifications;
 mod openapi;
 mod passkey_roundtrip;
 mod passkeys;
@@ -61,13 +63,13 @@ fn app(accounts: Accounts) -> App {
     Arc::new(HttpState {
         cookies,
         operations,
+        app_logins: super::AppLogins::new(),
         passkeys: Passkeys::new(&config.rp_id, &config.origin, config.cookie_key.as_deref())
             .unwrap(),
         notifications: Arc::new(
             crate::dashboard::notifications::channel::Notifications::new(
                 accounts.db.clone(),
                 config.cookie_key.clone(),
-                config.origin.clone(),
             ),
         ),
         notifier_rewards_games: None,

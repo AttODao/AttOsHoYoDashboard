@@ -41,6 +41,7 @@ async fn compiled_assets_are_public_local_and_hardened() {
         ("/", "text/html"),
         ("/docs", "text/html"),
         ("/login", "text/html"),
+        ("/app-login", "text/html"),
         ("/dashboard", "text/html"),
         ("/settings/games", "text/html"),
         ("/settings/bonus", "text/html"),
@@ -49,6 +50,7 @@ async fn compiled_assets_are_public_local_and_hardened() {
         ("/settings/notifications", "text/html"),
         ("/settings/delete", "text/html"),
         ("/admin", "text/html"),
+        ("/about", "text/html"),
         ("/assets/app.js", "text/javascript"),
         ("/assets/style.css", "text/css"),
         ("/assets/app.wasm", "application/wasm"),
@@ -154,9 +156,11 @@ async fn missing_bundle_returns_hardened_unavailable_without_breaking_api_routes
         "/",
         "/docs",
         "/login",
+        "/app-login",
         "/dashboard",
         "/settings/security",
         "/admin",
+        "/about",
     ] {
         error(
             call(&app, request("GET", path, None, None)).await,

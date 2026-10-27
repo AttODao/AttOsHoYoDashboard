@@ -298,6 +298,7 @@ fn scope_policy_allows_only_dashboard_reads_and_the_manual_run() {
             (Method::PATCH, "/api/v1/game-accounts/{id}"),
             (Method::PUT, "/api/v1/me/password"),
             (Method::POST, "/api/v1/auth/logout"),
+            (Method::POST, "/api/v1/me/app-login"),
             (Method::POST, "/api/v1/me/hoyolab/sync"),
             (Method::DELETE, "/api/v1/me"),
         ] {

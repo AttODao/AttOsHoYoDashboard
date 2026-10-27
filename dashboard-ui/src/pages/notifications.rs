@@ -1,4 +1,4 @@
-//! Personal notification channel: webhook, events, reminder times and browser push.
+//! Personal notification channel: webhook, events and reminder times.
 use super::common::{Field, LoadError};
 use crate::app::actions::{handle_api_error_for, spawn_action};
 use crate::app::data::{load_admin_notifications, load_notifications};
@@ -33,11 +33,7 @@ pub(super) fn NotificationsPage(state: Signal<AppState>) -> Element {
                 LoadError { state, message: ui.text(&error) }
             }
             if let Some(view) = state.read().notifications.clone() {
-                PersonalChannelCard { state, view: view.clone() }
-                // Web Push needs a browser service worker; the app does not offer it.
-                if !crate::platform::APP {
-                    PushCard { state, view }
-                }
+                PersonalChannelCard { state, view }
             } else if state.read().notifications_error.is_none() {
                 p { role: "status", {ui.text("notifications.loading")} }
             }
@@ -104,6 +100,9 @@ fn PersonalChannelCard(
                 }
             }
             h3 { {ui.text("notifications.events")} }
+            if crate::platform::APP {
+                p { class: "field-hint", {ui.text("notifications.events_hint_app")} }
+            }
             div { class: "event-list",
                 PersonalEventToggles { events }
             }
@@ -246,59 +245,6 @@ fn AdminEventToggles(events: Signal<BTreeMap<String, bool>>) -> Element {
         EventToggle { kind: "deletion_stuck", label: "notifications.event_deletion_stuck", events }
         EventToggle { kind: "sign_in_failed", label: "notifications.event_sign_in_failed", events }
         EventToggle { kind: "signed_in", label: "notifications.event_signed_in", events }
-    }
-}
-
-#[component]
-fn PushCard(state: Signal<AppState>, view: crate::models::PersonalNotificationView) -> Element {
-    let ui = use_preferences();
-    let available = view.push_public_key.is_some();
-    let subscriptions = view.push_subscriptions;
-    rsx! {
-        section { class: "panel page-stack",
-            h3 { {ui.text("notifications.browser_push")} }
-            if !available {
-                p { role: "status", {ui.text("notifications.push_unavailable")} }
-            } else {
-                p { class: "field-hint", {ui.format("notifications.push_subscriptions", &[("count", &subscriptions.to_string())])} }
-                div { class: "button-row",
-                    Button { id: "push-subscribe", r#type: "button", onclick: {
-                        let key = view.push_public_key.clone().unwrap_or_default();
-                        move |_| {
-                            let key = key.clone();
-                            spawn_action(state, move |generation| async move {
-                                #[cfg(target_arch = "wasm32")]
-                                match crate::webauthn::subscribe_push(&key).await {
-                                    Ok(_) if generation_matches(state, generation) => {
-                                        set_status(state, "notifications.push_registered", "success");
-                                        load_notifications(state).await;
-                                    }
-                                    Ok(_) => {}
-                                    Err(error) => handle_api_error_for(state, generation, error),
-                                }
-                                #[cfg(not(target_arch = "wasm32"))]
-                                let _ = (key, generation);
-                            });
-                        }
-                    }, {ui.text("notifications.enable_push")} }
-                    Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: subscriptions == 0, onclick: move |_| {
-                        spawn_action(state, move |generation| async move {
-                            #[cfg(target_arch = "wasm32")]
-                            match crate::webauthn::unsubscribe_push().await {
-                                Ok(()) if generation_matches(state, generation) => {
-                                    set_status(state, "notifications.push_unregistered", "success");
-                                    load_notifications(state).await;
-                                }
-                                Ok(()) => {}
-                                Err(error) => handle_api_error_for(state, generation, error),
-                            }
-                            #[cfg(not(target_arch = "wasm32"))]
-                            let _ = generation;
-                        });
-                    }, {ui.text("notifications.disable_push")} }
-                }
-            }
-        }
     }
 }
 

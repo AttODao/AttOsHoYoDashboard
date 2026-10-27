@@ -68,6 +68,7 @@ pub(super) fn Icon(name: &'static str) -> Element {
         "hide" => {
             "M3 3l18 18M9.5 5.3A12 12 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-4 4.7M6 6.5A19 19 0 0 0 2 12s3.5 7 10 7a12 12 0 0 0 5-1.1M10 10a3 3 0 0 0 4 4"
         }
+        "info" => "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M12 11v5M12 8h.01",
         _ => "M4 6h16M4 12h16M4 18h16",
     };
     rsx! { svg { view_box: "0 0 24 24", "aria-hidden": "true", "focusable": "false", path { d: path } } }

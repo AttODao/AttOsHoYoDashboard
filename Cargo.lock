@@ -438,12 +438,13 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "attos-dashboard-ui"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
  "dioxus",
  "dioxus-primitives",
+ "getrandom 0.3.4",
  "gloo-net",
  "gloo-timers",
  "jni 0.21.1",
@@ -452,6 +453,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
  "url",
  "uuid",
@@ -463,10 +465,11 @@ dependencies = [
 
 [[package]]
 name = "attoshoyodashboard"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "argon2",
  "axum",
+ "base64 0.22.1",
  "chrono",
  "chrono-tz",
  "derive_more 2.1.1",
@@ -488,6 +491,7 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "webauthn-rs",
+ "webauthn-rs-proto",
 ]
 
 [[package]]

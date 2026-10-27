@@ -24,6 +24,15 @@ async fn software_p256_registration_persists_trimmed_label_and_is_single_use() {
         .registration_start(&accounts, &actor, "  laptop  ".into())
         .await
         .unwrap();
+    let options = serde_json::to_value(&challenge.options).unwrap();
+    assert_eq!(
+        options["publicKey"]["authenticatorSelection"]["residentKey"],
+        "preferred"
+    );
+    assert_eq!(
+        options["publicKey"]["authenticatorSelection"]["requireResidentKey"],
+        false
+    );
     let mut authenticator = TestAuthenticator::new();
     let response = authenticator.register(&challenge, 1);
     let key = passkeys

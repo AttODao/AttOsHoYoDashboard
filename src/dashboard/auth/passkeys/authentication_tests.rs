@@ -696,3 +696,133 @@ async fn wait_for_lock_waiters(fixture: &Fixture, expected: i64) {
     .await
     .expect("authentication must reach the user lock");
 }
+
+#[tokio::test]
+async fn discoverable_login_issues_session_updates_counter_and_spends_finish_budget() {
+    let fixture = Fixture::new().await;
+    let username = &fixture.actor.user.username;
+    let attempts = fixture.accounts.login_attempts(username);
+    let before = passkey::Entity::find_by_id(fixture.key_id)
+        .one(&fixture.db.db)
+        .await
+        .unwrap()
+        .unwrap();
+    let challenge = fixture
+        .passkeys
+        .discoverable_authentication_start()
+        .await
+        .unwrap();
+    assert_eq!(fixture.accounts.login_attempts(username), attempts);
+    let options = serde_json::to_value(&challenge.options).unwrap();
+    assert!(options.get("mediation").is_none());
+    assert!(
+        options["publicKey"]
+            .get("allowCredentials")
+            .is_none_or(|v| v.as_array().unwrap().is_empty())
+    );
+    assert_eq!(options["publicKey"]["extensions"]["uvm"], true);
+    let response = fixture.authenticator.authenticate(&challenge, 2);
+    let (user, issued) = fixture
+        .passkeys
+        .authentication_finish(&fixture.accounts, challenge.challenge_id, response.clone())
+        .await
+        .unwrap();
+    assert_eq!(user.id, fixture.actor.user.id);
+    assert_eq!(
+        Sessions::authenticate(&fixture.db.db, &token_hash(&issued.token).unwrap())
+            .await
+            .unwrap()
+            .user
+            .id,
+        user.id
+    );
+    assert_eq!(fixture.accounts.login_attempts(username), attempts + 1);
+    let after = passkey::Entity::find_by_id(fixture.key_id)
+        .one(&fixture.db.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_ne!(
+        credential_fingerprint(&before.credential).unwrap(),
+        credential_fingerprint(&after.credential).unwrap()
+    );
+    assert!(after.last_used_at.is_some());
+    assert!(matches!(
+        fixture
+            .passkeys
+            .authentication_finish(&fixture.accounts, challenge.challenge_id, response)
+            .await,
+        Err(Error::Unauthorized)
+    ));
+}
+
+#[tokio::test]
+async fn discoverable_login_rejects_unknown_invalid_and_other_user_handles_without_sessions() {
+    use crate::dashboard::auth::passkeys::test_support::ready_user;
+    use webauthn_rs::prelude::Base64UrlSafeData;
+    let fixture = Fixture::new().await;
+    let other = ready_user(&fixture.accounts, &fixture.actor, "other-discoverable").await;
+    let before = session::Entity::find().count(&fixture.db.db).await.unwrap();
+    for handle in [
+        serde_json::to_value(Base64UrlSafeData::from(
+            uuid::Uuid::new_v4().as_bytes().to_vec(),
+        ))
+        .unwrap(),
+        serde_json::to_value(Base64UrlSafeData::from(other.user.id.as_bytes().to_vec())).unwrap(),
+        Value::String("AQ".into()),
+        Value::Null,
+    ] {
+        let challenge = fixture
+            .passkeys
+            .discoverable_authentication_start()
+            .await
+            .unwrap();
+        let mut response =
+            serde_json::to_value(fixture.authenticator.authenticate(&challenge, 2)).unwrap();
+        response["response"]["userHandle"] = handle;
+        assert!(matches!(
+            fixture
+                .passkeys
+                .authentication_finish(
+                    &fixture.accounts,
+                    challenge.challenge_id,
+                    serde_json::from_value(response).unwrap()
+                )
+                .await,
+            Err(Error::Unauthorized)
+        ));
+    }
+    assert_eq!(
+        session::Entity::find().count(&fixture.db.db).await.unwrap(),
+        before
+    );
+}
+
+#[tokio::test]
+async fn discoverable_login_rechecks_disabled_and_temporary_password_policy() {
+    let fixture = Fixture::new().await;
+    let before = session::Entity::find().count(&fixture.db.db).await.unwrap();
+    for temporary in [false, true] {
+        let challenge = fixture
+            .passkeys
+            .discoverable_authentication_start()
+            .await
+            .unwrap();
+        let response = fixture.authenticator.authenticate(&challenge, 2);
+        let mut user = fixture.actor.user.clone().into_active_model();
+        user.active = Set(temporary);
+        user.must_change_password = Set(temporary);
+        user.update(&fixture.db.db).await.unwrap();
+        assert!(matches!(
+            fixture
+                .passkeys
+                .authentication_finish(&fixture.accounts, challenge.challenge_id, response)
+                .await,
+            Err(Error::Unauthorized)
+        ));
+    }
+    assert_eq!(
+        session::Entity::find().count(&fixture.db.db).await.unwrap(),
+        before
+    );
+}

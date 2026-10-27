@@ -4,7 +4,6 @@ use super::{
     channel::{ADMIN_SCOPE, Channel, Notifications},
     conditions::{self, Game, Outcome, Rules},
     messages::word,
-    push,
 };
 use crate::dashboard::{
     config::Tuning,
@@ -18,8 +17,7 @@ use crate::dashboard::{
 };
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::{
-    ColumnTrait, Condition, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, Set,
-    sea_query::OnConflict,
+    ColumnTrait, Condition, EntityTrait, QueryFilter, QueryOrder, Set, sea_query::OnConflict,
 };
 use serde_json::Value;
 use std::sync::Arc;
@@ -313,7 +311,7 @@ impl<G: crate::dashboard::hoyolab::gateway::Gateway> Notifier<G> {
                     .collect(),
             };
             // Nothing to notify about: skip the HoYoLAB GET entirely.
-            if channel.url.is_none() && !self.has_push(setting.user_id).await? {
+            if channel.url.is_none() && !self.notifications.has_app_device(setting.user_id).await? {
                 continue;
             }
             let link = hoyolab_account::Entity::find()
@@ -381,14 +379,6 @@ impl<G: crate::dashboard::hoyolab::gateway::Gateway> Notifier<G> {
         Ok(())
     }
 
-    async fn has_push(&self, user: Uuid) -> Result<bool> {
-        let count = crate::dashboard::db::entities::push_subscription::Entity::find()
-            .filter(crate::dashboard::db::entities::push_subscription::Column::UserId.eq(user))
-            .count(&self.notifications.db)
-            .await?;
-        Ok(count > 0)
-    }
-
     async fn clear(&self, user: Uuid, key: &str) -> Result<()> {
         notification_log::Entity::delete_many()
             .filter(notification_log::Column::Scope.eq(user))
@@ -410,7 +400,9 @@ impl<G: crate::dashboard::hoyolab::gateway::Gateway> Notifier<G> {
             .send_webhook(user, channel, notice)
             .await?;
         if let Some(user) = user {
-            push::send_to_user(&self.notifications, user, notice, &channel.language).await?;
+            self.notifications
+                .send_to_app(user, notice, &channel.language)
+                .await?;
         }
         self.mark_sent(scope, &notice.key).await?;
         Ok(())
@@ -450,6 +442,7 @@ impl<G: crate::dashboard::hoyolab::gateway::Gateway> Notifier<G> {
 
     /// Deletes log entries older than seven days whose key is time-bounded (dates, weeks, run ids).
     pub(in crate::dashboard) async fn cleanup(&self) -> Result<()> {
+        self.notifications.cleanup_app(Utc::now()).await?;
         notification_log::Entity::delete_many()
             .filter(notification_log::Column::SentAt.lt(Utc::now() - Duration::days(7)))
             .filter(

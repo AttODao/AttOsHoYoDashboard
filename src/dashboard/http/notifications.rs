@@ -1,29 +1,36 @@
-//! Personal and administrator notification channels and browser push subscriptions.
+//! Personal and administrator notification channels and the
+//! app installations' inbox.
 use super::App;
 use crate::dashboard::{
     auth::sessions::Identity,
     error::Result,
-    notifications::{
-        channel::{ChannelInput, PersonalInput},
-        push::{SubscriptionInput, Unsubscription},
-    },
+    notifications::channel::{ChannelInput, PersonalInput},
 };
 use axum::{
     Json, Router,
-    extract::{Extension, State},
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use serde_json::Value;
 use std::sync::Arc;
+use uuid::Uuid;
 
 pub(super) fn protected_routes() -> Router<App> {
     Router::new()
         .route("/api/v1/me/notifications", get(me_view).put(me_update))
         .route("/api/v1/me/notifications/test", post(me_test))
         .route(
-            "/api/v1/me/notifications/push",
-            post(subscribe).delete(unsubscribe),
+            "/api/v1/me/notifications/app-devices",
+            post(register_app_device),
+        )
+        .route(
+            "/api/v1/me/notifications/app-devices/{id}",
+            delete(unregister_app_device),
+        )
+        .route(
+            "/api/v1/me/notifications/app-devices/{id}/inbox",
+            get(app_inbox),
         )
         .route(
             "/api/v1/admin/notifications",
@@ -64,22 +71,44 @@ async fn me_test(
     ))
 }
 
-async fn subscribe(
+async fn register_app_device(
     State(app): State<App>,
     Extension(actor): Extension<Arc<Identity>>,
-    Json(input): Json<SubscriptionInput>,
+    Json(_): Json<EmptyInput>,
+) -> Result<(StatusCode, Json<Value>)> {
+    let view = service(&app).register_app_device(&actor).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::to_value(view).unwrap_or(Value::Null)),
+    ))
+}
+
+async fn unregister_app_device(
+    State(app): State<App>,
+    Extension(actor): Extension<Arc<Identity>>,
+    Path(id): Path<Uuid>,
 ) -> Result<StatusCode> {
-    service(&app).subscribe(&actor, input).await?;
+    service(&app).unregister_app_device(&actor, id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn unsubscribe(
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InboxQuery {
+    #[serde(default)]
+    after: i64,
+}
+
+async fn app_inbox(
     State(app): State<App>,
     Extension(actor): Extension<Arc<Identity>>,
-    Json(input): Json<Unsubscription>,
-) -> Result<StatusCode> {
-    service(&app).unsubscribe(&actor, input).await?;
-    Ok(StatusCode::NO_CONTENT)
+    Path(id): Path<Uuid>,
+    Query(query): Query<InboxQuery>,
+) -> Result<Json<Value>> {
+    Ok(Json(
+        serde_json::to_value(service(&app).app_inbox(&actor, id, query.after).await?)
+            .unwrap_or(Value::Null),
+    ))
 }
 
 async fn admin_view(

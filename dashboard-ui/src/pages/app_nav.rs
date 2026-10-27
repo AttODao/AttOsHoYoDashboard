@@ -20,7 +20,7 @@ fn nav_target(page: Page) -> Option<NavTarget> {
         | Page::Security
         | Page::Notifications
         | Page::Delete => Some(NavTarget::Settings),
-        Page::Admin | Page::Docs => None,
+        Page::Admin | Page::Docs | Page::About => None,
     }
 }
 
@@ -72,6 +72,11 @@ pub(in crate::app) fn AppHead() -> Element {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn about_has_no_navigation_target() {
+        assert_eq!(nav_target(Page::About), None);
+    }
 
     #[test]
     fn dashboard_targets_dashboard() {
