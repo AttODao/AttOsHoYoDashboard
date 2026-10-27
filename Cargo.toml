@@ -5,7 +5,7 @@ resolver = "3"
 
 [package]
 name = "attoshoyodashboard"
-version = "1.4.0"
+version = "1.5.0"
 license = "GPL-3.0-or-later"
 edition = "2024"
 default-run = "attoshoyodashboard"
