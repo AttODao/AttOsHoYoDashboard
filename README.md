@@ -190,6 +190,8 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | パス | 責務 |
 | --- | --- |
 | `src/dashboard/auth/` | ユーザーのライフサイクル、パスワード、セッション（一覧・個別／他端末の失効・最終利用）、APIトークン（`api_tokens.rs`。発行・失効・Bearer認証・スコープで通せるルート）、パスキー（名前変更・最終利用）（アカウントの有無を明かさないログインoptionsを含む）、削除要求と完了（再試行の待機を含む）、ユーザー名ごとのログイン試行制限、ユーザーごとの現在パスワード確認の試行制限 |
+| `src/dashboard/auth/app_logins.rs` | ブラウザからアプリへのPKCE（S256）ワンタイムコード承認・交換 |
+| `src/dashboard/http/app_login.rs` | アプリログイン承認・交換のHTTPペイロードとルート |
 | `src/dashboard/http/` | ルート、DTO、Cookie・Bearer APIトークン、Origin・キャッシュの境界、UI配信、ヘルスチェック・メトリクス、報酬・削除のバックグラウンド処理の起動と保守 |
 | `src/dashboard/db/` | `entities/` に保存モデル、`migrations/` にスキーマ変更 |
 | `src/dashboard/hoyolab/` | Cookieの解析・暗号化保存・削除・鍵の再暗号化（`rekey`）、連携の検証・同期、ユーザー単位の操作ロック |
@@ -247,6 +249,7 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | --- | --- |
 | 認証 | `POST /auth/login`、`POST /auth/logout`、`GET /me`、`PUT /me/password` |
 | パスキー | `GET /me/passkeys`、`POST /me/passkeys/options`・`/me/passkeys/verify`、`PATCH`・`DELETE /me/passkeys/{id}`、`POST /auth/passkey/options`・`/auth/passkey/verify` |
+| アプリログイン | `POST /me/app-login`（セッション専用）、`POST /auth/app-login/exchange`（PKCE S256、120秒・1回限りのコードを新しいセッションに交換） |
 | セッション | `GET /me/sessions`、`DELETE /me/sessions/{id}`、`POST /me/sessions/revoke-others` |
 | APIトークン | `GET`・`POST /me/api-tokens`、`DELETE /me/api-tokens/{id}`（セッション専用） |
 | HoYoLAB | `GET /me/hoyolab`、`PUT`・`DELETE /me/hoyolab/cookie`、`POST /me/hoyolab/verify`・`/me/hoyolab/sync` |

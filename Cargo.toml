@@ -13,6 +13,7 @@ default-run = "attoshoyodashboard"
 [dependencies]
 argon2 = "0.5"
 axum = "0.8"
+base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"
 derive_more = { version = "2", default-features = false, features = ["debug"] }

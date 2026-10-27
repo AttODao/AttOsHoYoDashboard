@@ -467,6 +467,7 @@ version = "1.4.0"
 dependencies = [
  "argon2",
  "axum",
+ "base64 0.22.1",
  "chrono",
  "chrono-tz",
  "derive_more 2.1.1",

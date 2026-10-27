@@ -32,6 +32,7 @@ pub(super) fn routes(app: &App) -> Router<App> {
         .route("/", get(index))
         .route("/docs", get(index))
         .route("/login", get(index))
+        .route("/app-login", get(index))
         .route("/dashboard", get(index))
         .route(
             "/settings",

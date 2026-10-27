@@ -1,5 +1,6 @@
 //! HTTP composition and server lifetime; domain rules live outside this directory.
 mod api_tokens;
+mod app_login;
 mod auth;
 mod games;
 mod hoyolab;
@@ -20,6 +21,7 @@ mod tests;
 use super::{
     auth::{
         accounts::{self, Accounts},
+        app_logins::AppLogins,
         passkeys::Passkeys,
         sessions::Identity,
     },
@@ -40,6 +42,7 @@ type App = Arc<HttpState>;
 struct HttpState {
     accounts: Accounts,
     passkeys: Passkeys,
+    app_logins: AppLogins,
     cookies: Option<Arc<CookieStore>>,
     notifications: Arc<crate::dashboard::notifications::channel::Notifications>,
     notifier_rewards_games: Option<Arc<crate::dashboard::games::service::Games>>,
@@ -73,6 +76,7 @@ pub(super) async fn serve(accounts: Accounts, config: Config) -> Result<()> {
     let app = Arc::new(HttpState {
         accounts,
         passkeys,
+        app_logins: AppLogins::new(),
         cookies,
         notifications,
         notifier_rewards_games,
@@ -120,6 +124,7 @@ fn router(app: App) -> Router {
         .merge(games::protected_routes())
         .merge(rewards::protected_routes())
         .merge(passkeys::protected_routes())
+        .merge(app_login::protected_routes())
         .merge(notifications::protected_routes())
         .route_layer(from_fn_with_state(app.clone(), middleware::authenticate));
     Router::new()
@@ -129,6 +134,7 @@ fn router(app: App) -> Router {
         .merge(ui::routes(&app))
         .merge(auth::public_routes())
         .merge(passkeys::public_routes())
+        .merge(app_login::public_routes())
         .merge(protected)
         .layer(DefaultBodyLimit::max(16 * 1024))
         .layer(from_fn_with_state(app.clone(), middleware::boundary))
