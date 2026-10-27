@@ -1,4 +1,4 @@
-//! Web/app differences: what the Android app leaves out, and timers that work on both.
+//! Web/app differences: what the Android app leaves out, opening the web version, and timers that work on both.
 
 /// The Android app (`mobile` feature). The browser build and native tests are `false`.
 /// The app leaves administration, API docs, account deletion, API tokens and password
@@ -33,4 +33,18 @@ pub fn now_ms() -> f64 {
     }
     #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
     0.0
+}
+
+/// Opens an http(s) URL in the device's default browser. Only the app can; the browser
+/// build and native tests report failure.
+pub fn open_external(url: &str) -> Result<(), ()> {
+    #[cfg(feature = "mobile")]
+    {
+        webbrowser::open(url).map_err(|_| ())
+    }
+    #[cfg(not(feature = "mobile"))]
+    {
+        let _ = url;
+        Err(())
+    }
 }

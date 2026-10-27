@@ -31,6 +31,26 @@ fn page_from_path(path: &str) -> Page {
     }
 }
 
+/// The web version's URL for `page` on the server at `origin` (scheme://host[:port]).
+fn web_page_url(origin: &str, page: Page) -> String {
+    format!("{origin}{}", page_path(page))
+}
+
+/// Opens the web version of `page` in the device's default browser (app only); shows an
+/// error line when no browser could be opened or the server URL is unusable.
+pub(super) fn open_web_version(state: Signal<AppState>, page: Page) {
+    #[cfg(feature = "mobile")]
+    let origin = crate::mobile::http::server_origin();
+    #[cfg(not(feature = "mobile"))]
+    let origin: Option<&str> = None;
+    let opened = origin
+        .ok_or(())
+        .and_then(|origin| crate::platform::open_external(&web_page_url(origin, page)));
+    if opened.is_err() {
+        super::state::set_status(state, "messages.could_not_open_the_browser", "error");
+    }
+}
+
 pub(super) fn initial_page() -> Page {
     #[cfg(target_arch = "wasm32")]
     if let Some(window) = web_sys::window() {
@@ -143,6 +163,22 @@ impl Drop for HistoryListener {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn web_version_urls_join_the_server_origin_and_the_page_path() {
+        assert_eq!(
+            web_page_url("https://ahd.example.com", Page::Dashboard),
+            "https://ahd.example.com/dashboard"
+        );
+        assert_eq!(
+            web_page_url("http://localhost:18080", Page::Security),
+            "http://localhost:18080/settings/security"
+        );
+        assert_eq!(
+            web_page_url("https://ahd.example.com", Page::Notifications),
+            "https://ahd.example.com/settings/notifications"
+        );
+    }
 
     #[test]
     fn canonical_routes_follow_auth_without_discarding_loading_deep_links() {

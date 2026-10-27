@@ -8,7 +8,7 @@ publish = false
 default = ["web"]
 web = ["dioxus/web"]
 # Android app (`dx build --platform android`): native HTTP client and app-only screens.
-mobile = ["dioxus/mobile", "dep:reqwest", "dep:tokio", "dep:chrono", "dep:url"]
+mobile = ["dioxus/mobile", "dep:reqwest", "dep:tokio", "dep:chrono", "dep:url", "dep:webbrowser"]
 
 [dependencies]
 dioxus = { version = "=0.7.10", default-features = false, features = ["minimal", "document", "asset"] }
@@ -29,6 +29,8 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 tokio = { version = "1", features = ["time"], optional = true }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"], optional = true }
 url = { version = "2", optional = true }
+# Opens the web version in the device's default browser (Intent ACTION_VIEW on Android).
+webbrowser = { version = "1.2", optional = true, features = ["hardened"] }
 
 [dev-dependencies]
 # The app's platform-free modules (`mobile::session`, `mobile::time`) run in every test run.

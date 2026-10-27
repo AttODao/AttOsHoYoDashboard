@@ -9,6 +9,7 @@ use super::notifications::NotificationsPage;
 use super::rewards::RewardsPage;
 use super::security::SecurityPage;
 use crate::app::actions::spawn_action;
+use crate::app::navigation::open_web_version;
 use crate::app::preferences::{Preferences, use_preferences};
 use crate::app::session::logout;
 use crate::app::state::{AppState, Page, clear_status, set_page};
@@ -158,6 +159,10 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
                 nav { "aria-label": ui.text("shell.account_menu"),
                     a { href: "https://www.hoyolab.com/home", target: "_blank", rel: "noopener noreferrer", Icon { name: "link" } "HoYoLAB" }
                     button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Uids); }, Icon { name: "settings" } {ui.text("shell.settings")} }
+                    // Admin, API docs, password change and the rest live in the web version.
+                    if crate::platform::APP {
+                        button { r#type: "button", onclick: move |_| { open.set(false); let page = state.read().page; open_web_version(state, page); }, Icon { name: "external" } {ui.text("shell.open_in_browser")} }
+                    }
                     // The app leaves administration and the API docs to the web version.
                     if !crate::platform::APP && me.as_ref().is_some_and(|me| me.is_admin) {
                         button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Admin); }, Icon { name: "user" } {ui.text("shell.administration")} }
