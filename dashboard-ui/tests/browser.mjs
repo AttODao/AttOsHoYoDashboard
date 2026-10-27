@@ -703,6 +703,12 @@ try{
  await page.locator('#settings-tab-uids').focus();await page.keyboard.press('ArrowRight');
  await page.locator('#settings-tab-bonus[aria-selected=true]').waitFor();
  await page.locator('#settings-tab-security').click();await idle();
+ // Side-by-side fields keep their controls on one line when only one of them has a hint.
+ const pairBoxes=ids=>page.evaluate(ids=>ids.map(id=>{const r=document.getElementById(id).getBoundingClientRect();return {top:Math.round(r.top),height:Math.round(r.height)};}),ids);
+ const [currentBox,newBox]=await pairBoxes(['current-password','new-password']);
+ assert.deepEqual(currentBox,newBox,`password inputs line up: ${JSON.stringify({currentBox,newBox})}`);
+ const [tokenName,tokenScope]=await pairBoxes(['api-token-name','api-token-scope']);
+ assert.deepEqual(tokenScope,tokenName,`token scope select lines up with the name input: ${JSON.stringify({tokenScope,tokenName})}`);
  await eyes(['current-password','new-password','confirm-password']);
  await change('wrong-synthetic-password');
  await page.getByText('The current password was not accepted. Please try again.',{exact:true}).waitFor();
