@@ -56,7 +56,7 @@ web版が出しているすべての通知について、発生条件・内容�
 
 - アプリは、通知をONにしたときに `POST /api/v1/me/notifications/app-devices` で端末を登録します（1ユーザー10台まで）。応答は端末IDと、読み始める位置（登録前の通知は届けない）です。
 - `Notifier::deliver` は、Webhookへ送るのと同じ箇所で、同じ通知を登録済みの端末があるユーザーの受信箱（`app_notifications`）へ入れます。文面は通知設定の言語で作り、重複排除キーをタグとして保存します。発生条件と重複排除はWebhookと同じ処理を通り、送り先だけを種類ごとの選択で分けます：Webhookは `events`、受信箱は `app_events` がONのとき。どちらもOFFなら送らず、記録もしません（後でONにすれば、条件が続いている通知は届きます）。どちらかで送った通知は、同じキーではもう一方にも送りません。
-- 選択の保存：`GET /api/v1/me/notifications` は `events`（Webhook）と `app_events`（アプリ）を、2節の11種類すべてについて返します。`PUT` の `app_events` は省略できます。省略すると保存済みの値を残し、初めての保存では `events` と同じ値にします（v1.5.0までのクライアントはアプリの選択を送らないため）。未知の種類や管理者専用の種類はエラーです。
+- 選択の保存：`GET /api/v1/me/notifications` は `events`（Webhook）と `app_events`（アプリ）を、2節の11種類すべてについて返します。`PUT` の `app_events` は省略できます。省略すると保存済みの値を残し、初めての保存では `events` と同じ値にします（v1.5.0までのクライアントはアプリの選択を送らないため）。未知の種類や管理者専用の種類はエラーです。UIでは、アプリの通知設定の表（種類ごとに「この端末」と「Webhook」）が両方を送り、web版は `events` だけを送ります。
 - マイグレーション `m20261028_000011_app_notification_events` は `notification_settings.app_events`（jsonb、既定 `{}`）を追加し、既存の行には `events` をコピーします（それまでアプリはWebhookの選択に従っていたため、受け取る通知は変わりません）。downで列を削除します。
 - アプリは `GET /api/v1/me/notifications/app-devices/{id}/inbox?after={位置}` で新しい通知を読みます（1回50件まで）。読むたびに端末の最終確認時刻を更新します。
 - 受信箱の通知は3日、30日間読みに来ない端末は削除します（毎時の保守処理）。通知をOFFにすると `DELETE /api/v1/me/notifications/app-devices/{id}` で登録を消します。

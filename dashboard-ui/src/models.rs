@@ -233,6 +233,9 @@ pub struct NotificationChannelView {
 pub struct PersonalNotificationView {
     #[serde(flatten)]
     pub channel: NotificationChannelView,
+    /// Per-notice choices for the app inbox; the Webhook's are `channel.events`.
+    #[serde(default)]
+    pub app_events: std::collections::BTreeMap<String, bool>,
     pub resin_warn_hours: i32,
     pub daily_reminder_time: String,
     pub weekly_reminder_time: String,
