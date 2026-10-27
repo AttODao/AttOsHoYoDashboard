@@ -180,9 +180,7 @@
   "auth.sign_in": "ログイン",
   "auth.retry_server_logout": "ログアウトを再試行",
   "auth.enter_your_username_and_credentials": "ユーザー名と認証情報を入力してください。",
-  "auth.sign_in_method": "ログイン方法",
   "auth.password": "パスワード",
-  "auth.passkey": "パスキー",
   "auth.use_passkey": "パスキーでログイン",
   "auth.setup": "初期設定",
   "auth.setup_progress": "設定の進行状況",
@@ -545,8 +543,8 @@
   "auth.app_login_ready": "2分以内に、次のボタンでアプリに戻ってください。",
   "auth.app_login_open_app": "アプリに戻る",
   "auth.app_login_after_sign_in": "ログインすると、AHDアプリへのログインを確認する画面に進みます。",
-  "auth.passkey_in_browser": "ブラウザでパスキーを使う",
-  "auth.passkey_in_browser_hint": "パスキーでログインするときは、ブラウザでログインしてからアプリに戻ります。",
+  "auth.passkey_in_browser_hint": "パスキーとブラウザでのログインはブラウザが開きます。ログインして許可するとアプリに戻ります。",
   "messages.continue_in_browser": "ブラウザでログインを続けてください。",
-  "messages.app_login_expired": "ログインの要求が無効か期限切れです。もう一度お試しください。"
+  "messages.app_login_expired": "ログインの要求が無効か期限切れです。もう一度お試しください。",
+  "auth.sign_in_in_browser": "ブラウザでログイン"
 }

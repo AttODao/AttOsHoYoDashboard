@@ -180,10 +180,8 @@
   "auth.sign_in": "Sign in",
   "auth.retry_server_logout": "Retry server logout",
   "auth.enter_your_username_and_credentials": "Enter your username and credentials.",
-  "auth.sign_in_method": "Sign-in method",
   "auth.password": "Password",
-  "auth.passkey": "Passkey",
-  "auth.use_passkey": "Use passkey",
+  "auth.use_passkey": "Sign in with a passkey",
   "auth.setup": "Setup",
   "auth.setup_progress": "Setup progress",
   "auth.step_password": "Change password",
@@ -545,8 +543,8 @@
   "auth.app_login_ready": "Return to the app with the button below within 2 minutes.",
   "auth.app_login_open_app": "Return to the app",
   "auth.app_login_after_sign_in": "After you sign in, you will be asked to confirm signing in to the AHD app.",
-  "auth.passkey_in_browser": "Use a passkey in the browser",
-  "auth.passkey_in_browser_hint": "To sign in with a passkey, sign in in the browser, then return to the app.",
+  "auth.passkey_in_browser_hint": "Passkey and browser sign-in open the browser. Sign in there and allow it to return to the app.",
   "messages.continue_in_browser": "Continue signing in in the browser.",
-  "messages.app_login_expired": "The sign-in request is invalid or has expired. Please try again."
+  "messages.app_login_expired": "The sign-in request is invalid or has expired. Please try again.",
+  "auth.sign_in_in_browser": "Sign in with the browser"
 }

@@ -6,7 +6,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 #[cfg(target_arch = "wasm32")]
 use serde_json::{Value, json};
 
-pub async fn login(username: &str) -> api::Result<()> {
+pub async fn login(username: Option<&str>) -> api::Result<()> {
     login_impl(username).await
 }
 
@@ -15,7 +15,7 @@ pub async fn register(label: &str) -> api::Result<()> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-async fn login_impl(username: &str) -> api::Result<()> {
+async fn login_impl(username: Option<&str>) -> api::Result<()> {
     let _ = username;
     Err(api::ApiError::browser(
         "messages.passkeys_are_available_only_in_a_browser",
@@ -31,11 +31,14 @@ async fn register_impl(label: &str) -> api::Result<()> {
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn login_impl(username: &str) -> api::Result<()> {
+async fn login_impl(username: Option<&str>) -> api::Result<()> {
     let challenge: PasskeyChallenge = api::json(
         "POST",
         "/auth/passkey/options",
-        Some(json!({ "username": username })),
+        Some(match username {
+            Some(username) => json!({ "username": username }),
+            None => json!({}),
+        }),
     )
     .await?;
     let options = credential_request_options(challenge.options)?;

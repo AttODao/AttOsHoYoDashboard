@@ -39,7 +39,7 @@ const rewardSettings=['genshin','starrail'].map((game_kind,i)=>({id:uid(20+i),ga
 const hoursAgo=h=>new Date(Date.now()-h*3600e3).toISOString();
 // Backend error codes (gateway::error_code) must never be rendered raw in settings.
 let sessions=[{id:uid(50),created_at:hoursAgo(2),last_seen_at:hoursAgo(0.1),expires_at:hoursAgo(-100),user_agent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36',current:true},{id:uid(51),created_at:hoursAgo(30),last_seen_at:null,expires_at:hoursAgo(-70),user_agent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1',current:false},{id:uid(52),created_at:hoursAgo(50),last_seen_at:null,expires_at:hoursAgo(-50),user_agent:null,current:false}];
-let apiTokens=[];
+let apiTokens=[],passkeyOptionsBody;
 const rewardRuns=[{id:uid(40),setting_id:uid(20),game_kind:'genshin',trigger:'scheduled',state:'failed',created_at:hoursAgo(20),ended_at:hoursAgo(19.9),attempt_count:1,attempts:[{number:1,outcome:'failed',error_code:'http:503',started_at:hoursAgo(20),finished_at:hoursAgo(19.9)}]}];
 const json=(res,data,status=200)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
 let origin;
@@ -60,7 +60,13 @@ const server=http.createServer(async(req,res)=>{
     await loginGate;sessionExpired=false;res.setHeader('Set-Cookie',`attos_session=synthetic-${loginUser===user?'a':'b'}; HttpOnly; SameSite=Strict; Path=/`);return json(res,loginUser);
    }
    if(p==='/api/v1/auth/logout'){if(failLogout)return json(res,{error:'unavailable'},503);res.setHeader('Set-Cookie','attos_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');return json(res,{});}
-   if(p==='/api/v1/auth/passkey/options'){assert.equal(body.username,user.username);assert.ok(credentialId);return json(res,{challenge_id:uid(13),options:{publicKey:{challenge:Buffer.from('synthetic-assertion-challenge-32-bytes').toString('base64url'),rpId:'localhost',allowCredentials:[{type:'public-key',id:credentialId,transports:['internal']}],userVerification:'required',timeout:60000}}});}
+   if(p==='/api/v1/auth/passkey/options'){
+    assert.equal(req.method,'POST');assert.ok(credentialId);passkeyOptionsBody=body;
+    const publicKey={challenge:Buffer.from('synthetic-assertion-challenge-32-bytes').toString('base64url'),rpId:'localhost',userVerification:'required',timeout:60000};
+    if(Object.hasOwn(body,'username')){assert.deepEqual(Object.keys(body),['username']);assert.equal(body.username,user.username);publicKey.allowCredentials=[{type:'public-key',id:credentialId,transports:['internal']}];}
+    else assert.equal(Object.keys(body).length,0);
+    return json(res,{challenge_id:uid(13),options:{publicKey}});
+   }
    if(p==='/api/v1/auth/passkey/verify'){
     assert.equal(body.response.type,'public-key');assert.equal(body.response.id,credentialId);assert.equal(body.response.rawId,credentialId);
     assert.ok(body.response.response.clientDataJSON);assert.ok(body.response.response.authenticatorData);assert.ok(body.response.response.signature);
@@ -243,11 +249,11 @@ try{
  assert.ok(await button('Sign in').evaluate(e=>getComputedStyle(e).backgroundImage.includes('linear-gradient')),'stable data attributes style the CSS-module button');
  assert.equal(await page.locator('#login-username').count(),1,'both methods share one username');
  await eyes(['login-password']);
- await page.locator('#login-password').fill('synthetic-method-clear');
- await page.locator('#login-method-passkey').check();
- assert.equal(await page.locator('#login-password').count(),0);
- await page.locator('#login-method-password').check();
- assert.ok(await page.locator('#login-password').evaluate(e=>e.value===''));
+ const passkeyButton=page.locator('#login-passkey');
+ assert.equal(await passkeyButton.count(),1);
+ const passkeyBox=await passkeyButton.boundingBox();
+ assert.ok(passkeyBox.y>submitBox.y+submitBox.height,'passkey alternative is below Sign in');
+ assert.ok(Math.abs(passkeyBox.width-submitBox.width)<1,'passkey alternative is full width');
  // Unknown usernames and wrong passwords share one non-enumerating error.
  for(const language of ['en','ja']){
   if(language==='ja'){
@@ -278,7 +284,7 @@ try{
  const loginRequest=page.waitForRequest(origin+'/api/v1/auth/login');
  await button('Sign in').click();await loginRequest;
  assert.ok(await button('Sign in').isDisabled());
- assert.ok(await page.locator('#login-method-passkey').isDisabled());
+ assert.ok(await page.locator('#login-passkey').isDisabled());
  // Native disabled controls plus the synchronous submission reservation.
  await page.locator('form').dispatchEvent('submit');
  const metadataRequest=page.waitForRequest(origin+'/api/v1/me/hoyolab');allowLogin();await metadataRequest;
@@ -979,8 +985,9 @@ try{
  await menu('Sign out');await button('Retry server logout').waitFor();failLogout=false;
  await button('Retry server logout').click();await button('Sign in').waitFor();
  assert.equal((await context.cookies()).filter(c=>c.name==='attos_session').length,0);
- await page.locator('#login-username').fill(user.username);await page.locator('#login-method-passkey').check();
- await button('Use passkey').click();await dashboard();
+ await page.locator('#login-username').fill('');
+ await page.locator('#login-passkey').click();await dashboard();
+ assert.deepEqual(passkeyOptionsBody,{});
  assert.equal(counts.get('/api/v1/auth/passkey/options'),1);assert.equal(counts.get('/api/v1/auth/passkey/verify'),1);
  stage='app login';
  const challenge=appLoginChallenge;

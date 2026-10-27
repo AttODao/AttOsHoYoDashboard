@@ -78,7 +78,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 
 | 機能 | アプリでの扱い | 方法 |
 | --- | --- | --- |
-| パスキーでのログイン | アプリ内の方式選択は出さず、「ブラウザでパスキーを使う」からブラウザで認証し、確認後にアプリへ戻る（5.3節） | `pages/auth.rs` の `auth-method` fieldsetを `!APP` で囲み、`app/browser_login.rs` でハンドオフする |
+| パスキーでのログイン | パスワードフォームの下の「パスキーでログイン」「ブラウザでログイン」からブラウザで認証し、許可後にアプリへ戻る（5.3節） | `pages/auth.rs` の代替ボタンから `app/browser_login.rs` でハンドオフする |
 | パスキーの登録 | 登録フォームを出さない。登録済みパスキーの一覧・名前変更・削除はできる | `pages/security.rs` の `PasskeyCard` 内の登録フォームを `!APP` で囲む |
 
 `Page::web_only` と `reachable` は純関数として単体テストしています（`the_app_never_routes_to_web_only_pages`、`app_settings_tabs_leave_out_account_deletion`）。テスト中は `APP` が `false` になるため、`app` を引数で渡して両方の場合を確認します。
@@ -108,7 +108,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 
 ### ログイン・初回設定
 
-- アプリ内にはユーザー名とパスワードのフォームを置き、その下に「ブラウザでパスキーを使う」を表示する（3節・5.3節）。
+- アプリ内にはユーザー名とパスワードのフォームを置き、その下に「パスキーでログイン」「ブラウザでログイン」を表示する（3節・5.3節）。
 - パスワード変更が必須の場合は、変更フォームの代わりに案内文と「ブラウザで開く」を表示する。
 - レイアウトはweb版の600px以下と同じ。
 
@@ -240,7 +240,7 @@ web版がWebhookへ送る個人の通知を、すべてアプリでも受け取�
 
 同じアプリの通知が4件以上になると、Androidが自動でグループにまとめます。確認では、まとめたグループをタップしたときにグループ内の通知がすべて消え、先頭の通知（`cookie_invalid`）の画面が開きました。アプリは通知を個別に出しているだけなので、この動作はAndroidによるものです。
 
-### 5.3 ブラウザ経由のパスキーログイン
+### 5.3 ブラウザ経由のパスワード／パスキーログイン
 
 - アプリは32バイトの乱数からPKCE S256のverifierとchallengeを作り、verifierと作成時刻だけをアプリ専用の `files/browser-login.json` に保存します。保存した要求の有効期間は10分です。
 - ブラウザで `/app-login?challenge=…` を開きます。未ログインなら通常のログインを行い、ログイン済みのユーザー名と警告を表示してから、明示的な許可で `POST /api/v1/me/app-login` を呼びます。
@@ -248,7 +248,7 @@ web版がWebhookへ送る個人の通知を、すべてアプリでも受け取�
 - `AhdBrowserLogin` が起動時または `onNewIntent` でコールバックを受け取り、`mobile/login_intent.rs` がJNIとWebViewイベントで一度だけ取り出します。`mobile/browser_login.rs` がURLと保存要求の期限を検査し、`app/browser_login.rs` が起動時のセッション確認完了を待って保存要求を消費し、`POST /api/v1/auth/app-login/exchange` にコードとverifierを送ります。
 - `dashboard-ui/android/AndroidManifest.activity.xml` のintent-filterは `scripts/build-android.sh` が最初のactivity内へ一度だけ挿入します。既存のsingleTask・Activity寿命の対策は維持します。
 - 安全性：verifierは端末から出ず、URLに載るのはchallengeと単回使用のコードだけです。コードは120秒で失効し、交換時に先に消費されるため、誤ったverifierでの再試行もできません。外部から開かれた `cc.attodao.ahd://login` は、アプリが保存した要求がなければ無視されます（攻撃者のコードは攻撃者のchallengeに結び付いているため、こちらのverifierでは交換できません）。カスタムschemeは他のアプリも登録できるため、許可画面ではログインするユーザー名と「AHDアプリから開いたときだけ続ける」警告を出し、ユーザーの明示的な操作でだけコードを発行します。交換時には許可したブラウザのセッションがまだ有効なことを確かめるので、ブラウザでのログアウトや管理者による復旧・無効化の後は未交換のコードも使えません。
-- ログイン画面では、パスワードのフォームとブラウザ経由のパスキーの欄を区切り線で分けます（`mobile.css` の `.app-passkey`）。
+- ログイン画面では、ユーザー名＋パスワードのフォームの下を区切り線で分け、全幅のSecondaryボタン「パスキーでログイン」「ブラウザでログイン」を縦に並べます（web共通の `dashboard.css` の `.auth-alternatives`）。どちらもブラウザの `/app-login` を開き、パスワードまたはパスキーでログインして許可するとアプリへ戻ります。案内文は両ボタンの下に1つ置きます。
 - PKCE・コールバック・保存形式・期限の純粋関数は通常のネイティブ単体テストで検査します。ブラウザ回帰テストは許可とキャンセルまでを検査し、headless Chromiumではカスタムschemeを開きません。
 
 #### ネイティブのパスキーAPIを使わなかった理由
@@ -340,7 +340,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/app/display.rs` | 時刻表示のアプリ分岐 |
 | `dashboard-ui/src/app/preferences.rs` | 言語とテーマの保存のアプリ分岐 |
 | `dashboard-ui/src/pages/shell.rs` | `settings_tabs`、メニュー項目の分岐、ヘッダーの設定ボタン、`AppNav` |
-| `dashboard-ui/src/pages/auth.rs` | パスキーのログイン方式の除外、パスワード変更の案内、「ブラウザでパスキーを使う」とweb版の許可画面への案内文 |
+| `dashboard-ui/src/pages/auth.rs` | パスワードフォーム、「パスキーでログイン」「ブラウザでログイン」、パスワード変更とweb版の許可画面への案内文 |
 | `dashboard-ui/src/pages/app_login.rs` | web版の `/app-login` 許可画面（アプリのログイン要求を承認してコードを発行する） |
 | `dashboard-ui/src/pages/security.rs` | パスワード変更・APIトークン・パスキー登録の除外、「ブラウザで開く」 |
 | `dashboard-ui/src/pages/notifications.rs` | 端末通知カード、説明文の切り替え |

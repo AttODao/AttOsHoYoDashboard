@@ -38,5 +38,3 @@ body:has(:is(input:not([type=checkbox]):not([type=radio]),textarea):focus) .app-
 }
 @starting-style{@media(max-width:600px){.menu-drawer[open]{transform:translateY(100%)}}}
 [data-theme=light] .app-nav [aria-current=page] .app-nav-icon{background:#D3EEF1}
-/* Login: the browser passkey handoff sits below the password form, separated like other alternative sections. */
-.app-passkey{margin-top:28px;padding-top:24px;border-top:1px solid var(--decorative)}.app-passkey p{margin:0;color:var(--muted)}.app-passkey .auth-submit{margin-top:16px}
