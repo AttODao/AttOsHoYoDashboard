@@ -313,7 +313,10 @@ impl<G: crate::dashboard::hoyolab::gateway::Gateway> Notifier<G> {
                     .collect(),
             };
             // Nothing to notify about: skip the HoYoLAB GET entirely.
-            if channel.url.is_none() && !self.has_push(setting.user_id).await? {
+            if channel.url.is_none()
+                && !self.has_push(setting.user_id).await?
+                && !self.notifications.has_app_device(setting.user_id).await?
+            {
                 continue;
             }
             let link = hoyolab_account::Entity::find()
@@ -411,6 +414,9 @@ impl<G: crate::dashboard::hoyolab::gateway::Gateway> Notifier<G> {
             .await?;
         if let Some(user) = user {
             push::send_to_user(&self.notifications, user, notice, &channel.language).await?;
+            self.notifications
+                .send_to_app(user, notice, &channel.language)
+                .await?;
         }
         self.mark_sent(scope, &notice.key).await?;
         Ok(())
@@ -450,6 +456,7 @@ impl<G: crate::dashboard::hoyolab::gateway::Gateway> Notifier<G> {
 
     /// Deletes log entries older than seven days whose key is time-bounded (dates, weeks, run ids).
     pub(in crate::dashboard) async fn cleanup(&self) -> Result<()> {
+        self.notifications.cleanup_app(Utc::now()).await?;
         notification_log::Entity::delete_many()
             .filter(notification_log::Column::SentAt.lt(Utc::now() - Duration::days(7)))
             .filter(

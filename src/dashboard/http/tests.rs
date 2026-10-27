@@ -4,6 +4,7 @@ mod auth;
 mod dashboard;
 mod hoyolab;
 mod middleware;
+mod notifications;
 mod openapi;
 mod passkey_roundtrip;
 mod passkeys;

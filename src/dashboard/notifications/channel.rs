@@ -96,6 +96,8 @@ pub(in crate::dashboard) struct TestResult {
     webhook: &'static str,
     /// Browsers that accepted a push message.
     push: usize,
+    /// Whether the notice was queued for the user's registered app installations.
+    app: bool,
 }
 
 pub(in crate::dashboard) struct Notifications {
@@ -433,7 +435,10 @@ impl Notifications {
             .send_webhook(Some(fresh.user.id), &channel, &notice)
             .await?;
         let push = push::send_to_user(self, fresh.user.id, &notice, &channel.language).await?;
-        Ok(TestResult { webhook, push })
+        let app = self
+            .send_to_app(fresh.user.id, &notice, &channel.language)
+            .await?;
+        Ok(TestResult { webhook, push, app })
     }
 
     pub(in crate::dashboard) async fn test_admin(&self, actor: &Identity) -> Result<TestResult> {
@@ -442,7 +447,11 @@ impl Notifications {
         let webhook = self
             .send_webhook(None, &channel, &Notice::new("test", "test"))
             .await?;
-        Ok(TestResult { webhook, push: 0 })
+        Ok(TestResult {
+            webhook,
+            push: 0,
+            app: false,
+        })
     }
 
     /// Posts to the channel's webhook and records the outcome for the settings page.

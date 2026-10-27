@@ -1,4 +1,5 @@
-//! Webhook and browser-push notifications: channels, conditions and delivery.
+//! Webhook, browser-push and app notifications: channels, conditions and delivery.
+pub(super) mod app;
 pub(super) mod channel;
 #[cfg(test)]
 #[path = "channel_tests.rs"]
@@ -9,6 +10,9 @@ mod messages;
 pub(super) mod push;
 mod secret;
 pub(super) mod worker;
+#[cfg(test)]
+#[path = "worker_tests.rs"]
+mod worker_tests;
 
 /// Notification kinds a user can enable, with their defaults.
 pub(super) const PERSONAL_EVENTS: [(&str, bool); 11] = [

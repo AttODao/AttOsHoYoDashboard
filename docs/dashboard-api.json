@@ -3583,6 +3583,252 @@
         }
       }
     },
+    "/api/v1/me/notifications/app-devices": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "registerAppDevice",
+        "summary": "Register this app installation for notifications. Returns its id and the inbox position to read after; earlier entries are not delivered.",
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppDeviceView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyObject"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/notifications/app-devices/{id}": {
+      "delete": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "unregisterAppDevice",
+        "summary": "Stop notifications for one of the current user's app installations.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The app device id returned at registration."
+          }
+        ]
+      }
+    },
+    "/api/v1/me/notifications/app-devices/{id}/inbox": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "readAppInbox",
+        "summary": "Notices queued for the current user's app installations after a position (at most 50). The same notices as the Webhook and browser-push channels: the events chosen in the notification settings, deduplicated the same way. Marks the device as seen; devices unseen for 30 days are removed and entries are kept for 3 days.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppInbox"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The app device id returned at registration."
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Return entries with a larger id (the previous cursor)."
+          }
+        ]
+      }
+    },
     "/api/v1/admin/notifications": {
       "get": {
         "tags": [
@@ -5299,7 +5545,8 @@
         "additionalProperties": false,
         "required": [
           "webhook",
-          "push"
+          "push",
+          "app"
         ],
         "properties": {
           "webhook": {
@@ -5313,6 +5560,10 @@
           "push": {
             "type": "integer",
             "minimum": 0
+          },
+          "app": {
+            "type": "boolean",
+            "description": "Whether the notice was queued for the user's app installations."
           }
         }
       },
@@ -5361,6 +5612,90 @@
           "endpoint": {
             "type": "string",
             "format": "uri"
+          }
+        }
+      },
+      "AppDeviceView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "cursor"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Read inbox entries after this id."
+          }
+        }
+      },
+      "AppInboxEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "tag",
+          "title",
+          "body",
+          "url",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "kind": {
+            "type": "string",
+            "description": "A personal notification event, or test."
+          },
+          "tag": {
+            "type": "string",
+            "description": "Deduplication key; a newer notice with the same tag replaces the older one."
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "description": "Dashboard path of the screen that handles the notice, e.g. /settings/bonus."
+          },
+          "created_at": {
+            "$ref": "#/components/schemas/DateTime"
+          }
+        }
+      },
+      "AppInbox": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "cursor",
+          "more"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppInboxEntry"
+            }
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Pass as after on the next read."
+          },
+          "more": {
+            "type": "boolean",
+            "description": "More entries follow after cursor."
           }
         }
       },
