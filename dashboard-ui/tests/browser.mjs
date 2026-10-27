@@ -11,7 +11,7 @@ import {fileURLToPath} from 'node:url';
 const require=createRequire(import.meta.url);
 const {chromium}=require(process.env.ATTOS_TEST_PLAYWRIGHT_MODULE || 'playwright');
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
-const uiManifest=fs.readFileSync(path.join(root,'dashboard-ui/Cargo.toml'),'utf8');const uiVersion=uiManifest.match(/^version = "(.+)"$/m)[1];const uiLicense=uiManifest.match(/^license = "(.+)"$/m)?.[1]??'Not specified';
+const uiManifest=fs.readFileSync(path.join(root,'dashboard-ui/Cargo.toml'),'utf8');const uiVersion=uiManifest.match(/^version = "(.+)"$/m)[1];const uiLicense=uiManifest.match(/^license = "(.+)"$/m)[1];
 // BUILD_DIR is the compiled public directory (containing index.html and assets/).
 const publicDir=path.resolve(process.env.BUILD_DIR || path.join(root,'target/dx/attos-dashboard-ui/release/web/public'));
 assert.ok(fs.existsSync(path.join(publicDir,'index.html')),'build the Dioxus release UI first');
@@ -514,7 +514,9 @@ try{
  assert.equal(await page.title(),'About – AHD');
  const aboutFacts=await page.locator('.about-facts > div').evaluateAll(rows=>rows.map(row=>[row.querySelector('dt').textContent.trim(),row.querySelector('dd').textContent.trim()]));
  assert.deepEqual(aboutFacts,[['Author','AttODao'],['Version',uiVersion],['License',uiLicense],['Source code','git.attodao.cc/AttODao/AttOsHoYoDashboard']]);
- const repoLink=page.locator('.about-facts a');
+ assert.equal(uiLicense,'GPL-3.0-or-later');
+ assert.equal(await page.locator('.about-facts a').first().getAttribute('href'),'https://git.attodao.cc/AttODao/AttOsHoYoDashboard/src/branch/main/LICENSE');
+ const repoLink=page.locator('.about-facts a').last();
  assert.equal(await repoLink.getAttribute('href'),'https://git.attodao.cc/AttODao/AttOsHoYoDashboard');
  assert.equal(await repoLink.getAttribute('target'),'_blank');
  assert.equal(await page.locator('.about-licenses li').count(),4);
@@ -526,7 +528,7 @@ try{
  await page.keyboard.press('Escape');await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});await page.locator('#ahd-menu').evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});
  await page.screenshot({path:path.join(root,'target/ui-about-desktop-light.png'),fullPage:true});
  await page.setViewportSize({width:390,height:844});
- assert.ok(await page.locator('.about-facts a').evaluate(link=>{const r=link.getBoundingClientRect();return r.right<=link.closest('.panel').getBoundingClientRect().right;}),'repository link stays inside its panel');
+ assert.ok(await page.locator('.about-facts a').last().evaluate(link=>{const r=link.getBoundingClientRect();return r.right<=link.closest('.panel').getBoundingClientRect().right;}),'repository link stays inside its panel');
  assert.ok(await page.locator('main.container').evaluate(e=>e.scrollWidth<=e.clientWidth),'about fits a narrow screen');
  await page.screenshot({path:path.join(root,'target/ui-about-mobile-light.png'),fullPage:true});
  await page.setViewportSize({width:1280,height:900});

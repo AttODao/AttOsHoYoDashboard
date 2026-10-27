@@ -43,12 +43,6 @@ fn authors(raw: &str) -> String {
         .join(", ")
 }
 
-/// The project license from Cargo metadata; `None` while the package declares none.
-fn project_license(raw: &str) -> Option<&str> {
-    let license = raw.trim();
-    (!license.is_empty()).then_some(license)
-}
-
 /// The repository URL without scheme or trailing slash, as link text.
 fn repository_label(url: &str) -> &str {
     let url = url.trim_end_matches('/');
@@ -59,6 +53,14 @@ fn repository_label(url: &str) -> &str {
 fn lockfile_url(repository: &str, version: &str) -> String {
     format!(
         "{}/src/tag/v{version}/Cargo.lock",
+        repository.trim_end_matches('/')
+    )
+}
+
+/// The license text on the default branch (tags up to v1.4.0 predate the LICENSE file).
+fn license_url(repository: &str) -> String {
+    format!(
+        "{}/src/branch/main/LICENSE",
         repository.trim_end_matches('/')
     )
 }
@@ -75,10 +77,9 @@ pub(super) fn AboutPage() -> Element {
                     div { dt { {ui.text("about.version")} } dd { "{VERSION}" } }
                     div { dt { {ui.text("about.license")} }
                         dd {
-                            if let Some(license) = project_license(LICENSE) {
-                                "{license}"
-                            } else {
-                                span { class: "muted about-unspecified", {ui.text("about.license_unspecified")} }
+                            a { href: license_url(REPOSITORY), target: "_blank", rel: "noopener noreferrer",
+                                "{LICENSE}"
+                                Icon { name: "external" }
                             }
                         }
                     }
@@ -130,9 +131,8 @@ mod tests {
         assert_eq!(authors(AUTHORS), "AttODao");
     }
     #[test]
-    fn unspecified_project_license_is_not_invented() {
-        assert_eq!(project_license(""), None);
-        assert_eq!(project_license(" MIT "), Some("MIT"));
+    fn project_license_is_the_declared_gpl() {
+        assert_eq!(LICENSE, "GPL-3.0-or-later");
     }
     #[test]
     fn repository_links_and_labels_use_build_metadata() {
@@ -148,6 +148,10 @@ mod tests {
         assert_eq!(
             lockfile_url("https://x.example/r/", "1.2.3"),
             "https://x.example/r/src/tag/v1.2.3/Cargo.lock"
+        );
+        assert_eq!(
+            license_url("https://x.example/r/"),
+            "https://x.example/r/src/branch/main/LICENSE"
         );
         assert!(!VERSION.is_empty());
     }

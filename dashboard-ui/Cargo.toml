@@ -2,6 +2,7 @@
 name = "attos-dashboard-ui"
 version = "1.4.0"
 authors = ["AttODao"]
+license = "GPL-3.0-or-later"
 repository = "https://git.attodao.cc/AttODao/AttOsHoYoDashboard"
 edition = "2024"
 publish = false
