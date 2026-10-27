@@ -128,13 +128,24 @@ async fn ready_identity(db: &sea_orm::DatabaseConnection, name: &str) -> Identit
         .unwrap()
 }
 
+/// Same choices for the webhook and the app.
 async fn settings(db: &sea_orm::DatabaseConnection, user: Uuid, events: Value) {
+    split_settings(db, user, events.clone(), events).await;
+}
+
+async fn split_settings(
+    db: &sea_orm::DatabaseConnection,
+    user: Uuid,
+    webhook_events: Value,
+    app_events: Value,
+) {
     notification_setting::ActiveModel {
         user_id: Set(user),
         webhook_url: Set(None),
         webhook_format: Set("discord".to_owned()),
         language: Set("ja".to_owned()),
-        events: Set(events),
+        events: Set(webhook_events),
+        app_events: Set(app_events),
         last_delivery_at: Set(None),
         last_delivery_ok: Set(None),
         updated_at: Set(Utc::now()),
@@ -148,10 +159,14 @@ async fn settings(db: &sea_orm::DatabaseConnection, user: Uuid, events: Value) {
 }
 
 fn every_event() -> Value {
+    all_events(true)
+}
+
+fn all_events(on: bool) -> Value {
     Value::Object(
         super::PERSONAL_EVENTS
             .iter()
-            .map(|(kind, _)| ((*kind).to_owned(), Value::Bool(true)))
+            .map(|(kind, _)| ((*kind).to_owned(), Value::Bool(on)))
             .collect(),
     )
 }
@@ -462,6 +477,103 @@ async fn the_app_follows_the_event_choices_and_needs_a_registered_device() {
     assert!(inbox(db, other.user.id).await.is_empty());
 }
 
+/// Makes every personal notice pending for the user (games, reward runs, sign-ins).
+async fn every_notice_pending(db: &sea_orm::DatabaseConnection, user: Uuid, now: DateTime<Utc>) {
+    let verified = link(db, user, "verified").await;
+    game(
+        db,
+        verified.id,
+        "genshin",
+        "800000001",
+        now,
+        genshin_ready(now),
+    )
+    .await;
+    game(
+        db,
+        verified.id,
+        "starrail",
+        "700000001",
+        now,
+        starrail_near_cap(now),
+    )
+    .await;
+    reward_runs(db, verified.id, now - Duration::minutes(10)).await;
+    sign_ins(db, user, now - Duration::minutes(10)).await;
+}
+
+async fn inbox_kinds(db: &sea_orm::DatabaseConnection, user: Uuid) -> BTreeSet<String> {
+    inbox(db, user)
+        .await
+        .into_iter()
+        .map(|row| row.kind)
+        .collect()
+}
+
+#[tokio::test]
+async fn app_choices_apply_per_event_independently_of_the_webhook() {
+    let Fixture {
+        fixture,
+        notifications,
+        notifier,
+    } = fixture().await;
+    let db = &fixture.db;
+    let now = sunday_evening();
+    let kinds: Vec<&str> = super::PERSONAL_EVENTS
+        .iter()
+        .map(|(kind, _)| *kind)
+        .filter(|kind| *kind != "cookie_invalid")
+        .collect();
+    let mut users = Vec::new();
+    // Webhook off for everything, app on for everything: the app still gets every notice.
+    users.push((None, all_events(false), every_event()));
+    // App off for everything: nothing is queued even though the webhook wants it all.
+    users.push((Some("none"), every_event(), all_events(false)));
+    // Each kind alone for the app, with that kind off for the webhook.
+    for kind in &kinds {
+        let mut app = all_events(false);
+        app[*kind] = Value::Bool(true);
+        let mut webhook = every_event();
+        webhook[*kind] = Value::Bool(false);
+        users.push((Some(*kind), webhook, app));
+    }
+    let mut owners = Vec::new();
+    for (index, (only, webhook, app)) in users.into_iter().enumerate() {
+        let owner = ready_identity(db, &format!("user{index}")).await;
+        split_settings(db, owner.user.id, webhook, app).await;
+        notifications.register_app_device(&owner).await.unwrap();
+        every_notice_pending(db, owner.user.id, now).await;
+        owners.push((only, owner.user.id));
+    }
+    scanned_until(db, now - Duration::hours(1)).await;
+
+    notifier.tick(now, None).await.unwrap();
+
+    let every_kind: BTreeSet<String> = kinds.iter().map(|kind| (*kind).to_owned()).collect();
+    let (_, all_app) = owners[0];
+    let entries = inbox(db, all_app).await;
+    assert_eq!(inbox_kinds(db, all_app).await, every_kind);
+    let tags: BTreeSet<String> = entries.iter().map(|row| row.tag.clone()).collect();
+    assert_eq!(tags, delivered_keys(db, all_app).await);
+
+    let (_, no_app) = owners[1];
+    assert!(inbox(db, no_app).await.is_empty());
+    assert_eq!(
+        delivered_keys(db, no_app).await.len(),
+        entries.len(),
+        "the webhook route still records every notice"
+    );
+
+    for (only, user) in &owners[2..] {
+        let kind = only.unwrap();
+        assert_eq!(
+            inbox_kinds(db, *user).await,
+            BTreeSet::from([kind.to_owned()]),
+            "{kind}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn cookie_failures_reach_the_app_once_per_credential_version() {
     let Fixture {
@@ -474,6 +586,13 @@ async fn cookie_failures_reach_the_app_once_per_credential_version() {
     let owner = ready_identity(db, "owner").await;
     notifications.register_app_device(&owner).await.unwrap();
     let broken = link(db, owner.user.id, "cookie_invalid").await;
+    // Another user turned cookie_invalid off for the app only (webhook still on).
+    let muted = ready_identity(db, "muted").await;
+    let mut app = every_event();
+    app["cookie_invalid"] = Value::Bool(false);
+    split_settings(db, muted.user.id, every_event(), app).await;
+    notifications.register_app_device(&muted).await.unwrap();
+    link(db, muted.user.id, "cookie_invalid").await;
     notifier.tick(now, None).await.unwrap();
     notifier
         .tick(now + Duration::minutes(1), None)
@@ -485,6 +604,8 @@ async fn cookie_failures_reach_the_app_once_per_credential_version() {
     assert_eq!(entries[0].tag, format!("cookie:{}:1", broken.id));
     assert_eq!(entries[0].url, "/settings/link");
     assert_eq!(entries[0].title, "HoYoLABのCookieが使えなくなりました");
+    assert!(inbox(db, muted.user.id).await.is_empty());
+    assert_eq!(delivered_keys(db, muted.user.id).await.len(), 1);
 }
 
 #[tokio::test]

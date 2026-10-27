@@ -55,7 +55,8 @@ async fn migrations_are_ordered_idempotent_and_reversible() {
             "m20261020_000007_notifications",
             "m20261027_000008_api_tokens",
             "m20261028_000009_app_notifications",
-            "m20261028_000010_remove_web_push"
+            "m20261028_000010_remove_web_push",
+            "m20261028_000011_app_notification_events"
         ]
     );
     migrations::Migrator::down(&fixture.db, None).await.unwrap();
@@ -188,4 +189,76 @@ async fn audit_requires_existing_subject_and_diagnostics_redact_credentials() {
     for diagnostic in [format!("{key:?}"), format!("{key:#?}")] {
         assert_eq!(diagnostic, format!("Passkey {{ id: {:?}, .. }}", key.id));
     }
+}
+
+#[tokio::test]
+async fn app_event_choices_start_as_the_webhook_choices_and_revert_cleanly() {
+    let fixture = TestDatabase::new().await;
+    let db = &fixture.db;
+    migrations::Migrator::down(db, Some(1)).await.unwrap();
+    let owner = insert_user(db, "owner").await;
+    db.execute_unprepared(&format!(
+        "INSERT INTO notification_settings (user_id, webhook_format, language, events) \
+         VALUES ('{}', 'discord', 'ja', '{{\"reward_claimed\": true, \"resource_full\": false}}')",
+        owner.id
+    ))
+    .await
+    .unwrap();
+    migrations::Migrator::up(db, None).await.unwrap();
+    let copied = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            format!(
+                "SELECT app_events = events AS same, app_events->>'resource_full' AS full \
+                 FROM notification_settings WHERE user_id = '{}'",
+                owner.id
+            ),
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(copied.try_get::<bool>("", "same").unwrap());
+    assert_eq!(copied.try_get::<String>("", "full").unwrap(), "false");
+    // New rows without explicit app choices get an empty object (every kind at its default).
+    let other = insert_user(db, "other").await;
+    db.execute_unprepared(&format!(
+        "INSERT INTO notification_settings (user_id, webhook_format, language, events) \
+         VALUES ('{}', 'json', 'en', '{{}}')",
+        other.id
+    ))
+    .await
+    .unwrap();
+    let empty = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            format!(
+                "SELECT app_events::text AS app FROM notification_settings WHERE user_id = '{}'",
+                other.id
+            ),
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(empty.try_get::<String>("", "app").unwrap(), "{}");
+    assert!(
+        db.execute_unprepared(&format!(
+            "UPDATE notification_settings SET app_events = '[]' WHERE user_id = '{}'",
+            other.id
+        ))
+        .await
+        .is_err()
+    );
+    migrations::Migrator::down(db, Some(1)).await.unwrap();
+    let column = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT count(*) AS n FROM information_schema.columns \
+             WHERE table_name = 'notification_settings' AND column_name = 'app_events'",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<i64>("", "n")
+        .unwrap();
+    assert_eq!(column, 0);
 }

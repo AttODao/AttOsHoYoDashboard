@@ -21,7 +21,7 @@ const appLoginChallenge='E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
 const user={id:uid(1),username:'synthetic-admin',is_admin:true,active:true,must_change_password:true};
 const other={...user,id:uid(9),username:'synthetic-other',is_admin:false,active:false,must_change_password:false};
 let runPlan=['queued','running','success'];
-let verified=false,cookieSaved=false,statusMode=null,runProgress=[],passkeyDeletes=0,passkeys=[],credentialId,failLogout=false,allowLogin,allowSettings,expirePasswordSession=false,sessionExpired=false;
+let verified=false,cookieSaved=false,notificationSaves=[],statusMode=null,runProgress=[],passkeyDeletes=0,passkeys=[],credentialId,failLogout=false,allowLogin,allowSettings,expirePasswordSession=false,sessionExpired=false;
 const createdUsers=[];
 const secondAdmin={...user,id:uid(14),username:'synthetic-second-admin',must_change_password:false};
 let failCreate=false,adminDeletes=0,loginFailureStatus=0,failPatch=false,passkeyHold=null,releasePasskeys=()=>{},adminPatchHold=null,releaseAdminPatch=()=>{};
@@ -113,8 +113,8 @@ const server=http.createServer(async(req,res)=>{
    if(p==='/api/v1/me/api-tokens'&&req.method==='GET')return json(res,apiTokens);
    if(p==='/api/v1/me/api-tokens'){assert.equal(req.method,'POST');assert.deepEqual(Object.keys(body),['name','scope']);assert.deepEqual(body,{name:'Stream Deck',scope:'run'});const row={id:uid(60),name:body.name,scope:body.scope,created_at:hoursAgo(0),last_used_at:null};apiTokens=[row,...apiTokens];return json(res,{...row,token:'ahd_'+'5'.repeat(64)},201);}
    if(p===`/api/v1/me/api-tokens/${uid(60)}`){assert.equal(req.method,'DELETE');apiTokens=apiTokens.filter(row=>row.id!==uid(60));res.writeHead(204);return res.end();}
-   if(p==='/api/v1/me/notifications'&&req.method==='GET')return json(res,{webhook_configured:false,webhook_hint:null,webhook_format:'discord',language:'ja',events:{},last_delivery_at:null,last_delivery_ok:null,resin_warn_hours:2,daily_reminder_time:'21:00',weekly_reminder_time:'15:00'});
-   if(p==='/api/v1/me/notifications'&&req.method==='PUT'){assert.ok(body.webhook_format);res.writeHead(204);return res.end();}
+   if(p==='/api/v1/me/notifications'&&req.method==='GET')return json(res,{webhook_configured:false,webhook_hint:null,webhook_format:'discord',language:'ja',events:{},app_events:{signed_in:true},last_delivery_at:null,last_delivery_ok:null,resin_warn_hours:2,daily_reminder_time:'21:00',weekly_reminder_time:'15:00'});
+   if(p==='/api/v1/me/notifications'&&req.method==='PUT'){assert.ok(body.webhook_format);notificationSaves.push(body);res.writeHead(204);return res.end();}
    if(p==='/api/v1/admin/notifications'&&req.method==='GET')return json(res,{webhook_configured:false,webhook_hint:null,webhook_format:'discord',language:'ja',events:{},last_delivery_at:null,last_delivery_ok:null});
    if(p==='/api/v1/admin/notifications'&&req.method==='PUT'){res.writeHead(204);return res.end();}
       if(p===`/api/v1/me/sessions/${uid(51)}`){assert.equal(req.method,'DELETE');sessions=sessions.filter(row=>row.id!==uid(51));res.writeHead(204);return res.end();}
@@ -590,6 +590,17 @@ try{
  await page.waitForURL(origin+'/settings/notifications');
  await page.reload();await page.locator('#settings-tab-notifications[aria-selected=true]').waitFor();await idle();
  await page.locator('#webhook-url').waitFor();
+ // The web lists only the Webhook's choices and leaves the app's (app_events) untouched.
+ assert.equal(await page.locator('#app-event-signed_in, .event-matrix').count(),0);
+ await page.locator('#event-reward_failed').check();
+ const saves=notificationSaves.length;
+ await page.locator('#webhook-url').locator('xpath=ancestor::section[1]').locator('.button-row button').first().click();
+ await page.locator('.status.success').waitFor();
+ assert.equal(notificationSaves.length,saves+1);
+ const saved=notificationSaves.at(-1);
+ assert.equal(saved.events.reward_failed,true);
+ assert.ok(!('app_events' in saved),'the web keeps the app choices');
+ assert.ok(!('webhook_url' in saved),'an empty URL field keeps the stored URL');
  await page.locator('a.wordmark').click();await dashboard();
  assert.equal(new URL(page.url()).pathname,'/dashboard');
  assert.equal(new URL(page.url()).hash,'');

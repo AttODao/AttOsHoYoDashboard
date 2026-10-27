@@ -137,7 +137,9 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 
 ### 設定：通知
 
-- 説明文をアプリ用に変え、「この端末への通知」カード（5.2節・5.3節）を先頭に置く。Webhookの設定はweb版と同じ。「通知する内容」の下に、選んだ内容がWebhookとこの端末の両方に使われることを示す説明を出す。
+- ページの説明文は出さず、「この端末への通知」カード（全体のON/OFF・許可・登録状態・テスト。5.2節・5.3節）を先頭に置く。
+- その下の1枚のパネルで、通知の種類ごとに「この端末」と「Webhook」のON/OFFを並べた表（`pages/notifications.rs` の `EventMatrix`）、リマインダー、Webhookの設定（URL・形式・言語）をまとめて扱い、「保存」で全部を保存する。項目は名前だけで、機能の説明文は出さない。
+- 「この端末」の列はサーバーのアプリ用の選択（`app_events`）を送る。樹脂・開拓力の上限、派遣、参量物質変化器はこの選択が5.2節の予測通知にも適用され（保存の成功時に端末の設定へ反映）、洞天宝銭の上限は予測通知だけなので「Webhook」の列が空欄になる。web版は表を出さず、Webhookの選択だけを送る（`app_events` を送らないので、アプリで選んだ内容は変わらない）。
 - Webhook URLと樹脂の警告値の入力欄は、上記のとおり48pxにした（幅によらず）。
 
 確認した画面サイズ：エミュレータ（API 34）で、360/412/430dp（日本語・ライト）、360dpの文字130%（英語・ダーク）、360dpの文字200%。いずれも横方向のはみ出しはなく、44px未満のタップ領域もなかった。
@@ -173,9 +175,9 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 
 通知のタイトルは「◯◯が上限に達しました」「派遣がすべて完了しました」「参量物質変化器が使用可能です」です。本文は「ゲーム · UID」で、アプリの表示言語（日本語／英語）で作ります。
 
-**設定画面**（設定 › 通知の「この端末への通知」カード。`pages/device_notifications.rs`）
+**設定画面**（設定 › 通知の「この端末への通知」カード。`pages/device_notifications.rs`。種類ごとの選択は「設定：通知」の表）
 
-- 全体のON/OFF（既定はOFF。5.3節のサーバーからの通知と共通）と、「時刻を予測する通知」の種類ごとのON/OFF（既定はすべてON。全体がOFFの間は操作できない）。
+- 全体のON/OFF（既定はOFF。5.3節のサーバーからの通知と共通）。予測通知の種類ごとのON/OFF（端末の既定はすべてON）は、表の「この端末」の列を保存したときに合わせる。保存するまでは、以前の端末側の選択が残る。
 - ONにしたとき、Android 13以降で通知が許可されていなければ `POST_NOTIFICATIONS` の許可を求める。拒否された場合は警告と、「通知を許可する」「端末の通知設定を開く」のボタンを表示する。
 - 予定している通知の件数を表示する。
 - 「テスト通知を表示」で、その場で1件通知する。「サーバーからテスト通知を送る」は5.3節。
@@ -207,7 +209,7 @@ web版がWebhookへ送る個人の通知を、すべてアプリでも受け取�
 
 **仕組み**
 
-- 「この端末に通知する」をONにすると、アプリはサーバーに端末を登録します（`POST /api/v1/me/notifications/app-devices`）。サーバーは、Webhookへ送るのと同じ箇所（`Notifier::deliver`）で、同じ通知をそのユーザーの受信箱に入れます。条件、「通知する内容」の選択、重複排除、文面（通知設定の言語）はWebhookと同じです。
+- 「この端末に通知する」をONにすると、アプリはサーバーに端末を登録します（`POST /api/v1/me/notifications/app-devices`）。サーバーは、Webhookへ送るのと同じ箇所（`Notifier::deliver`）で、同じ通知をそのユーザーの受信箱に入れます。条件、重複排除、文面（通知設定の言語）はWebhookと同じです。通知する種類は、Webhook（`events`）とは別にアプリ用の選択（`app_events`）で決まります（既存の設定はWebhookの選択をコピーして移行）。
 - Kotlinの `AhdInbox`（`android/MainActivity.kt`）が、アプリ専用領域のセッションCookie（`files/session-cookies.json`）で受信箱を読み（`GET …/app-devices/{id}/inbox?after=…`）、Androidの通知を出します。読む時機は、JobSchedulerの定期ジョブ（15分ごと、ネットワーク接続時、アプリを閉じていても・再起動後も）、アプリの表示中の1分ごと、アプリに戻ったとき、登録直後とテスト送信直後です。
 - 外部のプッシュサービス（FCMなど）は使いません。サーバーに外部サービスの資格情報が要らず、Googleのサービスがない端末でも動きます。その代わり、アプリを開いていないときは届くまで最大15分程度（Dozeではさらに遅れることがある）かかります。
 - 通知チャンネルは5.2節と同じ「ゲームの状態」です。サーバーの重複排除キーをタグにし、同じタグの通知は置き換えます。
@@ -343,7 +345,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/pages/auth.rs` | パスワードフォーム、「パスキーでログイン」「ブラウザでログイン」、パスワード変更とweb版の許可画面への案内文 |
 | `dashboard-ui/src/pages/app_login.rs` | web版の `/app-login` 許可画面（アプリのログイン要求を承認してコードを発行する） |
 | `dashboard-ui/src/pages/security.rs` | パスワード変更・APIトークン・パスキー登録の除外、「ブラウザで開く」 |
-| `dashboard-ui/src/pages/notifications.rs` | 端末通知カード、説明文の切り替え |
+| `dashboard-ui/src/pages/notifications.rs` | 端末通知カードの配置、種類ごとの「この端末」／「Webhook」の表、`app_events` の送信と予測通知への反映 |
 | `dashboard-ui/src/pages/common.rs` | `external` アイコン、DOM操作・モーダルのアプリ分岐 |
 | `dashboard-ui/src/pages/dashboard.rs` | `matchMedia` と1分ごとの再描画のアプリ分岐 |
 | `dashboard-ui/src/pages/mod.rs` | 新しいモジュールの宣言 |

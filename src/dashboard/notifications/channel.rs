@@ -25,12 +25,21 @@ pub(super) struct Channel {
     pub(super) url: Option<String>,
     pub(super) format: String,
     pub(super) language: String,
+    /// Webhook choices.
     pub(super) events: BTreeMap<String, bool>,
+    /// App inbox choices; empty for the administrator channel, which has no app route.
+    pub(super) app_events: BTreeMap<String, bool>,
 }
 
 impl Channel {
+    /// Whether the webhook should get this kind.
     pub(super) fn wants(&self, kind: &str) -> bool {
         self.events.get(kind).copied().unwrap_or(false)
+    }
+
+    /// Whether the user's app installations should get this kind.
+    pub(super) fn wants_app(&self, kind: &str) -> bool {
+        self.app_events.get(kind).copied().unwrap_or(false)
     }
 }
 
@@ -49,6 +58,8 @@ pub(in crate::dashboard) struct ChannelView {
 pub(in crate::dashboard) struct PersonalView {
     #[serde(flatten)]
     channel: ChannelView,
+    /// Per-event app inbox choices, same keys as `events` (the webhook's).
+    app_events: BTreeMap<String, bool>,
     resin_warn_hours: i32,
     daily_reminder_time: String,
     weekly_reminder_time: String,
@@ -79,6 +90,9 @@ where
 pub(in crate::dashboard) struct PersonalInput {
     #[serde(flatten)]
     channel: ChannelInput,
+    /// Absent keeps the stored app choices (a new row copies `events`, as before the split).
+    #[serde(default)]
+    app_events: Option<BTreeMap<String, bool>>,
     resin_warn_hours: i32,
     daily_reminder_time: String,
     weekly_reminder_time: String,
@@ -118,6 +132,26 @@ fn validate_choice(value: &str, allowed: &[&str], message: &'static str) -> Resu
     }
 }
 
+fn validate_events(events: &BTreeMap<String, bool>, known: &[(&str, bool)]) -> Result<()> {
+    if events
+        .keys()
+        .any(|kind| !known.iter().any(|(k, _)| k == kind))
+    {
+        return Err(Error::Invalid("unknown notification event"));
+    }
+    Ok(())
+}
+
+/// Every known kind with its stored choice or default, as stored JSON.
+fn events_json(events: &BTreeMap<String, bool>, known: &[(&str, bool)]) -> Value {
+    Value::Object(
+        merged(&serde_json::to_value(events).unwrap_or(Value::Null), known)
+            .into_iter()
+            .map(|(kind, on)| (kind, Value::Bool(on)))
+            .collect(),
+    )
+}
+
 pub(super) fn parse_clock(value: &str) -> Result<NaiveTime> {
     if value.len() != 5 {
         return Err(Error::Invalid("reminder times must be HH:MM"));
@@ -134,14 +168,7 @@ impl ChannelInput {
             "webhook_format must be discord or json",
         )?;
         validate_choice(&self.language, &["ja", "en"], "language must be ja or en")?;
-        if self
-            .events
-            .keys()
-            .any(|kind| !known.iter().any(|(k, _)| k == kind))
-        {
-            return Err(Error::Invalid("unknown notification event"));
-        }
-        Ok(())
+        validate_events(&self.events, known)
     }
 
     /// The sealed URL to store: Some(new value) to write, None to keep.
@@ -161,15 +188,7 @@ impl ChannelInput {
     }
 
     fn events_json(&self, known: &[(&str, bool)]) -> Value {
-        Value::Object(
-            merged(
-                &serde_json::to_value(&self.events).unwrap_or(Value::Null),
-                known,
-            )
-            .into_iter()
-            .map(|(kind, on)| (kind, Value::Bool(on)))
-            .collect(),
-        )
+        events_json(&self.events, known)
     }
 }
 
@@ -203,22 +222,28 @@ impl Notifications {
         let row = notification_setting::Entity::find_by_id(user)
             .one(&self.db)
             .await?;
-        let channel = Channel {
-            url: row
-                .as_ref()
-                .and_then(|row| self.open_url(user, row.webhook_url.as_deref())),
-            format: row
-                .as_ref()
-                .map_or_else(|| "discord".to_owned(), |row| row.webhook_format.clone()),
-            language: row
-                .as_ref()
-                .map_or_else(|| "ja".to_owned(), |row| row.language.clone()),
+        Ok((self.personal_from(user, row.as_ref()), row))
+    }
+
+    /// A user's channel from their stored settings (defaults when none are saved).
+    pub(super) fn personal_from(
+        &self,
+        user: Uuid,
+        row: Option<&notification_setting::Model>,
+    ) -> Channel {
+        Channel {
+            url: row.and_then(|row| self.open_url(user, row.webhook_url.as_deref())),
+            format: row.map_or_else(|| "discord".to_owned(), |row| row.webhook_format.clone()),
+            language: row.map_or_else(|| "ja".to_owned(), |row| row.language.clone()),
             events: merged(
-                row.as_ref().map_or(&Value::Null, |row| &row.events),
+                row.map_or(&Value::Null, |row| &row.events),
                 &PERSONAL_EVENTS,
             ),
-        };
-        Ok((channel, row))
+            app_events: merged(
+                row.map_or(&Value::Null, |row| &row.app_events),
+                &PERSONAL_EVENTS,
+            ),
+        }
     }
 
     pub(super) async fn admin_channel(&self) -> Result<Channel> {
@@ -239,6 +264,7 @@ impl Notifications {
                 row.as_ref().map_or(&Value::Null, |row| &row.events),
                 &ADMIN_EVENTS,
             ),
+            app_events: BTreeMap::new(),
         })
     }
 
@@ -270,6 +296,7 @@ impl Notifications {
                 row.as_ref().and_then(|row| row.last_delivery_at),
                 row.as_ref().and_then(|row| row.last_delivery_ok),
             ),
+            app_events: channel.app_events.clone(),
             resin_warn_hours: row.as_ref().map_or(2, |row| row.resin_warn_hours),
             daily_reminder_time: row
                 .as_ref()
@@ -288,6 +315,9 @@ impl Notifications {
     ) -> Result<()> {
         let fresh = self.ready(actor).await?;
         input.channel.validate(&PERSONAL_EVENTS)?;
+        if let Some(app_events) = &input.app_events {
+            validate_events(app_events, &PERSONAL_EVENTS)?;
+        }
         if !(1..=24).contains(&input.resin_warn_hours) {
             return Err(Error::Invalid("resin_warn_hours must be 1 to 24"));
         }
@@ -296,10 +326,27 @@ impl Notifications {
         let user = fresh.user.id;
         let sealed = input.channel.sealed_url(self.key.as_deref(), user)?;
         let events = input.channel.events_json(&PERSONAL_EVENTS);
+        let app_events = input
+            .app_events
+            .as_ref()
+            .map(|chosen| events_json(chosen, &PERSONAL_EVENTS));
+        let mut updated = vec![
+            notification_setting::Column::WebhookFormat,
+            notification_setting::Column::Language,
+            notification_setting::Column::Events,
+            notification_setting::Column::ResinWarnHours,
+            notification_setting::Column::DailyReminderTime,
+            notification_setting::Column::WeeklyReminderTime,
+            notification_setting::Column::UpdatedAt,
+        ];
+        if app_events.is_some() {
+            updated.push(notification_setting::Column::AppEvents);
+        }
         let row = notification_setting::ActiveModel {
             user_id: Set(user),
             webhook_format: Set(input.channel.webhook_format),
             language: Set(input.channel.language),
+            app_events: Set(app_events.unwrap_or_else(|| events.clone())),
             events: Set(events),
             resin_warn_hours: Set(input.resin_warn_hours),
             daily_reminder_time: Set(input.daily_reminder_time),
@@ -313,15 +360,7 @@ impl Notifications {
         notification_setting::Entity::insert(row)
             .on_conflict(
                 sea_orm::sea_query::OnConflict::column(notification_setting::Column::UserId)
-                    .update_columns([
-                        notification_setting::Column::WebhookFormat,
-                        notification_setting::Column::Language,
-                        notification_setting::Column::Events,
-                        notification_setting::Column::ResinWarnHours,
-                        notification_setting::Column::DailyReminderTime,
-                        notification_setting::Column::WeeklyReminderTime,
-                        notification_setting::Column::UpdatedAt,
-                    ])
+                    .update_columns(updated)
                     .to_owned(),
             )
             .exec_without_returning(&tx)

@@ -17,6 +17,8 @@ pub struct Model {
     pub resin_warn_hours: i32,
     pub daily_reminder_time: String,
     pub weekly_reminder_time: String,
+    /// Per-event choices for the app inbox; `events` holds the webhook's.
+    pub app_events: Json,
 }
 
 // Generated ActiveModel diagnostics are not a logging boundary: never log/instrument it.

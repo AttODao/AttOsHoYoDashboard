@@ -3604,7 +3604,7 @@
           "notifications"
         ],
         "operationId": "readAppInbox",
-        "summary": "Notices queued for the current user's app installations after a position (at most 50). The same notices as the Webhook and browser-push channels: the events chosen in the notification settings, deduplicated the same way. Marks the device as seen; devices unseen for 30 days are removed and entries are kept for 3 days.",
+        "summary": "Notices queued for the current user's app installations after a position (at most 50). The same notices as the Webhook, filtered by the app's own per-event choices (`app_events`) and deduplicated with the same keys. Marks the device as seen; devices unseen for 30 days are removed and entries are kept for 3 days.",
         "responses": {
           "200": {
             "description": "OK.",
@@ -5427,7 +5427,8 @@
             ]
           },
           "events": {
-            "$ref": "#/components/schemas/NotificationEvents"
+            "$ref": "#/components/schemas/NotificationEvents",
+            "description": "Webhook choices per event."
           },
           "last_delivery_at": {
             "type": [
@@ -5452,11 +5453,16 @@
           {
             "type": "object",
             "required": [
+              "app_events",
               "resin_warn_hours",
               "daily_reminder_time",
               "weekly_reminder_time"
             ],
             "properties": {
+              "app_events": {
+                "$ref": "#/components/schemas/NotificationEvents",
+                "description": "Per-event choices for the app inbox (registered app installations), separate from `events` (the webhook's). Same personal event names; missing ones take their defaults."
+              },
               "resin_warn_hours": {
                 "type": "integer",
                 "minimum": 1,
@@ -5511,7 +5517,8 @@
             ]
           },
           "events": {
-            "$ref": "#/components/schemas/NotificationEvents"
+            "$ref": "#/components/schemas/NotificationEvents",
+            "description": "Webhook choices per event."
           }
         }
       },
@@ -5528,6 +5535,10 @@
               "weekly_reminder_time"
             ],
             "properties": {
+              "app_events": {
+                "$ref": "#/components/schemas/NotificationEvents",
+                "description": "Per-event choices for the app inbox. Absent keeps the stored choices; on the first save it copies `events`."
+              },
               "resin_warn_hours": {
                 "type": "integer",
                 "minimum": 1,

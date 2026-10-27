@@ -8,6 +8,11 @@ input:is([type=url],[type=number],[type=email],[type=search],[type=tel]){width:1
 body button[data-style][data-size]{max-width:100%}
 /* Give the inline HoYoLAB link a 48px touch area without moving its text. */
 .cookie-steps a{padding-block:12px}
+/* Notification choices: notice names wrap, the device/Webhook columns stay narrow and each checkbox cell is a 48px target. */
+.event-matrix th,.event-matrix td{vertical-align:middle}
+.event-matrix thead th:not(:first-child){width:5.5rem;padding:12px 4px;text-align:center}.event-matrix td{padding:0}
+.event-matrix tbody th{color:var(--text);font-size:16px;font-weight:500}
+.matrix-check{display:flex;align-items:center;justify-content:center;min-height:48px;cursor:pointer}
 @media(max-width:600px){
 /* Let bonus history controls wrap within the narrow viewport. */
 .history-tools{flex-wrap:wrap}.history-tools select{flex:1 1 10rem}

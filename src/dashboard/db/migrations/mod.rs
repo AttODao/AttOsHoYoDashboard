@@ -1,6 +1,7 @@
 //! Ordered migration registry; names and schema live in their individual migrations.
 mod account_activity;
 mod api_tokens;
+mod app_notification_events;
 mod app_notifications;
 mod dashboard_games;
 mod hoyolab_accounts;
@@ -28,6 +29,7 @@ impl MigratorTrait for Migrator {
             Box::new(api_tokens::ApiTokens),
             Box::new(app_notifications::AppNotifications),
             Box::new(remove_web_push::RemoveWebPush),
+            Box::new(app_notification_events::AppNotificationEvents),
         ]
     }
 }

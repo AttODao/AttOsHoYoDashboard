@@ -77,6 +77,24 @@ impl Settings {
             Kind::TransformerReady => self.transformer_ready,
         }
     }
+    /// The settings page has one "this device" choice per notice: the account's app inbox
+    /// choice also decides the predicted reminder of the same notice, and the realm currency
+    /// (no server notice) has its own device-only choice.
+    pub(crate) fn follow_choices(
+        &mut self,
+        app_events: &std::collections::BTreeMap<String, bool>,
+        realm_currency: bool,
+    ) {
+        for kind in [
+            Kind::ResourceFull,
+            Kind::ExpeditionsDone,
+            Kind::TransformerReady,
+        ] {
+            let on = app_events.get(kind.code()).copied().unwrap_or(false);
+            self.set_kind(kind, on);
+        }
+        self.realm_currency_full = realm_currency;
+    }
     pub(crate) fn set_kind(&mut self, kind: Kind, on: bool) {
         match kind {
             Kind::ResourceFull => self.resource_full = on,
@@ -453,6 +471,27 @@ mod tests {
         let mut retained: Vec<_> = schedule.reminders.iter().map(|r| r.at_ms).collect();
         retained.sort();
         assert_eq!(retained, expected);
+    }
+    #[test]
+    fn device_choices_steer_predicted_kinds() {
+        let mut settings = Settings {
+            enabled: true,
+            ..Settings::default()
+        };
+        let chosen = std::collections::BTreeMap::from([
+            ("resource_full".to_owned(), false),
+            ("expeditions_done".to_owned(), true),
+            ("signed_in".to_owned(), true),
+        ]);
+        settings.follow_choices(&chosen, false);
+        assert!(settings.enabled);
+        assert!(!settings.kind(Kind::ResourceFull));
+        assert!(!settings.kind(Kind::RealmCurrencyFull));
+        assert!(settings.kind(Kind::ExpeditionsDone));
+        // A notice missing from the choices is off, like on the server.
+        assert!(!settings.kind(Kind::TransformerReady));
+        settings.follow_choices(&chosen, true);
+        assert!(settings.kind(Kind::RealmCurrencyFull));
     }
     #[test]
     fn settings_defaults_switches_sorting_and_ids() {

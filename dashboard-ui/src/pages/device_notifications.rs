@@ -1,5 +1,5 @@
-//! Device notifications use Android permission/settings, independently of Webhooks: server
-//! notices (the events chosen below, like the Webhook) plus predicted local reminders.
+//! This device's notification switch, permission and server registration. Which notices it
+//! shows is chosen per notice next to the Webhook (`notifications::EventMatrix`).
 use crate::app::{
     actions::{handle_api_error_for, spawn_action},
     device_notifications::{Server, use_device_context},
@@ -10,7 +10,7 @@ use crate::{
     components::{Button, ButtonVariant},
     mobile::{
         notify,
-        reminders::{Kind, Outgoing, TEST_NOTIFICATION_ID},
+        reminders::{Outgoing, TEST_NOTIFICATION_ID},
     },
 };
 use dioxus::prelude::*;
@@ -24,7 +24,6 @@ pub(super) fn DeviceNotificationsCard(state: Signal<AppState>) -> Element {
     rsx! {
         section { class: "panel page-stack",
             h3 { {ui.text("notifications.device_title")} }
-            p { class: "field-hint", {ui.text("notifications.device_hint")} }
             label { class: "check",
                 input { id: "device-notifications-enabled", r#type: "checkbox", checked: enabled, onchange: move |event| {
                     let on = event.checked();
@@ -48,14 +47,6 @@ pub(super) fn DeviceNotificationsCard(state: Signal<AppState>) -> Element {
                     Server::Failed => rsx! { p { class: "warning", role: "status", {ui.text("notifications.device_server_failed")} } },
                     Server::Off => rsx! {},
                 }
-            }
-            h3 { {ui.text("notifications.device_predicted_title")} }
-            p { class: "field-hint", {ui.text("notifications.device_predicted_hint")} }
-            div { class: "event-list",
-                KindToggle { kind: Kind::ResourceFull, label: "notifications.event_resource_full" }
-                KindToggle { kind: Kind::RealmCurrencyFull, label: "notifications.device_kind_realm_currency" }
-                KindToggle { kind: Kind::ExpeditionsDone, label: "notifications.event_expeditions_done" }
-                KindToggle { kind: Kind::TransformerReady, label: "notifications.event_transformer_ready" }
             }
             if enabled { p { class: "field-hint", {ui.format("notifications.device_scheduled", &[("count", &(device.upcoming)().to_string())])} } }
             div { class: "button-row",
@@ -86,21 +77,6 @@ pub(super) fn DeviceNotificationsCard(state: Signal<AppState>) -> Element {
                     });
                 }, {ui.text("notifications.device_server_test")} }
             }
-        }
-    }
-}
-#[component]
-fn KindToggle(kind: Kind, label: &'static str) -> Element {
-    let ui = use_preferences();
-    let mut device = use_device_context();
-    let settings = device.settings.read().clone();
-    let id = format!("device-kind-{}", kind.code());
-    rsx! {
-        label { class: "check",
-            input { id, r#type: "checkbox", checked: settings.kind(kind), disabled: !settings.enabled,
-                onchange: move |event| { device.settings.write().set_kind(kind, event.checked()); device.save(); }
-            }
-            span { {ui.text(label)} }
         }
     }
 }
