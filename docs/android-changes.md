@@ -117,6 +117,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 - 900px以下で1ゲームずつタブで切り替える表示は、web版と同じ基準（`(max-width:900px)`）のまま。アプリでは `mobile/dom.rs` の `use_media_query` で判定する。
 - 下部バーの分（64px + セーフエリア + 32px）だけ、本文の下の余白を広げた。
 - アプリをバックグラウンドから戻したとき、前回の取得から60秒以上たっていれば状態を再取得する（web版の60秒ごとの更新に加えた動作）。
+- web版のカード右上にある更新ボタン（丸矢印）は出さない。代わりに、ページが最上部までスクロールされた状態で下に引っ張って離すと（減衰後72px以上）、UID一覧・両ゲームの状態・ボーナス設定を読み直す（`load_dashboard_data`、pull-to-refresh）。引っ張っている間は画面上部に丸矢印のインジケータが指に付いて回り、しきい値を超えるとシアンになり、読み込み中は回転し続ける。スクリーンリーダーには「更新中…」を `role="status"` で伝える。開いているダイアログ、入力欄・選択欄から始めたタッチ、横方向が主のスワイプでは反応しない。ダッシュボードではWebViewのオーバースクロール効果を止める（`overscroll-behavior-y:none`）。リスナーは `mobile/dom.rs` の `PullToRefresh` が持ち、ダッシュボードを離れると外す。
 
 ### 設定（共通）
 
@@ -311,7 +312,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/mobile/session.rs` | Cookie jarとサーバーURLの規則（I/Oなし、テストあり） |
 | `dashboard-ui/src/mobile/storage.rs` | アプリ専用領域のファイル（JNIで `getFilesDir()` を取得） |
 | `dashboard-ui/src/mobile/time.rs` | 端末時刻での表示 |
-| `dashboard-ui/src/mobile/dom.rs` | `document::eval` によるDOM操作 |
+| `dashboard-ui/src/mobile/dom.rs` | `document::eval` によるDOM操作（pull-to-refreshのタッチ処理を含む） |
 | `dashboard-ui/src/mobile/reminders.rs` | 通知時刻の予測、設定と予定の保存形式、通知文（テストあり） |
 | `dashboard-ui/src/mobile/notify.rs` | Kotlinの通知処理を呼ぶJNIブリッジ |
 | `dashboard-ui/src/mobile/browser_login.rs` | ブラウザ経由ログインのPKCE・コールバックURL・保存要求の規則（I/Oなし、テストあり） |
@@ -347,7 +348,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/pages/security.rs` | パスワード変更・APIトークン・パスキー登録の除外、「ブラウザで開く」 |
 | `dashboard-ui/src/pages/notifications.rs` | 端末通知カードの配置、種類ごとの「この端末」／「Webhook」の表、`app_events` の送信と予測通知への反映 |
 | `dashboard-ui/src/pages/common.rs` | `external` アイコン、DOM操作・モーダルのアプリ分岐 |
-| `dashboard-ui/src/pages/dashboard.rs` | `matchMedia` と1分ごとの再描画のアプリ分岐 |
+| `dashboard-ui/src/pages/dashboard.rs` | `matchMedia`・毎秒の時計のアプリ分岐、pull-to-refresh（更新ボタンの代わり） |
 | `dashboard-ui/src/pages/mod.rs` | 新しいモジュールの宣言 |
 | `dashboard-ui/locales/ja.json`, `en.json` | 24キーを追加（`shell.open_in_browser`、`shell.app_navigation`、`messages.could_not_open_the_browser`、`auth.change_password_in_browser`、`security.manage_in_browser`、`notifications.personal_hint_app`、`notifications.device_*` 18キー）。既存のキーは変えていない |
 | `dashboard-ui/Cargo.toml` | `mobile` feature とoptional依存、Android向けの `jni`・`ndk-context`、dev-dependenciesの `chrono`・`url` |

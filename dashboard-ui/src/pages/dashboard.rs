@@ -17,8 +17,10 @@ pub(super) fn DashboardPage(state: Signal<AppState>) -> Element {
     let ui = use_preferences();
     let mut active = use_signal(|| "genshin");
     let mobile = use_mobile_dashboard();
+    use_clock_provider();
     rsx! {
         div { class: "page-stack dashboard",
+            {pull_refresh(state)}
             div { class: "page-intro",
                 h1 { {ui.text("dashboard.dashboard")} }
                 ClaimNow { state }
@@ -170,7 +172,11 @@ fn GamePanel(state: Signal<AppState>, game: &'static str, active: bool, mobile: 
             "aria-labelledby": if mobile { format!("game-tab-{game}") } else { format!("game-title-{game}") },
             "data-selected": active, hidden: mobile && !active,
             tabindex: if mobile { "0" } else { "-1" },
-            h2 { class: "game-title", id: "game-title-{game}", {game_name(game, ui)} }
+            div { class: "game-heading",
+                h2 { class: "game-title", id: "game-title-{game}", {game_name(game, ui)} }
+                // The app refreshes by pulling the dashboard down instead.
+                if !crate::platform::APP { RefreshButton { state, game } }
+            }
             GameStatusSection { state, game }
             BonusSection { state, game }
         }
@@ -244,22 +250,84 @@ fn GameStatusSection(mut state: Signal<AppState>, game: &'static str) -> Element
             }
             div { class: "refresh-row",
                 Freshness { fetched_at: status.as_ref().and_then(|status| status.fetched_at.clone()), stale: status.as_ref().is_some_and(|status| status.stale) }
-                button {
-                    r#type: "button", disabled: loading, "aria-busy": loading,
-                    onclick: move |_| { spawn_root(async move { load_game_status(state, game).await; }); },
-                    if loading { {ui.text("dashboard.refreshing")} } else { {ui.text("dashboard.refresh")} }
-                }
             }
         }
     }
 }
 
-/// Always-visible age of the shown data, re-rendered each minute.
+/// Web refresh control: a circular-arrow icon button at the card's top right.
+#[component]
+fn RefreshButton(state: Signal<AppState>, game: &'static str) -> Element {
+    let ui = use_preferences();
+    let snapshot = state.read();
+    let shown = snapshot.accounts.is_some() && snapshot.selected_game_account(game).is_some();
+    let loading = snapshot
+        .selected_accounts
+        .get(game)
+        .is_some_and(|selection| selection.loading && selection.generation == snapshot.generation);
+    drop(snapshot);
+    let label = ui.text(if loading {
+        "dashboard.refreshing"
+    } else {
+        "dashboard.refresh"
+    });
+    rsx! {
+        if shown {
+            button {
+                r#type: "button", class: "icon-button refresh-button", id: "refresh-{game}",
+                disabled: loading, "aria-busy": loading, "aria-label": label, title: label,
+                onclick: move |_| { spawn_root(async move { load_game_status(state, game).await; }); },
+                Icon { name: "refresh" }
+            }
+        }
+    }
+}
+
+/// App only: pulling the dashboard down at its top reloads UIDs, status and bonus settings.
+#[cfg(feature = "mobile")]
+fn pull_refresh(state: Signal<AppState>) -> Element {
+    rsx! { PullRefresh { state } }
+}
+
+#[cfg(not(feature = "mobile"))]
+fn pull_refresh(_state: Signal<AppState>) -> Element {
+    rsx! {}
+}
+
+#[cfg(feature = "mobile")]
+#[component]
+fn PullRefresh(state: Signal<AppState>) -> Element {
+    use crate::app::data::load_dashboard_data;
+    let ui = use_preferences();
+    let mut refreshing = use_signal(|| false);
+    let _pull = use_hook(move || {
+        std::rc::Rc::new(crate::mobile::dom::PullToRefresh::attach(move || {
+            if *refreshing.peek() {
+                return;
+            }
+            refreshing.set(true);
+            spawn_root(async move {
+                load_dashboard_data(state, true).await;
+                refreshing.set(false);
+            });
+        }))
+    });
+    rsx! {
+        div { id: "pull-refresh", class: "pull-refresh", "data-refreshing": refreshing(), "aria-hidden": "true",
+            Icon { name: "refresh" }
+        }
+        p { class: "visually-hidden", role: "status",
+            if refreshing() { {ui.text("dashboard.refreshing")} }
+        }
+    }
+}
+
+/// Always-visible age of the shown data, kept current by the dashboard clock.
 #[component]
 fn Freshness(fetched_at: Option<String>, stale: bool) -> Element {
     let ui = use_preferences();
-    let minute = use_minute_tick();
-    let _ = minute();
+    let clock = use_clock();
+    let _ = clock();
     let age = seconds_since(fetched_at.as_deref()).map(|seconds| relative_age(seconds, ui));
     rsx! {
         if let Some(age) = age {
@@ -308,8 +376,8 @@ fn BonusSection(state: Signal<AppState>, game: &'static str) -> Element {
 #[component]
 fn BonusToday(state: Signal<AppState>, setting: RewardSetting) -> Element {
     let ui = use_preferences();
-    let minute = use_minute_tick();
-    let _ = minute();
+    let clock = use_clock();
+    let _ = clock();
     let tone = match setting.is_sign {
         Some(true) => "success",
         Some(false) => "pending",
@@ -399,15 +467,20 @@ fn AwardLine(award: DailyAward, claimed: bool) -> Element {
 #[component]
 fn GameStatusCard(status: GameStatus) -> Element {
     let ui = use_preferences();
+    // The transformer countdown reads the clock.
+    let clock = use_clock();
+    let _ = clock();
     rsx! {
         div { class: "status-card",
             if let Some(notice) = freshness_notice(&status, ui) { p { class: "warning", role: "status", {notice} } }
             if let Some(data) = status.data.as_ref() {
                 if status.game_kind == "genshin" {
                     Resource { label: ui.text("dashboard.resin"), current: data.current_resin, maximum: data.max_resin, full_at: data.resin_full_at.clone() }
+                    Resource {
+                        label: ui.text("dashboard.realm_currency"), current: data.current_home_coin, maximum: data.max_home_coin,
+                        full_at: data.home_coin_full_at.clone(), estimate: "dashboard.currency_full_at", reached: "dashboard.at_cap", secondary: true,
+                    }
                     dl { class: "metrics",
-                        Metric { label: ui.text("dashboard.realm_currency"), value: pair(data.current_home_coin, data.max_home_coin, ui) }
-                        Estimate { label: ui.text("dashboard.currency_full_at"), value: data.home_coin_full_at.clone(), countdown: true, reached: "dashboard.at_cap" }
                         Metric { label: ui.text("dashboard.commissions"), value: pair(data.finished_task_num, data.total_task_num, ui) }
                         Metric { label: ui.text("dashboard.extra_commission_reward"), value: received(data.is_extra_task_reward_received, ui).to_owned() }
                         Metric { label: ui.text("dashboard.weekly_boss_discounts"), value: remaining(data.remain_resin_discount_num, data.resin_discount_num_limit, ui) }
@@ -426,7 +499,7 @@ fn GameStatusCard(status: GameStatus) -> Element {
                     }
                 }
                 if status.game_kind == "genshin" {
-                    ExpeditionList { expeditions: data.expeditions.clone(), maximum: data.max_expedition_num }
+                    ExpeditionList { expeditions: data.expeditions.clone(), maximum: data.max_expedition_num, fetched_at: status.fetched_at.clone() }
                 }
             }
             if let Some(key) = missing_payload_notice(status.data.as_ref()).filter(|_| status.error_code.is_none()) {
@@ -452,35 +525,46 @@ fn GameStatusCard(status: GameStatus) -> Element {
     }
 }
 
+/// A capped resource as a number and a bar with its estimate. The primary one
+/// (resin, Trailblaze Power) uses the numeric face; a secondary one (realm
+/// currency) is a step smaller and keeps its date in the body font.
 #[component]
 fn Resource(
     label: &'static str,
     current: Option<i64>,
     maximum: Option<i64>,
     full_at: Option<String>,
+    #[props(default = "dashboard.full_recovery_at")] estimate: &'static str,
+    #[props(default = "dashboard.fully_recovered")] reached: &'static str,
+    #[props(default)] secondary: bool,
 ) -> Element {
     let ui = use_preferences();
     let fill = fill_level(current, maximum);
     rsx! {
-        p { class: "resource-label", "{label}"
-            if fill == "full" { span { class: "status warn cap-badge", {ui.text("dashboard.at_cap")} } }
-            else if fill == "near" { span { class: "status warn cap-badge", {ui.text("dashboard.near_cap")} } }
-        }
-        div { class: "resource", "data-fill": fill,
-            strong { {number(current, ui)} }
-            if let Some(maximum) = maximum { span { "/ {maximum}" } }
-        }
-        if let (Some(value), Some(max)) = (current, maximum) {
-            if max > 0 && value >= 0 && value <= max {
-                progress { value: "{value}", max: "{max}", "aria-label": label }
+        // One wrapper per resource keeps the fill-state sibling selectors to its own bar.
+        div { class: if secondary { "resource-block secondary" } else { "resource-block" },
+            p { class: "resource-label", "{label}"
+                if fill == "full" { span { class: "status warn cap-badge", {ui.text("dashboard.at_cap")} } }
+                else if fill == "near" { span { class: "status warn cap-badge", {ui.text("dashboard.near_cap")} } }
+            }
+            div { class: "resource", "data-fill": fill,
+                strong { {number(current, ui)} }
+                if let Some(maximum) = maximum { span { "/ {maximum}" } }
+            }
+            if let (Some(value), Some(max)) = (current, maximum) {
+                if max > 0 && value >= 0 && value <= max {
+                    progress { value: "{value}", max: "{max}", "aria-label": label }
+                }
+            }
+            dl { class: "row",
+                Estimate { label: ui.text(estimate), value: full_at, numeric: !secondary, countdown: secondary, reached }
             }
         }
-        dl { class: "row", Estimate { label: ui.text("dashboard.full_recovery_at"), value: full_at, numeric: true } }
     }
 }
 
 /// An estimated datetime. The numeric (full recovery) form also says how long
-/// is left, re-rendered each minute so the countdown does not go stale.
+/// is left, re-rendered each second so the countdown changes the moment its value does.
 #[component]
 fn Estimate(
     label: &'static str,
@@ -494,11 +578,11 @@ fn Estimate(
     reached: &'static str,
 ) -> Element {
     let ui = use_preferences();
-    let minute = use_minute_tick();
+    let clock = use_clock();
     let formatted = compact_datetime(value.as_deref());
     let countdown = (numeric || countdown)
         .then(|| {
-            let _ = minute();
+            let _ = clock();
             seconds_since(value.as_deref())
         })
         .flatten()
@@ -518,16 +602,25 @@ fn Estimate(
     }
 }
 
+/// Expeditions with their time left counted down from the fetch time.
 #[component]
-fn ExpeditionList(expeditions: Option<Vec<Expedition>>, maximum: Option<i64>) -> Element {
+fn ExpeditionList(
+    expeditions: Option<Vec<Expedition>>,
+    maximum: Option<i64>,
+    fetched_at: Option<String>,
+) -> Element {
     let ui = use_preferences();
+    let clock = use_clock();
+    let _ = clock();
+    let elapsed = seconds_since(fetched_at.as_deref());
+    let left = |row: &Expedition| expedition_left(expedition_seconds(row), elapsed);
     let summary = expeditions
         .as_ref()
         .filter(|rows| !rows.is_empty())
         .map(|rows| {
             let finished = rows
                 .iter()
-                .filter(|row| expedition_finished(row.status.as_deref()))
+                .filter(|row| row_finished(row.status.as_deref(), left(row)))
                 .count();
             let total = maximum
                 .and_then(|max| usize::try_from(max).ok())
@@ -557,10 +650,13 @@ fn ExpeditionList(expeditions: Option<Vec<Expedition>>, maximum: Option<i64>) ->
                                 source: expedition.avatar_side_icon.clone(),
                                 label: expedition_label(expedition.name.as_deref(), index, ui),
                             }
-                            span { {expedition.status.as_deref().map(|value| model_status(value, ui)).unwrap_or(ui.text("dashboard.unknown"))} }
-                            // A finished expedition has nothing left; "Finished" alone says so.
-                            if !expedition_finished(expedition.status.as_deref()) {
-                                span { {ui.text("dashboard.remaining")} ": " {expedition.remained_time.or(expedition.remaining_time).map(|duration| duration.seconds().map(|seconds| hours_minutes(seconds, ui)).unwrap_or_else(|| duration.to_string())).unwrap_or_else(|| ui.text("common.not_fetched").to_owned())} }
+                            // A finished expedition (also one whose time ran out since the fetch)
+                            // has nothing left; "Finished" alone says so.
+                            if row_finished(expedition.status.as_deref(), left(&expedition)) {
+                                span { {model_status("Finished", ui)} }
+                            } else {
+                                span { {expedition.status.as_deref().map(|value| model_status(value, ui)).unwrap_or(ui.text("dashboard.unknown"))} }
+                                span { {ui.text("dashboard.remaining")} ": " {remaining_text(&expedition, left(&expedition), ui)} }
                             }
                         }
                     }
@@ -591,6 +687,34 @@ fn expedition_finished(status: Option<&str>) -> bool {
     status == Some("Finished")
 }
 
+fn expedition_seconds(row: &Expedition) -> Option<i64> {
+    row.remained_time
+        .as_ref()
+        .or(row.remaining_time.as_ref())
+        .and_then(|duration| duration.seconds())
+}
+
+/// Seconds left now: the fetched remaining time minus the time since the fetch.
+fn expedition_left(remaining: Option<i64>, elapsed: Option<i64>) -> Option<i64> {
+    remaining.map(|left| left - elapsed.unwrap_or(0).max(0))
+}
+
+/// Upstream says finished, or the remaining time has run out since the fetch.
+fn row_finished(status: Option<&str>, left: Option<i64>) -> bool {
+    expedition_finished(status) || left.is_some_and(|seconds| seconds <= 0)
+}
+
+fn remaining_text(row: &Expedition, left: Option<i64>, ui: Preferences) -> String {
+    match (
+        left,
+        row.remained_time.as_ref().or(row.remaining_time.as_ref()),
+    ) {
+        (Some(seconds), _) => hours_minutes(seconds, ui),
+        (None, Some(duration)) => duration.to_string(),
+        (None, None) => ui.text("common.not_fetched").to_owned(),
+    }
+}
+
 /// Time left until full recovery, or "fully recovered" once the estimate has passed.
 fn countdown_text(seconds_left: i64, reached: &str, ui: Preferences) -> String {
     if seconds_left <= 0 {
@@ -603,19 +727,28 @@ fn countdown_text(seconds_left: i64, reached: &str, ui: Preferences) -> String {
     }
 }
 
-/// A counter that changes once a minute in the browser, for countdown re-renders.
-fn use_minute_tick() -> Signal<u64> {
+/// The dashboard's one clock: a counter that changes on every whole second, so
+/// countdowns change the moment their minute does. Components subscribe with `use_clock`.
+#[derive(Clone, Copy)]
+struct Clock(Signal<u64>);
+
+fn use_clock_provider() {
     let mut tick = use_signal(|| 0u64);
+    use_context_provider(|| Clock(tick));
     #[cfg(any(target_arch = "wasm32", feature = "mobile"))]
     use_future(move || async move {
         loop {
-            crate::platform::sleep_ms(60_000).await;
+            let wait = 1000 - (crate::platform::now_ms() as u64 % 1000);
+            crate::platform::sleep_ms(wait.max(1) as u32).await;
             tick += 1;
         }
     });
     #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
     let _ = &mut tick;
-    tick
+}
+
+fn use_clock() -> Signal<u64> {
+    use_context::<Clock>().0
 }
 
 fn expedition_label(name: Option<&str>, index: usize, ui: Preferences) -> String {
@@ -698,15 +831,15 @@ fn transformer_text(data: &DailySummary, ui: Preferences) -> String {
     match (data.transformer_obtained, data.transformer_ready) {
         (Some(false), _) => ui.text("dashboard.transformer_not_obtained").to_owned(),
         (_, Some(true)) => ui.text("dashboard.transformer_ready").to_owned(),
-        (_, Some(false)) => seconds_since(data.transformer_ready_at.as_deref())
-            .filter(|elapsed| *elapsed < 0)
-            .map(|elapsed| {
-                ui.format(
-                    "dashboard.in_duration",
-                    &[("duration", &days_hours(-elapsed, ui))],
-                )
-            })
-            .unwrap_or_else(|| ui.text("dashboard.transformer_cooling").to_owned()),
+        (_, Some(false)) => match seconds_since(data.transformer_ready_at.as_deref()) {
+            // The cooldown ended since the fetch.
+            Some(elapsed) if elapsed >= 0 => ui.text("dashboard.transformer_ready").to_owned(),
+            Some(elapsed) => ui.format(
+                "dashboard.in_duration",
+                &[("duration", &days_hours(-elapsed, ui))],
+            ),
+            None => ui.text("dashboard.transformer_cooling").to_owned(),
+        },
         _ => ui.text("common.not_fetched").to_owned(),
     }
 }
@@ -855,6 +988,29 @@ mod tests {
         assert!(expedition_finished(Some("Finished")));
         assert!(!expedition_finished(Some("Ongoing")));
         assert!(!expedition_finished(None));
+    }
+
+    #[test]
+    fn expedition_time_counts_down_from_the_fetch() {
+        assert_eq!(expedition_left(None, Some(60)), None);
+        assert_eq!(expedition_left(Some(3600), None), Some(3600));
+        assert_eq!(expedition_left(Some(3600), Some(600)), Some(3000));
+        // A fetch time ahead of the device clock does not add time.
+        assert_eq!(expedition_left(Some(3600), Some(-30)), Some(3600));
+        assert_eq!(expedition_left(Some(60), Some(90)), Some(-30));
+        assert!(row_finished(Some("Ongoing"), Some(0)));
+        assert!(row_finished(Some("Ongoing"), Some(-30)));
+        assert!(row_finished(Some("Finished"), None));
+        assert!(!row_finished(Some("Ongoing"), Some(1)));
+        assert!(!row_finished(Some("Ongoing"), None));
+        let row: Expedition = serde_json::from_value(
+            serde_json::json!({"status": "Ongoing", "remained_time": "soon"}),
+        )
+        .unwrap();
+        let ui = Preferences::default();
+        assert_eq!(expedition_seconds(&row), None);
+        assert_eq!(remaining_text(&row, None, ui), "soon");
+        assert_eq!(remaining_text(&row, Some(3000), ui), "0時間50分");
     }
 
     #[test]
