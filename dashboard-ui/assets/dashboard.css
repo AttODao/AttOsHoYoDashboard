@@ -83,6 +83,10 @@ textarea{width:100%;min-height:120px;resize:vertical;background:var(--elevated);
 .resource-label{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.cap-badge{font-size:13px;padding:2px 8px}
 .resource[data-fill=full] strong{color:var(--warning)}.starrail .resource[data-fill=full] strong{color:var(--warning)}
 .resource[data-fill=full]~progress::-webkit-progress-value{background:var(--warning)}.resource[data-fill=full]~progress::-moz-progress-bar{background:var(--warning)}
+/* Realm currency: the same number and bar as the primary resource, one step smaller. */
+.resource-block.secondary{margin-top:24px}.resource-block.secondary .resource strong{font-size:clamp(28px,3vw,36px)}.resource-block.secondary .resource span{font-size:18px}.resource-block.secondary progress{margin:12px 0 16px}
+/* Web refresh: a circular-arrow icon button at the card's top right. */
+.game-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px}.game-panel .game-heading .game-title{margin:0;min-width:0}.refresh-button{flex-shrink:0;margin:-8px -12px -8px 0;color:var(--muted)}.refresh-button:hover:not(:disabled){color:var(--text)}.refresh-button[aria-busy=true] svg{animation:ahd-spin 900ms linear infinite}@keyframes ahd-spin{to{transform:rotate(360deg)}}
 .expeditions-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px}.expeditions-heading h3{margin:0 0 8px}
 .bonus-section .run-state{margin-top:12px}.bonus-today{font-size:16px}.award{display:flex;align-items:center;gap:10px;margin:12px 0 0;font-size:14px;color:var(--muted)}.award strong{color:var(--text);font-weight:600}.award-icon{width:32px;height:32px;object-fit:contain;flex-shrink:0}
 .bonus-attention{margin:16px 0 0;font-size:14px}.bonus-attention p{margin-top:12px}.bonus-status{margin-top:16px}.bonus-status summary{min-height:48px;padding:10px 0;color:var(--muted)}

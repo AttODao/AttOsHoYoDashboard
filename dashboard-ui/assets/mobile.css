@@ -43,3 +43,11 @@ body:has(:is(input:not([type=checkbox]):not([type=radio]),textarea):focus) .app-
 }
 @starting-style{@media(max-width:600px){.menu-drawer[open]{transform:translateY(100%)}}}
 [data-theme=light] .app-nav [aria-current=page] .app-nav-icon{background:#D3EEF1}
+/* Dashboard pull-to-refresh (all widths): the indicator follows the finger, then spins while loading. */
+html:has(#pull-refresh){overscroll-behavior-y:none}
+.pull-refresh{position:fixed;left:50%;top:calc(var(--safe-top) + 8px);z-index:16;display:flex;align-items:center;justify-content:center;width:40px;height:40px;margin-left:-20px;border-radius:50%;background:var(--surface);border:1px solid var(--decorative);box-shadow:0 4px 12px #0004;color:var(--muted);opacity:0;transform:translateY(-56px);pointer-events:none;transition:transform 200ms cubic-bezier(.16,1,.3,1),opacity 150ms ease-out}
+.pull-refresh[data-pulling]{opacity:1;transform:translateY(calc(var(--pull,0px) - 40px));transition:none}
+.pull-refresh[data-armed]{color:var(--cyan);border-color:var(--cyan)}
+.pull-refresh svg{transform:rotate(var(--pull-turn,0deg))}
+.pull-refresh[data-refreshing=true]{opacity:1;transform:translateY(32px);color:var(--cyan)}
+.pull-refresh[data-refreshing=true] svg{animation:ahd-spin 900ms linear infinite}

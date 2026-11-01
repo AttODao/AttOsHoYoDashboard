@@ -138,9 +138,9 @@ const server=http.createServer(async(req,res)=>{
    const account=accounts.find(a=>p===`/api/v1/game-accounts/${a.id}/status`);
    if(account&&statusMode==='failed')return json(res,{...account,data:null,fetched_at:null,error_code:'network',error_at:new Date().toISOString(),stale:true});
    // 7h 12m minus a few seconds: the countdown rounds up to the displayed minute.
-   if(account&&statusMode==='recovering')return json(res,{...account,data:{current_stamina:150,max_stamina:300,stamina_full_at:new Date(Date.now()+(7*3600+12*60-5)*1000).toISOString()},fetched_at:new Date().toISOString(),error_code:null,error_at:null,stale:false});
+   if(account&&statusMode==='recovering')return json(res,{...account,data:{current_stamina:150,max_stamina:300,stamina_full_at:new Date(Date.now()+(7*3600+12*60+4)*1000).toISOString()},fetched_at:new Date().toISOString(),error_code:null,error_at:null,stale:false});
    if(account&&statusMode==='stale')return json(res,{...account,data:{current_stamina:5,max_stamina:300},fetched_at:new Date(Date.now()-6*3600e3-60e3).toISOString(),error_code:'http:503',error_at:new Date().toISOString(),stale:true});
-   if(account){assert.ok(account.visible&&account.detected);return json(res,{...account,data:account.game_kind==='genshin'?{current_resin:actor===user?(account.id===uid(5)?0:31):77,max_resin:200,finished_task_num:0,total_task_num:4,resin_full_at:account.id===uid(5)?'2026-10-17T12:38:00Z':'invalid-date',current_home_coin:510,max_home_coin:2400,home_coin_full_at:'2026-10-19T08:38:40Z',remain_resin_discount_num:2,resin_discount_num_limit:3,max_expedition_num:5,transformer_obtained:true,transformer_ready:true,expeditions:[{status:'Ongoing',remained_time:'30354',avatar_side_icon:avatarIcon},{status:'Finished',remained_time:'0',avatar_side_icon:avatarIcon}]}:{current_stamina:account.id===uid(7)?12:24,max_stamina:300,weekly_cocoon_cnt:1,weekly_cocoon_limit:3,current_rogue_score:2000,max_rogue_score:14000,stamina_full_at:account.id===uid(7)?'2026-10-17T16:52:31Z':null,expeditions:account.id===uid(7)?[{name:'Synthetic assignment',status:'Ongoing',remaining_time:1200,item_url:itemIcon}]:[]},fetched_at:new Date().toISOString(),error_code:null,error_at:null,stale:false});}
+   if(account){assert.ok(account.visible&&account.detected);return json(res,{...account,data:account.game_kind==='genshin'?{current_resin:actor===user?(account.id===uid(5)?0:31):77,max_resin:200,finished_task_num:0,total_task_num:4,resin_full_at:account.id===uid(5)?'2026-10-17T12:38:00Z':'invalid-date',current_home_coin:510,max_home_coin:2400,home_coin_full_at:'2026-10-19T08:38:40Z',remain_resin_discount_num:2,resin_discount_num_limit:3,max_expedition_num:5,transformer_obtained:true,transformer_ready:true,expeditions:[{status:'Ongoing',remained_time:'30360',avatar_side_icon:avatarIcon},{status:'Finished',remained_time:'0',avatar_side_icon:avatarIcon}]}:{current_stamina:account.id===uid(7)?12:24,max_stamina:300,weekly_cocoon_cnt:1,weekly_cocoon_limit:3,current_rogue_score:2000,max_rogue_score:14000,stamina_full_at:account.id===uid(7)?'2026-10-17T16:52:31Z':null,expeditions:account.id===uid(7)?[{name:'Synthetic assignment',status:'Ongoing',remaining_time:1200,item_url:itemIcon}]:[]},fetched_at:new Date().toISOString(),error_code:null,error_at:null,stale:false});}
    if(p==='/api/v1/reward-settings'){
     assert.equal(req.method,'GET');
     // Each read after an accepted manual run advances it one state, like the worker would.
@@ -396,6 +396,22 @@ try{
  assert.equal(await starrail.locator('.metric').filter({hasText:'Echo of War'}).locator('dd').innerText(),'1/3 left');
  assert.equal(await starrail.locator('.metric').filter({hasText:'Simulated Universe'}).locator('dd').innerText(),'2000/14000');
  assert.equal(await genshin.locator('.expeditions-heading .muted').innerText(),'1/5 done');
+ // Realm currency is a second number and bar under resin, not a plain metric.
+ assert.equal(await genshin.locator('progress').count(),2);
+ assert.equal(await genshin.locator('progress').nth(1).getAttribute('aria-label'),'Realm currency');
+ assert.equal(await genshin.locator('.resource-block.secondary .resource strong').innerText(),'510');
+ assert.equal(await genshin.locator('.metric').filter({hasText:'Realm currency'}).count(),0);
+ // Refresh is a circular-arrow icon button at each card's top right.
+ assert.equal(await page.locator('.refresh-row button').count(),0);
+ for(const [panel,game] of [[genshin,'genshin'],[starrail,'starrail']]){
+  const refresh=panel.locator('.game-heading #refresh-'+game);
+  assert.equal(await refresh.getAttribute('aria-label'),'Refresh');
+  assert.equal(await refresh.locator('svg').count(),1);
+  assert.equal((await refresh.innerText()).trim(),'');
+  const [card,box,uidBox]=[await panel.boundingBox(),await refresh.boundingBox(),await panel.locator('.uid-select').boundingBox()];
+  assert.ok(card.x+card.width-(box.x+box.width)<=32&&box.y<uidBox.y,'refresh sits at the card top right');
+  assert.ok(box.width>=44&&box.height>=44,'refresh keeps a touch-size target');
+ }
  // Card order: UID, primary resource with full recovery, other stats, then the login bonus.
  for(const panel of [genshin,starrail]){
   const order=await panel.evaluate(card=>['.uid-select','.resource','.recovery-at','.metrics','.bonus-section'].map(selector=>card.querySelector(selector)).map((node,i,nodes)=>i===0||Boolean(nodes[i-1].compareDocumentPosition(node)&Node.DOCUMENT_POSITION_FOLLOWING)));
@@ -446,7 +462,11 @@ try{
  assert.ok(!(await starrail.innerText()).includes('http:503'),'raw codes stay out of the visible card');
  statusMode='recovering';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
  await starrail.locator('.resource strong').getByText('150',{exact:true}).waitFor();
- assert.equal(await starrail.locator('.recovery-in').innerText(),'in 7h 12m','full recovery also states the time left');
+ // The estimate is 7h 12m 4s away, so the countdown turns from 13m to 12m by the clock, without a refetch.
+ const statusReads=counts.get('/api/v1/game-accounts/'+uid(8)+'/status');
+ assert.equal(await starrail.locator('.recovery-in').innerText(),'in 7h 13m','full recovery also states the time left');
+ await starrail.locator('.recovery-in').getByText('in 7h 12m',{exact:true}).waitFor({timeout:10000});
+ assert.equal(counts.get('/api/v1/game-accounts/'+uid(8)+'/status'),statusReads,'the countdown moved by the clock alone');
  assert.match(await starrail.locator('time.recovery-at').innerText(),/^\d\d\/\d\d \d\d:\d\d JST$/);
  statusMode=null;await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
  await starrail.locator('.resource strong').getByText('24',{exact:true}).waitFor();

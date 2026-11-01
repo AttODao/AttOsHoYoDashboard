@@ -116,6 +116,87 @@ impl Drop for Modal {
     }
 }
 
+/// Pull-to-refresh on the page's top edge: a single-finger drag down while the page
+/// is scrolled to the top moves `#pull-refresh` (CSS variables `--pull`/`--pull-turn`,
+/// `data-pulling`/`data-armed`), and releasing past the threshold calls `on_pull`.
+/// Open dialogs, touches on form controls and mostly horizontal swipes never pull.
+/// Dropping it removes the listeners.
+pub(crate) struct PullToRefresh {
+    task: Task,
+}
+
+const PULL_SCRIPT: &str = r#"
+if (window.__ahdPull) window.__ahdPull();
+const THRESHOLD = 72, MAX = 112;
+const root = () => document.scrollingElement || document.documentElement;
+const indicator = () => document.getElementById("pull-refresh");
+let startX = 0, startY = null, pull = 0, active = false;
+const reset = () => {
+  const e = indicator();
+  if (!e) return;
+  e.style.removeProperty("--pull");
+  e.style.removeProperty("--pull-turn");
+  delete e.dataset.pulling;
+  delete e.dataset.armed;
+};
+const start = (ev) => {
+  startY = null; active = false; pull = 0;
+  if (ev.touches.length !== 1 || root().scrollTop > 0 || document.querySelector("dialog[open]")) return;
+  const t = ev.target;
+  if (t && t.closest && t.closest("input,select,textarea")) return;
+  startX = ev.touches[0].clientX; startY = ev.touches[0].clientY;
+};
+const move = (ev) => {
+  if (startY === null || ev.touches.length !== 1) return;
+  const dx = ev.touches[0].clientX - startX, dy = ev.touches[0].clientY - startY;
+  if (!active) {
+    if (dy < -8 || Math.abs(dx) > Math.abs(dy) + 4) { startY = null; return; }
+    if (dy < 12 || root().scrollTop > 0) return;
+    active = true;
+  }
+  pull = Math.min(MAX, Math.max(0, (dy - 12) * 0.5));
+  const e = indicator();
+  if (!e) return;
+  e.dataset.pulling = "";
+  e.style.setProperty("--pull", pull + "px");
+  e.style.setProperty("--pull-turn", (pull * 3) + "deg");
+  if (pull >= THRESHOLD) e.dataset.armed = ""; else delete e.dataset.armed;
+};
+const end = (ev) => {
+  const fire = active && pull >= THRESHOLD && ev.type === "touchend";
+  startY = null; active = false; pull = 0;
+  reset();
+  if (fire) dioxus.send(true);
+};
+const listeners = [["touchstart", start], ["touchmove", move], ["touchend", end], ["touchcancel", end]];
+for (const [type, fn] of listeners) window.addEventListener(type, fn, { passive: true });
+window.__ahdPull = () => {
+  for (const [type, fn] of listeners) window.removeEventListener(type, fn);
+  reset();
+};
+"#;
+
+impl PullToRefresh {
+    pub(crate) fn attach(mut on_pull: impl FnMut() + 'static) -> Self {
+        let mut eval = document::eval(PULL_SCRIPT);
+        let task = spawn(async move {
+            while eval.recv::<bool>().await.is_ok() {
+                on_pull();
+            }
+        });
+        Self { task }
+    }
+}
+
+impl Drop for PullToRefresh {
+    fn drop(&mut self) {
+        self.task.cancel();
+        let _ = document::eval(
+            "if (window.__ahdPull) { window.__ahdPull(); delete window.__ahdPull; }",
+        );
+    }
+}
+
 /// Whether a media query matches, kept current while the component is mounted.
 pub(crate) fn use_media_query(query: &'static str) -> Signal<bool> {
     let mut matches = use_signal(|| false);
