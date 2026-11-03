@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Android APK for the dashboard UI (`mobile` feature); run inside `devenv --profile android shell`.
 # dx generates and assembles the Gradle project; then the AHD launcher/notification resources,
-# label, theme and network security config (dashboard-ui/android/res) replace Dioxus' defaults,
+# label, theme and network security config (dashboard-ui/android/res) replace Dioxus' defaults, the
+# extra Kotlin sources (dashboard-ui/android/kotlin) join MainActivity.kt,
 # the activity keeps itself across configuration changes, the manifest receivers, the inbox
 # job service and browser sign-in callbacks are inserted. Home-screen widget Kotlin sources,
 # resources and JVM tests are copied before Gradle assembles again.
@@ -22,7 +23,12 @@ res="$project/app/src/main/res"
 overlay=dashboard-ui/android/res
 kotlin_src="$project/app/src/main/kotlin/dev/dioxus/main"
 test_src="$project/app/src/test/java/dev/dioxus/main"
-# dx compiles MainActivity before the overlay exists; remove previous widget sources/tests.
+# dx rewrites its own resources but keeps extra files: drop the previous overlay first,
+# or its PNG icons would duplicate dx's WebP ones when dx runs Gradle. The same goes for the
+# extra Kotlin sources and JVM tests: dx compiles MainActivity before the overlay exists.
+if [ -d "$res" ]; then
+  (cd "$overlay" && find . -type f) | while read -r file; do rm -f "$res/$file"; done
+fi
 for source in "$kotlin_src" "$test_src"; do
   if [ -d "$source" ]; then
     for file in dashboard-ui/android/kotlin/*.kt dashboard-ui/android/test/*.kt; do
@@ -30,11 +36,6 @@ for source in "$kotlin_src" "$test_src"; do
     done
   fi
 done
-# dx rewrites its own resources but keeps extra files: drop the previous overlay first,
-# or its PNG icons would duplicate dx's WebP ones when dx runs Gradle.
-if [ -d "$res" ]; then
-  (cd "$overlay" && find . -type f) | while read -r file; do rm -f "$res/$file"; done
-fi
 # dx adds the library for this target but keeps other ABIs' from earlier builds, which
 # could carry another AHD_SERVER_URL: the APK must hold this build only.
 rm -rf "$project/app/src/main/jniLibs"
@@ -45,6 +46,7 @@ dx build --package attos-dashboard-ui --platform android --target "$target" "$@"
 test -d "$res"
 rm -f "$res"/mipmap-*/ic_launcher.webp
 cp -R "$overlay/." "$res/"
+# Kotlin next to dx's MainActivity.kt (widgets and indicators, dashboard-ui/android/README.md).
 test -d "$kotlin_src"
 cp dashboard-ui/android/kotlin/*.kt "$kotlin_src/"
 mkdir -p "$test_src"
@@ -86,6 +88,20 @@ if ! grep -qF 'android:scheme="cc.attodao.ahd"' "$manifest"; then
   mv "$manifest.tmp" "$manifest"
 fi
 grep -qF 'android:scheme="cc.attodao.ahd"' "$manifest"
+# The widget indicator samples are a debug-only screen.
+if [ "$profile" = debug ] && ! grep -q AhdIndicatorSamplesActivity "$manifest"; then
+  awk '
+    /<\/application>/ {
+      while ((getline line < "dashboard-ui/android/AndroidManifest.samples.xml") > 0) print line
+      close("dashboard-ui/android/AndroidManifest.samples.xml")
+    }
+    { print }
+  ' "$manifest" > "$manifest.tmp"
+  mv "$manifest.tmp" "$manifest"
+fi
+if [ "$profile" = debug ]; then
+  grep -q AhdIndicatorSamplesActivity "$manifest"
+fi
 # Android only installs an update when versionCode does not go down; dx always writes 1.
 gradle="$project/app/build.gradle.kts"
 if ! grep -qF '// AHD: JVM unit tests' "$gradle"; then

@@ -66,3 +66,56 @@ JobSchedulerは不正確でDoze中は遅延します。取得の間の数値は�
 2. アプリでログインしダッシュボードを開くと、`run-as cc.attodao.ahd cat shared_prefs/ahd_widgets.xml` に `origin` と `game.genshin` / `game.starrail`（`kind":"ready"`）が入り、ウィジェットが「HH:MM に更新」になる。`dumpsys jobscheduler` に `AhdWidgetJob` が登録される。
 3. サーバー側でキャッシュを更新してから `cmd jobscheduler run -f cc.attodao.ahd <job id>` で更新ジョブを強制実行すると、保存の `fetched_at` とウィジェットの時刻が変わる。
 4. ウィジェットのタップでアプリのダッシュボードが開く。メニューからログアウトすると `ahd_widgets` が空になり、ジョブが解除され、ウィジェットは未ログイン表示に戻る。
+
+## Widget indicators
+
+`kotlin/AhdIndicators.kt` provides two RemoteViews components for home-screen widgets
+(`build-android` copies `kotlin/*.kt` next to dx's `MainActivity.kt`, package
+`dev.dioxus.main`). Each call returns a `RemoteViews` to add into a container of the widget
+layout:
+
+```kotlin
+views.removeAllViews(slot)   // slot: a FrameLayout/LinearLayout id in the widget layout
+views.addView(slot, AhdIndicators.bar(context, AhdBarSpec(
+    label = "Original Resin", current = 120, max = 200, theme = AhdIndicatorTheme.GENSHIN,
+    caption = AhdIndicators.hoursMinutes(context, secondsToFull))))
+views.addView(slot, AhdIndicators.arc(context, AhdArcSpec(
+    current = 120, max = 200, theme = AhdIndicatorTheme.GENSHIN, size = AhdArcSize.LARGE,
+    caption = AhdIndicators.hoursMinutes(context, secondsToFull))))
+```
+
+- **Bar** (`layout/ahd_indicator_bar.xml`, full width): label and value text (`120/200`,
+  or `valueText`) on one line, the bar below, an optional `caption` under it.
+- **Arc** (`layout/ahd_indicator_arc.xml` 88dp, `_small.xml` 56dp): a 270° gauge with the
+  value (or `centerText`) in the center, or an `icon` instead, and an optional `caption` in
+  the open bottom (e.g. the time to full). Bundled icons: `AhdIndicators.icon(context,
+  "ahd_indicator_icon_resin" | "_power" | "_coin" | "_expedition" | "_daily")`; any drawable
+  id works. Set `contentDescription` when the center is an icon.
+- **States**: `current = null` (or no positive `max`) shows an empty track and `—`; 0 shows
+  an empty track; from 90% (`nearFullPercent`) the fill uses the near-full color, at the cap
+  the full color and the value text turns to the full color (the dashboard's rule,
+  `AhdIndicatorModel.fillLevel`). `level = AhdFillLevel.FULL` forces a state, e.g. when every
+  expedition is done.
+- **Colors**: `theme` picks the game accent (Genshin mint, Star Rail lavender). All colors are
+  `res/values(-night)/ahd_indicator_colors.xml` (light/dark from `dashboard.css`) applied by
+  `android:tint`, so they follow dark mode when the launcher re-inflates the widget. Change
+  them there; `fillColor` overrides the fill with a fixed ARGB color (not dark-mode aware).
+  The indicators draw no background: put them on the widget's own panel.
+- **Text**: `hoursMinutes` gives `3時間12分` / `3h 12m` (rounded up like the dashboard) in
+  the context's locale; Japanese is the default resource like the app, English is
+  `values-en`. To use the app's language instead of the system one, pass
+  `context.createConfigurationContext(config)` with that locale.
+- **Why level drawables**: RemoteViews cannot host custom views, and ProgressBar colors are
+  settable only from API 31; a Canvas bitmap would freeze its colors (no dark-mode switch)
+  and its density. See the header of `AhdIndicators.kt`.
+
+Samples: debug APKs contain `AhdIndicatorSamplesActivity` (all states: no value, 0%, 50%,
+90%, 100% for both games, light and dark side by side, rendered through `RemoteViews.apply`):
+
+```sh
+adb shell am start -n cc.attodao.ahd/dev.dioxus.main.AhdIndicatorSamplesActivity
+adb shell wm density 160; adb shell settings put system font_scale 2.0   # small density / large font
+```
+
+Rules and layout ids are checked on the JVM with
+`devenv --profile android shell -- test-android-kotlin` (`tests/AhdIndicatorModelTest.kt`).
