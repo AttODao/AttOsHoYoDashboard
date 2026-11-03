@@ -52,6 +52,19 @@ private fun texts() {
     check("under a minute", AhdIndicatorModel.hoursMinutes(1), Pair(0L, 1L))
     check("done", AhdIndicatorModel.hoursMinutes(0), Pair(0L, 0L))
     check("negative", AhdIndicatorModel.hoursMinutes(-30), Pair(0L, 0L))
+    check("minutes only under an hour", AhdIndicatorModel.durationString(0), "ahd_indicator_minutes")
+    check("hours and minutes", AhdIndicatorModel.durationString(1), "ahd_indicator_hours_minutes")
+}
+
+private fun strings(res: File) {
+    // Both duration formats exist in Japanese (default) and English.
+    val namePattern = Regex("""<string name="([a-z_]+)">""")
+    for (locale in listOf("values", "values-en")) {
+        val defined = namePattern.findAll(File(res, "$locale/ahd_indicator_strings.xml").readText()).map { it.groupValues[1] }.toSet()
+        for (hours in listOf(0L, 1L)) {
+            check("$locale ${AhdIndicatorModel.durationString(hours)}", AhdIndicatorModel.durationString(hours) in defined, true)
+        }
+    }
 }
 
 private val idPattern = Regex("""android:id="@\+id/([a-z_]+)"""")
@@ -95,6 +108,7 @@ fun main(args: Array<String>) {
     fillLevels()
     levels()
     texts()
+    strings(res)
     layouts(res)
     if (failures > 0) {
         println("$failures indicator check(s) failed")

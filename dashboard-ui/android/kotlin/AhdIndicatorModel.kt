@@ -92,4 +92,10 @@ object AhdIndicatorModel {
         val minutes = (seconds.coerceAtLeast(0) + 59) / 60
         return Pair(minutes / 60, minutes % 60)
     }
+
+    /**
+     * String resource for a duration of [hours] full hours: "10分" under an hour (the widgets
+     * showed "0時間10分"), "3時間12分" otherwise. The dashboard keeps its own format.
+     */
+    fun durationString(hours: Long): String = if (hours == 0L) "ahd_indicator_minutes" else "ahd_indicator_hours_minutes"
 }

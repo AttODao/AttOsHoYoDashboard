@@ -108,10 +108,11 @@ object AhdIndicators {
         return views
     }
 
-    /** "3h 12m" / "3時間12分" in the context's locale, rounded up like the dashboard. */
+    /** "3h 12m" / "3時間12分" ("12m" / "12分" under an hour) in the context's locale, rounded up like the dashboard. */
     @JvmStatic fun hoursMinutes(context: Context, seconds: Long): String {
         val (hours, minutes) = AhdIndicatorModel.hoursMinutes(seconds)
-        return context.getString(Resources(context).string("ahd_indicator_hours_minutes"), hours, minutes)
+        val format = Resources(context).string(AhdIndicatorModel.durationString(hours))
+        return if (hours == 0L) context.getString(format, minutes) else context.getString(format, hours, minutes)
     }
 
     /** A bundled indicator icon (ahd_indicator_icon_resin, _power, _coin, _expedition, _daily) or 0. */
