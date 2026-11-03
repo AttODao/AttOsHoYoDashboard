@@ -1,7 +1,9 @@
 //! Downloads the release APK chosen by `updates::check` into `<cache>/updates/`,
 //! verifies SHA-256 against SHA256SUMS (or `{asset}.sha256`), checks the package,
 //! version and installed app's signer, then hands it to Android's PackageInstaller.
-//! Any failure deletes temporary files and leaves the installed app untouched.
+//! Any failure deletes temporary files and leaves the installed app untouched. "Install unknown
+//! apps" is checked before downloading, and a verified APK whose session was cancelled is kept
+//! for "Try again" until the dialog closes (or the next launch).
 use super::updates::{UpdateCheck, Version};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -252,6 +254,47 @@ pub(crate) fn parse_install_result(text: &str) -> Option<InstallResult> {
     }
 }
 
+/// What tapping "Update now"/"Try again", or returning to the app while waiting for the install
+/// permission, does next.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Step {
+    /// "Install unknown apps" is off: explain and offer the settings screen, download nothing yet.
+    AskInstallPermission,
+    Download,
+    /// A verified APK for this version is still kept (the last session was cancelled).
+    Install,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Plan {
+    /// Android cannot reopen the app after the update (background activity launch is blocked), so
+    /// the "updated" notification is the only hint: ask for it once, when the user starts from the
+    /// prompt, and continue after the answer (a permission dialog left behind the installer would
+    /// outlive the replaced app).
+    pub(crate) request_notifications: bool,
+    pub(crate) step: Step,
+}
+pub(crate) fn plan(
+    from_prompt: bool,
+    notifications_granted: bool,
+    install_allowed: bool,
+    verified_ready: bool,
+) -> Plan {
+    Plan {
+        request_notifications: from_prompt && !notifications_granted,
+        step: if !install_allowed {
+            Step::AskInstallPermission
+        } else if verified_ready {
+            Step::Install
+        } else {
+            Step::Download
+        },
+    }
+}
+/// A cancelled session keeps the verified APK for "Try again"; a failed one discards it.
+pub(crate) fn keeps_verified_package(result: InstallResult) -> bool {
+    result == InstallResult::Aborted
+}
+
 #[cfg(feature = "mobile")]
 pub(crate) enum Stage {
     Progress(Progress),
@@ -260,6 +303,13 @@ pub(crate) enum Stage {
 #[cfg(feature = "mobile")]
 pub(crate) struct Prepared {
     file: TempFile,
+    version: Version,
+}
+#[cfg(feature = "mobile")]
+impl Prepared {
+    pub(crate) fn is_for(&self, version: &Version) -> bool {
+        &self.version == version
+    }
 }
 #[cfg(feature = "mobile")]
 pub(crate) fn clear_downloads() {
@@ -355,7 +405,10 @@ pub(crate) async fn download_and_verify(
     .map_err(|_| UpdateError::InvalidPackage)?
     .ok_or(UpdateError::InvalidPackage)?;
     verify_package(&json, latest)?;
-    Ok(Prepared { file })
+    Ok(Prepared {
+        file,
+        version: latest.clone(),
+    })
 }
 #[cfg(feature = "mobile")]
 #[derive(serde::Serialize)]
@@ -365,29 +418,33 @@ pub(crate) struct InstallNotice<'a> {
     pub(crate) body: String,
     pub(crate) channel: &'a str,
 }
+/// Commits an install session and hands the APK back: the caller keeps it while the system
+/// installer runs, so a cancelled session can be retried without downloading again.
 #[cfg(feature = "mobile")]
 pub(crate) async fn install(
     prepared: Prepared,
     notice: &InstallNotice<'_>,
-) -> Result<(), UpdateError> {
-    let json = serde_json::to_string(notice).map_err(|_| UpdateError::Install)?;
+) -> (Option<Prepared>, Result<(), UpdateError>) {
+    let Ok(json) = serde_json::to_string(notice) else {
+        return (Some(prepared), Err(UpdateError::Install));
+    };
     // The blocking operation owns the APK until PackageInstaller has copied it.
-    let result = tokio::task::spawn_blocking(move || {
-        let path = prepared.file.path().to_string_lossy();
-        super::notify::call_on(
+    let joined = tokio::task::spawn_blocking(move || {
+        let path = prepared.file.path().to_string_lossy().into_owned();
+        let result = super::notify::call_on(
             "dev.dioxus.main.AhdUpdater",
             "install",
             "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)Z",
             &[&path, &json],
             true,
-        )
+        );
+        (prepared, result)
     })
-    .await
-    .map_err(|_| UpdateError::Install)?;
-    if result.as_deref() == Some("true") {
-        Ok(())
-    } else {
-        Err(UpdateError::Install)
+    .await;
+    match joined {
+        Ok((prepared, result)) if result.as_deref() == Some("true") => (Some(prepared), Ok(())),
+        Ok((prepared, _)) => (Some(prepared), Err(UpdateError::Install)),
+        Err(_) => (None, Err(UpdateError::Install)),
     }
 }
 #[cfg(feature = "mobile")]
@@ -400,6 +457,44 @@ pub(crate) fn take_install_result() -> Option<InstallResult> {
         false,
     )?)
 }
+#[cfg(feature = "mobile")]
+pub(crate) fn install_allowed() -> bool {
+    super::notify::call_on(
+        "dev.dioxus.main.AhdUpdater",
+        "installAllowed",
+        "(Landroid/content/Context;)Z",
+        &[],
+        true,
+    )
+    .as_deref()
+        != Some("false")
+}
+#[cfg(feature = "mobile")]
+pub(crate) fn open_install_settings() -> bool {
+    super::notify::call_on(
+        "dev.dioxus.main.AhdUpdater",
+        "openInstallSettings",
+        "(Landroid/app/Activity;)Z",
+        &[],
+        true,
+    )
+    .as_deref()
+        == Some("true")
+}
+#[cfg(feature = "mobile")]
+/// True when Android was asked (the answer arrives as an install event).
+pub(crate) fn request_notification_permission() -> bool {
+    super::notify::call_on(
+        "dev.dioxus.main.AhdUpdater",
+        "requestNotificationPermission",
+        "(Landroid/app/Activity;)Z",
+        &[],
+        true,
+    )
+    .as_deref()
+        == Some("true")
+}
+/// Fires on installer results and whenever the activity resumes (a missing result is normal).
 #[cfg(feature = "mobile")]
 pub(crate) fn use_install_events(mut on_event: impl FnMut() + 'static) {
     use dioxus::prelude::*;
@@ -578,6 +673,41 @@ mod tests {
             assert!(error.message_key().starts_with("update."));
             assert!(!error.to_string().is_empty());
         }
+    }
+    #[test]
+    fn start_plan_asks_for_notifications_only_from_the_prompt() {
+        assert_eq!(
+            plan(true, false, true, false),
+            Plan {
+                request_notifications: true,
+                step: Step::Download
+            }
+        );
+        assert!(!plan(true, true, true, false).request_notifications);
+        // Retrying, returning from the settings screen or after the answer never asks again.
+        assert!(!plan(false, false, true, false).request_notifications);
+        assert!(!plan(false, false, true, true).request_notifications);
+        assert!(plan(true, false, false, false).request_notifications);
+    }
+    #[test]
+    fn start_plan_checks_the_install_permission_before_downloading() {
+        for ready in [false, true] {
+            for from_prompt in [false, true] {
+                assert_eq!(
+                    plan(from_prompt, true, false, ready).step,
+                    Step::AskInstallPermission
+                );
+            }
+        }
+        assert_eq!(plan(false, true, true, true).step, Step::Install);
+        assert_eq!(plan(true, false, true, true).step, Step::Install);
+        assert_eq!(plan(true, true, true, false).step, Step::Download);
+    }
+    #[test]
+    fn only_a_cancelled_session_keeps_the_verified_package() {
+        assert!(keeps_verified_package(InstallResult::Aborted));
+        assert!(!keeps_verified_package(InstallResult::Failed));
+        assert!(!keeps_verified_package(InstallResult::Success));
     }
     fn directory(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("ahd-update-{}-{name}", std::process::id()));

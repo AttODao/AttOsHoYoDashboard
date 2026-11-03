@@ -25,6 +25,7 @@ import android.provider.Settings
 import android.util.Log
 import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
+import androidx.lifecycle.Lifecycle
 import kotlin.math.roundToInt
 import java.io.File
 import java.net.HttpURLConnection
@@ -72,9 +73,20 @@ class MainActivity : WryActivity() {
         if (AhdNotifications.rememberOpenTarget(intent)) notifyPage("open")
         if (AhdBrowserLogin.remember(intent)) notifyBrowserLogin()
     }
+    // Back from the "install unknown apps" settings (or a permission dialog): the update dialog re-checks.
+    override fun onResume() {
+        super.onResume()
+        AhdUpdater.listener?.invoke()
+    }
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == AhdNotifications.PERMISSION_REQUEST) notifyPage("permission")
+        if (requestCode == AhdNotifications.PERMISSION_REQUEST) {
+            notifyPage("permission")
+            // The update dialog waits for this answer. After a permission dialog it arrives while
+            // the activity is still paused, and page updates made then stall until the next resume,
+            // so onResume delivers it; only an answer given without a dialog is passed on here.
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) AhdUpdater.listener?.invoke()
+        }
     }
     private fun notifyUpdate() { webView?.post { webView?.evaluateJavascript("window.__ahdUpdateEvent && window.__ahdUpdateEvent()", null) } }
     private fun notifyBrowserLogin() {
@@ -387,8 +399,8 @@ class AhdInboxJob : JobService() {
     override fun onStopJob(params: JobParameters): Boolean = true
 }
 
-// Dioxus has no updater: the APK signature is the update signature. PackageInstaller
-// sessions show system confirmation unless this app is already the installer of record.
+// Dioxus has no updater: the APK signature is the update signature. PackageInstaller shows the
+// system confirmation (also when this app is the installer of record, measured on Android 14).
 object AhdUpdater {
     const val ACTION_STATUS = "cc.attodao.ahd.UPDATE_STATUS"
     private const val NOTICE_ID = 0x41485544
@@ -415,6 +427,29 @@ object AhdUpdater {
         val archive = pm.getPackageArchiveInfo(path, flags)
         JSONObject().put("archive", if (archive == null) JSONObject.NULL else info(archive))
             .put("own", info(pm.getPackageInfo(context.packageName, flags))).toString()
+    }
+    /** Whether this app may start an install session ("install unknown apps"; always true before Android 8). */
+    @JvmStatic fun installAllowed(context: Context): Boolean = guarded(true) {
+        Build.VERSION.SDK_INT < 26 || context.packageManager.canRequestPackageInstalls()
+    }
+    @JvmStatic fun openInstallSettings(activity: Activity): Boolean = guarded(false) {
+        if (Build.VERSION.SDK_INT < 26) false else {
+            activity.runOnUiThread {
+                guarded(Unit) {
+                    activity.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${activity.packageName}")))
+                }
+            }
+            true
+        }
+    }
+    /** Asks for POST_NOTIFICATIONS (Android 13+) so the "updated" notice can reopen the app; never opens settings. */
+    @JvmStatic fun requestNotificationPermission(activity: Activity): Boolean = guarded(false) {
+        if (Build.VERSION.SDK_INT < 33 || AhdNotifications.permissionGranted(activity)) false else {
+            activity.runOnUiThread {
+                guarded(Unit) { activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), AhdNotifications.PERMISSION_REQUEST) }
+            }
+            true
+        }
     }
     @JvmStatic fun install(context: Context, path: String, json: String): Boolean = guarded(false) {
         prefs(context).edit().putString("pending", json).commit()

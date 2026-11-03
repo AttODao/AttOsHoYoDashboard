@@ -565,6 +565,10 @@
   "update.error_signer": "ダウンロードしたAPKの発行元がこのアプリと一致しません。更新を中止しました。",
   "update.error_install": "インストールできませんでした。",
   "update.install_aborted": "インストールが取り消されました。",
+  "update.restart_note": "インストールが終わるとAHDは閉じます。閉じたら、もう一度開いてください。",
+  "update.notification_permission": "更新後に「更新しました」の通知を出せるよう、通知を許可してください。",
+  "update.permission_needed": "更新するには、AHDに「不明なアプリのインストール」を許可してください。許可してこの画面に戻ると、そのままダウンロードします。",
+  "update.open_settings": "設定を開く",
   "update.channel": "アプリの更新",
   "update.installed_title": "AHDを{version}に更新しました",
   "update.installed_body": "タップして開きます。"

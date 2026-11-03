@@ -48,10 +48,21 @@ pub(crate) fn UpdateDialog(updates: Updates) -> Element {
             div { class: "release-notes", tabindex: "0", role: "region", "aria-labelledby": "app-update-notes-title", "{notes}" }
             match flow {
                 Flow::Prompt => rsx! {
+                    p { id: "app-update-restart-note", class: "update-note", {ui.text("update.restart_note")} }
                     div { class: "actions update-actions",
                         Button { variant: ButtonVariant::Secondary, id: "app-update-skip", onclick: move |_| updates.skip(), {ui.text("update.skip_version")} }
                         Button { variant: ButtonVariant::Secondary, id: "app-update-later", onclick: move |_| updates.later(), {ui.text("update.later")} }
                         Button { variant: ButtonVariant::Primary, id: "app-update-now", onclick: start, {ui.text("update.update_now")} }
+                    }
+                },
+                Flow::AwaitingNotificationAnswer => rsx! {
+                    p { role: "status", "aria-live": "polite", {ui.text("update.notification_permission")} }
+                },
+                Flow::NeedsInstallPermission => rsx! {
+                    p { role: "status", "aria-live": "polite", {ui.text("update.permission_needed")} }
+                    div { class: "actions update-actions",
+                        Button { variant: ButtonVariant::Secondary, id: "app-update-close", onclick: move |_| updates.close(), {ui.text("admin.cancel")} }
+                        Button { variant: ButtonVariant::Primary, id: "app-update-settings", onclick: move |_| updates.open_settings(), {ui.text("update.open_settings")} }
                     }
                 },
                 Flow::Downloading(p) => rsx! {
@@ -66,6 +77,7 @@ pub(crate) fn UpdateDialog(updates: Updates) -> Element {
                 },
                 Flow::Installing => rsx! {
                     p { role: "status", "aria-live": "polite", {ui.text("update.installing")} }
+                    p { id: "app-update-restart-note", class: "update-note", {ui.text("update.restart_note")} }
                     div { class: "actions update-actions", Button { id: "app-update-close", onclick: move |_| updates.close(), {ui.text("admin.close")} } }
                 },
                 Flow::Failed(error) => rsx! {

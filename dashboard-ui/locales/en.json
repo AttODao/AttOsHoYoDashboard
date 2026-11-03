@@ -565,6 +565,10 @@
   "update.error_signer": "The downloaded APK is not signed by the same publisher as this app. The update was stopped.",
   "update.error_install": "The update could not be installed.",
   "update.install_aborted": "The installation was cancelled.",
+  "update.restart_note": "AHD closes when the installation finishes. Open it again afterwards.",
+  "update.notification_permission": "Allow notifications so AHD can tell you when the update is installed.",
+  "update.permission_needed": "To update, allow AHD to install unknown apps. The download starts when you return to this screen.",
+  "update.open_settings": "Open settings",
   "update.channel": "App updates",
   "update.installed_title": "AHD was updated to {version}",
   "update.installed_body": "Tap to open."
