@@ -265,6 +265,15 @@ Android Credential Manager（`androidx.credentials`）でアプリ内からパ�
 
 ブラウザ経由なら、既存のweb版のWebAuthn処理をそのまま使え、ブラウザが対応する方法（端末のパスキー、セキュリティキー、別端末のQRコード）がすべて使え、サーバーごとの証明書設定も要りません。代わりにブラウザとの往復が1回増えます。
 
+### 5.4 起動時の更新確認
+
+- `app/updates.rs` の `use_update_check` が `App` の起動時に `mobile::updates::check` を `use_future` で1回だけ走らせます。起動・ログインはこれを待ちません。
+- `check` はForgejoの `GET /api/v1/repos/{owner}/{repo}/releases/latest` を1回呼び（接続10秒・全体30秒、リダイレクトなし、本文512 KiBまで）、`evaluate` でタグ（`v` 付きも可）をSemVer 2.0の順序で `CARGO_PKG_VERSION` と比べます。`draft`・`prerelease` やプレリリースのタグは `NotStable` として除外します。
+- 結果 `UpdateCheck` は `update_available`・`current`・`latest`・`release_notes`（リリース本文）・`release_url`・`asset`（`name`・`download_url`・`size`・`checksum_url`）です。アセットは `ahd-{os}-{version}-{arch}.{ext}`（Androidのarm64なら `ahd-android-X.Y.Z-arm64.apk`）と完全一致で選び、チェックサムは `{asset}.sha256`、なければ `SHA256SUMS` です。この端末向けのアセットがないリリースは更新ありにしません。
+- 成功した結果は `Signal<Option<UpdateCheck>>` のcontextに入ります（未完了・失敗の間は `None`）。後続の確認ダイアログ・ダウンロード・インストールはこのcontextを読みます。失敗（`Network`・`Status`・`Malformed`・`NotStable`・`BadTag`）は `mobile/log.rs` でlogcatのタグ `AHD` に出すだけです。
+- 取得先は既定で `https://git.attodao.cc` の `AttODao/AttOsHoYoDashboard`。ビルド時の環境変数 `AHD_UPDATE_FORGEJO_URL`・`AHD_UPDATE_REPOSITORY`・`AHD_UPDATE_TOKEN`（任意、`Authorization: token …`）で変えます。トークンはAPKに埋め込まれるため、読み取り専用で他に権限のないものに限ります。
+- バージョン比較・アセット選択・draft/prerelease除外・不正な応答は、Forgejoの応答を模したJSONで通常の `cargo test` から検査します（`mobile/updates.rs`）。
+
 ## 6. web版との共通化と分岐
 
 ### 共通のまま使うもの
@@ -298,7 +307,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | 言語とテーマの保存 | `localStorage` | `files/preferences.json` | `app/preferences.rs` |
 | 外部URL | （なし） | `webbrowser` | `platform::open_external` |
 
-`mobile/browser_login.rs`・`mobile/session.rs`・`mobile/time.rs`・`mobile/reminders.rs` は端末やI/Oに依存しないため、通常の `cargo test` でもコンパイルしてテストします（`main.rs` の `cfg(any(feature = "mobile", test))`）。
+`mobile/browser_login.rs`・`mobile/session.rs`・`mobile/time.rs`・`mobile/reminders.rs`・`mobile/updates.rs`（通信部分を除く）は端末やI/Oに依存しないため、通常の `cargo test` でもコンパイルしてテストします（`main.rs` の `cfg(any(feature = "mobile", test))`）。
 
 ### 変更したファイル
 
@@ -318,7 +327,10 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/mobile/browser_login.rs` | ブラウザ経由ログインのPKCE・コールバックURL・保存要求の規則（I/Oなし、テストあり） |
 | `dashboard-ui/src/mobile/login_intent.rs` | Kotlinが受け取ったコールバックを一度だけ取り出すJNIブリッジとWebViewイベント |
 | `dashboard-ui/src/app/browser_login.rs` | ブラウザ経由ログインの開始と、コールバック受信後のコード交換 |
+| `dashboard-ui/src/mobile/updates.rs` | Forgejoリリースの更新確認：SemVer比較、アセット選択、`releases/latest` の取得（5.4節、テストあり） |
+| `dashboard-ui/src/mobile/log.rs` | logcat（タグ `AHD`）への出力 |
 | `dashboard-ui/src/app/device_notifications.rs` | 端末通知の予定の更新、通知タップ時の画面遷移 |
+| `dashboard-ui/src/app/updates.rs` | 起動時の更新確認と結果のcontext |
 | `dashboard-ui/src/pages/device_notifications.rs` | 「この端末への通知」カード |
 | `dashboard-ui/src/pages/app_nav.rs` | 下部ナビゲーション `AppNav` と `AppHead`（モジュールは両ビルドでコンパイルするが、web版では描画しない） |
 | `dashboard-ui/assets/mobile.css` | アプリ専用のスタイル |
@@ -336,7 +348,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | --- | --- |
 | `dashboard-ui/src/main.rs` | `platform`・`mobile` モジュールの追加 |
 | `dashboard-ui/src/api.rs` | `fetch` のアプリ分岐、関連する `cfg` の拡張 |
-| `dashboard-ui/src/app.rs` | `AppHead`、端末通知のフック、復帰時の再取得、`DocsPage` の除外、`platform` のタイマー・時刻の使用 |
+| `dashboard-ui/src/app.rs` | `AppHead`、端末通知のフック、起動時の更新確認、復帰時の再取得、`DocsPage` の除外、`platform` のタイマー・時刻の使用 |
 | `dashboard-ui/src/app/state.rs` | `Page::web_only`、`reachable`、ステータス自動消去のタイマー |
 | `dashboard-ui/src/app/navigation.rs` | アプリ内History、`open_web_version`、`web_page_url` |
 | `dashboard-ui/src/app/data.rs` | APIトークン・管理者データを読み込まない分岐、`platform::sleep_ms` |

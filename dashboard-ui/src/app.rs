@@ -9,6 +9,8 @@ mod navigation;
 mod preferences;
 mod session;
 mod state;
+#[cfg(feature = "mobile")]
+mod updates;
 
 #[path = "pages/mod.rs"]
 mod pages;
@@ -57,6 +59,8 @@ pub fn App() -> Element {
     device_notifications::use_device_notifications(state);
     #[cfg(feature = "mobile")]
     browser_login::use_browser_login(state);
+    #[cfg(feature = "mobile")]
+    updates::use_update_check();
     use_effect(move || {
         let read = state.read();
         let title = page_title(read.page, read.phase, read.ready(), *preferences.read());
