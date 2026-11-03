@@ -336,7 +336,7 @@ object AhdInbox {
             .build()
         scheduler.schedule(job)
     }
-    private fun cookieHeader(context: Context): String? {
+    @JvmStatic internal fun cookieHeader(context: Context): String? {
         val file = File(context.filesDir, "session-cookies.json")
         if (!file.exists()) return null
         val cookies = JSONObject(file.readText())

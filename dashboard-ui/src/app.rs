@@ -5,6 +5,8 @@ mod data;
 #[cfg(feature = "mobile")]
 mod device_notifications;
 mod display;
+#[cfg(feature = "mobile")]
+mod home_widgets;
 mod navigation;
 mod preferences;
 mod session;
@@ -57,6 +59,8 @@ pub fn App() -> Element {
     navigation::use_browser_history(state);
     #[cfg(feature = "mobile")]
     device_notifications::use_device_notifications(state);
+    #[cfg(feature = "mobile")]
+    home_widgets::use_home_widgets(state);
     #[cfg(feature = "mobile")]
     browser_login::use_browser_login(state);
     #[cfg(feature = "mobile")]
