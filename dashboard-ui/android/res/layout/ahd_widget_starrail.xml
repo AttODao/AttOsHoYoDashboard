@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Honkai: Star Rail 3x3 widget (kotlin/StarRailWidget.kt). Header: game. Top row: the
-     Trailblaze Power arc, with the time to full (bolt icon), the reserve and the fetch time
-     beside it.
+<!-- Honkai: Star Rail 3x3 widget, regular (kotlin/StarRailWidget.kt, StarRailWidgetLayout.REGULAR;
+     narrow widgets and large fonts use ahd_widget_starrail_compact.xml). Header: game. Top row:
+     the Trailblaze Power arc, with "全回復まで" and the time to full (bolt icon), the reserve and
+     the fetch time beside it.
      Below: full-width bars for assignments, daily training and Simulated Universe points (full
      width so values are not clipped at the 180dp minimum or at large font sizes). The
      indicator slots are filled from code (AhdIndicators). Without data only the header and the
-     status message show; this is also the picker preview and the initial layout. Lines that
-     can warn exist twice (name / name_full) so their colors follow dark mode. -->
+     message box (icon, what to do, tap hint) show; this is also the picker preview (with the
+     description) and the initial layout. Lines that can warn exist twice (name / name_full) so
+     their colors follow dark mode. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/ahd_widget_root"
     android:layout_width="match_parent"
@@ -72,7 +74,14 @@
                 android:orientation="vertical">
 
                 <!-- The bolt stands for the Trailblaze Power label (spoken through the arc's
-                     description), so the column stays within the arc's height at large fonts. -->
+                     description). The time has the column's width to itself; StarRailWidgetLayout
+                     switches to the compact layout before it would be ellipsized. -->
+                <TextView
+                    android:id="@+id/ahd_widget_power_until"
+                    style="@style/AhdWidgetStarRailLine"
+                    android:layout_marginTop="0dp"
+                    android:text="@string/ahd_widget_until_full" />
+
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -149,15 +158,47 @@
         </LinearLayout>
     </LinearLayout>
 
-    <TextView
-        android:id="@+id/ahd_widget_status"
+    <!-- Not signed in, no account or no status yet: what to do in the app (the preview shows
+         the description), like the Genshin widget. -->
+    <LinearLayout
+        android:id="@+id/ahd_widget_message_box"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:ellipsize="end"
         android:gravity="center"
-        android:maxLines="4"
-        android:text="@string/ahd_widget_sign_in"
-        android:textColor="@color/ahd_widget_starrail_muted"
-        android:textSize="13sp" />
+        android:orientation="vertical">
+
+        <ImageView
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ahd_widget_starrail_icon"
+            android:tint="@color/ahd_indicator_starrail"
+            android:tintMode="src_in" />
+
+        <TextView
+            android:id="@+id/ahd_widget_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:maxLines="4"
+            android:text="@string/ahd_widget_starrail_description"
+            android:textColor="@color/ahd_indicator_text"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/ahd_widget_hint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:ellipsize="end"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:text="@string/ahd_widget_open_hint"
+            android:textColor="@color/ahd_widget_starrail_muted"
+            android:textSize="11sp"
+            android:visibility="gone" />
+    </LinearLayout>
 </LinearLayout>

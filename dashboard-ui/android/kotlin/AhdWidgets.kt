@@ -182,7 +182,7 @@ abstract class AhdGameWidget(val game: WidgetGame) : AppWidgetProvider() {
             WidgetState.SignedOut -> text("ahd_widget_sign_in", "Open AHD and sign in")
             WidgetState.NoAccount -> text("ahd_widget_no_account", "Open AHD and link a game account")
             WidgetState.Unavailable -> text("ahd_widget_unavailable", "Could not load the status. Open AHD to retry.")
-            is WidgetState.Ready -> String.format(text("ahd_widget_placeholder_ready", "Updated %1\$s"), DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(state.snapshot.fetchedAtMs)))
+            is WidgetState.Ready -> String.format(text("ahd_widget_updated_at", "Updated %1\$s"), DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(state.snapshot.fetchedAtMs)))
         }
         views.setTextViewText(id("ahd_widget_status", "id"), status)
         return views

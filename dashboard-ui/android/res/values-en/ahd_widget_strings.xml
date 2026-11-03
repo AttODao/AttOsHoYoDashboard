@@ -8,7 +8,6 @@
     <string name="ahd_widget_sign_in">Open AHD and sign in</string>
     <string name="ahd_widget_no_account">Open AHD and link a game account</string>
     <string name="ahd_widget_unavailable">Could not load the status. Open AHD to retry.</string>
-    <string name="ahd_widget_placeholder_ready">Updated %1$s</string>
     <string name="ahd_widget_open_hint">Tap to open AHD</string>
     <string name="ahd_widget_updated_at">Updated %1$s</string>
     <string name="ahd_widget_update_failed">Update failed %1$s</string>

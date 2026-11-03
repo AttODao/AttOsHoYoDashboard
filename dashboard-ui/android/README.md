@@ -46,7 +46,7 @@ system.
 - `kotlin/AhdWidgetData.kt`: Android依存のないモデル、RFC 3339パーサー、取得後の回復値の推定。
 - `kotlin/AhdWidgets.kt`: SharedPreferences `ahd_widgets`、Rust JNIブリッジ、更新ジョブ、共通provider。
 - `kotlin/GenshinWidget.kt` / `kotlin/StarRailWidget.kt`: ゲーム別の描画（下記「Genshin widget」「Star Rail widget」）。
-- `res/xml/ahd_widget_{genshin,starrail}_info.xml` / `res/layout/ahd_widget_{genshin,starrail}.xml`: サイズ・更新周期と、ゲームごとのRemoteViewsレイアウト（ピッカーのプレビューと初期表示を兼ねる）。`AndroidManifest.application.xml` にreceiverとジョブを登録。
+- `res/xml/ahd_widget_{genshin,starrail}_info.xml` / `res/layout/ahd_widget_{genshin,starrail}.xml`（狭い幅・大きい文字用は `_compact.xml`）: サイズ・更新周期と、ゲームごとのRemoteViewsレイアウト（通常レイアウトがピッカーのプレビューと初期表示を兼ねる）。`AndroidManifest.application.xml` にreceiverとジョブを登録。
 
 Rustの `app/home_widgets.rs` はダッシュボードの変更ごとに選択中のアカウントと取得済みの状態を `mobile/widgets.rs` からpublishし、Kotlinが `ahd_widgets` に保存します。未取得でも同じアカウントのキャッシュは保持します。JobSchedulerは30分周期で状態APIを読み、`updatePeriodMillis` も30分です。401またはセッションを忘れるログアウトで保存を消去しSignedOutに戻します。通信失敗時は既存の状態に失敗フラグを付けて保持します。
 
@@ -54,7 +54,7 @@ Rustの `app/home_widgets.rs` はダッシュボードの変更ごとに選択�
 
 1. 各ゲームのクラスで `render(context, state, nowMs)` をoverrideします。`when (state)` で `SignedOut`、`NoAccount`、`Unavailable`、`Ready` を扱い、未準備の状態では `placeholder(context, state)` を利用できます。
 2. `Ready` の `state.snapshot.at(nowMs)` で樹脂・開拓力・宝銭を推定します。残り時間は `remainingSecondsAt(nowMs)`、派遣の完了数は `Expeditions.finishedAt(nowMs)` を使います。
-3. RemoteViews対応のビューだけを使い、ルートのidを `ahd_widget_root` にします。タップは `/dashboard?game=<key>` を開き、アプリはそのゲームのタブを選びます（`widgetOpenTarget`、Rustの `app/navigation.rs` `target_game`）。大きさで描き分ける場合は `render(context, state, nowMs, options)` をoverrideします（`options` は `AppWidgetManager.OPTION_APPWIDGET_*` のdp値。リサイズ時にも再描画されます）。
+3. RemoteViews対応のビューだけを使い、ルートのidを `ahd_widget_root` にします。タップは `/dashboard?game=<key>` を開き、アプリはそのゲームのタブを選びます（`widgetOpenTarget`、Rustの `app/navigation.rs` `target_game`）。大きさで描き分ける場合は `render(context, state, nowMs, options)` をoverrideします（`options` は `AppWidgetManager.OPTION_APPWIDGET_*` のdp値。リサイズ時にも再描画されます）。文字はspで端末の文字サイズに合わせて大きくなるため、レイアウトの選択には `context.resources.configuration.fontScale` も使います（`GenshinWidgetLayout` / `StarRailWidgetLayout.forSize`）。表示サイズ（密度）の変更はウィジェットのdpが変わるので即座に再描画されますが、文字サイズの変更を知らせるbroadcastはなく（manifestのreceiverでは `CONFIGURATION_CHANGED` を受け取れず、裏のプロセスは凍結される）、ランチャーは前回のRemoteViewsを読み直すだけです。新しい文字サイズでのレイアウト選択は次の描画（アプリを開く、30分ごとの更新ジョブ、`updatePeriodMillis`）からです。
    文言は `values/`（日本語、既定）と `values-en/`、面の色は `values/`・`values-night/` の `ahd_widget_*` です。
 4. Kotlinに `R.` 参照を追加せず、`context.resources.getIdentifier(name, type, context.packageName)` を使います。リソースはdxの最初のGradle実行の後にコピーされます。**MainActivity.ktから新しいKotlinファイルを参照してはいけません**（同じビルド順の制約）。
 5. 純粋モデルのテストは `android/test/` に追加します。先に `build-android` を実行し、`devenv --profile android shell -- test-android` でJUnitを実行します。Kotlinとテストの変更だけなら再ビルドせずに再コピーしてテストできます。
@@ -66,19 +66,22 @@ JobSchedulerは不正確でDoze中は遅延します。取得の間の数値は�
 `kotlin/GenshinWidget.kt` が描画し、表示する値と色の判断は `kotlin/GenshinWidgetModel.kt`（Android非依存、`test/GenshinWidgetModelTest.kt`）にあります。
 
 - 通常（`layout/ahd_widget_genshin.xml`、幅210dp・高さ250dp以上。ピッカーのプレビューと初期表示も兼ねる）: 見出し（原神と取得時刻）、上段に天然樹脂の88dpの円弧（中央に現在値）と「120/200・全回復まで・3時間12分」、下段に洞天宝銭・探索派遣・デイリー任務の56dpの円弧（中央はアイコン）と名前・値・補足を3列で並べます。補足は宝銭が「あと …」（満タンまで）、派遣が「最短 …」「最長 …」、デイリーが追加報酬の受取状況です。
-- それより小さくリサイズすると（`layout/ahd_widget_genshin_compact.xml`）、同じ4項目をバーで縦に並べます（補足は樹脂の残り時間だけ。デイリーは値の横に「受取済」／「未受取」）。大きさは `OPTION_APPWIDGET_MIN_WIDTH` と `OPTION_APPWIDGET_MAX_HEIGHT`（縦向きの大きさ）で選び、不明なら通常です。
+- それより小さいとき（`layout/ahd_widget_genshin_compact.xml`）は、同じ4項目をバーで縦に並べます（補足は樹脂の「全回復まで …」だけ。デイリーは値の横に「受取済」／「未受取」）。大きさは `OPTION_APPWIDGET_MIN_WIDTH` と `OPTION_APPWIDGET_MAX_HEIGHT`（縦向きの大きさ）で選び、不明なら通常です。文字サイズが1より大きいときは、必要な幅・高さを文字サイズ倍にします（3×3の約270×343dpでは文字115%まで通常、130%以上はバー。文字200%で樹脂の残り時間が下で切れていたため）。
 - 色: 面はダッシュボードの原神カードの色（`values(-night)/ahd_widget_genshin_colors.xml`）、ゲージは `ahd_indicator_genshin`（ミント）。樹脂・宝銭は90%以上と上限でwarning色になり、上限では値と補足もwarning色です。派遣は全員帰還（受取待ち）で、デイリーは4/4で追加報酬が未受取のときにwarning色にし、受取済みの4/4はミントのままです。
 - 状態: 未ログイン・アカウントなし・未取得は、アイコンと案内（「AHDを開いてログインしてください」など）と「タップしてAHDを開く」を表示します。取得済みで最後の更新に失敗したときは、値はそのまま見出しの時刻を「更新失敗 HH:MM」のwarning色にします。
 - 値は描画時刻に合わせて推定します（`snapshot.at(nowMs)`）。描画はアプリのpublish、30分ごとの更新ジョブ、`updatePeriodMillis`（30分）、リサイズのときです。
+- 残り時間は「3時間12分」、1時間未満は「10分」です（`AhdIndicators.hoursMinutes`。スターレイルも同じ）。
 
 ### Star Rail widget
 
-`kotlin/StarRailWidget.kt` renders `layout/ahd_widget_starrail.xml`: a Trailblaze Power arc (value, `/max`) with the time to full, the reserve and the fetch time beside it, then full-width bars for assignments (done/sent and time left on the value line), daily training and Simulated Universe weekly points (the realm-currency slot; reasons in `docs/android-changes.md`). The values come from the Android-free `kotlin/StarRailWidgetModel.kt` (`test/StarRailWidgetModelTest.kt`). Lines that can turn to the warning color exist twice in the layout (`name` / `name_full`) so the colors stay resources that follow dark mode. Strings are `values(-en)/ahd_widget_starrail_strings.xml` (Japanese default) and are set from code (layout strings are resolved by the launcher in the system locale, which would ignore a per-app language); colors are `values(-night)/ahd_widget_starrail_colors.xml`.
+`kotlin/StarRailWidget.kt` renders `layout/ahd_widget_starrail.xml`: a Trailblaze Power arc (value, `/max`) with "全回復まで" and the time to full, the reserve and the fetch time beside it, then full-width bars for assignments (done/sent and time left on the value line), daily training and Simulated Universe weekly points (the realm-currency slot; reasons in `docs/android-changes.md`). The values come from the Android-free `kotlin/StarRailWidgetModel.kt` (`test/StarRailWidgetModelTest.kt`). Lines that can turn to the warning color exist twice in the layout (`name` / `name_full`) so the colors stay resources that follow dark mode. Strings are `values(-en)/ahd_widget_starrail_strings.xml` (Japanese default) and are set from code (layout strings are resolved by the launcher in the system locale, which would ignore a per-app language); colors are `values(-night)/ahd_widget_starrail_colors.xml`.
+
+When the time beside the arc would not fit, `StarRailWidgetLayout.forSize` (width ≥ 142dp + 90dp × font scale, height ≥ 148dp + 98dp × font scale; unknown size = regular) picks `layout/ahd_widget_starrail_compact.xml`: four bars (Trailblaze Power with "全回復まで 9時間00分" as its caption, reserve and fetch time on the next line, assignments with their time as the caption) and a one-line title that shrinks to fit. A 3×3 widget is compact at density 560 (about 200dp wide) and from font size about 150% at density 420. The fetch time and the message box (icon, text, "タップしてAHDを開く") use the same wording as the Genshin widget ("3:31 更新", "更新失敗 3:40").
 
 ### 動作確認手順（エミュレータ）
 
 1. `AHD_ANDROID_TARGET=x86_64-linux-android` で `build-android` し、インストールする。ホーム画面の長押し →「ウィジェット」→ AHD に原神／スターレイルが各「3 × 3」で並び、プレビューにゲーム名が出ることを確認して配置する（未ログインなら「AHDを開いてログインしてください」）。
-2. アプリでログインしダッシュボードを開くと、`run-as cc.attodao.ahd cat shared_prefs/ahd_widgets.xml` に `origin` と `game.genshin` / `game.starrail`（`kind":"ready"`）が入り、ウィジェットが「HH:MM に更新」になる。`dumpsys jobscheduler` に `AhdWidgetJob` が登録される。
+2. アプリでログインしダッシュボードを開くと、`run-as cc.attodao.ahd cat shared_prefs/ahd_widgets.xml` に `origin` と `game.genshin` / `game.starrail`（`kind":"ready"`）が入り、ウィジェットが「HH:MM 更新」になる。`dumpsys jobscheduler` に `AhdWidgetJob` が登録される。
 3. サーバー側でキャッシュを更新してから `cmd jobscheduler run -f cc.attodao.ahd <job id>` で更新ジョブを強制実行すると、保存の `fetched_at` とウィジェットの時刻が変わる。
 4. ウィジェットのタップでアプリのダッシュボードが開く。メニューからログアウトすると `ahd_widgets` が空になり、ジョブが解除され、ウィジェットは未ログイン表示に戻る。
 
@@ -116,7 +119,7 @@ views.addView(slot, AhdIndicators.arc(context, AhdArcSpec(
   `android:tint`, so they follow dark mode when the launcher re-inflates the widget. Change
   them there; `fillColor` overrides the fill with a fixed ARGB color (not dark-mode aware).
   The indicators draw no background: put them on the widget's own panel.
-- **Text**: `hoursMinutes` gives `3時間12分` / `3h 12m` (rounded up like the dashboard) in
+- **Text**: `hoursMinutes` gives `3時間12分` / `3h 12m`, or `10分` / `10m` under an hour (rounded up like the dashboard) in
   the context's locale; Japanese is the default resource like the app, English is
   `values-en`. To use the app's language instead of the system one, pass
   `context.createConfigurationContext(config)` with that locale.

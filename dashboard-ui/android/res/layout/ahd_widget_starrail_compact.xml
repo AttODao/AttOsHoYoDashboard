@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Honkai: Star Rail widget, compact (kotlin/StarRailWidget.kt, StarRailWidgetLayout.COMPACT):
+     for widgets too narrow, or system fonts too large, for the arc and its time side by side
+     (e.g. 3x3 at density 560 or font size 200%). Four full-width bars: Trailblaze Power with
+     "全回復まで 9時間00分" as its caption, then the reserve and the fetch time on one line, then
+     assignments, daily training and Simulated Universe points like the regular layout. Same ids
+     as the regular layout except the power time column; lines that can warn exist twice. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/ahd_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/ahd_widget_starrail_background"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_marginEnd="6dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ahd_widget_starrail_icon"
+            android:tint="@color/ahd_indicator_starrail"
+            android:tintMode="src_in" />
+
+        <!-- One line that shrinks to fit (down to 9sp) instead of wrapping: two lines cost the
+             last bar at density 560 with font size 130%. API 24/25 ignore autoSize and ellipsize. -->
+        <TextView
+            android:id="@+id/ahd_widget_title"
+            android:layout_width="0dp"
+            android:layout_height="26dp"
+            android:layout_weight="1"
+            android:autoSizeMaxTextSize="14sp"
+            android:autoSizeMinTextSize="9sp"
+            android:autoSizeStepGranularity="1sp"
+            android:autoSizeTextType="uniform"
+            android:ellipsize="end"
+            android:gravity="center_vertical"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:text="@string/ahd_widget_starrail_label"
+            android:textColor="@color/ahd_indicator_starrail"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/ahd_widget_content"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center_vertical"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout style="@style/AhdWidgetStarRailRow">
+            <ImageView
+                style="@style/AhdWidgetStarRailRowIcon"
+                android:src="@drawable/ahd_indicator_icon_power" />
+            <FrameLayout
+                android:id="@+id/ahd_widget_power"
+                style="@style/AhdWidgetStarRailSlot" />
+        </LinearLayout>
+
+        <!-- Reserve and fetch time under the power bar (aligned with the bars, past the icon). -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/ahd_widget_reserve"
+                style="@style/AhdWidgetStarRailLine"
+                android:layout_marginEnd="8dp" />
+
+            <TextView
+                android:id="@+id/ahd_widget_reserve_full"
+                style="@style/AhdWidgetStarRailLine.Warn"
+                android:layout_marginEnd="8dp" />
+
+            <TextView
+                android:id="@+id/ahd_widget_updated"
+                style="@style/AhdWidgetStarRailSmall"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:gravity="end" />
+
+            <TextView
+                android:id="@+id/ahd_widget_updated_full"
+                style="@style/AhdWidgetStarRailSmall.Warn"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:gravity="end" />
+        </LinearLayout>
+
+        <LinearLayout
+            style="@style/AhdWidgetStarRailRow"
+            android:layout_marginTop="4dp">
+            <ImageView
+                style="@style/AhdWidgetStarRailRowIcon"
+                android:src="@drawable/ahd_indicator_icon_expedition" />
+            <FrameLayout
+                android:id="@+id/ahd_widget_assignments"
+                style="@style/AhdWidgetStarRailSlot" />
+        </LinearLayout>
+
+        <LinearLayout
+            style="@style/AhdWidgetStarRailRow"
+            android:layout_marginTop="3dp">
+            <ImageView
+                style="@style/AhdWidgetStarRailRowIcon"
+                android:src="@drawable/ahd_indicator_icon_daily" />
+            <FrameLayout
+                android:id="@+id/ahd_widget_daily"
+                style="@style/AhdWidgetStarRailSlot" />
+        </LinearLayout>
+
+        <LinearLayout
+            style="@style/AhdWidgetStarRailRow"
+            android:layout_marginTop="3dp">
+            <ImageView
+                style="@style/AhdWidgetStarRailRowIcon"
+                android:src="@drawable/ahd_widget_starrail_icon_weekly" />
+            <FrameLayout
+                android:id="@+id/ahd_widget_weekly"
+                style="@style/AhdWidgetStarRailSlot" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Same message box as the regular layout. -->
+    <LinearLayout
+        android:id="@+id/ahd_widget_message_box"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <ImageView
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ahd_widget_starrail_icon"
+            android:tint="@color/ahd_indicator_starrail"
+            android:tintMode="src_in" />
+
+        <TextView
+            android:id="@+id/ahd_widget_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:maxLines="4"
+            android:text="@string/ahd_widget_starrail_description"
+            android:textColor="@color/ahd_indicator_text"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/ahd_widget_hint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:ellipsize="end"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:text="@string/ahd_widget_open_hint"
+            android:textColor="@color/ahd_widget_starrail_muted"
+            android:textSize="11sp"
+            android:visibility="gone" />
+    </LinearLayout>
+</LinearLayout>

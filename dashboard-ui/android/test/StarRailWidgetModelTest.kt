@@ -17,6 +17,21 @@ class StarRailWidgetModelTest {
         "expeditions":[{"status":"Finished","remaining_time":0},{"status":"Ongoing","remaining_time":3600},
         {"status":"Ongoing","remaining_time":7200},{"status":"Ongoing","remaining_time":7200}]}"""
 
+    @Test fun layoutFollowsTheWidgetAndFontSize() {
+        // 3x3 on a 1080px phone at density 420 is about 270x343dp; at density 560 about 200x248dp.
+        assertEquals(StarRailWidgetLayout.REGULAR, StarRailWidgetLayout.forSize(270, 343, 1.0f))
+        assertEquals(StarRailWidgetLayout.REGULAR, StarRailWidgetLayout.forSize(270, 343, 1.3f))
+        assertEquals(StarRailWidgetLayout.REGULAR, StarRailWidgetLayout.forSize(0, 0, 2.0f))
+        // The time beside the arc was ellipsized ("あと9…") in these cases.
+        assertEquals(StarRailWidgetLayout.COMPACT, StarRailWidgetLayout.forSize(200, 248, 1.0f))
+        assertEquals(StarRailWidgetLayout.COMPACT, StarRailWidgetLayout.forSize(270, 343, 2.0f))
+        assertEquals(StarRailWidgetLayout.COMPACT, StarRailWidgetLayout.forSize(200, 248, 1.3f))
+        // Boundaries: 142dp fixed + 90dp of time per font scale; 148dp + 98dp of text in height.
+        assertEquals(StarRailWidgetLayout.REGULAR, StarRailWidgetLayout.forSize(232, 246, 0.85f))
+        assertEquals(StarRailWidgetLayout.COMPACT, StarRailWidgetLayout.forSize(231, 343, 1.0f))
+        assertEquals(StarRailWidgetLayout.COMPACT, StarRailWidgetLayout.forSize(270, 245, 1.0f))
+    }
+
     @Test fun normalStatusProjectsToTheRenderTime() {
         val model = StarRailWidgetModel.of(ready(normal), time)
         assertEquals(180, model.power)

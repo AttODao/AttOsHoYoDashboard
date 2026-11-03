@@ -24,6 +24,19 @@ class GenshinWidgetModelTest {
         assertEquals(GenshinWidgetLayout.COMPACT, GenshinWidgetLayout.forSize(209, 249))
     }
 
+    @Test fun largeFontsNeedTheCompactLayout() {
+        // 3x3 on a 1080px phone at density 420 is about 270x343dp.
+        assertEquals(GenshinWidgetLayout.REGULAR, GenshinWidgetLayout.forSize(270, 343, 1.0f))
+        assertEquals(GenshinWidgetLayout.REGULAR, GenshinWidgetLayout.forSize(270, 343, 1.15f))
+        // Font size 200%: the resin time was cut off at the bottom.
+        assertEquals(GenshinWidgetLayout.COMPACT, GenshinWidgetLayout.forSize(270, 343, 2.0f))
+        // Density 560 (about 200x248dp) is compact at any font size.
+        assertEquals(GenshinWidgetLayout.COMPACT, GenshinWidgetLayout.forSize(200, 248, 1.3f))
+        // Small fonts do not shrink the minimum.
+        assertEquals(GenshinWidgetLayout.COMPACT, GenshinWidgetLayout.forSize(209, 250, 0.85f))
+        assertEquals(GenshinWidgetLayout.REGULAR, GenshinWidgetLayout.forSize(0, 0, 2.0f))
+    }
+
     @Test fun valuesAndTimesAtFetch() {
         val model = GenshinWidgetModel.of(normal, false, fetched)
         assertEquals(120, model.resin!!.current)

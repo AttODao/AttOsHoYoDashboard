@@ -9,7 +9,6 @@
     <string name="ahd_widget_sign_in">AHDを開いてログインしてください</string>
     <string name="ahd_widget_no_account">AHDを開いてゲームアカウントを設定してください</string>
     <string name="ahd_widget_unavailable">状態を取得できませんでした。AHDを開いて再試行してください</string>
-    <string name="ahd_widget_placeholder_ready">%1$s に更新</string>
     <string name="ahd_widget_open_hint">タップしてAHDを開く</string>
     <string name="ahd_widget_updated_at">%1$s 更新</string>
     <string name="ahd_widget_update_failed">更新失敗 %1$s</string>

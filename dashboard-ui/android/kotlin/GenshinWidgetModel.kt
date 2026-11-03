@@ -8,19 +8,27 @@ enum class GenshinWidgetLayout(val layout: String) {
     /** Resin as the large arc, Realm Currency, expeditions and daily commissions below. */
     REGULAR("ahd_widget_genshin"),
 
-    /** Four bars, for a widget resized below the regular layout's height or width. */
+    /** Four bars, for a widget resized below the regular layout's height or width or large text. */
     COMPACT("ahd_widget_genshin_compact");
 
     companion object {
-        // Three 56dp arcs with their texts side by side, and the 88dp arc above them.
+        // Three 56dp arcs with their texts side by side, and the 88dp arc above them, at the
+        // default font size. The labels, values and times below the arcs grow with the system
+        // font size, so the minimum grows with it (font size 200% at 3x3 cut the resin time off).
         const val REGULAR_MIN_WIDTH_DP = 210
         const val REGULAR_MIN_HEIGHT_DP = 250
 
-        /** Portrait size: the width is OPTION_APPWIDGET_MIN_WIDTH, the height MAX_HEIGHT. 0 = unknown. */
-        fun forSize(widthDp: Int, heightDp: Int): GenshinWidgetLayout = when {
-            widthDp <= 0 || heightDp <= 0 -> REGULAR
-            widthDp >= REGULAR_MIN_WIDTH_DP && heightDp >= REGULAR_MIN_HEIGHT_DP -> REGULAR
-            else -> COMPACT
+        /**
+         * Portrait size: the width is OPTION_APPWIDGET_MIN_WIDTH, the height MAX_HEIGHT. 0 = unknown.
+         * [fontScale] is Configuration.fontScale (values below 1 count as 1).
+         */
+        fun forSize(widthDp: Int, heightDp: Int, fontScale: Float = 1f): GenshinWidgetLayout {
+            val scale = fontScale.coerceAtLeast(1f)
+            return when {
+                widthDp <= 0 || heightDp <= 0 -> REGULAR
+                widthDp >= REGULAR_MIN_WIDTH_DP * scale && heightDp >= REGULAR_MIN_HEIGHT_DP * scale -> REGULAR
+                else -> COMPACT
+            }
         }
     }
 }

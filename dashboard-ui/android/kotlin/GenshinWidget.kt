@@ -11,7 +11,8 @@ import java.util.Date
 /**
  * Genshin Impact 3x3 home-screen widget: Original Resin as the large arc, Realm Currency,
  * expeditions and daily commissions below (GenshinWidgetModel.kt decides the values, the
- * indicators come from AhdIndicators.kt). Resized below the regular size it shows four bars.
+ * indicators come from AhdIndicators.kt). Resized below the regular size, or with a system font
+ * size the regular layout cannot hold (GenshinWidgetLayout.forSize), it shows four bars.
  * Resources are looked up by name: no `R.` (android/README.md "Home-screen widgets").
  */
 class GenshinWidget : AhdGameWidget(WidgetGame.GENSHIN) {
@@ -19,6 +20,7 @@ class GenshinWidget : AhdGameWidget(WidgetGame.GENSHIN) {
         val layout = GenshinWidgetLayout.forSize(
             options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH),
             options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT),
+            context.resources.configuration.fontScale,
         )
         val ui = Ui(context, RemoteViews(context.packageName, find(context, layout.layout, "layout")))
         when (state) {
