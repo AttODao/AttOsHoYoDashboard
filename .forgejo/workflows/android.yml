@@ -1,4 +1,5 @@
-# Build the Android APK for every version tag and attach it to the Forgejo release.
+# Build the release packages for every version tag and attach them to the Forgejo release.
+# Asset names, checksums, signing and test tags: docs/releases.md.
 # The container image is built and published by image.yml.
 name: android
 on:
@@ -23,17 +24,9 @@ jobs:
       - name: Verify version
         run: |
           set -eu
-          VERSION=$(nix eval --raw --impure --expr '(builtins.fromTOML (builtins.readFile ./Cargo.toml)).package.version')
-          UI_VERSION=$(nix eval --raw --impure --expr '(builtins.fromTOML (builtins.readFile ./dashboard-ui/Cargo.toml)).package.version')
-          if [ "$VERSION" != "${GITHUB_REF_NAME#v}" ] || [ "$UI_VERSION" != "$VERSION" ]; then
-            echo "Tag $GITHUB_REF_NAME must match both package versions ($VERSION, $UI_VERSION)" >&2
-            exit 1
-          fi
-          if ! printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "Version must be X.Y.Z: $VERSION" >&2
-            exit 1
-          fi
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          bash scripts/release-version.sh "$GITHUB_REF_NAME" > release-version.env
+          cat release-version.env
+          cat release-version.env >> "$GITHUB_ENV"
       - name: Install devenv
         run: |
           set -eu
@@ -44,7 +37,7 @@ jobs:
           AHD_SERVER_URL: ${{ vars.AHD_SERVER_URL || 'https://hoyo.attodao.cc' }}
           CARGO_BUILD_JOBS: '2'
         run: devenv --profile android shell -- build-android --release
-      - name: Sign and package
+      - name: Sign, check and package
         shell: bash
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -53,72 +46,91 @@ jobs:
         run: |
           set -euo pipefail
           # build-tools are not on the android profile's PATH.
-          apksigner() {
+          build_tool() {
             # shellcheck disable=SC2016 # expanded by the inner bash
-            devenv --profile android shell -- bash -c 'exec "$ANDROID_HOME/build-tools/34.0.0/apksigner" "$@"' apksigner "$@"
+            devenv --profile android shell -- bash -c 'tool=$1; shift; exec "$ANDROID_HOME/build-tools/34.0.0/$tool" "$@"' build-tool "$@"
           }
           apk=target/dx/attos-dashboard-ui/release/android/app/app/build/outputs/apk/debug/app-debug.apk
-          NAME="ahd-android-${VERSION}-arm64"
+          APK_NAME="ahd-android-${VERSION}-arm64.apk"
           install -d -m755 dist
           if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
             ks_dir=${RUNNER_TEMP:-$(mktemp -d)}
             ks="$ks_dir/release.jks"
             trap 'rm -f "$ks"' EXIT
             (umask 077; printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ks")
-            apksigner sign --ks "$ks" \
+            # v2/v3 only: a v4 signature would leave an extra .idsig file in dist/.
+            build_tool apksigner sign --v4-signing-enabled false --ks "$ks" \
               --ks-pass env:ANDROID_KEYSTORE_PASSWORD --ks-key-alias "$ANDROID_KEY_ALIAS" \
-              --out "dist/$NAME.apk" "$apk"
-            echo SIGNING=release >> "$GITHUB_ENV"
-          else
-            install -m644 "$apk" "dist/$NAME.apk"
-            echo SIGNING=debug >> "$GITHUB_ENV"
+              --out "dist/$APK_NAME" "$apk"
+            SIGNING=release
+          elif [ "$PRERELEASE" = true ]; then
+            install -m644 "$apk" "dist/$APK_NAME"
+            SIGNING=debug
             echo '::warning::APK is debug-signed with a key created for this build; it cannot be installed as an update over a previous build.'
+          else
+            echo 'Releases must be signed with the release key: set ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_ALIAS.' >&2
+            exit 1
           fi
-          apksigner verify --print-certs "dist/$NAME.apk"
-          chmod 644 "dist/$NAME.apk"
-          (cd dist && sha256sum "$NAME.apk" > "$NAME.apk.sha256")
-          echo "APK_NAME=$NAME.apk" >> "$GITHUB_ENV"
-      - name: Publish release and replace matching assets
+          chmod 644 "dist/$APK_NAME"
+
+          # Exactly one signer; release builds must carry the pinned release certificate,
+          # because Android only installs an update signed like the installed app.
+          # (The nixos/nix image has grep but no sed/awk.)
+          build_tool apksigner verify --print-certs "dist/$APK_NAME" > apksigner.txt
+          grep -v '^WARNING' apksigner.txt || true
+          mapfile -t digests < <(grep '^Signer #[0-9]* certificate SHA-256 digest: ' apksigner.txt || true)
+          if [ "${#digests[@]}" -ne 1 ]; then
+            echo "Expected exactly one APK signer" >&2
+            exit 1
+          fi
+          CERT_SHA256=${digests[0]##*: }
+          PINNED=$(tr -d '[:space:]' < dashboard-ui/android/release-signing-cert.sha256)
+          if [ "$SIGNING" = release ] && [ "$CERT_SHA256" != "$PINNED" ]; then
+            echo "APK signer $CERT_SHA256 is not the release certificate $PINNED" >&2
+            exit 1
+          fi
+
+          # The APK's own version must be the tag's version.
+          build_tool aapt2 dump badging "dist/$APK_NAME" > badging.txt
+          head -n1 badging.txt
+          expected="package: name='cc.attodao.ahd' versionCode='$VERSION_CODE' versionName='$APP_VERSION' "
+          case "$(head -n1 badging.txt)" in
+            "$expected"*) ;;
+            *) echo "APK manifest does not start with: $expected" >&2; exit 1 ;;
+          esac
+
+          # Only the named packages are release assets (docs/releases.md).
+          shopt -s nullglob
+          files=(dist/*)
+          if [ "${#files[@]}" -ne 1 ] || [ "${files[0]}" != "dist/$APK_NAME" ]; then
+            echo "Unexpected files in dist/: ${files[*]}" >&2
+            exit 1
+          fi
+
+          # One checksum file over every package of this release.
+          (cd dist && sha256sum -- *) > SHA256SUMS
+          mv SHA256SUMS dist/SHA256SUMS
+          cat dist/SHA256SUMS
+          {
+            echo "APK_NAME=$APK_NAME"
+            echo "SIGNING=$SIGNING"
+            echo "CERT_SHA256=$CERT_SHA256"
+          } >> "$GITHUB_ENV"
+      - name: Publish release assets
         env:
           FORGEJO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AHD_SERVER_URL: ${{ vars.AHD_SERVER_URL || 'https://hoyo.attodao.cc' }}
         run: |
-          nix shell github:NixOS/nixpkgs/3ec636362e1816bc2f0888fa0fa2c69f1bc9e504#curl github:NixOS/nixpkgs/3ec636362e1816bc2f0888fa0fa2c69f1bc9e504#jq -c bash -euo pipefail <<'SH'
-          TAG=${GITHUB_REF#refs/tags/}
-          API="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY"
-          STATUS=$(curl -sS -o release.json -w '%{http_code}' \
-            -H "Authorization: token $FORGEJO_TOKEN" "$API/releases/tags/$TAG")
-          case "$STATUS" in
-            200) ;;
-            404)
-              BODY="Androidアプリ: $APK_NAME（サーバー $AHD_SERVER_URL 向け、arm64）。"
-              if [ "$SIGNING" = debug ]; then
-                BODY="$BODY このビルド専用のデバッグ鍵で署名されています。以前のAPKからは上書き更新できないため、アンインストールしてから入れてください。"
-              fi
-              jq -n --arg tag "$TAG" --arg body "$BODY" \
-                '{tag_name:$tag,name:$tag,body:$body,draft:false,prerelease:false}' > release-request.json
-              curl --fail-with-body -sS -X POST -H "Authorization: token $FORGEJO_TOKEN" \
-                -H 'Content-Type: application/json' --data-binary @release-request.json \
-                "$API/releases" > release.json
-              ;;
-            *) cat release.json; echo "Release lookup failed: HTTP $STATUS" >&2; exit 1 ;;
-          esac
-          ID=$(jq -er '.id' release.json)
-          curl --fail-with-body -sS -H "Authorization: token $FORGEJO_TOKEN" \
-            "$API/releases/$ID/assets" > assets.json
-          for ASSET in "dist/$APK_NAME" "dist/$APK_NAME.sha256"; do
-            NAME=${ASSET##*/}
-            for ASSET_ID in $(jq -r --arg name "$NAME" '.[] | select(.name == $name) | .id' assets.json); do
-              curl --fail-with-body -sS -X DELETE -H "Authorization: token $FORGEJO_TOKEN" \
-                "$API/releases/$ID/assets/$ASSET_ID"
-            done
-            curl --fail-with-body -sS -X POST -H "Authorization: token $FORGEJO_TOKEN" \
-              -F "attachment=@$ASSET" "$API/releases/$ID/assets?name=$NAME"
-          done
-          # Read back the exact release and assert that both assets were published.
-          curl --fail-with-body -sS -H "Authorization: token $FORGEJO_TOKEN" \
-            "$API/releases/tags/$TAG" > published-release.json
-          for ASSET in "dist/$APK_NAME" "dist/$APK_NAME.sha256"; do
-            jq -e --arg name "${ASSET##*/}" '.assets | any(.name == $name)' published-release.json
-          done
-          SH
+          set -eu
+          RELEASE_BODY="Androidアプリ: $APK_NAME（サーバー $AHD_SERVER_URL 向け、arm64）。チェックサムは SHA256SUMS、APK署名証明書のSHA-256は $CERT_SHA256 です。"
+          if [ "$PRERELEASE" = true ]; then
+            RELEASE_BODY="$RELEASE_BODY テスト用のプレリリースで、アプリの自動更新の対象外です。"
+          fi
+          if [ "$SIGNING" = debug ]; then
+            RELEASE_BODY="$RELEASE_BODY このビルド専用のデバッグ鍵で署名されています。以前のAPKからは上書き更新できないため、アンインストールしてから入れてください。"
+          fi
+          export RELEASE_BODY
+          export API="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY"
+          export TAG="$GITHUB_REF_NAME"
+          nix shell github:NixOS/nixpkgs/3ec636362e1816bc2f0888fa0fa2c69f1bc9e504#curl github:NixOS/nixpkgs/3ec636362e1816bc2f0888fa0fa2c69f1bc9e504#jq \
+            -c bash scripts/publish-release.sh dist

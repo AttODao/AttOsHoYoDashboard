@@ -29,6 +29,9 @@ in
     wasmBindgen
     nodejs
     playwright-driver
+    # Release asset scripts (scripts/publish-release.sh) and their tests.
+    curl
+    jq
   ];
 
   env = {
@@ -61,6 +64,13 @@ in
     build-ui
     node dashboard-ui/tests/browser.mjs
     node dashboard-ui/tests/browser.mjs --normal-motion
+  '';
+  # Release tag version rules and Forgejo asset publishing (docs/releases.md).
+  scripts.test-release.exec = ''
+    set -e
+    cd "$DEVENV_ROOT"
+    bash scripts/release-version.test.sh
+    node scripts/publish-release.test.mjs
   '';
 
   # Android app (dashboard-ui `mobile` feature): `devenv --profile android shell`.
@@ -112,6 +122,7 @@ in
   enterTest = ''
     set -e
     check-rust
+    test-release
     test-rust
     test-ui
   '';
