@@ -78,27 +78,30 @@ fn page_from_path(path: &str) -> Page {
     }
 }
 
-/// The page a tapped notification opens: a dashboard path from the server ("/settings/bonus"),
-/// or "dashboard" from the app's own predicted notices.
+/// The page a tapped notification or home-screen widget opens: a dashboard path from the
+/// server ("/settings/bonus"), "dashboard" from the app's own predicted notices, or a widget's
+/// "/dashboard?game=genshin" (see `target_game`).
 #[cfg_attr(not(feature = "mobile"), allow(dead_code))]
 pub(super) fn notification_target(target: &str) -> Page {
-    page_from_path(if target == "dashboard" {
+    let path = target.split_once('?').map_or(target, |(path, _)| path);
+    page_from_path(if path == "dashboard" {
         "/dashboard"
     } else {
-        target
+        path
     })
 }
 
-/// The dashboard game tab a tapped home-screen widget asks for: `/dashboard?game=starrail`
-/// (AhdGameWidget.openApp in dashboard-ui/android/kotlin/AhdWidgets.kt). Anything else,
-/// including notification targets, leaves the current tab alone.
+/// The dashboard tab an open target asks for: "/dashboard?game=starrail" from a home-screen
+/// widget (dashboard-ui/android/kotlin/AhdWidgets.kt `openApp`). Unknown games are ignored.
 #[cfg_attr(not(feature = "mobile"), allow(dead_code))]
 pub(super) fn target_game(target: &str) -> Option<&'static str> {
     let (path, query) = target.split_once('?')?;
     if path != "/dashboard" {
         return None;
     }
-    let game = query.strip_prefix("game=")?;
+    let game = query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("game="))?;
     DASHBOARD_GAMES.into_iter().find(|known| *known == game)
 }
 
@@ -245,17 +248,22 @@ mod tests {
         assert!(notification_target("/settings/notifications") == Page::Notifications);
         assert!(notification_target("unknown") == Page::Dashboard);
         assert!(notification_target("/dashboard?game=starrail") == Page::Dashboard);
+        assert!(notification_target("/settings/bonus?game=genshin") == Page::Rewards);
     }
 
     #[test]
-    fn widget_targets_pick_a_known_dashboard_game() {
-        assert_eq!(target_game("/dashboard?game=starrail"), Some("starrail"));
+    fn widget_targets_select_their_dashboard_tab() {
         assert_eq!(target_game("/dashboard?game=genshin"), Some("genshin"));
+        assert_eq!(target_game("/dashboard?game=starrail"), Some("starrail"));
+        assert_eq!(
+            target_game("/dashboard?x=1&game=starrail"),
+            Some("starrail")
+        );
         assert_eq!(target_game("/dashboard"), None);
         assert_eq!(target_game("dashboard"), None);
         assert_eq!(target_game("/dashboard?game=zzz"), None);
-        assert_eq!(target_game("/dashboard?game=starrail&x=1"), None);
-        assert_eq!(target_game("/settings/bonus?game=starrail"), None);
+        assert_eq!(target_game("/dashboard?game="), None);
+        assert_eq!(target_game("/settings/bonus?game=genshin"), None);
     }
 
     #[test]

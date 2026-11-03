@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Home-screen widgets, English. -->
+    <string name="ahd_widget_genshin_label">Genshin Impact</string>
+    <string name="ahd_widget_starrail_label">Honkai: Star Rail</string>
+    <string name="ahd_widget_genshin_description">Original Resin, Realm Currency, expeditions and daily commissions</string>
+    <string name="ahd_widget_starrail_description">Trailblaze Power, assignments, daily training and Simulated Universe points</string>
+    <string name="ahd_widget_sign_in">Open AHD and sign in</string>
+    <string name="ahd_widget_no_account">Open AHD and link a game account</string>
+    <string name="ahd_widget_unavailable">Could not load the status. Open AHD to retry.</string>
+    <string name="ahd_widget_placeholder_ready">Updated %1$s</string>
+    <string name="ahd_widget_open_hint">Tap to open AHD</string>
+    <string name="ahd_widget_updated_at">Updated %1$s</string>
+    <string name="ahd_widget_update_failed">Update failed %1$s</string>
+    <string name="ahd_widget_until_full">Full in</string>
+    <string name="ahd_widget_full_in">Full in %1$s</string>
+    <string name="ahd_widget_expedition_next">Next %1$s</string>
+    <string name="ahd_widget_expedition_last">All %1$s</string>
+    <string name="ahd_widget_expeditions_done">All done</string>
+    <string name="ahd_widget_expeditions_none">None sent</string>
+</resources>

@@ -2,10 +2,4 @@
 <resources>
     <!-- The app canvas color (DESIGN.md), behind the launcher star. -->
     <color name="ahd_launcher_background">#0C0B0E</color>
-    <color name="ahd_widget_surface">#18171D</color>
-    <color name="ahd_widget_text">#F8F7FC</color>
-    <color name="ahd_widget_muted">#B7B2C4</color>
-    <color name="ahd_widget_genshin">#93F5CE</color>
-    <color name="ahd_widget_starrail">#D5B7FF</color>
-    <color name="ahd_widget_warning">#FFD585</color>
 </resources>

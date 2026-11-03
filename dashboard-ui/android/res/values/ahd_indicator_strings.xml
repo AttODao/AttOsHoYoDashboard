@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Widget indicators (AhdIndicators.kt). English is the default like the widget strings; Japanese in values-ja. -->
-    <string name="ahd_indicator_hours_minutes">%1$dh %2$02dm</string>
-    <string name="ahd_indicator_no_value">No data</string>
-    <string name="ahd_indicator_near_full">Near cap</string>
-    <string name="ahd_indicator_full">Full</string>
+    <!-- Widget indicators (AhdIndicators.kt). Japanese is the default like the app; English in values-en. -->
+    <string name="ahd_indicator_hours_minutes">%1$d時間%2$02d分</string>
+    <string name="ahd_indicator_no_value">データなし</string>
+    <string name="ahd_indicator_near_full">まもなく上限</string>
+    <string name="ahd_indicator_full">上限</string>
 </resources>

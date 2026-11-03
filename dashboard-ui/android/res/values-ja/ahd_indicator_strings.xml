@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- Widget indicators (AhdIndicators.kt). Japanese. -->
-    <string name="ahd_indicator_hours_minutes">%1$d時間%2$02d分</string>
-    <string name="ahd_indicator_no_value">データなし</string>
-    <string name="ahd_indicator_near_full">まもなく上限</string>
-    <string name="ahd_indicator_full">上限</string>
-</resources>

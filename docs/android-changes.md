@@ -272,7 +272,7 @@ Android Credential Manager（`androidx.credentials`）でアプリ内からパ�
 - バー型：ラベルと数値（`120/200`）を1行に、その下にバー、任意で残り時間などの補足。丸型：中央に数値またはアイコン、円弧の開いた下部に残り時間（`3時間12分`）。丸型は88dpと56dpの2サイズ（API 31未満のRemoteViewsはビューの大きさを変えられないため）。
 - 値なし（`null`）は空のトラックと「—」、上限の90%以上は「まもなく上限」の色、上限は上限の色で、数値も上限の色にします（ダッシュボードの `fill_level` と同じ規則）。色は原神がミント、スターレイルがラベンダー、まもなく上限・上限はダッシュボードのwarning色です（`res/values(-night)/ahd_indicator_colors.xml`）。
 - 描画：RemoteViewsは独自のViewを描けず、ProgressBarの色をコードから変えられるのはAPI 31からです（アプリはAPI 24以上）。そのため、バーは `<clip>`、円弧は回転したring `<shape android:useLevel="true">` のdrawableを `ImageView.setImageLevel` で伸ばします。色はレイアウトの `android:tint` で `values`／`values-night` から取るので、ランチャーが再inflateすればダークモードの切り替えにも追従します。Canvasで描いたBitmapは、描いた時点の色と密度に固定され、更新のたびにランチャーへ画像を送るため使っていません。
-- 文言は `values/ahd_indicator_strings.xml`（英語、ウィジェットの文言と同じく既定）と `values-ja`。端末のロケールで選ばれます。
+- 文言は `values/ahd_indicator_strings.xml`（日本語、アプリと同じく既定）と `values-en`。端末のロケールで選ばれます。ウィジェットの文言（`ahd_widget_*`）も同じく `values` が日本語、`values-en` が英語です。
 - 確認：デバッグビルドには、全状態（値なし・0%・50%・90%・100%）を両ゲーム・ライト／ダークで並べるサンプル画面 `AhdIndicatorSamplesActivity` が入ります（`adb shell am start -n cc.attodao.ahd/dev.dioxus.main.AhdIndicatorSamplesActivity`、release用のmanifestには入れません）。規則（状態の判定、drawableのlevel、数値と残り時間の表記）と、レイアウトのidや色の定義は `devenv --profile android shell -- test-android-kotlin` がJVMで検査します（`dashboard-ui/android/tests/AhdIndicatorModelTest.kt`）。
 - 確認した表示：エミュレータ（API 34、1080×2400）のサンプル画面で、密度420（日本語・英語）と密度160・文字200%、それぞれライト／ダーク。文字の欠けや円弧のつぶれはない。tintの既定モード（src_atop）では半透明のトラック色が白い図形の上で白く残るため、tintした全ビューを `tintMode="src_in"` にしている（JVM検査でも確認）。
 
@@ -431,11 +431,15 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 
 ## ホーム画面ウィジェット（基盤）
 
-原神／スターレイルの3×3ウィジェットを追加しました。現在はゲーム名と更新時刻または案内を表示するプレースホルダーです。`app/home_widgets.rs` が選択アカウントと状態を `mobile/widgets.rs` のJNIでKotlinへ渡し、アプリ専用SharedPreferences `ahd_widgets` に保存します。描画とモデルは `dashboard-ui/android/kotlin/`、JVMテストは `dashboard-ui/android/test/` に分離しています。web版への動作変更はありません。
+原神／スターレイルの3×3ウィジェットを追加しました。`app/home_widgets.rs` が選択アカウントと状態を `mobile/widgets.rs` のJNIでKotlinへ渡し、アプリ専用SharedPreferences `ahd_widgets` に保存します。描画とモデルは `dashboard-ui/android/kotlin/`、JVMテストは `dashboard-ui/android/test/` に分離しています。web版への動作変更はありません。
+
+ウィジェットの面の色（`ahd_widget_surface`・`_text`・`_muted`・`_warning`）は `values`（ライト）／`values-night`（ダーク）にあり、インジケーターの色と同じく端末のダークモードに従います。
 
 状態はSignedOut（未ログイン／ログアウト）、NoAccount（対象ゲームの表示アカウントなし）、Unavailable（状態未取得）、Ready（キャッシュ済み状態＋更新失敗フラグ）の4つです。既知の同じアカウントが未取得ならキャッシュを保持し、切り替わったアカウントに別のアカウントの値を表示しません。明示的なログアウトなどセッションを忘れる理由と、状態取得の401では保存を消去してジョブを停止します。一時的なオフラインによるサインアウトは保存を消しません。
 
-JobSchedulerはネットワーク接続時に30分周期でGETし、providerの `updatePeriodMillis` も30分です。ウィジェット全体のタップでアプリの `/dashboard?game=<genshin|starrail>` を開き、ダッシュボードはそのゲームのタブを選びます（`navigation::target_game`。タブの選択は `AppState.dashboard_game` に置き、設定画面から戻っても保持します）。ログイン前に開いた場合もタブだけは先に選びます。ジョブの時刻は不正確でDozeにより遅れ、取得間の樹脂・開拓力・宝銭は推定値です。選択はダッシュボードに追従し、サーバーの状態キャッシュTTLも適用されるため、常に最新の実値を保証しません。実ゲーム用の描画は別タスクで実装します。
+原神ウィジェット（`GenshinWidget.kt`）は、上段に天然樹脂の丸型、下段に洞天宝銭・探索派遣・デイリー任務の小さな丸型を3列に並べ、残り時間（全回復・満タン・派遣の最短／最長）と追加報酬の受取状況、取得時刻を表示します。幅210dp・高さ250dp未満にリサイズしたときは4本のバーに切り替えます。面の色はダッシュボードの原神カード、樹脂・宝銭の90%以上と上限、全員帰還した派遣、追加報酬が未受取の4/4のデイリーはwarning色です。未ログイン・アカウントなし・未取得では案内とタップの案内を、更新に失敗したときは見出しの時刻を「更新失敗」で表示します。詳細は `dashboard-ui/android/README.md` の「Genshin widget」です。
+
+JobSchedulerはネットワーク接続時に30分周期でGETし、providerの `updatePeriodMillis` も30分です。ウィジェット全体のタップでアプリの `/dashboard?game=<genshin|starrail>` を開き、ダッシュボードはそのゲームのタブを選びます（`app/navigation.rs` の `target_game`。タブの選択は `AppState.dashboard_game` に置き、設定画面から戻っても保持します）。ログイン前に開いた場合もタブだけは先に選び、`/me` 後の状態の作り直しでも引き継ぎます。ジョブの時刻は不正確でDozeにより遅れ、取得間の樹脂・開拓力・宝銭は推定値です。選択はダッシュボードに追従し、サーバーの状態キャッシュTTLも適用されるため、常に最新の実値を保証しません。端末の言語を変えたときは、ランチャーがレイアウトの文言を読み直し、コードで入れる値や時刻はreceiverの `LOCALE_CHANGED` で描き直します。タッチではタップしたタブに `:hover` が残り、共通のボタンのhover枠が選択されていないタブの下線に見えるため、`mobile.css` で選択中でないタブのhover表示を消しています（ウィジェットから別のゲームのタブを開いたときに目立つ）。
 
 ### スターレイルのウィジェット
 

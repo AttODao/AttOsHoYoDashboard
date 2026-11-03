@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Star Rail widget (kotlin/StarRailWidget.kt), English. -->
+    <string name="ahd_widget_starrail_power">Trailblaze Power</string>
+    <string name="ahd_widget_starrail_full_in">%1$s to full</string>
+    <string name="ahd_widget_starrail_reserve">Reserve %1$d</string>
+    <string name="ahd_widget_starrail_assignments">Assignments</string>
+    <string name="ahd_widget_starrail_left">%1$s · %2$s</string>
+    <string name="ahd_widget_starrail_all_done">%1$s · all done</string>
+    <string name="ahd_widget_starrail_no_assignments">None sent</string>
+    <string name="ahd_widget_starrail_daily">Daily Training</string>
+    <string name="ahd_widget_starrail_weekly">Simulated Universe</string>
+    <string name="ahd_widget_starrail_refresh_failed">%1$s · refresh failed</string>
+</resources>

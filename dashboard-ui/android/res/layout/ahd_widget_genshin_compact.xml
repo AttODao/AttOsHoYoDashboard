@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Genshin widget, compact (GenshinWidgetLayout.COMPACT, resized below the regular size): four
+     AhdIndicators bars for Original Resin, Realm Currency, expeditions and daily commissions. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/ahd_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/ahd_widget_genshin_background"
+    android:orientation="vertical"
+    android:padding="10dp">
+
+    <!-- Header: game name and the time of the data (warning color when the last refresh failed). -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_marginEnd="6dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ahd_indicator_icon_resin"
+            android:tint="@color/ahd_widget_genshin_title"
+            android:tintMode="src_in" />
+
+        <TextView
+            android:id="@+id/ahd_widget_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textSize="14sp"
+            android:textColor="@color/ahd_widget_genshin_title"
+            android:textStyle="bold"
+            android:text="@string/ahd_widget_genshin_label"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/ahd_widget_updated"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textSize="11sp"
+            android:textColor="@color/ahd_widget_genshin_muted"
+            android:visibility="gone"
+            android:layout_marginStart="6dp" />
+
+        <TextView
+            android:id="@+id/ahd_widget_updated_warn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textSize="11sp"
+            android:textColor="@color/ahd_widget_warning"
+            android:visibility="gone"
+            android:layout_marginStart="6dp" />
+    </LinearLayout>
+
+    <!-- Not signed in, no account or no status yet: what to do in the app (the preview shows the description). -->
+    <LinearLayout
+        android:id="@+id/ahd_widget_message_box"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <ImageView
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ahd_indicator_icon_resin"
+            android:tint="@color/ahd_widget_genshin_title"
+            android:tintMode="src_in" />
+
+        <TextView
+            android:id="@+id/ahd_widget_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:maxLines="4"
+            android:text="@string/ahd_widget_genshin_description"
+            android:textColor="@color/ahd_widget_text"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/ahd_widget_hint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textSize="11sp"
+            android:textColor="@color/ahd_widget_genshin_muted"
+            android:visibility="gone"
+            android:text="@string/ahd_widget_open_hint"
+            android:layout_marginTop="6dp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/ahd_widget_content"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center_vertical"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <FrameLayout
+            android:id="@+id/ahd_widget_resin_slot"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <FrameLayout
+            android:id="@+id/ahd_widget_coin_slot"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp" />
+
+        <FrameLayout
+            android:id="@+id/ahd_widget_expedition_slot"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp" />
+
+        <FrameLayout
+            android:id="@+id/ahd_widget_daily_slot"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp" />
+    </LinearLayout>
+</LinearLayout>

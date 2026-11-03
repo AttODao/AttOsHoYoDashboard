@@ -141,6 +141,9 @@ internal fun parseRfc3339Ms(text: String): Long? {
     return (days * 86400 + hour * 3600 + minute * 60 + second - offset) * 1000 + fraction
 }
 
+/** The app page a widget tap opens: the dashboard on [game]'s tab (app/navigation.rs target_game). */
+internal fun widgetOpenTarget(game: WidgetGame): String = "/dashboard?game=${game.key}"
+
 sealed class WidgetState {
     object SignedOut : WidgetState()
     object NoAccount : WidgetState()
