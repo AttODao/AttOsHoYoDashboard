@@ -58,7 +58,8 @@ jobs:
             ks="$ks_dir/release.jks"
             trap 'rm -f "$ks"' EXIT
             (umask 077; printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ks")
-            build_tool apksigner sign --ks "$ks" \
+            # v2/v3 only: a v4 signature would leave an extra .idsig file in dist/.
+            build_tool apksigner sign --v4-signing-enabled false --ks "$ks" \
               --ks-pass env:ANDROID_KEYSTORE_PASSWORD --ks-key-alias "$ANDROID_KEY_ALIAS" \
               --out "dist/$APK_NAME" "$apk"
             SIGNING=release
@@ -97,6 +98,14 @@ jobs:
             "$expected"*) ;;
             *) echo "APK manifest does not start with: $expected" >&2; exit 1 ;;
           esac
+
+          # Only the named packages are release assets (docs/releases.md).
+          shopt -s nullglob
+          files=(dist/*)
+          if [ "${#files[@]}" -ne 1 ] || [ "${files[0]}" != "dist/$APK_NAME" ]; then
+            echo "Unexpected files in dist/: ${files[*]}" >&2
+            exit 1
+          fi
 
           # One checksum file over every package of this release.
           (cd dist && sha256sum -- *) > SHA256SUMS
