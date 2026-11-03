@@ -79,7 +79,7 @@ mod android {
         .flatten()
     }
 }
-fn call_on(
+pub(super) fn call_on(
     class: &str,
     name: &str,
     signature: &str,

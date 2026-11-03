@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ahd_widget_genshin_label">原神</string>
+    <string name="ahd_widget_starrail_label">崩壊：スターレイル</string>
+    <string name="ahd_widget_genshin_description">天然樹脂・洞天宝銭・探索派遣・デイリー任務</string>
+    <string name="ahd_widget_starrail_description">開拓力・依頼・デイリー訓練</string>
+    <string name="ahd_widget_sign_in">AHDを開いてログインしてください</string>
+    <string name="ahd_widget_no_account">AHDを開いてゲームアカウントを設定してください</string>
+    <string name="ahd_widget_unavailable">状態を取得できませんでした。AHDを開いて再試行してください</string>
+    <string name="ahd_widget_placeholder_ready">%1$s に更新</string>
+</resources>

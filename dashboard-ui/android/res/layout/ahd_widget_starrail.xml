@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/ahd_widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:gravity="center" android:padding="16dp"
+    android:background="@drawable/ahd_widget_background">
+    <TextView android:id="@+id/ahd_widget_title" android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="@string/ahd_widget_starrail_label" android:textSize="16sp" android:textStyle="bold"
+        android:gravity="center" android:textColor="@color/ahd_widget_text" />
+    <TextView android:id="@+id/ahd_widget_status" android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="@string/ahd_widget_sign_in" android:textSize="13sp" android:textColor="@color/ahd_widget_muted"
+        android:layout_marginTop="8dp" android:maxLines="3" android:gravity="center" />
+</LinearLayout>

@@ -128,6 +128,8 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 ### Androidアプリ
 
+ホーム画面ウィジェットの基盤として原神／スターレイルの2つの3×3ウィジェットを用意しています（現在はプレースホルダー）。ダッシュボードの選択アカウントと状態を共有し、30分周期で更新します。先に `build-android` で生成した後、`devenv --profile android shell -- test-android` でモデルのJVMテストを実行できます。
+
 `dashboard-ui` はDioxusのmobile機能でAndroidアプリとしてもビルドできます（Cargo feature `mobile`。web版は既定の `web` featureのまま）。画面構成はweb版とほぼ同じですが、次の機能はアプリに含めず、web版でのみ使えます。
 
 - 管理者機能（ユーザー管理・管理者向け通知設定）、APIドキュメント（`/docs`）、ユーザー削除
@@ -171,6 +173,9 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | パス | 責務 |
 | --- | --- |
 | `dashboard-ui/src/app/navigation.rs` | 通常パス・History API・認証状態に応じた転送と戻る／進むの対応 |
+| `dashboard-ui/src/app/home_widgets.rs` | 選択アカウント・状態とAndroidホーム画面ウィジェットの同期 |
+| `dashboard-ui/android/kotlin/` | ウィジェットのモデル・パーサー・推定、保存・JNI・更新ジョブとゲーム別provider |
+| `dashboard-ui/android/test/` | ウィジェットモデルのKotlin JVMテスト |
 | `dashboard-ui/src/app/state.rs` | 画面状態、認証・初期設定ゲートと画面データ取得の起動 |
 | `dashboard-ui/src/app/session.rs` | `/me`による起動・再確認、初期設定ゲートのその場での再読み込み、ログアウト |
 | `dashboard-ui/src/app/actions.rs` | 操作の予約（busy）と完了・APIエラー処理。セッション世代とは独立 |
@@ -178,7 +183,7 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | `dashboard-ui/src/app/display.rs` | 数値・ブラウザのローカル時刻による簡潔な月日／24時間表示、データの経過時間、上限への近さ、サーバー時刻とブラウザ時刻の換算、エラーコードの表示文への対応付け |
 | `dashboard-ui/src/pages/` | 画面、メニュー、設定、ユーザー管理、このアプリについて |
 | `dashboard-ui/src/platform.rs` | web版とAndroidアプリの切り替え（`APP`）、両方で動くタイマーと時刻、web版を既定のブラウザで開く処理 |
-| `dashboard-ui/src/mobile/` | Androidアプリ専用：サーバーへの直接接続とセッションCookieの保存（`http.rs`・`session.rs`）、アプリ専用領域のファイル（`storage.rs`）、端末時刻（`time.rs`）、通知予測とJNIブリッジ（`reminders.rs`・`notify.rs`）、サーバーの受信箱への登録の判断（`inbox.rs`）、web版がweb-sysで行うDOM操作の `document::eval` 版（`dom.rs`） |
+| `dashboard-ui/src/mobile/` | Androidアプリ専用：サーバーへの直接接続とセッションCookieの保存（`http.rs`・`session.rs`）、アプリ専用領域のファイル（`storage.rs`）、端末時刻（`time.rs`）、通知予測とJNIブリッジ（`reminders.rs`・`notify.rs`）、ウィジェットへ渡す内容とJNI（`widgets.rs`）、サーバーの受信箱への登録の判断（`inbox.rs`）、web版がweb-sysで行うDOM操作の `document::eval` 版（`dom.rs`） |
 | `dashboard-ui/src/app/device_notifications.rs` | 端末通知の設定・予定の保存、状態変更時の再計算、サーバーの受信箱への端末登録と解除、表示中の確認、通知からの画面遷移 |
 | `dashboard-ui/src/pages/device_notifications.rs` | アプリの端末通知カード（全体のON/OFF・許可・登録状態・テスト） |
 | `dashboard-ui/android/res/` | ランチャーと通知のアイコン、アプリ名、DayNightテーマ、開発用サーバー（localhost）へのHTTPを許可するnetwork security config（`build-android` が生成プロジェクトへ上書き） |

@@ -87,6 +87,9 @@ in
     scripts.build-android.exec = ''
       exec ${pkgs.bash}/bin/bash "$DEVENV_ROOT/scripts/build-android.sh" "$@"
     '';
+    scripts.test-android.exec = ''
+      exec ${pkgs.bash}/bin/bash "$DEVENV_ROOT/scripts/test-android.sh" "$@"
+    '';
     scripts.check-android.exec = ''
       set -e
       cd "$DEVENV_ROOT"
