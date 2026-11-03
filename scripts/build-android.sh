@@ -3,8 +3,9 @@
 # dx generates and assembles the Gradle project; then the AHD launcher/notification resources,
 # label, theme and network security config (dashboard-ui/android/res) replace Dioxus' defaults,
 # the activity keeps itself across configuration changes, the manifest receivers, the inbox
-# job service and browser sign-in callbacks are inserted. Home-screen widget Kotlin sources,
-# resources and JVM tests are copied before Gradle assembles again.
+# job service and browser sign-in callbacks are inserted. Home-screen widget Kotlin sources
+# (dashboard-ui/android/kotlin, next to MainActivity.kt), resources and JVM tests are copied
+# before Gradle assembles again.
 set -euo pipefail
 cd "${DEVENV_ROOT:?run inside the devenv android profile}"
 
@@ -31,9 +32,13 @@ for source in "$kotlin_src" "$test_src"; do
   fi
 done
 # dx rewrites its own resources but keeps extra files: drop the previous overlay first,
-# or its PNG icons would duplicate dx's WebP ones when dx runs Gradle.
+# or its PNG icons would duplicate dx's WebP ones when dx runs Gradle. The same goes for the
+# extra Kotlin sources (a removed one would otherwise stay in the build).
 if [ -d "$res" ]; then
   (cd "$overlay" && find . -type f) | while read -r file; do rm -f "$res/$file"; done
+fi
+if [ -d "$kotlin_src" ]; then
+  find "$kotlin_src" -maxdepth 1 -name 'Ahd*.kt' -delete
 fi
 # dx adds the library for this target but keeps other ABIs' from earlier builds, which
 # could carry another AHD_SERVER_URL: the APK must hold this build only.
@@ -86,6 +91,20 @@ if ! grep -qF 'android:scheme="cc.attodao.ahd"' "$manifest"; then
   mv "$manifest.tmp" "$manifest"
 fi
 grep -qF 'android:scheme="cc.attodao.ahd"' "$manifest"
+# The widget indicator samples are a debug-only screen.
+if [ "$profile" = debug ] && ! grep -q AhdIndicatorSamplesActivity "$manifest"; then
+  awk '
+    /<\/application>/ {
+      while ((getline line < "dashboard-ui/android/AndroidManifest.samples.xml") > 0) print line
+      close("dashboard-ui/android/AndroidManifest.samples.xml")
+    }
+    { print }
+  ' "$manifest" > "$manifest.tmp"
+  mv "$manifest.tmp" "$manifest"
+fi
+if [ "$profile" = debug ]; then
+  grep -q AhdIndicatorSamplesActivity "$manifest"
+fi
 # Android only installs an update when versionCode does not go down; dx always writes 1.
 gradle="$project/app/build.gradle.kts"
 if ! grep -qF '// AHD: JVM unit tests' "$gradle"; then

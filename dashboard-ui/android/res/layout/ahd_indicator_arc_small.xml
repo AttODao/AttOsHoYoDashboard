@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Arc indicator, small (AhdIndicators.arc): 270° gauge with an icon or the value in the
+     center and an optional caption below. The ring keeps a fixed dp size (RemoteViews cannot
+     resize views before API 31); the radii are ratios, so the ring stays round at any density. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/ahd_indicator_root"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:gravity="center_horizontal"
+    android:importantForAccessibility="yes"
+    android:orientation="vertical">
+
+    <FrameLayout
+        android:layout_width="@dimen/ahd_indicator_arc_small"
+        android:layout_height="@dimen/ahd_indicator_arc_small"
+        android:importantForAccessibility="noHideDescendants">
+
+        <ImageView
+            android:id="@+id/ahd_indicator_track"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:importantForAccessibility="no"
+            android:scaleType="fitXY"
+            android:src="@drawable/ahd_indicator_arc_ring"
+            android:tint="@color/ahd_indicator_track"
+            android:tintMode="src_in" />
+
+        <ImageView
+            android:id="@+id/ahd_indicator_fill_genshin"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:importantForAccessibility="no"
+            android:scaleType="fitXY"
+            android:src="@drawable/ahd_indicator_arc_ring"
+            android:tint="@color/ahd_indicator_genshin"
+            android:tintMode="src_in"
+            android:visibility="gone" />
+        <ImageView
+            android:id="@+id/ahd_indicator_fill_starrail"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:importantForAccessibility="no"
+            android:scaleType="fitXY"
+            android:src="@drawable/ahd_indicator_arc_ring"
+            android:tint="@color/ahd_indicator_starrail"
+            android:tintMode="src_in"
+            android:visibility="gone" />
+        <ImageView
+            android:id="@+id/ahd_indicator_fill_near"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:importantForAccessibility="no"
+            android:scaleType="fitXY"
+            android:src="@drawable/ahd_indicator_arc_ring"
+            android:tint="@color/ahd_indicator_near"
+            android:tintMode="src_in"
+            android:visibility="gone" />
+        <ImageView
+            android:id="@+id/ahd_indicator_fill_full"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:importantForAccessibility="no"
+            android:scaleType="fitXY"
+            android:src="@drawable/ahd_indicator_arc_ring"
+            android:tint="@color/ahd_indicator_full"
+            android:tintMode="src_in"
+            android:visibility="gone" />
+
+        <ImageView
+            android:id="@+id/ahd_indicator_icon"
+            android:layout_width="@dimen/ahd_indicator_arc_small_icon"
+            android:layout_height="@dimen/ahd_indicator_arc_small_icon"
+            android:layout_gravity="center"
+            android:importantForAccessibility="no"
+            android:scaleType="fitCenter"
+            android:tint="@color/ahd_indicator_text"
+            android:tintMode="src_in"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/ahd_indicator_value"
+            style="@style/AhdIndicatorValue"
+            android:layout_gravity="center"
+            android:textSize="@dimen/ahd_indicator_arc_small_value_text" />
+
+        <TextView
+            android:id="@+id/ahd_indicator_value_full"
+            style="@style/AhdIndicatorValue.Full"
+            android:layout_gravity="center"
+            android:textSize="@dimen/ahd_indicator_arc_small_value_text" />
+    </FrameLayout>
+
+    <!-- Pulled up into the gauge's open bottom. -->
+    <TextView
+        android:id="@+id/ahd_indicator_caption"
+        style="@style/AhdIndicatorCaption"
+        android:layout_marginTop="@dimen/ahd_indicator_arc_small_caption_offset"
+        android:gravity="center_horizontal" />
+</LinearLayout>

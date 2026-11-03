@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Widget indicator sizes (layout/ahd_indicator_*.xml). Labels, bar values and captions
+         are in sp and follow the system font size (they ellipsize when space runs out). The
+         value inside the arc is in dp: the ring has a fixed size, and a larger font would
+         push the number over the ring. The arc captions sit in the gauge's open bottom. -->
+    <dimen name="ahd_indicator_bar_height">6dp</dimen>
+    <dimen name="ahd_indicator_bar_radius">3dp</dimen>
+    <dimen name="ahd_indicator_label_text">12sp</dimen>
+    <dimen name="ahd_indicator_bar_value_text">14sp</dimen>
+    <dimen name="ahd_indicator_caption_text">11sp</dimen>
+    <dimen name="ahd_indicator_arc_large">88dp</dimen>
+    <dimen name="ahd_indicator_arc_large_icon">36dp</dimen>
+    <dimen name="ahd_indicator_arc_large_value_text">24dp</dimen>
+    <dimen name="ahd_indicator_arc_large_caption_offset">-12dp</dimen>
+    <dimen name="ahd_indicator_arc_small">56dp</dimen>
+    <dimen name="ahd_indicator_arc_small_icon">24dp</dimen>
+    <dimen name="ahd_indicator_arc_small_value_text">15dp</dimen>
+    <dimen name="ahd_indicator_arc_small_caption_offset">-6dp</dimen>
+</resources>
