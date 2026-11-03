@@ -248,6 +248,11 @@ pub(super) fn use_device_notifications(state: Signal<AppState>) -> DeviceNotific
                     granted.set(value);
                 }
                 if let Some(target) = notify::take_open_target() {
+                    // Kept until the dashboard mounts (a cold start opens it after sign-in).
+                    if let Some(game) = navigation::target_game(&target) {
+                        let mut requests = state;
+                        requests.write().dashboard_game = Some(game);
+                    }
                     let open = {
                         let read = state.read();
                         read.phase == Phase::SignedIn && read.ready()

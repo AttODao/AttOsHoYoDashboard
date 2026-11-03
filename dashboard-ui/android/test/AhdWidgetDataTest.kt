@@ -142,4 +142,9 @@ class AhdWidgetDataTest {
         assertSame(WidgetState.Unavailable, widgetStateFromStored(game, storedRecord("ready", "synthetic-account", null, false)))
         assertSame(WidgetState.Unavailable, widgetStateFromStored(game, storedRecord("ready", "synthetic-account", JSONObject(), false)))
     }
+
+    @Test fun tapOpensTheGameTab() {
+        assertEquals("/dashboard?game=genshin", widgetOpenTarget(WidgetGame.GENSHIN))
+        assertEquals("/dashboard?game=starrail", widgetOpenTarget(WidgetGame.STARRAIL))
+    }
 }

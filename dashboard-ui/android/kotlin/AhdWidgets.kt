@@ -10,6 +10,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
 import android.util.Log
 import android.widget.RemoteViews
 import org.json.JSONObject
@@ -146,6 +147,14 @@ class AhdWidgetJob : JobService() {
 /** Shared state, tap target and periodic refresh; game widgets override render only. */
 abstract class AhdGameWidget(val game: WidgetGame) : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) = updateWidgets(context, manager, ids)
+    // Resizing changes the size the layout is chosen for (render with options).
+    override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: Bundle) =
+        updateWidgets(context, manager, intArrayOf(id))
+    // Texts set from code (values, times) follow the locale only when drawn again; the launcher
+    // re-inflates the layout itself (receiver intent-filter in AndroidManifest.application.xml).
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_LOCALE_CHANGED) AhdWidgets.renderAll(context) else super.onReceive(context, intent)
+    }
     override fun onEnabled(context: Context) {
         AhdWidgets.schedule(context)
         val app = context.applicationContext
@@ -155,12 +164,14 @@ abstract class AhdGameWidget(val game: WidgetGame) : AppWidgetProvider() {
         val now = System.currentTimeMillis()
         val state = AhdWidgets.state(context, game)
         for (id in ids) {
-            val views = render(context, state, now)
+            val views = render(context, state, now, manager.getAppWidgetOptions(id))
             views.setOnClickPendingIntent(rootId(context), openApp(context))
             manager.updateAppWidget(id, views)
         }
     }
     open fun render(context: Context, state: WidgetState, nowMs: Long): RemoteViews = placeholder(context, state)
+    /** Size-aware variant: [options] holds the AppWidgetManager.OPTION_APPWIDGET_* sizes in dp. */
+    open fun render(context: Context, state: WidgetState, nowMs: Long, options: Bundle): RemoteViews = render(context, state, nowMs)
     protected fun rootId(context: Context): Int = context.resources.getIdentifier("ahd_widget_root", "id", context.packageName)
     protected fun placeholder(context: Context, state: WidgetState): RemoteViews {
         fun id(name: String, type: String) = context.resources.getIdentifier(name, type, context.packageName)
@@ -176,7 +187,8 @@ abstract class AhdGameWidget(val game: WidgetGame) : AppWidgetProvider() {
         views.setTextViewText(id("ahd_widget_status", "id"), status)
         return views
     }
+    // Opens the dashboard on this game's tab (Rust: app/navigation.rs target_game).
     protected fun openApp(context: Context): PendingIntent = PendingIntent.getActivity(context, 0x4157 + game.ordinal,
         Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            .putExtra(AhdNotifications.EXTRA_OPEN, "/dashboard"), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            .putExtra(AhdNotifications.EXTRA_OPEN, widgetOpenTarget(game)), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 }

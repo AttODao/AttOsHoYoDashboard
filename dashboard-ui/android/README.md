@@ -54,7 +54,8 @@ Rustの `app/home_widgets.rs` はダッシュボードの変更ごとに選択�
 
 1. 各ゲームのクラスで `render(context, state, nowMs)` をoverrideします。`when (state)` で `SignedOut`、`NoAccount`、`Unavailable`、`Ready` を扱い、未準備の状態では `placeholder(context, state)` を利用できます。
 2. `Ready` の `state.snapshot.at(nowMs)` で樹脂・開拓力・宝銭を推定します。残り時間は `remainingSecondsAt(nowMs)`、派遣の完了数は `Expeditions.finishedAt(nowMs)` を使います。
-3. RemoteViews対応のビューだけを使い、タップで `/dashboard` を開くためルートのidを `ahd_widget_root` にします。
+3. RemoteViews対応のビューだけを使い、ルートのidを `ahd_widget_root` にします。タップは `/dashboard?game=<key>` を開き、アプリはそのゲームのタブを選びます（`widgetOpenTarget`、Rustの `app/navigation.rs` `target_game`）。大きさで描き分ける場合は `render(context, state, nowMs, options)` をoverrideします（`options` は `AppWidgetManager.OPTION_APPWIDGET_*` のdp値。リサイズ時にも再描画されます）。
+   文言は `values/`（日本語、既定）と `values-en/`、面の色は `values/`・`values-night/` の `ahd_widget_*` です。
 4. Kotlinに `R.` 参照を追加せず、`context.resources.getIdentifier(name, type, context.packageName)` を使います。リソースはdxの最初のGradle実行の後にコピーされます。**MainActivity.ktから新しいKotlinファイルを参照してはいけません**（同じビルド順の制約）。
 5. 純粋モデルのテストは `android/test/` に追加します。先に `build-android` を実行し、`devenv --profile android shell -- test-android` でJUnitを実行します。Kotlinとテストの変更だけなら再ビルドせずに再コピーしてテストできます。
 

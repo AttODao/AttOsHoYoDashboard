@@ -128,7 +128,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 ### Androidアプリ
 
-ホーム画面ウィジェットの基盤として原神／スターレイルの2つの3×3ウィジェットを用意しています（現在はプレースホルダー）。ダッシュボードの選択アカウントと状態を共有し、30分周期で更新します。先に `build-android` で生成した後、`devenv --profile android shell -- test-android` でモデルのJVMテストを実行できます。
+ホーム画面ウィジェットの基盤として原神／スターレイルの2つの3×3ウィジェットを用意しています（現在はプレースホルダー）。タップでアプリのダッシュボードがそのゲームのタブで開きます。ダッシュボードの選択アカウントと状態を共有し、30分周期で更新します。先に `build-android` で生成した後、`devenv --profile android shell -- test-android` でモデルのJVMテストを実行できます。
 
 `dashboard-ui` はDioxusのmobile機能でAndroidアプリとしてもビルドできます（Cargo feature `mobile`。web版は既定の `web` featureのまま）。画面構成はweb版とほぼ同じですが、次の機能はアプリに含めず、web版でのみ使えます。
 

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Home-screen widget panels, dark mode (dashboard.css :root). -->
+    <color name="ahd_widget_surface">#18171D</color>
+    <color name="ahd_widget_text">#F8F7FC</color>
+    <color name="ahd_widget_muted">#B7B2C4</color>
+    <color name="ahd_widget_warning">#FFD585</color>
+</resources>

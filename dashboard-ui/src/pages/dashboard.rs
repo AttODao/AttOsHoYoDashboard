@@ -16,6 +16,15 @@ use uuid::Uuid;
 pub(super) fn DashboardPage(state: Signal<AppState>) -> Element {
     let ui = use_preferences();
     let mut active = use_signal(|| "genshin");
+    // A home-screen widget tap asks for its game's tab (`navigation::target_game`).
+    use_effect(move || {
+        let requested = state.read().dashboard_game;
+        if let Some(game) = requested {
+            active.set(game);
+            let mut requests = state;
+            requests.write().dashboard_game = None;
+        }
+    });
     let mobile = use_mobile_dashboard();
     use_clock_provider();
     rsx! {

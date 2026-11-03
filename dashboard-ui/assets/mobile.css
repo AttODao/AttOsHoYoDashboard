@@ -51,3 +51,5 @@ html:has(#pull-refresh){overscroll-behavior-y:none}
 .pull-refresh svg{transform:rotate(var(--pull-turn,0deg))}
 .pull-refresh[data-refreshing=true]{opacity:1;transform:translateY(32px);color:var(--cyan)}
 .pull-refresh[data-refreshing=true] svg{animation:ahd-spin 900ms linear infinite}
+/* Touch keeps :hover on the last tapped tab; the shared button hover border would then underline a tab that is no longer selected (e.g. after a widget opens another game). */
+.tabs [role=tab]:not([aria-selected=true]):hover{border-bottom-color:transparent;color:var(--muted)}

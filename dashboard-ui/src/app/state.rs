@@ -113,6 +113,9 @@ pub(super) struct AppState {
     pub(super) admin_audit_more: bool,
     pub(super) openapi: Option<serde_json::Value>,
     pub(super) openapi_error: Option<String>,
+    /// Dashboard tab asked for from outside the page (a home-screen widget tap);
+    /// `DashboardPage` selects it once and clears the request.
+    pub(super) dashboard_game: Option<&'static str>,
 }
 
 impl AppState {
@@ -155,6 +158,7 @@ impl AppState {
             admin_audit_more: false,
             openapi: None,
             openapi_error: None,
+            dashboard_game: None,
         }
     }
 
