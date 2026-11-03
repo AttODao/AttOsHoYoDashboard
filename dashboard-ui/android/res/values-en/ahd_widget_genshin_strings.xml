@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Genshin widget (kotlin/GenshinWidget.kt), English. -->
+    <string name="ahd_widget_genshin_resin">Original Resin</string>
+    <string name="ahd_widget_genshin_coin">Realm Currency</string>
+    <string name="ahd_widget_genshin_expeditions">Expeditions</string>
+    <string name="ahd_widget_genshin_daily">Commissions</string>
+    <string name="ahd_widget_genshin_resin_full">Fully replenished</string>
+    <string name="ahd_widget_genshin_coin_full">At cap</string>
+    <string name="ahd_widget_genshin_daily_claimed">Claimed</string>
+    <string name="ahd_widget_genshin_daily_unclaimed">Unclaimed</string>
+    <!-- Compact bar value: "3/4 · unclaimed". -->
+    <string name="ahd_widget_genshin_daily_claimed_short">claimed</string>
+    <string name="ahd_widget_genshin_daily_unclaimed_short">unclaimed</string>
+</resources>

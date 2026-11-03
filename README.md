@@ -128,7 +128,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 ### Androidアプリ
 
-ホーム画面ウィジェットの基盤として原神／スターレイルの2つの3×3ウィジェットを用意しています（現在はプレースホルダー）。タップでアプリのダッシュボードがそのゲームのタブで開きます。ダッシュボードの選択アカウントと状態を共有し、30分周期で更新します。先に `build-android` で生成した後、`devenv --profile android shell -- test-android` でモデルのJVMテストを実行できます。
+ホーム画面ウィジェットとして原神／スターレイルの2つの3×3ウィジェットを用意しています（原神は樹脂・宝銭・探索派遣・デイリー任務を表示。スターレイルは現在プレースホルダー）。タップでアプリのダッシュボードがそのゲームのタブで開きます。ダッシュボードの選択アカウントと状態を共有し、30分周期で更新します。先に `build-android` で生成した後、`devenv --profile android shell -- test-android` でモデルのJVMテストを実行できます。
 
 `dashboard-ui` はDioxusのmobile機能でAndroidアプリとしてもビルドできます（Cargo feature `mobile`。web版は既定の `web` featureのまま）。画面構成はweb版とほぼ同じですが、次の機能はアプリに含めず、web版でのみ使えます。
 
@@ -176,7 +176,7 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | --- | --- |
 | `dashboard-ui/src/app/navigation.rs` | 通常パス・History API・認証状態に応じた転送と戻る／進むの対応 |
 | `dashboard-ui/src/app/home_widgets.rs` | 選択アカウント・状態とAndroidホーム画面ウィジェットの同期 |
-| `dashboard-ui/android/kotlin/` | ウィジェットのモデル・パーサー・推定、保存・JNI・更新ジョブとゲーム別provider |
+| `dashboard-ui/android/kotlin/` | ウィジェットのモデル・パーサー・推定、保存・JNI・更新ジョブとゲーム別provider（原神の描画は `GenshinWidget.kt`、表示内容の判断は `GenshinWidgetModel.kt`） |
 | `dashboard-ui/android/test/` | ウィジェットモデルのKotlin JVMテスト |
 | `dashboard-ui/src/app/state.rs` | 画面状態、認証・初期設定ゲートと画面データ取得の起動 |
 | `dashboard-ui/src/app/session.rs` | `/me`による起動・再確認、初期設定ゲートのその場での再読み込み、ログアウト |

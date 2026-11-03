@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Genshin widget panel, dark mode (dashboard.css .game-panel.genshin). -->
+    <color name="ahd_widget_genshin_surface">#132B27</color>
+    <color name="ahd_widget_genshin_border">#456A5D</color>
+    <color name="ahd_widget_genshin_title">#93F5CE</color>
+    <color name="ahd_widget_genshin_muted">#B7D9CC</color>
+</resources>

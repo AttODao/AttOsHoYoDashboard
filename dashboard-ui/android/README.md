@@ -45,7 +45,7 @@ system.
 
 - `kotlin/AhdWidgetData.kt`: Android依存のないモデル、RFC 3339パーサー、取得後の回復値の推定。
 - `kotlin/AhdWidgets.kt`: SharedPreferences `ahd_widgets`、Rust JNIブリッジ、更新ジョブ、共通provider。
-- `kotlin/GenshinWidget.kt` / `kotlin/StarRailWidget.kt`: ゲーム別の入口（後続実装で描画を追加）。
+- `kotlin/GenshinWidget.kt` / `kotlin/StarRailWidget.kt`: ゲーム別の入口。原神は実装済み（下記「Genshin widget」）。
 - `res/xml/ahd_widget_{genshin,starrail}_info.xml` / `res/layout/ahd_widget_{genshin,starrail}.xml`: サイズ・更新周期と、ゲームごとのRemoteViewsレイアウト（ピッカーのプレビューと初期表示を兼ねる。後続タスクはこのファイルを書き換えればよい）。`AndroidManifest.application.xml` にreceiverとジョブを登録。
 
 Rustの `app/home_widgets.rs` はダッシュボードの変更ごとに選択中のアカウントと取得済みの状態を `mobile/widgets.rs` からpublishし、Kotlinが `ahd_widgets` に保存します。未取得でも同じアカウントのキャッシュは保持します。JobSchedulerは30分周期で状態APIを読み、`updatePeriodMillis` も30分です。401またはセッションを忘れるログアウトで保存を消去しSignedOutに戻します。通信失敗時は既存の状態に失敗フラグを付けて保持します。
@@ -60,6 +60,16 @@ Rustの `app/home_widgets.rs` はダッシュボードの変更ごとに選択�
 5. 純粋モデルのテストは `android/test/` に追加します。先に `build-android` を実行し、`devenv --profile android shell -- test-android` でJUnitを実行します。Kotlinとテストの変更だけなら再ビルドせずに再コピーしてテストできます。
 
 JobSchedulerは不正確でDoze中は遅延します。取得の間の数値は推定で、サーバーの状態キャッシュTTLも適用されます。ウィジェットはダッシュボードで選択したアカウントに追従します。
+
+### Genshin widget
+
+`kotlin/GenshinWidget.kt` が描画し、表示する値と色の判断は `kotlin/GenshinWidgetModel.kt`（Android非依存、`test/GenshinWidgetModelTest.kt`）にあります。
+
+- 通常（`layout/ahd_widget_genshin.xml`、幅210dp・高さ250dp以上。ピッカーのプレビューと初期表示も兼ねる）: 見出し（原神と取得時刻）、上段に天然樹脂の88dpの円弧（中央に現在値）と「120/200・全回復まで・3時間12分」、下段に洞天宝銭・探索派遣・デイリー任務の56dpの円弧（中央はアイコン）と名前・値・補足を3列で並べます。補足は宝銭が「あと …」（満タンまで）、派遣が「最短 …」「最長 …」、デイリーが追加報酬の受取状況です。
+- それより小さくリサイズすると（`layout/ahd_widget_genshin_compact.xml`）、同じ4項目をバーで縦に並べます（補足は樹脂の残り時間だけ。デイリーは値の横に「受取済」／「未受取」）。大きさは `OPTION_APPWIDGET_MIN_WIDTH` と `OPTION_APPWIDGET_MAX_HEIGHT`（縦向きの大きさ）で選び、不明なら通常です。
+- 色: 面はダッシュボードの原神カードの色（`values(-night)/ahd_widget_genshin_colors.xml`）、ゲージは `ahd_indicator_genshin`（ミント）。樹脂・宝銭は90%以上と上限でwarning色になり、上限では値と補足もwarning色です。派遣は全員帰還（受取待ち）で、デイリーは4/4で追加報酬が未受取のときにwarning色にし、受取済みの4/4はミントのままです。
+- 状態: 未ログイン・アカウントなし・未取得は、アイコンと案内（「AHDを開いてログインしてください」など）と「タップしてAHDを開く」を表示します。取得済みで最後の更新に失敗したときは、値はそのまま見出しの時刻を「更新失敗 HH:MM」のwarning色にします。
+- 値は描画時刻に合わせて推定します（`snapshot.at(nowMs)`）。描画はアプリのpublish、30分ごとの更新ジョブ、`updatePeriodMillis`（30分）、リサイズのときです。
 
 ### 動作確認手順（エミュレータ）
 
