@@ -265,6 +265,17 @@ Android Credential Manager（`androidx.credentials`）でアプリ内からパ�
 
 ブラウザ経由なら、既存のweb版のWebAuthn処理をそのまま使え、ブラウザが対応する方法（端末のパスキー、セキュリティキー、別端末のQRコード）がすべて使え、サーバーごとの証明書設定も要りません。代わりにブラウザとの往復が1回増えます。
 
+### 5.4 ホーム画面ウィジェット用のインジケーター部品
+
+ウィジェット本体（AppWidgetProvider）が使う共通部品として、横バー型と丸型（270°の円弧）のインジケーターを `dashboard-ui/android/kotlin/AhdIndicators.kt` に置きます。どちらも `RemoteViews` を返し、ウィジェットのレイアウト内の入れ物に `addView` して使います。使い方とオプションの一覧は [dashboard-ui/android/README.md](../dashboard-ui/android/README.md) の「Widget indicators」です。
+
+- バー型：ラベルと数値（`120/200`）を1行に、その下にバー、任意で残り時間などの補足。丸型：中央に数値またはアイコン、円弧の開いた下部に残り時間（`3時間12分`）。丸型は88dpと56dpの2サイズ（API 31未満のRemoteViewsはビューの大きさを変えられないため）。
+- 値なし（`null`）は空のトラックと「—」、上限の90%以上は「まもなく上限」の色、上限は上限の色で、数値も上限の色にします（ダッシュボードの `fill_level` と同じ規則）。色は原神がミント、スターレイルがラベンダー、まもなく上限・上限はダッシュボードのwarning色です（`res/values(-night)/ahd_indicator_colors.xml`）。
+- 描画：RemoteViewsは独自のViewを描けず、ProgressBarの色をコードから変えられるのはAPI 31からです（アプリはAPI 24以上）。そのため、バーは `<clip>`、円弧は回転したring `<shape android:useLevel="true">` のdrawableを `ImageView.setImageLevel` で伸ばします。色はレイアウトの `android:tint` で `values`／`values-night` から取るので、ランチャーが再inflateすればダークモードの切り替えにも追従します。Canvasで描いたBitmapは、描いた時点の色と密度に固定され、更新のたびにランチャーへ画像を送るため使っていません。
+- 文言は `values/ahd_indicator_strings.xml`（日本語、アプリと同じく既定）と `values-en`。端末のロケールで選ばれます。
+- 確認：デバッグビルドには、全状態（値なし・0%・50%・90%・100%）を両ゲーム・ライト／ダークで並べるサンプル画面 `AhdIndicatorSamplesActivity` が入ります（`adb shell am start -n cc.attodao.ahd/dev.dioxus.main.AhdIndicatorSamplesActivity`、release用のmanifestには入れません）。規則（状態の判定、drawableのlevel、数値と残り時間の表記）と、レイアウトのidや色の定義は `devenv --profile android shell -- test-android-kotlin` がJVMで検査します（`dashboard-ui/android/tests/AhdIndicatorModelTest.kt`）。
+- 確認した表示：エミュレータ（API 34、1080×2400）のサンプル画面で、密度420（日本語・英語）と密度160・文字200%、それぞれライト／ダーク。文字の欠けや円弧のつぶれはない。tintの既定モード（src_atop）では半透明のトラック色が白い図形の上で白く残るため、tintした全ビューを `tintMode="src_in"` にしている（JVM検査でも確認）。
+
 ## 6. web版との共通化と分岐
 
 ### 共通のまま使うもの
@@ -327,6 +338,9 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/android/AndroidManifest.activity.xml` | 生成manifestのactivityに挿入する `cc.attodao.ahd://login` のintent-filter |
 | `dashboard-ui/android/res/**` | ランチャーアイコン、通知アイコン、アプリ名、色、DayNightテーマ（`values/styles.xml`） |
 | `dashboard-ui/android/README.md` | リソースの作り方 |
+| `dashboard-ui/android/kotlin/*.kt` | ウィジェット用インジケーター（`AhdIndicators.kt`、`AhdIndicatorModel.kt`）とデバッグ用サンプル画面（`AhdIndicatorSamples.kt`）。`build-android` が生成プロジェクトへコピーする |
+| `dashboard-ui/android/tests/AhdIndicatorModelTest.kt` | インジケーターの規則とレイアウトのJVM検査（`test-android-kotlin`） |
+| `dashboard-ui/android/AndroidManifest.samples.xml` | デバッグビルドだけ生成manifestに挿入するサンプル画面のactivity |
 | `scripts/build-android.sh` | APKのビルド（2節）。生成manifestへの `launchMode="singleTask"`・`configChanges` の書き換えとreceiverの挿入も行う |
 | `docs/android-changes.md` | 本書 |
 
@@ -354,7 +368,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/Cargo.toml` | `mobile` feature とoptional依存、Android向けの `jni`・`ndk-context`、dev-dependenciesの `chrono`・`url` |
 | `dashboard-ui/Dioxus.toml` | `android_main_activity`、`[bundle]`、`[android]`、`[android.permissions]` |
 | `Cargo.lock` | 上記の依存の追加 |
-| `devenv.nix` | `android`・`android-emulator` プロファイル、`build-android`・`check-android` |
+| `devenv.nix` | `android`・`android-emulator` プロファイル、`build-android`・`check-android`・`test-android-kotlin`（`kotlin` パッケージ） |
 | `devenv.yaml` | `allowUnfree: true` |
 | `rust-toolchain.toml` | Android向けtargetの追加 |
 | `.gitignore` | `android` プロファイルが書く `/local.properties`、`/.android/` |

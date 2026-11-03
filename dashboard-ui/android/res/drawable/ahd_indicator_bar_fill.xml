@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The filled share of the bar is the drawable level (0..10000, AhdIndicators.bar). -->
+<clip xmlns:android="http://schemas.android.com/apk/res/android"
+    android:clipOrientation="horizontal"
+    android:drawable="@drawable/ahd_indicator_bar_shape"
+    android:gravity="start|fill_vertical" />

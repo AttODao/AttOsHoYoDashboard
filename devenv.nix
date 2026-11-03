@@ -96,6 +96,16 @@ in
       export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC_aarch64_linux_android"
       exec cargo clippy --locked -p attos-dashboard-ui --no-default-features --features mobile --target aarch64-linux-android -- -D warnings
     '';
+    # JVM checks of the widget indicator rules and layouts (no Android SDK or Gradle needed).
+    packages = [ pkgs.kotlin ];
+    scripts.test-android-kotlin.exec = ''
+      set -e
+      cd "$DEVENV_ROOT"
+      out=$(mktemp -d)
+      trap 'rm -rf "$out"' EXIT
+      kotlinc -nowarn dashboard-ui/android/kotlin/AhdIndicatorModel.kt dashboard-ui/android/tests/AhdIndicatorModelTest.kt -include-runtime -d "$out/tests.jar"
+      java -cp "$out/tests.jar" dev.dioxus.main.AhdIndicatorModelTestKt dashboard-ui/android/res
+    '';
   };
   # Emulator and x86_64 system image for local testing (needs KVM):
   # `devenv --profile android --profile android-emulator shell`.
