@@ -1,0 +1,488 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Genshin widget, regular size (GenshinWidget.kt, GenshinWidgetLayout.REGULAR): Original Resin as the
+     large arc, Realm Currency, expeditions and daily commissions in three columns below. Also
+     the initial and preview layout. The arcs are AhdIndicators RemoteViews added into the slots.
+     The column values are in dp like the arc centers: a third of the widget cannot fit
+     "2400/2400" at large font sizes, and a cut number is worse than a fixed size; labels and
+     details stay in sp and ellipsize. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/ahd_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/ahd_widget_genshin_background"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <!-- Header: game name and the time of the data (warning color when the last refresh failed). -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_marginEnd="6dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ahd_indicator_icon_resin"
+            android:tint="@color/ahd_widget_genshin_title"
+            android:tintMode="src_in" />
+
+        <TextView
+            android:id="@+id/ahd_widget_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textSize="14sp"
+            android:textColor="@color/ahd_widget_genshin_title"
+            android:textStyle="bold"
+            android:text="@string/ahd_widget_genshin_label"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/ahd_widget_updated"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textSize="11sp"
+            android:textColor="@color/ahd_widget_genshin_muted"
+            android:visibility="gone"
+            android:layout_marginStart="6dp" />
+
+        <TextView
+            android:id="@+id/ahd_widget_updated_warn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textSize="11sp"
+            android:textColor="@color/ahd_widget_warning"
+            android:visibility="gone"
+            android:layout_marginStart="6dp" />
+    </LinearLayout>
+
+    <!-- Not signed in, no account or no status yet: what to do in the app (the preview shows the description). -->
+    <LinearLayout
+        android:id="@+id/ahd_widget_message_box"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <ImageView
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ahd_indicator_icon_resin"
+            android:tint="@color/ahd_widget_genshin_title"
+            android:tintMode="src_in" />
+
+        <TextView
+            android:id="@+id/ahd_widget_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:maxLines="4"
+            android:text="@string/ahd_widget_genshin_description"
+            android:textColor="@color/ahd_widget_text"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/ahd_widget_hint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textSize="11sp"
+            android:textColor="@color/ahd_widget_genshin_muted"
+            android:visibility="gone"
+            android:text="@string/ahd_widget_open_hint"
+            android:layout_marginTop="6dp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/ahd_widget_content"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <FrameLayout
+                android:id="@+id/ahd_widget_resin_slot"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:importantForAccessibility="noHideDescendants"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/ahd_widget_resin_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="12sp"
+                    android:textColor="@color/ahd_widget_genshin_muted"
+                    android:text="@string/ahd_widget_genshin_resin" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_resin_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="20sp"
+                    android:textColor="@color/ahd_widget_text"
+                    android:textStyle="bold"
+                    android:layout_marginTop="2dp"
+                    android:fontFeatureSettings="tnum" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_resin_value_warn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="20sp"
+                    android:textColor="@color/ahd_widget_warning"
+                    android:textStyle="bold"
+                    android:visibility="gone"
+                    android:layout_marginTop="2dp"
+                    android:fontFeatureSettings="tnum" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_resin_until"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="11sp"
+                    android:textColor="@color/ahd_widget_genshin_muted"
+                    android:visibility="gone"
+                    android:text="@string/ahd_widget_until_full"
+                    android:layout_marginTop="6dp" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_resin_time"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="14sp"
+                    android:textColor="@color/ahd_widget_text"
+                    android:textStyle="bold"
+                    android:visibility="gone"
+                    android:layout_marginTop="2dp" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_resin_time_warn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="14sp"
+                    android:textColor="@color/ahd_widget_warning"
+                    android:textStyle="bold"
+                    android:visibility="gone"
+                    android:layout_marginTop="2dp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:baselineAligned="false"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <FrameLayout
+                    android:id="@+id/ahd_widget_coin_slot"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_coin_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="11sp"
+                    android:textColor="@color/ahd_widget_genshin_muted"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_coin_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="14dp"
+                    android:textColor="@color/ahd_widget_text"
+                    android:textStyle="bold"
+                    android:fontFeatureSettings="tnum"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_coin_value_warn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="14dp"
+                    android:textColor="@color/ahd_widget_warning"
+                    android:textStyle="bold"
+                    android:visibility="gone"
+                    android:fontFeatureSettings="tnum"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_coin_detail"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="11sp"
+                    android:textColor="@color/ahd_widget_genshin_muted"
+                    android:visibility="gone"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_coin_detail_warn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="11sp"
+                    android:textColor="@color/ahd_widget_warning"
+                    android:visibility="gone"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_coin_detail2"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="11sp"
+                    android:textColor="@color/ahd_widget_genshin_muted"
+                    android:visibility="gone"
+                    android:importantForAccessibility="no" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <FrameLayout
+                    android:id="@+id/ahd_widget_expedition_slot"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_expedition_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="11sp"
+                    android:textColor="@color/ahd_widget_genshin_muted"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_expedition_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="14dp"
+                    android:textColor="@color/ahd_widget_text"
+                    android:textStyle="bold"
+                    android:fontFeatureSettings="tnum"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_expedition_value_warn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="14dp"
+                    android:textColor="@color/ahd_widget_warning"
+                    android:textStyle="bold"
+                    android:visibility="gone"
+                    android:fontFeatureSettings="tnum"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_expedition_detail"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="11sp"
+                    android:textColor="@color/ahd_widget_genshin_muted"
+                    android:visibility="gone"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_expedition_detail_warn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="11sp"
+                    android:textColor="@color/ahd_widget_warning"
+                    android:visibility="gone"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_expedition_detail2"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="11sp"
+                    android:textColor="@color/ahd_widget_genshin_muted"
+                    android:visibility="gone"
+                    android:importantForAccessibility="no" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <FrameLayout
+                    android:id="@+id/ahd_widget_daily_slot"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_daily_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="11sp"
+                    android:textColor="@color/ahd_widget_genshin_muted"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_daily_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="14dp"
+                    android:textColor="@color/ahd_widget_text"
+                    android:textStyle="bold"
+                    android:fontFeatureSettings="tnum"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_daily_value_warn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="14dp"
+                    android:textColor="@color/ahd_widget_warning"
+                    android:textStyle="bold"
+                    android:visibility="gone"
+                    android:fontFeatureSettings="tnum"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_daily_detail"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="11sp"
+                    android:textColor="@color/ahd_widget_genshin_muted"
+                    android:visibility="gone"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_daily_detail_warn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="11sp"
+                    android:textColor="@color/ahd_widget_warning"
+                    android:visibility="gone"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:id="@+id/ahd_widget_daily_detail2"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textSize="11sp"
+                    android:textColor="@color/ahd_widget_genshin_muted"
+                    android:visibility="gone"
+                    android:importantForAccessibility="no" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

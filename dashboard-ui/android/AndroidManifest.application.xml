@@ -9,3 +9,15 @@
         <!-- Polls the server's notification inbox every 15 minutes (AhdInbox). -->
         <service android:name="dev.dioxus.main.AhdInboxJob" android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- Home-screen widgets (dashboard-ui/android/kotlin/AhdWidgets.kt) -->
+        <receiver android:name="dev.dioxus.main.GenshinWidget" android:exported="true" android:label="@string/ahd_widget_genshin_label">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /><action android:name="android.intent.action.LOCALE_CHANGED" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/ahd_widget_genshin_info" />
+        </receiver>
+        <receiver android:name="dev.dioxus.main.StarRailWidget" android:exported="true" android:label="@string/ahd_widget_starrail_label">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /><action android:name="android.intent.action.LOCALE_CHANGED" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/ahd_widget_starrail_info" />
+        </receiver>
+        <!-- Refreshes the widgets status from the server every 30 minutes (AhdWidgets). -->
+        <service android:name="dev.dioxus.main.AhdWidgetJob" android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />

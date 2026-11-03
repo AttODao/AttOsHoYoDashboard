@@ -114,6 +114,9 @@ pub struct DailySummary {
     pub resin_discount_num_limit: Option<i64>,
     pub current_expedition_num: Option<i64>,
     pub max_expedition_num: Option<i64>,
+    /// Star Rail assignment slots and dispatched count (home-screen widget).
+    pub total_expedition_num: Option<i64>,
+    pub accepted_expedition_num: Option<i64>,
     pub transformer_obtained: Option<bool>,
     pub transformer_ready: Option<bool>,
     pub transformer_ready_at: Option<String>,

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Widget indicators, light mode (dashboard.css [data-theme=light]); dark mode is
+         values-night. Near full and full use the dashboard's warning color. -->
+    <color name="ahd_indicator_genshin">#006A4E</color>
+    <color name="ahd_indicator_starrail">#674198</color>
+    <color name="ahd_indicator_near">#825000</color>
+    <color name="ahd_indicator_full">#825000</color>
+    <color name="ahd_indicator_track">#24201C29</color>
+    <color name="ahd_indicator_text">#201C29</color>
+    <color name="ahd_indicator_muted">#625B70</color>
+</resources>

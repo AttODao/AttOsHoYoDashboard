@@ -88,6 +88,9 @@ pub(super) struct AppState {
     pub(super) accounts: Option<Vec<GameAccount>>,
     pub(super) accounts_error: Option<String>,
     pub(super) selected_accounts: BTreeMap<&'static str, GameSelection>,
+    /// The dashboard's game tab (one panel at a time on narrow screens); a home-screen
+    /// widget tap selects its game.
+    pub(super) dashboard_game: &'static str,
     pub(super) account_statuses: Vec<AccountStatusEntry>,
     pub(super) rewards: Vec<RewardSetting>,
     pub(super) rewards_error: Option<String>,
@@ -131,6 +134,7 @@ impl AppState {
             accounts: None,
             accounts_error: None,
             selected_accounts: BTreeMap::new(),
+            dashboard_game: DASHBOARD_GAMES[0],
             account_statuses: Vec::new(),
             rewards: Vec::new(),
             rewards_error: None,

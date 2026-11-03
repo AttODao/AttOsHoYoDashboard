@@ -15,7 +15,11 @@ use uuid::Uuid;
 #[component]
 pub(super) fn DashboardPage(state: Signal<AppState>) -> Element {
     let ui = use_preferences();
-    let mut active = use_signal(|| "genshin");
+    let active = use_memo(move || state.read().dashboard_game);
+    let select = move |game: &'static str| {
+        let mut state = state;
+        state.write().dashboard_game = game;
+    };
     let mobile = use_mobile_dashboard();
     use_clock_provider();
     rsx! {
@@ -34,11 +38,11 @@ pub(super) fn DashboardPage(state: Signal<AppState>) -> Element {
                         r#type: "button", role: "tab", id: "game-tab-{game}",
                         "aria-controls": "game-panel-{game}", "aria-selected": active() == game,
                         tabindex: if active() == game { "0" } else { "-1" },
-                        onclick: move |_| active.set(game),
+                        onclick: move |_| select(game),
                         onkeydown: move |event: KeyboardEvent| {
                             if let Some(next) = next_game_tab(game, &event.key()) {
                                 event.prevent_default();
-                                active.set(next);
+                                select(next);
                                 focus_game_tab(next);
                             }
                         },

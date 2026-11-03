@@ -37,7 +37,10 @@ pub(super) async fn bootstrap(mut state: Signal<AppState>) {
             {
                 let mut write = state.write();
                 let page = write.page;
+                // A home-screen widget tap may pick the tab before /me returns (cold start).
+                let dashboard_game = write.dashboard_game;
                 *write = AppState::new(page);
+                write.dashboard_game = dashboard_game;
                 write.phase = Phase::SignedIn;
                 write.busy = true;
                 write.generation = generation;

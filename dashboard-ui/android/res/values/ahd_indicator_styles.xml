@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Widget indicator text (layout/ahd_indicator_*.xml). -->
+    <style name="AhdIndicatorValue">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:fontFeatureSettings">tnum</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/ahd_indicator_text</item>
+    </style>
+    <style name="AhdIndicatorValue.Full">
+        <item name="android:textColor">@color/ahd_indicator_full</item>
+        <item name="android:visibility">gone</item>
+    </style>
+    <style name="AhdIndicatorCaption">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:fontFeatureSettings">tnum</item>
+        <item name="android:textColor">@color/ahd_indicator_muted</item>
+        <item name="android:textSize">@dimen/ahd_indicator_caption_text</item>
+        <item name="android:visibility">gone</item>
+    </style>
+</resources>
