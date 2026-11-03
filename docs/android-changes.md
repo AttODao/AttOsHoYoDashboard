@@ -56,7 +56,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
   4. `dashboard-ui/android/AndroidManifest.application.xml` のreceiverを、生成された `AndroidManifest.xml` の `<application>` に挿入する。
   5. Gradleで組み直す。
 - APKはデバッグ署名です。`--release` を付けても、署名設定がなければデバッグ署名になります。
-- `v*` タグのCI（`.forgejo/workflows/android.yml`）はarm64のrelease APKとチェックサムをForgejoリリースへ添付し、署名用secretがあれば同じ鍵で署名し直します。`build-android` はバージョン `X.Y.Z` から `versionCode = X*10000+Y*100+Z`（Y・Zは100未満）を設定します。
+- `v*` タグのCI（`.forgejo/workflows/android.yml`）はarm64のrelease APKと `SHA256SUMS` をForgejoリリースへ添付し、リリース鍵で署名し直します（証明書は `android/release-signing-cert.sha256` で固定。命名規則と手順は [releases.md](releases.md)）。`build-android` はバージョン `X.Y.Z` から `versionCode = X*10000+Y*100+Z`（Y・Zは100未満）を設定します。
 - パッケージ名は `cc.attodao.ahd`、minSdk 24、targetSdk 34です。権限は、dxが既定で付けるINTERNETに加えて、`POST_NOTIFICATIONS` と `RECEIVE_BOOT_COMPLETED` を使います（`Dioxus.toml`）。
 - 開発用サーバーにつなぐ場合：`AHD_SERVER_URL` を省略すると `http://localhost:8080` になります。`adb reverse tcp:8080 tcp:8080` でホストの開発サーバー（`PUBLIC_ORIGIN=http://localhost:8080`）へつなぎます。ただし `build-android` では `AHD_SERVER_URL` が必須なので、`AHD_SERVER_URL=http://localhost:8080` と明示します。
 - エミュレータは `devenv --profile android --profile android-emulator shell` で入ります（x86_64イメージ、KVMが必要）。
