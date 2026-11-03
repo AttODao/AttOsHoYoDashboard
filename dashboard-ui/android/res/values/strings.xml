@@ -4,7 +4,7 @@
     <string name="ahd_widget_genshin_label">Genshin Impact</string>
     <string name="ahd_widget_starrail_label">Honkai: Star Rail</string>
     <string name="ahd_widget_genshin_description">Original Resin, Realm Currency, expeditions and daily commissions</string>
-    <string name="ahd_widget_starrail_description">Trailblaze Power, assignments and daily training</string>
+    <string name="ahd_widget_starrail_description">Trailblaze Power, assignments, daily training and Simulated Universe points</string>
     <string name="ahd_widget_sign_in">Open AHD and sign in</string>
     <string name="ahd_widget_no_account">Open AHD and link a game account</string>
     <string name="ahd_widget_unavailable">Could not load the status. Open AHD to retry.</string>

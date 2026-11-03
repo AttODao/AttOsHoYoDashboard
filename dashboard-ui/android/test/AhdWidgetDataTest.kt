@@ -20,6 +20,8 @@ class AhdWidgetDataTest {
         "game_kind":"starrail","game_uid":"987654321","fetched_at":"2026-11-04T09:00:00+09:00",
         "stale":true,"data":{"current_stamina":100,"max_stamina":300,"stamina_full_at":"2026-11-04T20:00:00Z",
         "current_reserve_stamina":50,"current_train_score":500,"max_train_score":500,
+        "current_rogue_score":8000,"max_rogue_score":14000,"is_reserve_stamina_full":false,
+        "accepted_expedition_num":3,"total_expedition_num":4,
         "expeditions":[{"status":"Finished","remaining_time":"100"},{"remaining_time":60},{"remaining_time":"120"}]}}
     """)
 
@@ -106,6 +108,19 @@ class AhdWidgetDataTest {
         assertEquals(1, rail.expeditions!!.finishedAt(time))
         assertEquals(60L, rail.expeditions.nextRemainingSecondsAt(time))
         assertEquals(120L, rail.expeditions.allDoneRemainingSecondsAt(time))
+        assertEquals(3, rail.expeditions.total)
+        assertEquals(4, rail.expeditions.max)
+        assertEquals(WeeklyProgress(8000, 14000), rail.weeklyPoints)
+        assertFalse(rail.weeklyPoints!!.complete)
+        assertTrue(WeeklyProgress(14000, 14000).complete)
+        assertFalse(WeeklyProgress(0, 0).complete)
+        assertFalse(rail.reserveFull)
+        val full = starrail()
+        full.getJSONObject("data").put("is_reserve_stamina_full", true).put("max_rogue_score", JSONObject.NULL)
+        assertTrue(WidgetSnapshot.fromStatus(full)!!.reserveFull)
+        assertNull(WidgetSnapshot.fromStatus(full)!!.weeklyPoints)
+        assertNull(g.weeklyPoints)
+        assertFalse(g.reserveFull)
         assertNull(WidgetSnapshot.fromStatus(genshin().put("game_kind", "other")))
         assertNull(WidgetSnapshot.fromStatus(genshin().put("data", JSONObject.NULL)))
         assertNull(WidgetSnapshot.fromStatus(genshin().put("data", "invalid")))

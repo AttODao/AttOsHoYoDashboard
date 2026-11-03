@@ -103,11 +103,15 @@ Rules and layout ids are checked on the JVM with
 
 Rustの `app/home_widgets.rs` はダッシュボードの変更ごとに選択中のアカウントと取得済みの状態を `mobile/widgets.rs` からpublishし、Kotlinが `ahd_widgets` に保存します。未取得でも同じアカウントのキャッシュは保持します。JobSchedulerは30分周期で状態APIを読み、`updatePeriodMillis` も30分です。401またはセッションを忘れるログアウトで保存を消去しSignedOutに戻します。通信失敗時は既存の状態に失敗フラグを付けて保持します。
 
+### Star Rail widget
+
+`kotlin/StarRailWidget.kt` renders `layout/ahd_widget_starrail.xml`: a Trailblaze Power arc (value, `/max`) with the time to full, the reserve and the fetch time beside it, then full-width bars for assignments (done/sent and time left on the value line), daily training and Simulated Universe weekly points (the realm-currency slot; reasons in `docs/android-changes.md`). The values come from the Android-free `kotlin/StarRailWidgetModel.kt` (`test/StarRailWidgetModelTest.kt`). Lines that can turn to the warning color exist twice in the layout (`name` / `name_full`) so the colors stay resources that follow dark mode. Strings are `values(-ja)/ahd_widget_starrail_strings.xml` and are set from code (layout strings are resolved by the launcher in the system locale, which would ignore a per-app language); colors are `values(-night)/ahd_widget_starrail_colors.xml`.
+
 ### How to implement a game widget
 
 1. 各ゲームのクラスで `render(context, state, nowMs)` をoverrideします。`when (state)` で `SignedOut`、`NoAccount`、`Unavailable`、`Ready` を扱い、未準備の状態では `placeholder(context, state)` を利用できます。
 2. `Ready` の `state.snapshot.at(nowMs)` で樹脂・開拓力・宝銭を推定します。残り時間は `remainingSecondsAt(nowMs)`、派遣の完了数は `Expeditions.finishedAt(nowMs)` を使います。
-3. RemoteViews対応のビューだけを使い、タップで `/dashboard` を開くためルートのidを `ahd_widget_root` にします。
+3. RemoteViews対応のビューだけを使い、タップで `/dashboard?game=<key>`（そのゲームのタブ）を開くためルートのidを `ahd_widget_root` にします。
 4. Kotlinに `R.` 参照を追加せず、`context.resources.getIdentifier(name, type, context.packageName)` を使います。リソースはdxの最初のGradle実行の後にコピーされます。**MainActivity.ktから新しいKotlinファイルを参照してはいけません**（同じビルド順の制約）。
 5. 純粋モデルのテストは `android/test/` に追加します。先に `build-android` を実行し、`devenv --profile android shell -- test-android` でJUnitを実行します。Kotlinとテストの変更だけなら再ビルドせずに再コピーしてテストできます。
 

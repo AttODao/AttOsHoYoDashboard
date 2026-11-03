@@ -107,6 +107,24 @@ mod tests {
     }
 
     #[test]
+    fn widgets_publication_keeps_the_star_rail_widget_fields() {
+        let rail: GameStatus = serde_json::from_value(json!({"game_kind":"starrail","game_uid":"789","region":"test","visible":true,"detected":true,"data":{"current_stamina":240,"max_stamina":240,"current_reserve_stamina":2400,"is_reserve_stamina_full":true,"current_rogue_score":8000,"max_rogue_score":14000,"accepted_expedition_num":3,"total_expedition_num":4,"current_train_score":400,"max_train_score":500},"fetched_at":"2026-11-04T00:00:00Z","stale":false})).unwrap();
+        let data = serde_json::to_value(&rail).unwrap()["data"].clone();
+        for (key, value) in [
+            ("current_reserve_stamina", json!(2400)),
+            ("is_reserve_stamina_full", json!(true)),
+            ("current_rogue_score", json!(8000)),
+            ("max_rogue_score", json!(14000)),
+            ("accepted_expedition_num", json!(3)),
+            ("total_expedition_num", json!(4)),
+            ("current_train_score", json!(400)),
+            ("max_train_score", json!(500)),
+        ] {
+            assert_eq!(data[key], value, "{key}");
+        }
+    }
+
+    #[test]
     fn widgets_publication_serializes_exact_bridge_shape_and_empty_selection() {
         let id = Uuid::from_u128(1);
         let s = status("genshin", "123");

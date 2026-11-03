@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Star Rail widget (kotlin/StarRailWidget.kt), Japanese. -->
+    <string name="ahd_widget_starrail_power">開拓力</string>
+    <string name="ahd_widget_starrail_full_in">あと%1$s</string>
+    <string name="ahd_widget_starrail_reserve">予備 %1$d</string>
+    <string name="ahd_widget_starrail_assignments">依頼</string>
+    <string name="ahd_widget_starrail_left">%1$s・%2$s</string>
+    <string name="ahd_widget_starrail_all_done">%1$s・すべて完了</string>
+    <string name="ahd_widget_starrail_no_assignments">派遣なし</string>
+    <string name="ahd_widget_starrail_daily">デイリー訓練</string>
+    <string name="ahd_widget_starrail_weekly">模擬宇宙</string>
+    <string name="ahd_widget_starrail_refresh_failed">%1$s・更新失敗</string>
+</resources>

@@ -47,6 +47,11 @@ data class Daily(val current: Int, val max: Int, val extraRewardReceived: Boolea
     val complete: Boolean get() = current >= max && extraRewardReceived != false
 }
 
+/** A capped weekly counter that does not recover over time (Star Rail Simulated Universe points). */
+data class WeeklyProgress(val current: Int, val max: Int) {
+    val complete: Boolean get() = max > 0 && current >= max
+}
+
 data class WidgetSnapshot(
     val game: WidgetGame,
     val gameUid: String,
@@ -57,6 +62,10 @@ data class WidgetSnapshot(
     val currency: Gauge?,
     val expeditions: Expeditions?,
     val daily: Daily?,
+    /** Star Rail: Simulated Universe weekly points (the widget's realm-currency slot). */
+    val weeklyPoints: WeeklyProgress? = null,
+    /** Star Rail: the reserve is at its cap (is_reserve_stamina_full). */
+    val reserveFull: Boolean = false,
 ) {
     fun at(nowMs: Long): WidgetSnapshot = copy(stamina = stamina?.at(nowMs), currency = currency?.at(nowMs))
     companion object {
@@ -79,7 +88,7 @@ data class WidgetSnapshot(
                         val seconds = expedition.optString(if (genshin) "remained_time" else "remaining_time").toLongOrNull() ?: 0
                         fetched + if (expedition.optString("status") == "Finished" || seconds <= 0) 0 else seconds * 1000
                     }
-                }, data.nullableInt("max_expedition_num"))
+                }, data.nullableInt(if (genshin) "max_expedition_num" else "total_expedition_num"))
             }
             return WidgetSnapshot(
                 game, status.optString("game_uid"), fetched, status.optBoolean("stale"),
@@ -90,6 +99,10 @@ data class WidgetSnapshot(
                 expeditions,
                 if (currentDaily != null && maxDaily != null) Daily(currentDaily, maxDaily,
                     if (genshin && !data.isNull("is_extra_task_reward_received")) data.optBoolean("is_extra_task_reward_received") else null) else null,
+                if (genshin) null else data.nullableInt("current_rogue_score")?.let { current ->
+                    data.nullableInt("max_rogue_score")?.let { WeeklyProgress(current, it) }
+                },
+                !genshin && data.optBoolean("is_reserve_stamina_full"),
             )
         }
     }
