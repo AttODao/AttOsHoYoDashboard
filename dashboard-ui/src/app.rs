@@ -60,7 +60,11 @@ pub fn App() -> Element {
     #[cfg(feature = "mobile")]
     browser_login::use_browser_login(state);
     #[cfg(feature = "mobile")]
-    updates::use_update_check();
+    let updates = updates::use_update_check();
+    #[cfg(feature = "mobile")]
+    let update_dialog = rsx! { pages::app_update::UpdateDialog { updates } };
+    #[cfg(not(feature = "mobile"))]
+    let update_dialog = rsx! {};
     use_effect(move || {
         let read = state.read();
         let title = page_title(read.page, read.phase, read.ready(), *preferences.read());
@@ -146,6 +150,7 @@ pub fn App() -> Element {
                 }
             }
         }
+        {update_dialog}
     }
 }
 

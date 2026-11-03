@@ -31,7 +31,7 @@ web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlE
 
 # Native (mobile) API client; the browser build keeps using fetch through gloo-net.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"], optional = true }
-tokio = { version = "1", features = ["time"], optional = true }
+tokio = { version = "1", features = ["time", "rt"], optional = true }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"], optional = true }
 url = { version = "2", optional = true }
 # Opens the web version in the device's default browser (Intent ACTION_VIEW on Android).

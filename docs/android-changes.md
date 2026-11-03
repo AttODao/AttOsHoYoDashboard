@@ -57,7 +57,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
   5. Gradleで組み直す。
 - APKはデバッグ署名です。`--release` を付けても、署名設定がなければデバッグ署名になります。
 - `v*` タグのCI（`.forgejo/workflows/android.yml`）はarm64のrelease APKと `SHA256SUMS` をForgejoリリースへ添付し、リリース鍵で署名し直します（証明書は `android/release-signing-cert.sha256` で固定。命名規則と手順は [releases.md](releases.md)）。`build-android` はバージョン `X.Y.Z` から `versionCode = X*10000+Y*100+Z`（Y・Zは100未満）を設定します。
-- パッケージ名は `cc.attodao.ahd`、minSdk 24、targetSdk 34です。権限は、dxが既定で付けるINTERNETに加えて、`POST_NOTIFICATIONS` と `RECEIVE_BOOT_COMPLETED` を使います（`Dioxus.toml`）。
+- パッケージ名は `cc.attodao.ahd`、minSdk 24、targetSdk 34です。権限は、dxが既定で付けるINTERNETに加えて、`POST_NOTIFICATIONS`、`RECEIVE_BOOT_COMPLETED` と更新用の `REQUEST_INSTALL_PACKAGES` を使います（`Dioxus.toml`）。
 - 開発用サーバーにつなぐ場合：`AHD_SERVER_URL` を省略すると `http://localhost:8080` になります。`adb reverse tcp:8080 tcp:8080` でホストの開発サーバー（`PUBLIC_ORIGIN=http://localhost:8080`）へつなぎます。ただし `build-android` では `AHD_SERVER_URL` が必須なので、`AHD_SERVER_URL=http://localhost:8080` と明示します。
 - エミュレータは `devenv --profile android --profile android-emulator shell` で入ります（x86_64イメージ、KVMが必要）。
 - `dx serve --platform android` でも起動できますが、アイコンと名前がDioxusの既定のままで、通知用のreceiverも入りません。通知を確認するときは `build-android` のAPKを使います。
@@ -274,6 +274,18 @@ Android Credential Manager（`androidx.credentials`）でアプリ内からパ�
 - 取得先は既定で `https://git.attodao.cc` の `AttODao/AttOsHoYoDashboard`。ビルド時の環境変数 `AHD_UPDATE_FORGEJO_URL`・`AHD_UPDATE_REPOSITORY`・`AHD_UPDATE_TOKEN`（任意、`Authorization: token …`）で変えます。トークンはAPKに埋め込まれるため、読み取り専用で他に権限のないものに限ります。
 - バージョン比較・アセット選択・draft/prerelease除外・不正な応答は、Forgejoの応答を模したJSONで通常の `cargo test` から検査します（`mobile/updates.rs`）。
 
+### 5.5 更新の確認ダイアログとインストール
+
+- 更新があると、現在／新しいバージョンと変更内容（HTMLではなくプレーンテキスト）を表示し、「今すぐ更新」「後で」「このバージョンをスキップ」を選べます。「後で」は次回起動時にまた確認します。スキップは `files/update-skip.json` に保存し、さらに新しいバージョンが出るとまた確認します。ダイアログは `fieldset.app-shell` の外なので、他の処理中も操作できます。
+- APKは `cacheDir/updates` にストリーミングで保存し、進捗を表示します。ダウンロード・確認中はキャンセルできます。上限は200 MiB、チェックサム一覧は64 KiBです。接続10秒・読み取り30秒のタイムアウトを設け、ダウンロード全体の時間制限は設けません。
+- `SHA256SUMS` または `{asset}.sha256` のSHA-256と照合します。一覧がない／対象のハッシュがない場合は更新を拒否します。リダイレクトは追いません（Forgejoはアセットを直接返します）。
+- APKのパッケージ名、versionNameがリリースと一致すること、versionCodeがインストール済みより大きいこと、署名者の集合がインストール済みと一致することを確認します。正式ビルドは `dashboard-ui/android/release-signing-cert.sha256` のリリース鍵だけ、デバッグビルドは自身のデバッグ鍵だけを受け付けます。
+- `REQUEST_INSTALL_PACKAGES` を宣言し、PackageInstallerのセッションへコピーしてインストールを依頼します。システムが確認画面や「不明なアプリのインストール」の許可画面を出します。Android 12以降でAHD自身がinstaller of recordの場合は、`USER_ACTION_NOT_REQUIRED` により確認なしで更新できることがあります（未検証）。
+- エラーとキャンセルで一時ファイルを削除し、次回起動時にも残りを掃除します。失敗はダイアログに表示し、再試行できます。Androidがアトミックにインストールするので、失敗してもインストール済みアプリは変更されません。
+- 「不明なアプリのインストール」が未許可の場合、システムが設定画面への案内を出します。Android 14（エミュレータ）では、設定で許可して戻るとそのセッションは「取り消されました」になるため、「もう一度試す」で確認画面（「このアプリを更新しますか？」）が出ます。一度AHDから更新すると、AHDがinstaller of recordになります。
+- 更新後は `MY_PACKAGE_REPLACED` で「AHDを…に更新しました」の通知を出し、アプリの再表示も試みます。Android 10以降はバックグラウンドからのActivity起動が止められる（Android 14で `BAL_BLOCK` を確認）ので、通知のタップで開きます。アプリ起動時にはこの通知を消します。
+- 確認方法（エミュレータ、x86_64）: `AHD_UPDATE_FORGEJO_URL=http://localhost:<port>`・`AHD_UPDATE_REPOSITORY=o/r` を付けて旧版と新版（`dashboard-ui/Cargo.toml` の版だけ上げる）を同じworktreeでビルドし（同じデバッグ鍵になる）、`releases/latest`・APK・`SHA256SUMS` を返すモックを `adb reverse` でつなぎます。更新あり／なし・後で・スキップ・キャンセル・ダウンロード中断・SHA-256不一致・一覧なし・別の鍵で署名したAPK・インストールの取り消し・1.7.0→1.7.1の更新を確認しました。
+
 ## 6. web版との共通化と分岐
 
 ### 共通のまま使うもの
@@ -307,7 +319,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | 言語とテーマの保存 | `localStorage` | `files/preferences.json` | `app/preferences.rs` |
 | 外部URL | （なし） | `webbrowser` | `platform::open_external` |
 
-`mobile/browser_login.rs`・`mobile/session.rs`・`mobile/time.rs`・`mobile/reminders.rs`・`mobile/updates.rs`（通信部分を除く）は端末やI/Oに依存しないため、通常の `cargo test` でもコンパイルしてテストします（`main.rs` の `cfg(any(feature = "mobile", test))`）。
+`mobile/browser_login.rs`・`mobile/session.rs`・`mobile/time.rs`・`mobile/reminders.rs`・`mobile/updates.rs`（通信部分を除く）、`mobile/update_install.rs`（ハッシュ・APK情報・スキップ・進捗の純粋な検証と、一時ファイルのSink）は通常のテスト環境で動くため、通常の `cargo test` でもコンパイルしてテストします（`main.rs` の `cfg(any(feature = "mobile", test))`）。
 
 ### 変更したファイル
 
@@ -319,7 +331,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/mobile/mod.rs` | アプリ用モジュールの宣言 |
 | `dashboard-ui/src/mobile/http.rs` | サーバーへの直接接続、Cookieの保存、`server_origin` |
 | `dashboard-ui/src/mobile/session.rs` | Cookie jarとサーバーURLの規則（I/Oなし、テストあり） |
-| `dashboard-ui/src/mobile/storage.rs` | アプリ専用領域のファイル（JNIで `getFilesDir()` を取得） |
+| `dashboard-ui/src/mobile/storage.rs` | アプリ専用領域のファイル（JNIで `getFilesDir()`・`getCacheDir()` を取得） |
 | `dashboard-ui/src/mobile/time.rs` | 端末時刻での表示 |
 | `dashboard-ui/src/mobile/dom.rs` | `document::eval` によるDOM操作（pull-to-refreshのタッチ処理を含む） |
 | `dashboard-ui/src/mobile/reminders.rs` | 通知時刻の予測、設定と予定の保存形式、通知文（テストあり） |
@@ -328,13 +340,15 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/mobile/login_intent.rs` | Kotlinが受け取ったコールバックを一度だけ取り出すJNIブリッジとWebViewイベント |
 | `dashboard-ui/src/app/browser_login.rs` | ブラウザ経由ログインの開始と、コールバック受信後のコード交換 |
 | `dashboard-ui/src/mobile/updates.rs` | Forgejoリリースの更新確認：SemVer比較、アセット選択、`releases/latest` の取得（5.4節、テストあり） |
+| `dashboard-ui/src/mobile/update_install.rs` | APKのダウンロード、SHA-256・パッケージ・署名者の検証、一時ファイル管理、PackageInstallerへのJNI（5.5節、テストあり） |
 | `dashboard-ui/src/mobile/log.rs` | logcat（タグ `AHD`）への出力 |
 | `dashboard-ui/src/app/device_notifications.rs` | 端末通知の予定の更新、通知タップ時の画面遷移 |
-| `dashboard-ui/src/app/updates.rs` | 起動時の更新確認と結果のcontext |
+| `dashboard-ui/src/app/updates.rs` | 起動時の更新確認と結果のcontext、ダイアログの状態・スキップ・ダウンロードタスクとキャンセル |
+| `dashboard-ui/src/pages/app_update.rs` | 更新の確認・進捗・失敗・再試行のダイアログ |
 | `dashboard-ui/src/pages/device_notifications.rs` | 「この端末への通知」カード |
 | `dashboard-ui/src/pages/app_nav.rs` | 下部ナビゲーション `AppNav` と `AppHead`（モジュールは両ビルドでコンパイルするが、web版では描画しない） |
 | `dashboard-ui/assets/mobile.css` | アプリ専用のスタイル |
-| `dashboard-ui/android/MainActivity.kt` | `MainActivity`（ルートでの戻る、設定変更のその場反映、破棄時のプロセス終了、通知タップの受け取り）、`AhdNotifications`、`AhdAlarmReceiver`、`AhdBootReceiver` |
+| `dashboard-ui/android/MainActivity.kt` | `MainActivity`（ルートでの戻る、設定変更のその場反映、破棄時のプロセス終了、通知タップの受け取り）、`AhdNotifications`、`AhdAlarmReceiver`、`AhdBootReceiver`、`AhdUpdater`（APK情報・PackageInstaller・更新後通知）、`AhdUpdateReceiver` |
 | `dashboard-ui/android/AndroidManifest.application.xml` | 生成manifestに挿入するreceiver |
 | `dashboard-ui/android/AndroidManifest.activity.xml` | 生成manifestのactivityに挿入する `cc.attodao.ahd://login` のintent-filter |
 | `dashboard-ui/android/res/**` | ランチャーアイコン、通知アイコン、アプリ名、色、DayNightテーマ（`values/styles.xml`） |
@@ -348,7 +362,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | --- | --- |
 | `dashboard-ui/src/main.rs` | `platform`・`mobile` モジュールの追加 |
 | `dashboard-ui/src/api.rs` | `fetch` のアプリ分岐、関連する `cfg` の拡張 |
-| `dashboard-ui/src/app.rs` | `AppHead`、端末通知のフック、起動時の更新確認、復帰時の再取得、`DocsPage` の除外、`platform` のタイマー・時刻の使用 |
+| `dashboard-ui/src/app.rs` | `AppHead`、端末通知のフック、起動時の更新確認とapp-shell外の更新ダイアログ、復帰時の再取得、`DocsPage` の除外、`platform` のタイマー・時刻の使用 |
 | `dashboard-ui/src/app/state.rs` | `Page::web_only`、`reachable`、ステータス自動消去のタイマー |
 | `dashboard-ui/src/app/navigation.rs` | アプリ内History、`open_web_version`、`web_page_url` |
 | `dashboard-ui/src/app/data.rs` | APIトークン・管理者データを読み込まない分岐、`platform::sleep_ms` |

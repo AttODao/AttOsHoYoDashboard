@@ -163,7 +163,7 @@ APKは `target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/apk/deb
 
 - `AHD_SERVER_URL` はHTTPS、またはlocalhostのHTTPのみ。未指定時は `http://localhost:8080` で、開発用サーバー（`PUBLIC_ORIGIN: http://localhost:8080`）に `adb reverse tcp:8080 tcp:8080` でつなぐ想定です。
 - エミュレータは `devenv --profile android --profile android-emulator shell`（x86_64イメージ、KVMが必要）で入ります。
-- パッケージ名 `cc.attodao.ahd`、minSdk 24、targetSdk 34（`dashboard-ui/Dioxus.toml`）。権限はINTERNET（dx既定）、通知用の `POST_NOTIFICATIONS` と `RECEIVE_BOOT_COMPLETED`（再起動後のアラームと受信箱ジョブの復元）です。
+- パッケージ名 `cc.attodao.ahd`、minSdk 24、targetSdk 34（`dashboard-ui/Dioxus.toml`）。権限はINTERNET（dx既定）、更新用の `REQUEST_INSTALL_PACKAGES`、通知用の `POST_NOTIFICATIONS` と `RECEIVE_BOOT_COMPLETED`（再起動後のアラームと受信箱ジョブの復元）です。
 - tao/wryはActivityの破棄・再生成や二つ目の起動に対応しておらず、その場合プロセスが異常終了します。そのためActivityは1つだけ（`singleTask`）で、最初の画面での戻る操作はアプリを閉じずにバックグラウンドへ移し（ホームと同じ）、ダークモード・文字サイズ・表示サイズ・言語・キーボードなどの変更はActivityを作り直さずにその場で反映します。最近使ったアプリから消すなどで破棄されたときはプロセスをそのまま終了し、次回は新しく起動します（`dashboard-ui/android/MainActivity.kt`）。テーマ「システム」は端末のダークモードに追従します。
 
 web版からの変更点（除外した機能とその方法、画面ごとのレイアウト、追加機能の仕様、共通化と分岐、web版への影響、既知の制約）は [docs/android-changes.md](docs/android-changes.md) にまとめています。
@@ -178,11 +178,11 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | `dashboard-ui/src/app/actions.rs` | 操作の予約（busy）と完了・APIエラー処理。セッション世代とは独立 |
 | `dashboard-ui/src/app/data.rs` | セッション世代に結び付いた画面データの取得（未取得と空を区別、リソースごとに最新の要求の応答だけを反映）、全ゲームの手動受け取りとその後の報酬状態のGET追従 |
 | `dashboard-ui/src/app/display.rs` | 数値・ブラウザのローカル時刻による簡潔な月日／24時間表示、データの経過時間、上限への近さ、サーバー時刻とブラウザ時刻の換算、エラーコードの表示文への対応付け |
-| `dashboard-ui/src/pages/` | 画面、メニュー、設定、ユーザー管理、このアプリについて |
+| `dashboard-ui/src/pages/` | 画面、メニュー、設定、ユーザー管理、このアプリについて、アプリ更新ダイアログ（`pages/app_update.rs`） |
 | `dashboard-ui/src/platform.rs` | web版とAndroidアプリの切り替え（`APP`）、両方で動くタイマーと時刻、web版を既定のブラウザで開く処理 |
-| `dashboard-ui/src/mobile/` | Androidアプリ専用：サーバーへの直接接続とセッションCookieの保存（`http.rs`・`session.rs`）、アプリ専用領域のファイル（`storage.rs`）、端末時刻（`time.rs`）、通知予測とJNIブリッジ（`reminders.rs`・`notify.rs`）、サーバーの受信箱への登録の判断（`inbox.rs`）、Forgejoリリースによる更新確認（`updates.rs`、インターフェースはファイル先頭のコメント）、logcatへの出力（`log.rs`）、web版がweb-sysで行うDOM操作の `document::eval` 版（`dom.rs`） |
+| `dashboard-ui/src/mobile/` | Androidアプリ専用：サーバーへの直接接続とセッションCookieの保存（`http.rs`・`session.rs`）、アプリ専用領域のファイル（`storage.rs`）、端末時刻（`time.rs`）、通知予測とJNIブリッジ（`reminders.rs`・`notify.rs`）、サーバーの受信箱への登録の判断（`inbox.rs`）、Forgejoリリースによる更新確認（`updates.rs`、インターフェースはファイル先頭のコメント）、APKのダウンロード・SHA-256とAPKの検証・PackageInstaller（`update_install.rs`）、logcatへの出力（`log.rs`）、web版がweb-sysで行うDOM操作の `document::eval` 版（`dom.rs`） |
 | `dashboard-ui/src/app/device_notifications.rs` | 端末通知の設定・予定の保存、状態変更時の再計算、サーバーの受信箱への端末登録と解除、表示中の確認、通知からの画面遷移 |
-| `dashboard-ui/src/app/updates.rs` | アプリ起動時の更新確認（`mobile::updates::check` をバックグラウンドで1回実行し、結果を `Signal<Option<UpdateCheck>>` のcontextで渡す。失敗はログのみ） |
+| `dashboard-ui/src/app/updates.rs` | アプリ起動時の更新確認（`mobile::updates::check` をバックグラウンドで1回実行し、結果を `Signal<Option<UpdateCheck>>` のcontextで渡す。確認失敗はログのみ）、更新ダイアログの状態・スキップ・ダウンロードとキャンセル |
 | `dashboard-ui/src/pages/device_notifications.rs` | アプリの端末通知カード（全体のON/OFF・許可・登録状態・テスト） |
 | `dashboard-ui/android/res/` | ランチャーと通知のアイコン、アプリ名、DayNightテーマ、開発用サーバー（localhost）へのHTTPを許可するnetwork security config（`build-android` が生成プロジェクトへ上書き） |
 | `dashboard-ui/android/MainActivity.kt` | AndroidのActivity（`Dioxus.toml` の `android_main_activity`）：ルートでの戻るをバックグラウンド化、設定変更時の文字サイズ反映、破棄時のプロセス終了、通知の権限要求・アラーム・receiver、サーバーの受信箱を読む `AhdInbox` とそのジョブ（receiverとジョブの設定は `android/AndroidManifest.application.xml` を生成manifestへ挿入） |

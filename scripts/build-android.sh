@@ -3,7 +3,7 @@
 # dx generates and assembles the Gradle project; then the AHD launcher/notification resources,
 # label, theme and network security config (dashboard-ui/android/res) replace Dioxus' defaults,
 # the activity keeps itself across configuration changes, the manifest receivers, the inbox
-# job service and browser sign-in callbacks are inserted, and Gradle assembles again.
+# job service, update receiver and browser sign-in callbacks are inserted, and Gradle assembles again.
 set -euo pipefail
 cd "${DEVENV_ROOT:?run inside the devenv android profile}"
 
@@ -56,6 +56,7 @@ if ! grep -q AhdInboxJob "$manifest"; then
 fi
 grep -q AhdBootReceiver "$manifest"
 grep -q AhdInboxJob "$manifest"
+grep -q AhdUpdateReceiver "$manifest"
 if ! grep -qF 'android:scheme="cc.attodao.ahd"' "$manifest"; then
   awk '
     /<\/activity>/ && !inserted {

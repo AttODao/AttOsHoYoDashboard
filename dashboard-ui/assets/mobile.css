@@ -51,3 +51,5 @@ html:has(#pull-refresh){overscroll-behavior-y:none}
 .pull-refresh svg{transform:rotate(var(--pull-turn,0deg))}
 .pull-refresh[data-refreshing=true]{opacity:1;transform:translateY(32px);color:var(--cyan)}
 .pull-refresh[data-refreshing=true] svg{animation:ahd-spin 900ms linear infinite}
+
+.release-notes{white-space:pre-wrap;overflow-wrap:anywhere;max-height:40vh;overflow:auto;margin:0;padding:12px 16px;background:var(--elevated);border-radius:10px}.modal-dialog .metric-list{margin:0 0 24px}.update-actions{flex-wrap:wrap}.update-actions>*{flex:1 1 auto}.modal-dialog progress{margin:24px 0 8px}.update-error{color:var(--danger);margin:0}
