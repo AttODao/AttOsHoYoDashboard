@@ -22,7 +22,7 @@ mod android {
         class: &str,
         name: &str,
         signature: &str,
-        texts: Option<(&str, &str)>,
+        texts: &[&str],
         activity_arg: bool,
     ) -> Option<String> {
         let context = ndk_context::android_context();
@@ -53,15 +53,13 @@ mod android {
                 if activity_arg {
                     args.push(JValue::Object(&activity));
                 }
-                let strings;
-                if let Some((channel, json)) = texts {
-                    let value = env.new_string(channel);
-                    let channel = checked(env, value)?;
-                    let value = env.new_string(json);
-                    let json = checked(env, value)?;
-                    strings = (channel, json);
-                    args.push(JValue::Object(strings.0.as_ref()));
-                    args.push(JValue::Object(strings.1.as_ref()));
+                let mut strings = Vec::with_capacity(texts.len());
+                for text in texts {
+                    let value = env.new_string(text);
+                    strings.push(checked(env, value)?);
+                }
+                for string in &strings {
+                    args.push(JValue::Object(string.as_ref()));
                 }
                 let value = env.call_static_method(class, name, signature, &args);
                 match checked(env, value)? {
@@ -79,11 +77,12 @@ mod android {
         .flatten()
     }
 }
+/// Calls a static app method through the activity's class loader.
 pub(super) fn call_on(
     class: &str,
     name: &str,
     signature: &str,
-    texts: Option<(&str, &str)>,
+    texts: &[&str],
     activity: bool,
 ) -> Option<String> {
     #[cfg(target_os = "android")]
@@ -96,29 +95,24 @@ pub(super) fn call_on(
         None
     }
 }
-fn call(
-    name: &str,
-    signature: &str,
-    texts: Option<(&str, &str)>,
-    activity: bool,
-) -> Option<String> {
+fn call(name: &str, signature: &str, texts: &[&str], activity: bool) -> Option<String> {
     call_on(NOTIFICATIONS, name, signature, texts, activity)
 }
 pub(crate) fn permission_granted() -> bool {
     call(
         "permissionGranted",
         "(Landroid/content/Context;)Z",
-        None,
+        &[],
         true,
     )
     .as_deref()
         == Some("true")
 }
 pub(crate) fn request_permission() {
-    let _ = call("requestPermission", "(Landroid/app/Activity;)V", None, true);
+    let _ = call("requestPermission", "(Landroid/app/Activity;)V", &[], true);
 }
 pub(crate) fn open_settings() {
-    let _ = call("openSettings", "(Landroid/app/Activity;)V", None, true);
+    let _ = call("openSettings", "(Landroid/app/Activity;)V", &[], true);
 }
 pub(crate) fn schedule(channel: &str, entries: &[Outgoing]) -> bool {
     let Ok(json) = serde_json::to_string(entries) else {
@@ -127,7 +121,7 @@ pub(crate) fn schedule(channel: &str, entries: &[Outgoing]) -> bool {
     call(
         "schedule",
         "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)Z",
-        Some((channel, &json)),
+        &[channel, &json],
         true,
     )
     .as_deref()
@@ -140,14 +134,14 @@ pub(crate) fn show_now(channel: &str, entry: &Outgoing) -> bool {
     call(
         "showNow",
         "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)Z",
-        Some((channel, &json)),
+        &[channel, &json],
         true,
     )
     .as_deref()
         == Some("true")
 }
 pub(crate) fn take_open_target() -> Option<String> {
-    call("takeOpenTarget", "()Ljava/lang/String;", None, false)
+    call("takeOpenTarget", "()Ljava/lang/String;", &[], false)
 }
 /// `{"device","owner"}` of the installation registered for server notices, if any.
 pub(crate) fn inbox_state() -> Option<String> {
@@ -155,7 +149,7 @@ pub(crate) fn inbox_state() -> Option<String> {
         INBOX,
         "state",
         "(Landroid/content/Context;)Ljava/lang/String;",
-        None,
+        &[],
         true,
     )
 }
@@ -168,15 +162,15 @@ pub(crate) fn inbox_configure(channel: &str, config: &super::inbox::Config) -> b
         INBOX,
         "configure",
         "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)Z",
-        Some((channel, &json)),
+        &[channel, &json],
         true,
     )
     .as_deref()
         == Some("true")
 }
 pub(crate) fn inbox_stop() {
-    let _ = call_on(INBOX, "stop", "(Landroid/content/Context;)Z", None, true);
+    let _ = call_on(INBOX, "stop", "(Landroid/content/Context;)Z", &[], true);
 }
 pub(crate) fn inbox_poll_now() {
-    let _ = call_on(INBOX, "pollNow", "(Landroid/content/Context;)Z", None, true);
+    let _ = call_on(INBOX, "pollNow", "(Landroid/content/Context;)Z", &[], true);
 }

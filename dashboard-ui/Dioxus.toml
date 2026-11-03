@@ -19,6 +19,7 @@ min_sdk = 24
 target_sdk = 34
 
 [android.permissions]
+"android.permission.REQUEST_INSTALL_PACKAGES" = { description = "Install app updates downloaded from the release page" }
 "android.permission.POST_NOTIFICATIONS" = { description = "Device notifications for game status" }
 "android.permission.RECEIVE_BOOT_COMPLETED" = { description = "Restore scheduled notifications after a restart" }
 "android.permission.ACCESS_NETWORK_STATE" = { description = "Check the server for notifications only when a network is available" }

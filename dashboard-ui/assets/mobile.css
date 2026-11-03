@@ -53,3 +53,5 @@ html:has(#pull-refresh){overscroll-behavior-y:none}
 .pull-refresh[data-refreshing=true] svg{animation:ahd-spin 900ms linear infinite}
 /* Touch keeps :hover on the last tapped tab; the shared button hover border would then underline a tab that is no longer selected (e.g. after a widget opens another game). */
 .tabs [role=tab]:not([aria-selected=true]):hover{border-bottom-color:transparent;color:var(--muted)}
+
+.release-notes{white-space:pre-wrap;overflow-wrap:anywhere;max-height:40vh;overflow:auto;margin:0;padding:12px 16px;background:var(--elevated);border-radius:10px}.modal-dialog .metric-list{margin:0 0 24px}.update-actions{flex-wrap:wrap}.update-actions>*{flex:1 1 auto}.modal-dialog progress{margin:24px 0 8px}.update-error{color:var(--danger);margin:0}.update-note{margin:16px 0 0;color:var(--muted)}

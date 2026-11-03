@@ -53,7 +53,7 @@ pub(crate) fn publish(origin: &str, publication: &Publication) -> bool {
         WIDGETS,
         "publish",
         "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)Z",
-        Some((origin, &json)),
+        &[origin, &json],
         true,
     )
     .as_deref()
@@ -66,7 +66,7 @@ pub(crate) fn sign_out() {
         WIDGETS,
         "signOut",
         "(Landroid/content/Context;)Z",
-        None,
+        &[],
         true,
     );
 }

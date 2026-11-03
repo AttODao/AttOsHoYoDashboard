@@ -7,11 +7,16 @@ use std::{
 
 fn data_dir() -> Option<&'static PathBuf> {
     static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
-    DIR.get_or_init(locate).as_ref()
+    DIR.get_or_init(|| locate("getFilesDir")).as_ref()
+}
+
+pub(crate) fn cache_dir() -> Option<&'static PathBuf> {
+    static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+    DIR.get_or_init(|| locate("getCacheDir")).as_ref()
 }
 
 #[cfg(target_os = "android")]
-fn locate() -> Option<PathBuf> {
+fn locate(method: &str) -> Option<PathBuf> {
     use jni::{
         JavaVM,
         objects::{JObject, JString},
@@ -35,7 +40,7 @@ fn locate() -> Option<PathBuf> {
         }
         value.ok()?.l().ok()
     }
-    let dir = call(&mut env, &activity, "getFilesDir", "()Ljava/io/File;")?;
+    let dir = call(&mut env, &activity, method, "()Ljava/io/File;")?;
     let path = call(&mut env, &dir, "getAbsolutePath", "()Ljava/lang/String;")?;
     let path: String = env.get_string(&JString::from(path)).ok()?.into();
     Some(PathBuf::from(path))
@@ -43,8 +48,13 @@ fn locate() -> Option<PathBuf> {
 
 /// Desktop runs of the mobile build (development only) use an explicit directory.
 #[cfg(not(target_os = "android"))]
-fn locate() -> Option<PathBuf> {
-    std::env::var_os("AHD_APP_DATA_DIR").map(PathBuf::from)
+fn locate(method: &str) -> Option<PathBuf> {
+    std::env::var_os(if method == "getCacheDir" {
+        "AHD_APP_CACHE_DIR"
+    } else {
+        "AHD_APP_DATA_DIR"
+    })
+    .map(PathBuf::from)
 }
 
 pub(crate) fn read(name: &str) -> Option<String> {

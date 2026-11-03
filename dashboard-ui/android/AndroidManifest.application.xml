@@ -1,3 +1,5 @@
+        <!-- PackageInstaller update session status. -->
+        <receiver android:name="dev.dioxus.main.AhdUpdateReceiver" android:exported="false" />
         <!-- AHD device notifications (dashboard-ui/android/MainActivity.kt) -->
         <receiver android:name="dev.dioxus.main.AhdAlarmReceiver" android:exported="false" />
         <receiver android:name="dev.dioxus.main.AhdBootReceiver" android:exported="true">

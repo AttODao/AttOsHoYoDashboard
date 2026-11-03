@@ -4,8 +4,8 @@
 # label, theme and network security config (dashboard-ui/android/res) replace Dioxus' defaults, the
 # extra Kotlin sources (dashboard-ui/android/kotlin) join MainActivity.kt,
 # the activity keeps itself across configuration changes, the manifest receivers, the inbox
-# job service and browser sign-in callbacks are inserted. Home-screen widget Kotlin sources,
-# resources and JVM tests are copied before Gradle assembles again.
+# job service, update receiver and browser sign-in callbacks are inserted. Home-screen widget Kotlin
+# sources, resources and JVM tests are copied before Gradle assembles again.
 set -euo pipefail
 cd "${DEVENV_ROOT:?run inside the devenv android profile}"
 
@@ -76,6 +76,7 @@ grep -q AhdInboxJob "$manifest"
 grep -q GenshinWidget "$manifest"
 grep -q StarRailWidget "$manifest"
 grep -q AhdWidgetJob "$manifest"
+grep -q AhdUpdateReceiver "$manifest"
 if ! grep -qF 'android:scheme="cc.attodao.ahd"' "$manifest"; then
   awk '
     /<\/activity>/ && !inserted {

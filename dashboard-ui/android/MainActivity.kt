@@ -16,6 +16,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.PackageInstaller
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
@@ -24,11 +25,13 @@ import android.provider.Settings
 import android.util.Log
 import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
+import androidx.lifecycle.Lifecycle
 import kotlin.math.roundToInt
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.security.MessageDigest
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -50,6 +53,7 @@ class MainActivity : WryActivity() {
             AhdBrowserLogin.remember(intent)
         }
         super.onCreate(savedInstanceState)
+        AhdUpdater.clearInstalledNotice(this)
         // WryActivity.onKeyDown still goes back in the WebView history first.
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -60,6 +64,7 @@ class MainActivity : WryActivity() {
 
     override fun onWebViewCreate(webView: WebView) {
         this.webView = webView
+        AhdUpdater.listener = { notifyUpdate() }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -68,10 +73,22 @@ class MainActivity : WryActivity() {
         if (AhdNotifications.rememberOpenTarget(intent)) notifyPage("open")
         if (AhdBrowserLogin.remember(intent)) notifyBrowserLogin()
     }
+    // Back from the "install unknown apps" settings (or a permission dialog): the update dialog re-checks.
+    override fun onResume() {
+        super.onResume()
+        AhdUpdater.listener?.invoke()
+    }
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == AhdNotifications.PERMISSION_REQUEST) notifyPage("permission")
+        if (requestCode == AhdNotifications.PERMISSION_REQUEST) {
+            notifyPage("permission")
+            // The update dialog waits for this answer. After a permission dialog it arrives while
+            // the activity is still paused, and page updates made then stall until the next resume,
+            // so onResume delivers it; only an answer given without a dialog is passed on here.
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) AhdUpdater.listener?.invoke()
+        }
     }
+    private fun notifyUpdate() { webView?.post { webView?.evaluateJavascript("window.__ahdUpdateEvent && window.__ahdUpdateEvent()", null) } }
     private fun notifyBrowserLogin() {
         webView?.post {
             webView?.evaluateJavascript("window.__ahdBrowserLoginEvent && window.__ahdBrowserLoginEvent()", null)
@@ -257,6 +274,7 @@ class AhdBootReceiver : BroadcastReceiver() {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
             AhdNotifications.restore(context)
             AhdInbox.restore(context)
+            if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) AhdUpdater.afterUpdate(context)
         }
     }
 }
@@ -379,4 +397,132 @@ class AhdInboxJob : JobService() {
         return true
     }
     override fun onStopJob(params: JobParameters): Boolean = true
+}
+
+// Dioxus has no updater: the APK signature is the update signature. PackageInstaller shows the
+// system confirmation (also when this app is the installer of record, measured on Android 14).
+object AhdUpdater {
+    const val ACTION_STATUS = "cc.attodao.ahd.UPDATE_STATUS"
+    private const val NOTICE_ID = 0x41485544
+    private const val CHANNEL_ID = "app_updates"
+    @Volatile @JvmStatic var listener: (() -> Unit)? = null
+    @Volatile private var result: String? = null
+    private fun prefs(context: Context) = context.getSharedPreferences("ahd_update", Context.MODE_PRIVATE)
+    private inline fun <T> guarded(fallback: T, block: () -> T): T = try { block() } catch (error: Throwable) {
+        Log.w("AHD", "App update operation failed", error)
+        fallback
+    }
+    @Suppress("DEPRECATION")
+    @JvmStatic fun inspect(context: Context, path: String): String? = guarded(null) {
+        val pm = context.packageManager
+        val flags = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+        fun info(value: android.content.pm.PackageInfo): JSONObject {
+            val signers = if (Build.VERSION.SDK_INT >= 28) value.signingInfo?.apkContentsSigners ?: emptyArray() else value.signatures ?: emptyArray()
+            val hashes = JSONArray()
+            for (signer in signers) hashes.put(MessageDigest.getInstance("SHA-256").digest(signer.toByteArray()).joinToString("") { "%02x".format(it.toInt() and 0xff) })
+            return JSONObject().put("package", value.packageName)
+                .put("versionCode", if (Build.VERSION.SDK_INT >= 28) value.longVersionCode else value.versionCode.toLong())
+                .put("versionName", value.versionName ?: "").put("signers", hashes)
+        }
+        val archive = pm.getPackageArchiveInfo(path, flags)
+        JSONObject().put("archive", if (archive == null) JSONObject.NULL else info(archive))
+            .put("own", info(pm.getPackageInfo(context.packageName, flags))).toString()
+    }
+    /** Whether this app may start an install session ("install unknown apps"; always true before Android 8). */
+    @JvmStatic fun installAllowed(context: Context): Boolean = guarded(true) {
+        Build.VERSION.SDK_INT < 26 || context.packageManager.canRequestPackageInstalls()
+    }
+    @JvmStatic fun openInstallSettings(activity: Activity): Boolean = guarded(false) {
+        if (Build.VERSION.SDK_INT < 26) false else {
+            activity.runOnUiThread {
+                guarded(Unit) {
+                    activity.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${activity.packageName}")))
+                }
+            }
+            true
+        }
+    }
+    /** Asks for POST_NOTIFICATIONS (Android 13+) so the "updated" notice can reopen the app; never opens settings. */
+    @JvmStatic fun requestNotificationPermission(activity: Activity): Boolean = guarded(false) {
+        if (Build.VERSION.SDK_INT < 33 || AhdNotifications.permissionGranted(activity)) false else {
+            activity.runOnUiThread {
+                guarded(Unit) { activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), AhdNotifications.PERMISSION_REQUEST) }
+            }
+            true
+        }
+    }
+    @JvmStatic fun install(context: Context, path: String, json: String): Boolean = guarded(false) {
+        prefs(context).edit().putString("pending", json).commit()
+        result = null
+        val installer = context.packageManager.packageInstaller
+        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+        params.setAppPackageName(context.packageName)
+        if (Build.VERSION.SDK_INT >= 31) params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+        val id = installer.createSession(params)
+        val session = installer.openSession(id)
+        try {
+            val file = File(path)
+            session.openWrite("base.apk", 0, file.length()).use { out ->
+                file.inputStream().use { it.copyTo(out) }
+                session.fsync(out)
+            }
+            val intent = Intent(context, AhdUpdateReceiver::class.java).setAction(ACTION_STATUS).setPackage(context.packageName)
+            val pending = PendingIntent.getBroadcast(context, id, intent, PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0))
+            session.commit(pending.intentSender)
+            session.close()
+            true
+        } catch (error: Throwable) {
+            session.abandon()
+            prefs(context).edit().remove("pending").commit()
+            throw error
+        }
+    }
+    @Suppress("DEPRECATION")
+    fun onStatus(context: Context, intent: Intent) {
+        val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+        when (status) {
+            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                try {
+                    val confirmation = if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+                        else intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+                    if (confirmation == null) report("failed")
+                    else context.startActivity(confirmation.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                } catch (error: Throwable) { report("failed") }
+            }
+            PackageInstaller.STATUS_SUCCESS -> report("success")
+            PackageInstaller.STATUS_FAILURE_ABORTED -> { prefs(context).edit().remove("pending").commit(); report("aborted") }
+            else -> { prefs(context).edit().remove("pending").commit(); Log.w("AHD", "update install failed: status $status"); report("failed") }
+        }
+    }
+    @Synchronized private fun report(value: String) { result = value; listener?.invoke() }
+    @JvmStatic @Synchronized fun takeResult(): String? { val value = result; result = null; return value }
+    @Suppress("DEPRECATION")
+    @JvmStatic fun afterUpdate(context: Context): Unit = guarded(Unit) {
+        val pending = prefs(context).getString("pending", null)
+        prefs(context).edit().remove("pending").commit()
+        if (pending != null) {
+            val notice = JSONObject(pending)
+            if (notice.getString("version") == context.packageManager.getPackageInfo(context.packageName, 0).versionName) {
+                if (AhdNotifications.permissionGranted(context)) {
+                    val manager = context.getSystemService(NotificationManager::class.java)
+                    if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, notice.getString("channel"), NotificationManager.IMPORTANCE_DEFAULT))
+                    val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(context, CHANNEL_ID) else Notification.Builder(context).setPriority(Notification.PRIORITY_DEFAULT)
+                    val icon = context.resources.getIdentifier("ic_stat_ahd", "drawable", context.packageName)
+                    val open = PendingIntent.getActivity(context, NOTICE_ID,
+                        Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+                    manager.notify(NOTICE_ID, builder.setSmallIcon(if (icon == 0) android.R.drawable.stat_sys_download_done else icon)
+                        .setContentTitle(notice.getString("title")).setContentText(notice.getString("body")).setAutoCancel(true).setContentIntent(open).build())
+                }
+                try { context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                catch (error: Throwable) { Log.w("AHD", "Could not reopen after update", error) }
+            }
+        }
+    }
+    @JvmStatic fun clearInstalledNotice(context: Context): Unit = guarded(Unit) { context.getSystemService(NotificationManager::class.java).cancel(NOTICE_ID) }
+}
+class AhdUpdateReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == AhdUpdater.ACTION_STATUS) AhdUpdater.onStatus(context, intent)
+    }
 }
