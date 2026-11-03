@@ -143,7 +143,7 @@ class AhdWidgetJob : JobService() {
     override fun onStopJob(params: JobParameters): Boolean = true
 }
 
-/** Shared state, tap target and periodic refresh; game widgets override render only. */
+/** Shared state, tap target (the dashboard tab of [game], navigation.rs target_game) and periodic refresh; game widgets override render only. */
 abstract class AhdGameWidget(val game: WidgetGame) : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) = updateWidgets(context, manager, ids)
     override fun onEnabled(context: Context) {
@@ -178,5 +178,5 @@ abstract class AhdGameWidget(val game: WidgetGame) : AppWidgetProvider() {
     }
     protected fun openApp(context: Context): PendingIntent = PendingIntent.getActivity(context, 0x4157 + game.ordinal,
         Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            .putExtra(AhdNotifications.EXTRA_OPEN, "/dashboard"), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            .putExtra(AhdNotifications.EXTRA_OPEN, "/dashboard?game=${game.key}"), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 }

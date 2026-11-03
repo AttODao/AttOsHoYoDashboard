@@ -248,6 +248,11 @@ pub(super) fn use_device_notifications(state: Signal<AppState>) -> DeviceNotific
                     granted.set(value);
                 }
                 if let Some(target) = notify::take_open_target() {
+                    // A widget's game tab applies even before sign-in finishes (cold start).
+                    if let Some(game) = navigation::target_game(&target) {
+                        let mut state = state;
+                        state.write().dashboard_game = game;
+                    }
                     let open = {
                         let read = state.read();
                         read.phase == Phase::SignedIn && read.ready()

@@ -1,6 +1,6 @@
 //! Same-origin path history (in-WebView history in the app); authentication/onboarding
 //! gates remain in App.
-use super::state::{AppState, Page, Phase};
+use super::state::{AppState, DASHBOARD_GAMES, Page, Phase};
 use dioxus::prelude::*;
 
 #[cfg(any(target_arch = "wasm32", test))]
@@ -87,6 +87,19 @@ pub(super) fn notification_target(target: &str) -> Page {
     } else {
         target
     })
+}
+
+/// The dashboard game tab a tapped home-screen widget asks for: `/dashboard?game=starrail`
+/// (AhdGameWidget.openApp in dashboard-ui/android/kotlin/AhdWidgets.kt). Anything else,
+/// including notification targets, leaves the current tab alone.
+#[cfg_attr(not(feature = "mobile"), allow(dead_code))]
+pub(super) fn target_game(target: &str) -> Option<&'static str> {
+    let (path, query) = target.split_once('?')?;
+    if path != "/dashboard" {
+        return None;
+    }
+    let game = query.strip_prefix("game=")?;
+    DASHBOARD_GAMES.into_iter().find(|known| *known == game)
 }
 
 /// The web version's URL for `page` on the server at `origin` (scheme://host[:port]).
@@ -231,6 +244,18 @@ mod tests {
         assert!(notification_target("/settings/security") == Page::Security);
         assert!(notification_target("/settings/notifications") == Page::Notifications);
         assert!(notification_target("unknown") == Page::Dashboard);
+        assert!(notification_target("/dashboard?game=starrail") == Page::Dashboard);
+    }
+
+    #[test]
+    fn widget_targets_pick_a_known_dashboard_game() {
+        assert_eq!(target_game("/dashboard?game=starrail"), Some("starrail"));
+        assert_eq!(target_game("/dashboard?game=genshin"), Some("genshin"));
+        assert_eq!(target_game("/dashboard"), None);
+        assert_eq!(target_game("dashboard"), None);
+        assert_eq!(target_game("/dashboard?game=zzz"), None);
+        assert_eq!(target_game("/dashboard?game=starrail&x=1"), None);
+        assert_eq!(target_game("/settings/bonus?game=starrail"), None);
     }
 
     #[test]
