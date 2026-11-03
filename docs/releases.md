@@ -58,7 +58,7 @@ SHA256SUMS
 
 ## リリースの手順（人が行うこと）
 
-1. `Cargo.toml`・`dashboard-ui/Cargo.toml`・`Cargo.lock` のバージョンを `X.Y.Z` に上げた `Release X.Y.Z` コミットをmainにマージする。タグを打つ前に `devenv test` を通す（CIではテストを実行しません）。
+1. `Cargo.toml`・`dashboard-ui/Cargo.toml`・`Cargo.lock` のバージョンを `X.Y.Z` に上げ、ルートの `CHANGELOG.md` に `X.Y.Z` の項目を足した `Release X.Y.Z` コミットをmainにマージする。タグを打つ前に `devenv test` を通す（CIではテストを実行しません）。
 2. マージコミットに注釈付きタグを付けてpushする。
    ```bash
    git tag -a vX.Y.Z -m "Release X.Y.Z" <マージコミット>
