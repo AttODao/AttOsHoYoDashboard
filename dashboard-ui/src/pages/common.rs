@@ -232,6 +232,31 @@ pub(super) fn focus_element(id: &str) {
     let _ = id;
 }
 
+/// Scrolls the parent of `id` sideways just enough to show it, without moving the page
+/// vertically (the app's settings tab bar scrolls horizontally).
+pub(super) fn reveal_horizontally(id: &str) {
+    #[cfg(target_arch = "wasm32")]
+    if let Some(element) = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.get_element_by_id(id))
+        && let Some(parent) = element.parent_element()
+    {
+        let (item, bar) = (
+            element.get_bounding_client_rect(),
+            parent.get_bounding_client_rect(),
+        );
+        if item.left() < bar.left() {
+            parent.set_scroll_left(parent.scroll_left() - (bar.left() - item.left()).ceil() as i32);
+        } else if item.right() > bar.right() {
+            parent
+                .set_scroll_left(parent.scroll_left() + (item.right() - bar.right()).ceil() as i32);
+        }
+    }
+    #[cfg(feature = "mobile")]
+    crate::mobile::dom::reveal_horizontally(id);
+    let _ = id;
+}
+
 /// A controlled checkbox only re-renders when its stored value changes, so a
 /// rejected toggle would stay flipped in the DOM. Write the stored value back.
 pub(super) fn reset_checked(id: &str, checked: bool) {

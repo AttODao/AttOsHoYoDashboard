@@ -42,6 +42,17 @@ pub(crate) fn focus(id: &str) {
     ));
 }
 
+/// Scrolls the parent of `id` sideways just enough to show it (scrolling tab bars).
+pub(crate) fn reveal_horizontally(id: &str) {
+    let _ = document::eval(&format!(
+        "const e = document.getElementById({}); const p = e && e.parentElement; \
+         if (p) {{ const r = e.getBoundingClientRect(), b = p.getBoundingClientRect(); \
+         if (r.left < b.left) p.scrollLeft -= b.left - r.left; \
+         else if (r.right > b.right) p.scrollLeft += r.right - b.right; }}",
+        quoted(id)
+    ));
+}
+
 pub(crate) fn set_checked(id: &str, checked: bool) {
     let _ = document::eval(&format!(
         "const e = document.getElementById({}); if (e) e.checked = {checked};",
