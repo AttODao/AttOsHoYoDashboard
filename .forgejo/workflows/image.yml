@@ -1,10 +1,12 @@
-# Publishes the release image to this Forgejo instance's container registry.
+# Publishes the web release (server + browser UI) image to this Forgejo
+# instance's container registry for every web tag (web-vX.Y.Z, version from the
+# root Cargo.toml). App tags (vX.Y.Z) are built by android.yml; see docs/releases.md.
 # Tests are not run here; run `devenv test` locally before tagging.
 name: image
 
 on:
   push:
-    tags: ['v*']
+    tags: ['web-v*']
 
 jobs:
   publish:
@@ -12,20 +14,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify version
+        run: |
+          set -eu
+          bash scripts/release-version.sh "$GITHUB_REF_NAME" > release-version.env
+          cat release-version.env
+          grep -qx COMPONENT=web release-version.env || { echo "Not a web tag: $GITHUB_REF_NAME" >&2; exit 1; }
+          cat release-version.env >> "$GITHUB_ENV"
+
       - name: Resolve image name and tags
         env:
           SERVER_URL: ${{ github.server_url }}
           REPOSITORY: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
         run: |
           set -eu
           registry="${SERVER_URL#*://}"
           image="$registry/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')"
-          version="${TAG#v}"
-          tags="$image:$version"
+          # VERSION is the tag without `web-v` (release-version.sh), e.g. 1.8.1 or 1.8.1-test.1.
+          tags="$image:$VERSION"
           # Only plain X.Y.Z releases move the X.Y and latest tags.
-          if printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            tags="$tags $image:${version%.*} $image:latest"
+          if [ "$PRERELEASE" = false ]; then
+            tags="$tags $image:${VERSION%.*} $image:latest"
           fi
           {
             echo "REGISTRY=$registry"
@@ -44,7 +53,6 @@ jobs:
           SERVER_URL: ${{ github.server_url }}
           REPOSITORY: ${{ github.repository }}
           REVISION: ${{ github.sha }}
-          TAG: ${{ github.ref_name }}
         run: |
           set -eu
           # Registry cache export needs a container builder, not the default docker driver.
@@ -62,7 +70,7 @@ jobs:
             --platform linux/amd64 \
             --label "org.opencontainers.image.source=$SERVER_URL/$REPOSITORY" \
             --label "org.opencontainers.image.revision=$REVISION" \
-            --label "org.opencontainers.image.version=${TAG#v}" \
+            --label "org.opencontainers.image.version=$VERSION" \
             --cache-from "type=registry,ref=$IMAGE:buildcache" \
             --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max" \
             "$@" \

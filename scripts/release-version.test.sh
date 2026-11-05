@@ -35,26 +35,41 @@ rejects() {
   fi
 }
 
+# Arguments: server (web) version, dashboard-ui (app) version.
 manifests 1.8.0 1.8.0
-accepts v1.8.0 $'VERSION=1.8.0\nAPP_VERSION=1.8.0\nVERSION_CODE=10800\nPRERELEASE=false'
-accepts v1.8.0-test.1 $'VERSION=1.8.0-test.1\nAPP_VERSION=1.8.0\nVERSION_CODE=10800\nPRERELEASE=true'
-accepts v1.8.0-rc-2 $'VERSION=1.8.0-rc-2\nAPP_VERSION=1.8.0\nVERSION_CODE=10800\nPRERELEASE=true'
-rejects v1.8.1 'must match both package versions'
+accepts v1.8.0 $'COMPONENT=app\nVERSION=1.8.0\nAPP_VERSION=1.8.0\nVERSION_CODE=10800\nPRERELEASE=false'
+accepts v1.8.0-test.1 $'COMPONENT=app\nVERSION=1.8.0-test.1\nAPP_VERSION=1.8.0\nVERSION_CODE=10800\nPRERELEASE=true'
+accepts v1.8.0-rc-2 $'COMPONENT=app\nVERSION=1.8.0-rc-2\nAPP_VERSION=1.8.0\nVERSION_CODE=10800\nPRERELEASE=true'
+accepts web-v1.8.0 $'COMPONENT=web\nVERSION=1.8.0\nPRERELEASE=false'
+rejects v1.8.1 'Tag v1.8.1 must match dashboard-ui/Cargo.toml (1.8.0)'
+rejects web-v1.8.1 'Tag web-v1.8.1 must match Cargo.toml (1.8.0)'
 rejects 1.8.0 'Tag must be'
 rejects v1.8 'Tag must be'
 rejects v01.8.0 'Tag must be'
 rejects v1.8.0- 'Tag must be'
 rejects 'v1.8.0-te st' 'Tag must be'
 rejects v1.8.0+build 'Tag must be'
+rejects app-v1.8.0 'Tag must be'
+rejects webv1.8.0 'Tag must be'
+rejects web-1.8.0 'Tag must be'
+rejects Web-v1.8.0 'Tag must be'
+rejects web-v01.8.0 'Tag must be'
+rejects web-v1.8.0+build 'Tag must be'
 
-manifests 1.8.0 1.7.0
-rejects v1.8.0 'dashboard-ui/Cargo.toml 1.7.0'
+# Independent versions: each tag reads only its own crate.
+manifests 1.8.1 1.9.0
+accepts v1.9.0 $'COMPONENT=app\nVERSION=1.9.0\nAPP_VERSION=1.9.0\nVERSION_CODE=10900\nPRERELEASE=false'
+accepts web-v1.8.1 $'COMPONENT=web\nVERSION=1.8.1\nPRERELEASE=false'
+accepts web-v1.8.1-test.1 $'COMPONENT=web\nVERSION=1.8.1-test.1\nPRERELEASE=true'
+rejects v1.8.1 'Tag v1.8.1 must match dashboard-ui/Cargo.toml (1.9.0)'
+rejects web-v1.9.0 'Tag web-v1.9.0 must match Cargo.toml (1.8.1)'
 
 manifests 1.100.0 1.100.0
 rejects v1.100.0 'below 100'
+rejects web-v1.100.0 'below 100'
 
 manifests 12.3.45 12.3.45
-accepts v12.3.45 $'VERSION=12.3.45\nAPP_VERSION=12.3.45\nVERSION_CODE=120345\nPRERELEASE=false'
+accepts v12.3.45 $'COMPONENT=app\nVERSION=12.3.45\nAPP_VERSION=12.3.45\nVERSION_CODE=120345\nPRERELEASE=false'
 
 if [ "$failures" -ne 0 ]; then
   echo "$failures release-version check(s) failed" >&2

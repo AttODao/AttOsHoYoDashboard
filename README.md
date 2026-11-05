@@ -161,7 +161,7 @@ devenv --profile android shell -- test-android-kotlin
 
 APKは `target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/apk/debug/app-debug.apk` に出力されます（デバッグ署名。`--release` を付けても署名設定がなければデバッグ署名です）。`adb install -r <APK>` で導入します。`build-android` は `dx build --platform android` の後、`dashboard-ui/android/res/` のアイコン・アプリ名「AHD」・テーマで生成プロジェクトを上書きし、AndroidManifestの `configChanges` を広げ、バージョンから `versionCode` を設定してGradleを再実行します（`dx serve --platform android` ではDioxus既定のアイコン・名前になり、ダークモードや文字サイズの変更でアプリが終了します）。
 
-`v*` タグをpushすると `.forgejo/workflows/android.yml` がarm64のAPKを `--release` でビルドし、そのタグのForgejoリリースに `ahd-android-X.Y.Z-arm64.apk` と `SHA256SUMS` を添付します。接続先はリポジトリ変数 `AHD_SERVER_URL`（未設定なら `https://hoyo.attodao.cc`）です。APKはリポジトリのsecret `ANDROID_KEYSTORE_BASE64`（base64のkeystore）・`ANDROID_KEYSTORE_PASSWORD`・`ANDROID_KEY_ALIAS` のリリース鍵で署名し直し、証明書が `dashboard-ui/android/release-signing-cert.sha256` と一致することを確認します（secretがないと正式リリースは失敗し、テスト用タグだけはデバッグ鍵で続けます）。`versionCode` は `X*10000+Y*100+Z`（Y・Zは100未満）を `build-android` が設定します。命名規則・タグとバージョンの対応・テスト用タグ・リリース手順は [docs/releases.md](docs/releases.md) にあります。
+アプリのタグ `vX.Y.Z`（`dashboard-ui/Cargo.toml` の版）をpushすると `.forgejo/workflows/android.yml` がarm64のAPKを `--release` でビルドし、そのタグのForgejoリリースに `ahd-android-X.Y.Z-arm64.apk` と `SHA256SUMS` を添付します。接続先はリポジトリ変数 `AHD_SERVER_URL`（未設定なら `https://hoyo.attodao.cc`）です。APKはリポジトリのsecret `ANDROID_KEYSTORE_BASE64`（base64のkeystore）・`ANDROID_KEYSTORE_PASSWORD`・`ANDROID_KEY_ALIAS` のリリース鍵で署名し直し、証明書が `dashboard-ui/android/release-signing-cert.sha256` と一致することを確認します（secretがないと正式リリースは失敗し、テスト用タグだけはデバッグ鍵で続けます）。`versionCode` は `X*10000+Y*100+Z`（Y・Zは100未満）を `build-android` が設定します。命名規則・タグとバージョンの対応・テスト用タグ・リリース手順は [docs/releases.md](docs/releases.md) にあります。
 
 アプリは起動時にバックグラウンドで1回、`GET https://git.attodao.cc/api/v1/repos/AttODao/AttOsHoYoDashboard/releases/latest` を呼び、タグ（`vX.Y.Z`）をSemVerとしてアプリのバージョンと比べます。draft・prerelease（フラグまたはSemVerのプレリリースのタグ）は対象外です。新しいリリースにこの端末向けのAPK（`ahd-android-X.Y.Z-<arch>.apk`）がある場合だけ「更新あり」とし、最新バージョン・リリースノート・APKとチェックサム（`.sha256` か `SHA256SUMS`）のURLを返します。起動は待たず、オフラインやAPIエラーはlogcat（`adb logcat -s AHD`）に出すだけです。取得先はビルド時の `AHD_UPDATE_FORGEJO_URL`・`AHD_UPDATE_REPOSITORY`（`owner/repo`）で変えられ、非公開リポジトリには `AHD_UPDATE_TOKEN` を渡せます（APKに埋め込まれて取り出せるため、読み取り専用で他に権限のないトークンに限る）。更新ダイアログの「今すぐ更新」は、通知の許可を求め（更新後はアプリが閉じ、Androidは自動で開き直せないため、「更新しました」の通知と「もう一度開いてください」の案内で知らせます）、「不明なアプリのインストール」が未許可ならダウンロードの前に設定画面へ案内し、戻ってきたら続けます。取り消されたインストールは、検証済みのAPKのまま再試行します（[docs/android-changes.md](docs/android-changes.md) 5.5）。
 
@@ -229,11 +229,11 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 
 ## リリースイメージ
 
-`v*` タグのpushで `.forgejo/workflows/image.yml` がlinux/amd64イメージをビルドし、Forgejoのコンテナレジストリ（`<Forgejoホスト>/<owner>/<repo>`、小文字）へ公開します。CIではテストを実行しないため、タグ付け前に `devenv test` を通してください。
+webのタグ `web-vX.Y.Z`（ルート `Cargo.toml` の版）のpushで `.forgejo/workflows/image.yml` がlinux/amd64イメージをビルドし、Forgejoのコンテナレジストリ（`<Forgejoホスト>/<owner>/<repo>`、小文字）へ公開します。webのタグではForgejoリリースを作らず、アプリのビルドも動きません。CIではテストを実行しないため、タグ付け前に `devenv test` を通してください。
 
-同じタグで `.forgejo/workflows/android.yml` も起動し、Android APKと `SHA256SUMS` をForgejoリリースに添付します。タグは両方のCargo.tomlのバージョンと一致させます。アセットの命名規則・署名・リリース手順・テスト用タグ（`vX.Y.Z-test.N`、プレリリース）は [docs/releases.md](docs/releases.md) を参照してください。
+アプリ（Android APK）は別の版・別のタグ `vX.Y.Z`（`dashboard-ui/Cargo.toml` の版）で `.forgejo/workflows/android.yml` から出します。v1.8.0 までの `v*` タグはイメージとAPKの両方を出していました。どちらを出すかの判断（`scripts/release-scope.sh`）・手順・テスト用タグは [docs/releases.md](docs/releases.md) と [docs/versioning.md](docs/versioning.md) を参照してください。
 
-- `v1.2.3` → `1.2.3`・`1.2`・`latest`。`v1.2.3-rc.1` などはそのタグのみ
+- `web-v1.2.3` → `1.2.3`・`1.2`・`latest`。`web-v1.2.3-rc.1` などはそのタグのみ
 - runnerはラベル `ubuntu-latest`、ジョブから `docker`／`buildx` でDinDへ接続できること
 - リポジトリSecret `REGISTRY_TOKEN`：タグをpushするユーザーの `write:package` 権限付きアクセストークン
 - ビルドキャッシュは同じイメージの `buildcache` タグに保存
