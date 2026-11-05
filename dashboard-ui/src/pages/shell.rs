@@ -2,13 +2,14 @@ use super::about::AboutPage;
 use super::accounts::UidsPage;
 use super::admin::AdminPage;
 use super::app_nav::AppNav;
-use super::common::{Icon, focus_element, use_modal};
+use super::common::{Icon, focus_element, reveal_horizontally, use_modal};
 use super::dashboard::DashboardPage;
 use super::deletion::DeletePage;
 use super::hoyolab::LinkPage;
 use super::notifications::NotificationsPage;
 use super::rewards::RewardsPage;
 use super::security::SecurityPage;
+use super::swipe_tabs::SwipeableTabs;
 use crate::app::actions::spawn_action;
 use crate::app::navigation::open_web_version;
 use crate::app::preferences::{Preferences, use_preferences};
@@ -81,6 +82,8 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
     let ui = use_preferences();
     let page = state.read().page;
     let is_settings = SETTINGS.iter().any(|(p, ..)| *p == page);
+    let tabs = settings_tabs(crate::platform::APP);
+    let tab_index = tabs.iter().position(|(p, ..)| *p == page).unwrap_or(0);
     rsx! {
         a { class: "skip-link", href: "#main", {ui.text("shell.skip_to_content")} }
         Header { state }
@@ -92,7 +95,7 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
                     button { r#type: "button", onclick: move |_| set_page(state, Page::Dashboard), {ui.text("shell.dashboard")} }
                 }
                 div { class: "tabs settings-tabs", role: "tablist", "aria-label": ui.text("shell.settings_sections"),
-                    for (target, key, label, short) in settings_tabs(crate::platform::APP) {
+                    for (target, key, label, short) in tabs.clone() {
                         button { id: "settings-tab-{key}", r#type: "button", role: "tab", "aria-controls": "settings-panel",
                             "aria-selected": (page == target).to_string(), tabindex: if page == target { "0" } else { "-1" },
                             "aria-label": ui.text(label), onclick: move |_| set_page(state, target),
@@ -109,16 +112,26 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
                         }
                     }
                 }
-                section { class: "settings-section", id: "settings-panel", role: "tabpanel",
-                    "aria-labelledby": format!("settings-tab-{}", SETTINGS.iter().find(|(p, ..)| *p == page).map(|(_, key, ..)| *key).unwrap_or("uids")),
-                    match page {
-                        Page::Uids => rsx! { UidsPage { state } },
-                        Page::Rewards => rsx! { RewardsPage { state } },
-                        Page::Link => rsx! { LinkPage { state } },
-                        Page::Security => rsx! { SecurityPage { state } },
-                        Page::Notifications => rsx! { NotificationsPage { state } },
-                        Page::Delete if !crate::platform::APP => rsx! { DeletePage { state } },
-                        _ => rsx! {},
+                // Swipes switch tabs like a tap: the URL, the selected tab and its data load
+                // follow `set_page`; the scrolling app tab bar keeps the new tab in view.
+                SwipeableTabs { id: "settings-swipe", count: tabs.len(), index: tab_index,
+                    on_change: move |next: usize| {
+                        if let Some((target, key, ..)) = settings_tabs(crate::platform::APP).get(next) {
+                            set_page(state, *target);
+                            reveal_horizontally(&format!("settings-tab-{key}"));
+                        }
+                    },
+                    section { class: "settings-section", id: "settings-panel", role: "tabpanel",
+                        "aria-labelledby": format!("settings-tab-{}", SETTINGS.iter().find(|(p, ..)| *p == page).map(|(_, key, ..)| *key).unwrap_or("uids")),
+                        match page {
+                            Page::Uids => rsx! { UidsPage { state } },
+                            Page::Rewards => rsx! { RewardsPage { state } },
+                            Page::Link => rsx! { LinkPage { state } },
+                            Page::Security => rsx! { SecurityPage { state } },
+                            Page::Notifications => rsx! { NotificationsPage { state } },
+                            Page::Delete if !crate::platform::APP => rsx! { DeletePage { state } },
+                            _ => rsx! {},
+                        }
                     }
                 }
             } else {
@@ -298,5 +311,24 @@ mod tests {
         assert!(next_settings(Page::Uids, &Key::ArrowLeft, true) == Some(Page::Notifications));
         assert!(next_settings(Page::Notifications, &Key::ArrowRight, true) == Some(Page::Uids));
         assert!(next_settings(Page::Delete, &Key::ArrowRight, true).is_none());
+    }
+
+    /// Swipes walk the same tab order as the tab bar but stop at either end
+    /// instead of wrapping like the arrow keys.
+    #[test]
+    fn settings_swipes_follow_the_tab_order_and_stop_at_the_ends() {
+        use crate::app::swipe::{SwipeDirection, step};
+        let swipe = |page: Page, direction, app| {
+            let tabs = settings_tabs(app);
+            let index = tabs.iter().position(|(p, ..)| *p == page)?;
+            step(index, tabs.len(), direction).map(|next| tabs[next].0)
+        };
+        assert!(swipe(Page::Uids, SwipeDirection::Next, false) == Some(Page::Rewards));
+        assert!(swipe(Page::Rewards, SwipeDirection::Previous, false) == Some(Page::Uids));
+        assert!(swipe(Page::Notifications, SwipeDirection::Next, false) == Some(Page::Delete));
+        assert!(swipe(Page::Uids, SwipeDirection::Previous, false).is_none());
+        assert!(swipe(Page::Delete, SwipeDirection::Next, false).is_none());
+        assert!(swipe(Page::Notifications, SwipeDirection::Next, true).is_none());
+        assert!(swipe(Page::Security, SwipeDirection::Next, true) == Some(Page::Notifications));
     }
 }

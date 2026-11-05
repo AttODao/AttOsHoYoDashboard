@@ -11,6 +11,7 @@ mod navigation;
 mod preferences;
 mod session;
 mod state;
+pub(crate) mod swipe;
 #[cfg(feature = "mobile")]
 mod updates;
 

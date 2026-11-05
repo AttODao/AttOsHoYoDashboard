@@ -3,7 +3,7 @@
 use dioxus::{core::Task, prelude::*};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-fn quoted(value: &str) -> String {
+pub(super) fn quoted(value: &str) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_owned())
 }
 
@@ -38,6 +38,17 @@ pub(crate) fn apply_preferences(language: &str, theme: &str) {
 pub(crate) fn focus(id: &str) {
     let _ = document::eval(&format!(
         "const e = document.getElementById({}); if (e && e.focus) e.focus();",
+        quoted(id)
+    ));
+}
+
+/// Scrolls the parent of `id` sideways just enough to show it (scrolling tab bars).
+pub(crate) fn reveal_horizontally(id: &str) {
+    let _ = document::eval(&format!(
+        "const e = document.getElementById({}); const p = e && e.parentElement; \
+         if (p) {{ const r = e.getBoundingClientRect(), b = p.getBoundingClientRect(); \
+         if (r.left < b.left) p.scrollLeft -= b.left - r.left; \
+         else if (r.right > b.right) p.scrollLeft += r.right - b.right; }}",
         quoted(id)
     ));
 }

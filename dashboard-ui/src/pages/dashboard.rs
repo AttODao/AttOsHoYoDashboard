@@ -1,5 +1,6 @@
 use super::common::{Icon, LoadError, Metric, focus_element, game_name};
 use super::rewards::AutomationSwitch;
+use super::swipe_tabs::SwipeableTabs;
 use crate::app::actions::spawn_root;
 use crate::app::data::{RunAll, load_game_status, run_all_targets, run_rewards_now};
 use crate::app::display::{
@@ -50,7 +51,15 @@ pub(super) fn DashboardPage(state: Signal<AppState>) -> Element {
                     }
                 }
             }
-            div { class: "dashboard-grid",
+            // Narrow screens show one game at a time: swiping the panels switches tabs like a tap.
+            SwipeableTabs {
+                id: "game-panels", class: "dashboard-grid",
+                count: DASHBOARD_GAMES.len(), index: game_index(active()), enabled: mobile(),
+                on_change: move |index: usize| {
+                    if let Some(&game) = DASHBOARD_GAMES.get(index) {
+                        select(game);
+                    }
+                },
                 for game in DASHBOARD_GAMES {
                     GamePanel { key: "{game}", state, game, active: active() == game, mobile: mobile() }
                 }
@@ -158,6 +167,14 @@ fn next_game_tab(game: &str, key: &Key) -> Option<&'static str> {
         }),
         _ => None,
     }
+}
+
+/// The tab position of `game` for `SwipeableTabs`; unknown games count as the first tab.
+fn game_index(game: &str) -> usize {
+    DASHBOARD_GAMES
+        .iter()
+        .position(|candidate| *candidate == game)
+        .unwrap_or(0)
 }
 
 fn focus_game_tab(game: &'static str) {
@@ -1024,5 +1041,15 @@ mod tests {
         assert_eq!(next_game_tab("starrail", &Key::Home), Some("genshin"));
         assert_eq!(next_game_tab("genshin", &Key::End), Some("starrail"));
         assert_eq!(next_game_tab("genshin", &Key::Enter), None);
+    }
+
+    #[test]
+    fn swipe_index_follows_the_tab_order() {
+        assert_eq!(game_index("genshin"), 0);
+        assert_eq!(game_index("starrail"), 1);
+        assert_eq!(game_index("zzz"), 0);
+        for (index, game) in DASHBOARD_GAMES.iter().enumerate() {
+            assert_eq!(game_index(game), index);
+        }
     }
 }

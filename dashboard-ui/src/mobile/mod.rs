@@ -19,6 +19,8 @@ pub(crate) mod reminders;
 pub(crate) mod session;
 #[cfg(feature = "mobile")]
 pub(crate) mod storage;
+#[cfg(feature = "mobile")]
+pub(crate) mod swipe;
 pub(crate) mod time;
 pub(crate) mod update_install;
 pub(crate) mod updates;

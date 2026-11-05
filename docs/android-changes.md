@@ -118,11 +118,13 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 - 下部バーの分（64px + セーフエリア + 32px）だけ、本文の下の余白を広げた。
 - アプリをバックグラウンドから戻したとき、前回の取得から60秒以上たっていれば状態を再取得する（web版の60秒ごとの更新に加えた動作）。
 - web版のカード右上にある更新ボタン（丸矢印）は出さない。代わりに、ページが最上部までスクロールされた状態で下に引っ張って離すと（減衰後72px以上）、UID一覧・両ゲームの状態・ボーナス設定を読み直す（`load_dashboard_data`、pull-to-refresh）。引っ張っている間は画面上部に丸矢印のインジケータが指に付いて回り、しきい値を超えるとシアンになり、読み込み中は回転し続ける。スクリーンリーダーには「更新中…」を `role="status"` で伝える。開いているダイアログ、入力欄・選択欄から始めたタッチ、横方向が主のスワイプでは反応しない。ダッシュボードではWebViewのオーバースクロール効果を止める（`overscroll-behavior-y:none`）。リスナーは `mobile/dom.rs` の `PullToRefresh` が持ち、ダッシュボードを離れると外す。
+- ゲームタブ（900px以下）はパネルの上で左右にスワイプしても切り替わる（左で次、右で前、端では止まる）。web版と同じ `SwipeableTabs` を使い、アプリではタッチを `mobile/swipe.rs` が集める。横方向が主のスワイプでは上の pull-to-refresh が外れ、縦方向が主の引っ張りではスワイプにならないので、2つは同時に動かない。
 
 ### 設定（共通）
 
 - 見出し横の「ダッシュボードへ」ボタンは、下部バーと重複するので隠す。
 - タブから「削除」がなくなる（3節）。文字が大きいときは、ページを横に広げずにタブ列の中だけでスクロールする（スクロールバーは非表示）。
+- 幅によらず：web版と同じく、本文を左右にスワイプするとタブが切り替わる（`SwipeableTabs`、左で次・右で前、端では止まる）。タブ列が横スクロールしているときは、スワイプで選んだタブが見えるようにタブ列だけを横にスクロールする（`mobile::dom::reveal_horizontally`）。
 
 ### 設定：報酬
 
@@ -329,6 +331,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | 現在時刻 | `js_sys::Date::now` | `SystemTime` | `platform::now_ms` |
 | 時刻の表示と経過時間 | `js_sys::Date` | chrono（`mobile/time.rs`） | `app/display.rs` の各関数 |
 | DOM（フォーカス、checked、`<dialog>`、`matchMedia`、History、`hidden`） | web-sys | `document::eval`（`mobile/dom.rs`） | `pages/common.rs`、`app/navigation.rs`、`pages/dashboard.rs`、`app.rs` |
+| タブの横スワイプのタッチ収集 | web-sys（`pages/swipe_tabs.rs`） | `document::eval`（`mobile/swipe.rs`） | `pages/swipe_tabs.rs` の `SwipeableTabs`、判定は `app/swipe.rs` |
 | 言語とテーマの保存 | `localStorage` | `files/preferences.json` | `app/preferences.rs` |
 | 外部URL | （なし） | `webbrowser` | `platform::open_external` |
 
@@ -347,6 +350,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/mobile/storage.rs` | アプリ専用領域のファイル（JNIで `getFilesDir()`・`getCacheDir()` を取得） |
 | `dashboard-ui/src/mobile/time.rs` | 端末時刻での表示 |
 | `dashboard-ui/src/mobile/dom.rs` | `document::eval` によるDOM操作（pull-to-refreshのタッチ処理を含む） |
+| `dashboard-ui/src/mobile/swipe.rs` | タブの横スワイプのタッチ収集（`document::eval`）。判定は共通の `app/swipe.rs` |
 | `dashboard-ui/src/mobile/reminders.rs` | 通知時刻の予測、設定と予定の保存形式、通知文（テストあり） |
 | `dashboard-ui/src/mobile/notify.rs` | Kotlinの通知処理を呼ぶJNIブリッジ |
 | `dashboard-ui/src/mobile/browser_login.rs` | ブラウザ経由ログインのPKCE・コールバックURL・保存要求の規則（I/Oなし、テストあり） |

@@ -598,6 +598,52 @@ try{
  assert.ok(await page.locator('#game-tab-starrail').evaluate(e=>e===document.activeElement));
  await page.keyboard.press('Home');await genshin.waitFor();
  await page.keyboard.press('End');await starrail.waitFor();
+ // Touch swipes on the panels switch tabs like a tap: left = next, right = previous, no wrap.
+ const touch=await context.newCDPSession(page);await touch.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
+ const drag=async(from,to,steps=6)=>{
+  await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:from.x,y:from.y}]});
+  for(let i=1;i<=steps;i++){await page.waitForTimeout(16);await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:from.x+(to.x-from.x)*i/steps,y:from.y+(to.y-from.y)*i/steps}]});}
+  await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.waitForTimeout(100);
+ };
+ const titleAt=async game=>{const box=await page.locator(`#game-title-${game}`).boundingBox();return box.y+box.height/2;};
+ const selectedGame=()=>page.locator('.game-tabs [aria-selected=true]').getAttribute('id');
+ let y=await titleAt('starrail');
+ await drag({x:100,y},{x:260,y});await genshin.waitFor();assert.ok(await starrail.isHidden());
+ assert.equal(await selectedGame(),'game-tab-genshin','a right swipe selects the previous tab');
+ y=await titleAt('genshin');
+ await drag({x:100,y},{x:260,y});assert.equal(await selectedGame(),'game-tab-genshin','the first tab stays at the start');
+ await drag({x:300,y},{x:140,y});await starrail.waitFor();assert.ok(await genshin.isHidden());
+ assert.equal(await selectedGame(),'game-tab-starrail','a left swipe selects the next tab');
+ await drag({x:300,y},{x:140,y});assert.equal(await selectedGame(),'game-tab-starrail','the last tab stays at the end');
+ // A tap on the tab bar still works after swipes.
+ await page.locator('#game-tab-genshin').click();await genshin.waitFor();
+ // Edge starts (system back gesture), slanted vertical drags and mouse drags never switch.
+ y=await titleAt('genshin');
+ await drag({x:10,y},{x:200,y});assert.equal(await selectedGame(),'game-tab-genshin','edge swipe is ignored');
+ await drag({x:300,y},{x:240,y:y+120});assert.equal(await selectedGame(),'game-tab-genshin','vertical drag is ignored');
+ await page.mouse.move(300,y);await page.mouse.down();await page.mouse.move(100,y,{steps:6});await page.mouse.up();
+ assert.equal(await selectedGame(),'game-tab-genshin','mouse drag is ignored');
+ // A vertical swipe scrolls the page natively and keeps the tab.
+ if(await page.evaluate(()=>document.documentElement.scrollHeight>innerHeight+200)){
+  await page.evaluate(()=>scrollTo(0,0));
+  await drag({x:200,y:700},{x:210,y:300},10);
+  assert.ok(await page.evaluate(()=>scrollY>0),'a vertical touch drag scrolls the dashboard');
+  assert.equal(await selectedGame(),'game-tab-genshin');
+  await page.evaluate(()=>scrollTo(0,0));
+ }
+ // Form controls and horizontally scrolling content keep their own drags.
+ const uidPicker=genshin.locator('select').first();
+ if(await uidPicker.count()){const box=await uidPicker.boundingBox();const py=box.y+box.height/2;await drag({x:box.x+box.width-30,y:py},{x:box.x+30,y:py});assert.equal(await selectedGame(),'game-tab-genshin','a swipe on the UID picker is ignored');}
+ await genshin.evaluate(panel=>{const strip=document.createElement('div');strip.id='swipe-probe';strip.style.cssText='overflow-x:auto;white-space:nowrap;height:48px';strip.textContent='x'.repeat(400);panel.prepend(strip);});
+ const probe=await page.locator('#swipe-probe').boundingBox();
+ await drag({x:300,y:probe.y+24},{x:120,y:probe.y+24});assert.equal(await selectedGame(),'game-tab-genshin','a swipe inside a horizontal scroller is ignored');
+ await page.locator('#swipe-probe').evaluate(e=>e.remove());
+ // Wide screens show both games and do not swipe.
+ await page.setViewportSize({width:1280,height:900});await page.waitForFunction(()=>document.getElementById('game-panels')?.dataset.swipeEnabled==='false');
+ y=await titleAt('genshin');await drag({x:600,y},{x:300,y});
+ await page.setViewportSize({width:390,height:844});await genshin.waitFor();
+ assert.equal(await selectedGame(),'game-tab-genshin','no swipe while both games are shown');
+ await touch.send('Emulation.setTouchEmulationEnabled',{enabled:false});await touch.detach();
  await page.setViewportSize({width:1280,height:900});
  // Pathname navigation supports back/forward and reload without bypassing auth gates.
  await menu('Settings');
@@ -751,6 +797,31 @@ try{
  await page.locator('#settings-tab-uids[aria-selected=true]').waitFor();
  await page.locator('#settings-tab-uids').focus();await page.keyboard.press('ArrowRight');
  await page.locator('#settings-tab-bonus[aria-selected=true]').waitFor();
+ // Touch swipes on the settings panel switch tabs like a tap (selected tab, URL and
+ // history follow), stop at either end, and never start on form controls or from mouse drags.
+ await page.setViewportSize({width:375,height:812});
+ const settingsTouch=await context.newCDPSession(page);await settingsTouch.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1});
+ const plainPoint=()=>page.evaluate(()=>{const panel=document.getElementById('settings-panel'),r=panel.getBoundingClientRect(),x=innerWidth/2;for(let y=Math.max(r.top,0)+8;y<Math.min(r.bottom,innerHeight)-8;y+=8){const e=document.elementFromPoint(x,y);if(e&&panel.contains(e)&&!e.closest('input,select,textarea,button,a,label,[role=slider],[data-swipe-ignore],.table-wrap'))return {x,y};}return null;});
+ const settingsDrag=async(start,dx,dy=0)=>{await settingsTouch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[start]});for(let i=1;i<=4;i++)await settingsTouch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:start.x+dx*i/4,y:start.y+dy*i/4}]});await settingsTouch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});};
+ const swipeTo=async(dx,key,url)=>{const start=await plainPoint();assert.ok(start,'the settings panel has a plain area to swipe on');await settingsDrag(start,dx);await page.locator('#settings-tab-'+key+'[aria-selected=true]').waitFor();await idle();assert.equal(new URL(page.url()).pathname,url);assert.equal(await page.locator('#settings-panel').getAttribute('aria-labelledby'),'settings-tab-'+key);};
+ const staysOn=async key=>{await page.waitForTimeout(300);assert.equal(await page.locator('#settings-tab-'+key).getAttribute('aria-selected'),'true');};
+ const rewardWrites=()=>[...counts].filter(([p])=>p.startsWith('/api/v1/reward-settings/')).reduce((n,[,c])=>n+c,0);
+ const writesBefore=rewardWrites();
+ const toggle=page.locator('#settings-panel input[role=switch]').first();await toggle.scrollIntoViewIfNeeded();const toggleBox=await toggle.boundingBox();const toggled=await toggle.isChecked();
+ await settingsDrag({x:toggleBox.x+toggleBox.width/2,y:toggleBox.y+toggleBox.height/2},-120);await staysOn('bonus');
+ assert.equal(await toggle.isChecked(),toggled,'a drag across a switch neither switches tabs nor toggles it');assert.equal(rewardWrites(),writesBefore);
+ await swipeTo(-120,'link','/settings/link');
+ await swipeTo(120,'bonus','/settings/bonus');
+ await swipeTo(120,'uids','/settings/games');
+ const first=await plainPoint();await settingsDrag(first,120);await staysOn('uids');
+ await settingsDrag(first,30,200);await staysOn('uids');
+ await page.mouse.move(first.x,first.y);await page.mouse.down();await page.mouse.move(first.x-150,first.y,{steps:5});await page.mouse.up();await staysOn('uids');
+ await page.goBack();await page.locator('#settings-tab-bonus[aria-selected=true]').waitFor();await idle();
+ await page.locator('#settings-tab-bonus').focus();await page.keyboard.press('End');await page.locator('#settings-tab-delete[aria-selected=true]').waitFor();await idle();
+ await settingsDrag(await plainPoint(),-120);await staysOn('delete');
+ await swipeTo(120,'notifications','/settings/notifications');
+ await settingsTouch.send('Emulation.setTouchEmulationEnabled',{enabled:false});await settingsTouch.detach();
+ await page.setViewportSize({width:1280,height:900});
  await page.locator('#settings-tab-security').click();await idle();
  // Side-by-side fields keep their controls on one line when only one of them has a hint.
  const pairBoxes=ids=>page.evaluate(ids=>ids.map(id=>{const r=document.getElementById(id).getBoundingClientRect();return {top:Math.round(r.top),height:Math.round(r.height)};}),ids);
