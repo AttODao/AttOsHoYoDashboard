@@ -11,7 +11,12 @@ import {fileURLToPath} from 'node:url';
 const require=createRequire(import.meta.url);
 const {chromium}=require(process.env.ATTOS_TEST_PLAYWRIGHT_MODULE || 'playwright');
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
-const uiManifest=fs.readFileSync(path.join(root,'dashboard-ui/Cargo.toml'),'utf8');const uiVersion=uiManifest.match(/^version = "(.+)"$/m)[1];const uiLicense=uiManifest.match(/^license = "(.+)"$/m)[1];
+const uiManifest=fs.readFileSync(path.join(root,'dashboard-ui/Cargo.toml'),'utf8');const uiLicense=uiManifest.match(/^license = "(.+)"$/m)[1];
+// The web build's About shows the web version: the root (server) crate's [package] version.
+const webVersion=fs.readFileSync(path.join(root,'Cargo.toml'),'utf8').split(/^\[package\]$/m)[1].match(/^version = "(.+)"$/m)[1];
+const webCore=webVersion.split(/[-+]/)[0].split('.').map(Number);
+// Up to 1.8.0 one vX.Y.Z tag released web and app together; later web releases are web-vX.Y.Z.
+const webTag=webCore[0]*1e6+webCore[1]*1e3+webCore[2]>1008000?`web-v${webVersion}`:`v${webVersion}`;
 // BUILD_DIR is the compiled public directory (containing index.html and assets/).
 const publicDir=path.resolve(process.env.BUILD_DIR || path.join(root,'target/dx/attos-dashboard-ui/release/web/public'));
 assert.ok(fs.existsSync(path.join(publicDir,'index.html')),'build the Dioxus release UI first');
@@ -546,14 +551,14 @@ try{
  await page.getByRole('heading',{name:'About',exact:true,level:1}).waitFor();
  assert.equal(await page.title(),'About – AHD');
  const aboutFacts=await page.locator('.about-facts > div').evaluateAll(rows=>rows.map(row=>[row.querySelector('dt').textContent.trim(),row.querySelector('dd').textContent.trim()]));
- assert.deepEqual(aboutFacts,[['Author','AttODao'],['Version',uiVersion],['License',uiLicense],['Source code','git.attodao.cc/AttODao/AttOsHoYoDashboard']]);
+ assert.deepEqual(aboutFacts,[['Author','AttODao'],['Version',webVersion],['License',uiLicense],['Source code','git.attodao.cc/AttODao/AttOsHoYoDashboard']]);
  assert.equal(uiLicense,'GPL-3.0-or-later');
  assert.equal(await page.locator('.about-facts a').first().getAttribute('href'),'https://git.attodao.cc/AttODao/AttOsHoYoDashboard/src/branch/main/LICENSE');
  const repoLink=page.locator('.about-facts a').last();
  assert.equal(await repoLink.getAttribute('href'),'https://git.attodao.cc/AttODao/AttOsHoYoDashboard');
  assert.equal(await repoLink.getAttribute('target'),'_blank');
  assert.equal(await page.locator('.about-licenses li').count(),4);
- assert.equal(await page.getByRole('link',{name:'Open Cargo.lock',exact:true}).getAttribute('href'),`https://git.attodao.cc/AttODao/AttOsHoYoDashboard/src/tag/v${uiVersion}/Cargo.lock`);
+ assert.equal(await page.getByRole('link',{name:'Open Cargo.lock',exact:true}).getAttribute('href'),`https://git.attodao.cc/AttODao/AttOsHoYoDashboard/src/tag/${webTag}/Cargo.lock`);
  for(const link of await page.locator('.about-page a').all())assert.ok((await link.boundingBox()).height>=48,'about links keep a 48px target');
  await page.screenshot({path:path.join(root,'target/ui-about-desktop-dark.png'),fullPage:true});
  await openMenu();await page.locator('#ahd-menu').getByRole('combobox',{name:'Theme',exact:true}).selectOption('light');
