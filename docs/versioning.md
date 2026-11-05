@@ -113,10 +113,11 @@ Forgejo の `releases/latest` は `is_draft=false AND is_prerelease=false AND is
 
 | 変更したパス | 上げるもの |
 | --- | --- |
-| `src/**`、`Dockerfile`、`docs/dashboard-api.json`、`.forgejo/workflows/image.yml` | web |
-| `dashboard-ui/android/**`、`dashboard-ui/src/mobile/**`、`dashboard-ui/assets/mobile.css`、`#[cfg(feature = "mobile")]` だけのモジュール（`app/{device_notifications,home_widgets,updates}.rs`、`pages/{app_update,device_notifications}.rs`）、`scripts/build-android.sh`、`.forgejo/workflows/android.yml`、`dashboard-ui/android/release-signing-cert.sha256` | アプリ |
+| `src/**`、`Dockerfile`、`docs/dashboard-api.json`、ルート `Cargo.toml`（サーバーの依存）、`.forgejo/workflows/image.yml` | web |
+| `dashboard-ui/android/**`、`dashboard-ui/src/mobile/**`、`dashboard-ui/assets/mobile.css`、`#[cfg(feature = "mobile")]` だけのモジュール（`app/{device_notifications,home_widgets,updates}.rs`、`pages/{app_update,device_notifications}.rs`）、`scripts/build-android.sh`、`scripts/publish-release.sh`、`.forgejo/workflows/android.yml`、`dashboard-ui/android/release-signing-cert.sha256` | アプリ |
 | それ以外の `dashboard-ui/**`（`src/`・`assets/`・`locales/`・`Dioxus.toml`・`Cargo.toml` の依存）、`Cargo.lock` の依存更新、`rust-toolchain.toml` | **差分を読んで判断**: `platform::APP` / `!APP` / `cfg` で片側にしか効かないなら片側だけ、両方に効くなら両方 |
-| `tests/**`、`dashboard-ui/tests/**`、`docs/**`（`dashboard-api.json` 以外）、`README.md`、`devenv.*`、`scripts/*.test.*` | なし |
+| `tests/**`、`dashboard-ui/tests/**`、`docs/**`（`dashboard-api.json` 以外）、`README.md`・`CHANGELOG.md` などルートの文書、`devenv.*`、`nix/**`、`.agents/**`・`.pi/**`・`.impeccable/**`、`scripts/*.test.*`、開発・リリース用の補助スクリプト（`release-version.sh`・`release-scope.sh`・`launch-*`・`test-android.sh`・`subset-fonts.sh`） | なし |
+| 上のどれにも当たらないパス | `release-scope.sh` は `other` と表示する。表に足すか手で判断 |
 
 - 両方に効く変更は両方を上げる。同じコミットに `vX.Y.Z` と `web-vA.B.C` を打ってよい（番号は別々）。
 - 共有コードの変更でも、片方の配布物で意味が無いなら上げなくてよい（例: アプリで非表示の `if !APP` ブロックの修正はwebだけ）。迷ったら両方上げる（不要な更新は「使いづらい」程度、出し忘れは不具合）。
