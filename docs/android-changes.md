@@ -280,10 +280,13 @@ Android Credential Manager（`androidx.credentials`）でアプリ内からパ�
 
 - `app/updates.rs` の `use_update_check` が `App` の起動時に `mobile::updates::check` を `use_future` で1回だけ走らせます。起動・ログインはこれを待ちません。
 - `check` はForgejoの `GET /api/v1/repos/{owner}/{repo}/releases/latest` を1回呼び（接続10秒・全体30秒、リダイレクトなし、本文512 KiBまで）、`evaluate` でタグ（`v` 付きも可）をSemVer 2.0の順序で `CARGO_PKG_VERSION` と比べます。`draft`・`prerelease` やプレリリースのタグは `NotStable` として除外します。
+- 比べるのはアプリの版（`dashboard-ui/Cargo.toml`、アプリのタグ `vX.Y.Z`）だけです。webの版（ルートの `Cargo.toml`、タグ `web-vX.Y.Z`）はForgejoリリースを作らないので `releases/latest` に出ず、webだけのリリースではアプリは更新を検知しません。誤ってwebのタグでリリースを作っても、タグが `v` + SemVer でないため `BadTag` になり、更新ありにはなりません（[versioning.md](versioning.md)）。
+- アプリはwebのコンテンツをリモートで読み込みません。UIはAPKに組み込まれ、サーバーとはJSON API（`/api/v1/...`）でだけ通信します。そのためwebの更新（ブラウザ版UIの見た目など）はアプリの更新なしにはアプリへ届かず、webだけのリリースはアプリの更新を必要としません。共有UIの変更をアプリに出すにはアプリのリリースが要ります。webはアプリ1.8.0以降と互換を保つ規則です（[versioning.md](versioning.md) 2.5）。
+- 「このアプリについて」のバージョンもアプリの版です。web版の同じページはwebの版（ルートの `Cargo.toml`）を表示し、Cargo.lockへのリンクはそれぞれのタグ（`vX.Y.Z` / `web-vX.Y.Z`、1.8.0以前は共通の `vX.Y.Z`）を指します（`pages/about.rs`）。
 - 結果 `UpdateCheck` は `update_available`・`current`・`latest`・`release_notes`（リリース本文）・`release_url`・`asset`（`name`・`download_url`・`size`・`checksum_url`）です。アセットは `ahd-{os}-{version}-{arch}.{ext}`（Androidのarm64なら `ahd-android-X.Y.Z-arm64.apk`）と完全一致で選び、チェックサムは `{asset}.sha256`、なければ `SHA256SUMS` です。この端末向けのアセットがないリリースは更新ありにしません。
 - 成功した結果は `Signal<Option<UpdateCheck>>` のcontextに入ります（未完了・失敗の間は `None`）。後続の確認ダイアログ・ダウンロード・インストールはこのcontextを読みます。失敗（`Network`・`Status`・`Malformed`・`NotStable`・`BadTag`）は `mobile/log.rs` でlogcatのタグ `AHD` に出すだけです。
 - 取得先は既定で `https://git.attodao.cc` の `AttODao/AttOsHoYoDashboard`。ビルド時の環境変数 `AHD_UPDATE_FORGEJO_URL`・`AHD_UPDATE_REPOSITORY`・`AHD_UPDATE_TOKEN`（任意、`Authorization: token …`）で変えます。トークンはAPKに埋め込まれるため、読み取り専用で他に権限のないものに限ります。
-- バージョン比較・アセット選択・draft/prerelease除外・不正な応答は、Forgejoの応答を模したJSONで通常の `cargo test` から検査します（`mobile/updates.rs`）。
+- バージョン比較・アセット選択・draft/prerelease除外・webのタグの無視・不正な応答は、Forgejoの応答を模したJSONで通常の `cargo test` から検査します（`mobile/updates.rs`）。
 
 ### 5.6 更新の確認ダイアログとインストール
 

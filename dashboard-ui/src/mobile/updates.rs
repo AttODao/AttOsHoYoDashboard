@@ -16,6 +16,12 @@
 //! The startup hook is `app::updates::use_update_check`, which runs `check` in the
 //! background and publishes the result as `Signal<Option<UpdateCheck>>` context.
 //!
+//! Only the app's own version takes part (docs/versioning.md): [`Version::current`] is the
+//! app version and `releases/latest` is always an app release, because app releases are the
+//! only Forgejo releases (tags `vX.Y.Z`). Web releases are bare `web-vX.Y.Z` tags without a
+//! Forgejo release, which `releases/latest` never returns, so a web-only release cannot
+//! prompt an app update. Even a web release created by mistake ends as [`CheckError::BadTag`].
+//!
 //! Assets follow `ahd-{os}-{version}-{arch}.{ext}` (today `ahd-android-X.Y.Z-arm64.apk`,
 //! built by `.forgejo/workflows/android.yml`); the checksum is `{asset}.sha256` or, if
 //! absent, a release-wide `SHA256SUMS`.
@@ -143,7 +149,8 @@ impl Version {
         })
     }
 
-    /// The running app's version (`dashboard-ui/Cargo.toml`, equal to the release tag).
+    /// The running app's version: `dashboard-ui/Cargo.toml`, equal to the app's release tag
+    /// `vX.Y.Z`. Unrelated to the web version (root `Cargo.toml`, tags `web-vX.Y.Z`).
     pub(crate) fn current() -> Self {
         Self::parse(env!("CARGO_PKG_VERSION")).expect("the package version is SemVer")
     }
@@ -670,6 +677,31 @@ mod tests {
         let minimal = json!({"tag_name": "v1.8.0", "body": null});
         let check = run(&minimal, "1.7.0", Some(ARM64)).unwrap();
         assert_eq!((check.release_notes.as_str(), check.asset), ("", None));
+    }
+
+    #[test]
+    fn only_app_releases_drive_updates() {
+        // A web release is a bare `web-v` tag, but a Forgejo release made for one by mistake
+        // still never prompts, however far the web version is ahead.
+        for tag in ["web-v1.9.0", "web-v2.0.0"] {
+            let web = release(tag, &[&format!("ahd-android-{}-arm64.apk", &tag[5..])]);
+            assert_eq!(
+                run(&web, "1.8.0", Some(ARM64)),
+                Err(CheckError::BadTag(tag.into()))
+            );
+        }
+        // While web releases go on, latest stays the app release the device already runs.
+        let unchanged = release("v1.8.0", &["ahd-android-1.8.0-arm64.apk", "SHA256SUMS"]);
+        assert!(
+            !run(&unchanged, "1.8.0", Some(ARM64))
+                .unwrap()
+                .update_available
+        );
+        // A newer app release still prompts, independent of any web version.
+        let app = release("v1.9.0", &["ahd-android-1.9.0-arm64.apk", "SHA256SUMS"]);
+        let check = run(&app, "1.8.0", Some(ARM64)).unwrap();
+        assert!(check.update_available);
+        assert_eq!(check.latest, version("1.9.0"));
     }
 
     #[test]
