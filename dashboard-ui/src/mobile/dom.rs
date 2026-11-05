@@ -3,7 +3,7 @@
 use dioxus::{core::Task, prelude::*};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-fn quoted(value: &str) -> String {
+pub(super) fn quoted(value: &str) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_owned())
 }
 

@@ -329,6 +329,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | 現在時刻 | `js_sys::Date::now` | `SystemTime` | `platform::now_ms` |
 | 時刻の表示と経過時間 | `js_sys::Date` | chrono（`mobile/time.rs`） | `app/display.rs` の各関数 |
 | DOM（フォーカス、checked、`<dialog>`、`matchMedia`、History、`hidden`） | web-sys | `document::eval`（`mobile/dom.rs`） | `pages/common.rs`、`app/navigation.rs`、`pages/dashboard.rs`、`app.rs` |
+| タブの横スワイプのタッチ収集 | web-sys（`pages/swipe_tabs.rs`） | `document::eval`（`mobile/swipe.rs`） | `pages/swipe_tabs.rs` の `SwipeableTabs`、判定は `app/swipe.rs` |
 | 言語とテーマの保存 | `localStorage` | `files/preferences.json` | `app/preferences.rs` |
 | 外部URL | （なし） | `webbrowser` | `platform::open_external` |
 
@@ -347,6 +348,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/mobile/storage.rs` | アプリ専用領域のファイル（JNIで `getFilesDir()`・`getCacheDir()` を取得） |
 | `dashboard-ui/src/mobile/time.rs` | 端末時刻での表示 |
 | `dashboard-ui/src/mobile/dom.rs` | `document::eval` によるDOM操作（pull-to-refreshのタッチ処理を含む） |
+| `dashboard-ui/src/mobile/swipe.rs` | タブの横スワイプのタッチ収集（`document::eval`）。判定は共通の `app/swipe.rs` |
 | `dashboard-ui/src/mobile/reminders.rs` | 通知時刻の予測、設定と予定の保存形式、通知文（テストあり） |
 | `dashboard-ui/src/mobile/notify.rs` | Kotlinの通知処理を呼ぶJNIブリッジ |
 | `dashboard-ui/src/mobile/browser_login.rs` | ブラウザ経由ログインのPKCE・コールバックURL・保存要求の規則（I/Oなし、テストあり） |

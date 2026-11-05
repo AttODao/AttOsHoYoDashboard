@@ -11,6 +11,11 @@ mod navigation;
 mod preferences;
 mod session;
 mod state;
+#[allow(
+    dead_code,
+    reason = "used by SwipeableTabs, which the dashboard and settings tabs adopt next"
+)]
+pub(crate) mod swipe;
 #[cfg(feature = "mobile")]
 mod updates;
 

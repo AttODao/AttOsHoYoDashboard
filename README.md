@@ -186,8 +186,10 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | `dashboard-ui/src/app/data.rs` | セッション世代に結び付いた画面データの取得（未取得と空を区別、リソースごとに最新の要求の応答だけを反映）、全ゲームの手動受け取りとその後の報酬状態のGET追従 |
 | `dashboard-ui/src/app/display.rs` | 数値・ブラウザのローカル時刻による簡潔な月日／24時間表示、データの経過時間、上限への近さ、サーバー時刻とブラウザ時刻の換算、エラーコードの表示文への対応付け |
 | `dashboard-ui/src/pages/` | 画面、メニュー、設定、ユーザー管理、このアプリについて、アプリ更新ダイアログ（`pages/app_update.rs`） |
+| `dashboard-ui/src/app/swipe.rs` | タブの横スワイプの判定（距離・速度・縦横比・画面端の除外としきい値）と移動先のタブ。web版とアプリで共通、テストあり |
+| `dashboard-ui/src/pages/swipe_tabs.rs` | タブのパネルを包む `SwipeableTabs`（`use_horizontal_swipe_tabs`）：左スワイプで次・右スワイプで前のタブ、端ではバウンス、切り替えアニメーション。web版のタッチ収集（web-sys） |
 | `dashboard-ui/src/platform.rs` | web版とAndroidアプリの切り替え（`APP`）、両方で動くタイマーと時刻、web版を既定のブラウザで開く処理 |
-| `dashboard-ui/src/mobile/` | Androidアプリ専用：サーバーへの直接接続とセッションCookieの保存（`http.rs`・`session.rs`）、アプリ専用領域のファイル（`storage.rs`）、端末時刻（`time.rs`）、通知予測とJNIブリッジ（`reminders.rs`・`notify.rs`）、ウィジェットへ渡す内容とJNI（`widgets.rs`）、サーバーの受信箱への登録の判断（`inbox.rs`）、Forgejoリリースによる更新確認（`updates.rs`、インターフェースはファイル先頭のコメント）、APKのダウンロード・SHA-256とAPKの検証・PackageInstaller（`update_install.rs`）、logcatへの出力（`log.rs`）、web版がweb-sysで行うDOM操作の `document::eval` 版（`dom.rs`） |
+| `dashboard-ui/src/mobile/` | Androidアプリ専用：サーバーへの直接接続とセッションCookieの保存（`http.rs`・`session.rs`）、アプリ専用領域のファイル（`storage.rs`）、端末時刻（`time.rs`）、通知予測とJNIブリッジ（`reminders.rs`・`notify.rs`）、ウィジェットへ渡す内容とJNI（`widgets.rs`）、サーバーの受信箱への登録の判断（`inbox.rs`）、Forgejoリリースによる更新確認（`updates.rs`、インターフェースはファイル先頭のコメント）、APKのダウンロード・SHA-256とAPKの検証・PackageInstaller（`update_install.rs`）、logcatへの出力（`log.rs`）、web版がweb-sysで行うDOM操作の `document::eval` 版（`dom.rs`）、タブの横スワイプのタッチ収集（`swipe.rs`） |
 | `dashboard-ui/src/app/device_notifications.rs` | 端末通知の設定・予定の保存、状態変更時の再計算、サーバーの受信箱への端末登録と解除、表示中の確認、通知からの画面遷移 |
 | `dashboard-ui/src/app/updates.rs` | アプリ起動時の更新確認（`mobile::updates::check` をバックグラウンドで1回実行し、結果を `Signal<Option<UpdateCheck>>` のcontextで渡す。確認失敗はログのみ）、更新ダイアログの状態・スキップ・通知と「不明なアプリのインストール」の許可の確認（設定から戻ると続行）・ダウンロードとキャンセル・取り消されたインストールの検証済みAPKの保持 |
 | `dashboard-ui/src/pages/device_notifications.rs` | アプリの端末通知カード（全体のON/OFF・許可・登録状態・テスト） |

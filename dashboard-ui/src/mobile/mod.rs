@@ -19,6 +19,12 @@ pub(crate) mod reminders;
 pub(crate) mod session;
 #[cfg(feature = "mobile")]
 pub(crate) mod storage;
+#[cfg(feature = "mobile")]
+#[allow(
+    dead_code,
+    reason = "used by SwipeableTabs, which the dashboard and settings tabs adopt next"
+)]
+pub(crate) mod swipe;
 pub(crate) mod time;
 pub(crate) mod update_install;
 pub(crate) mod updates;
