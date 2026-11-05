@@ -800,27 +800,27 @@ try{
  // Touch swipes on the settings panel switch tabs like a tap (selected tab, URL and
  // history follow), stop at either end, and never start on form controls or from mouse drags.
  await page.setViewportSize({width:375,height:812});
- const touch=await context.newCDPSession(page);await touch.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1});
+ const settingsTouch=await context.newCDPSession(page);await settingsTouch.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1});
  const plainPoint=()=>page.evaluate(()=>{const panel=document.getElementById('settings-panel'),r=panel.getBoundingClientRect(),x=innerWidth/2;for(let y=Math.max(r.top,0)+8;y<Math.min(r.bottom,innerHeight)-8;y+=8){const e=document.elementFromPoint(x,y);if(e&&panel.contains(e)&&!e.closest('input,select,textarea,button,a,label,[role=slider],[data-swipe-ignore],.table-wrap'))return {x,y};}return null;});
- const drag=async(start,dx,dy=0)=>{await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[start]});for(let i=1;i<=4;i++)await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:start.x+dx*i/4,y:start.y+dy*i/4}]});await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});};
- const swipeTo=async(dx,key,url)=>{const start=await plainPoint();assert.ok(start,'the settings panel has a plain area to swipe on');await drag(start,dx);await page.locator('#settings-tab-'+key+'[aria-selected=true]').waitFor();await idle();assert.equal(new URL(page.url()).pathname,url);assert.equal(await page.locator('#settings-panel').getAttribute('aria-labelledby'),'settings-tab-'+key);};
+ const settingsDrag=async(start,dx,dy=0)=>{await settingsTouch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[start]});for(let i=1;i<=4;i++)await settingsTouch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:start.x+dx*i/4,y:start.y+dy*i/4}]});await settingsTouch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});};
+ const swipeTo=async(dx,key,url)=>{const start=await plainPoint();assert.ok(start,'the settings panel has a plain area to swipe on');await settingsDrag(start,dx);await page.locator('#settings-tab-'+key+'[aria-selected=true]').waitFor();await idle();assert.equal(new URL(page.url()).pathname,url);assert.equal(await page.locator('#settings-panel').getAttribute('aria-labelledby'),'settings-tab-'+key);};
  const staysOn=async key=>{await page.waitForTimeout(300);assert.equal(await page.locator('#settings-tab-'+key).getAttribute('aria-selected'),'true');};
  const rewardWrites=()=>[...counts].filter(([p])=>p.startsWith('/api/v1/reward-settings/')).reduce((n,[,c])=>n+c,0);
  const writesBefore=rewardWrites();
  const toggle=page.locator('#settings-panel input[role=switch]').first();await toggle.scrollIntoViewIfNeeded();const toggleBox=await toggle.boundingBox();const toggled=await toggle.isChecked();
- await drag({x:toggleBox.x+toggleBox.width/2,y:toggleBox.y+toggleBox.height/2},-120);await staysOn('bonus');
+ await settingsDrag({x:toggleBox.x+toggleBox.width/2,y:toggleBox.y+toggleBox.height/2},-120);await staysOn('bonus');
  assert.equal(await toggle.isChecked(),toggled,'a drag across a switch neither switches tabs nor toggles it');assert.equal(rewardWrites(),writesBefore);
  await swipeTo(-120,'link','/settings/link');
  await swipeTo(120,'bonus','/settings/bonus');
  await swipeTo(120,'uids','/settings/games');
- const first=await plainPoint();await drag(first,120);await staysOn('uids');
- await drag(first,30,200);await staysOn('uids');
+ const first=await plainPoint();await settingsDrag(first,120);await staysOn('uids');
+ await settingsDrag(first,30,200);await staysOn('uids');
  await page.mouse.move(first.x,first.y);await page.mouse.down();await page.mouse.move(first.x-150,first.y,{steps:5});await page.mouse.up();await staysOn('uids');
  await page.goBack();await page.locator('#settings-tab-bonus[aria-selected=true]').waitFor();await idle();
  await page.locator('#settings-tab-bonus').focus();await page.keyboard.press('End');await page.locator('#settings-tab-delete[aria-selected=true]').waitFor();await idle();
- await drag(await plainPoint(),-120);await staysOn('delete');
+ await settingsDrag(await plainPoint(),-120);await staysOn('delete');
  await swipeTo(120,'notifications','/settings/notifications');
- await touch.send('Emulation.setTouchEmulationEnabled',{enabled:false});await touch.detach();
+ await settingsTouch.send('Emulation.setTouchEmulationEnabled',{enabled:false});await settingsTouch.detach();
  await page.setViewportSize({width:1280,height:900});
  await page.locator('#settings-tab-security').click();await idle();
  // Side-by-side fields keep their controls on one line when only one of them has a hint.
