@@ -56,7 +56,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
   4. `dashboard-ui/android/AndroidManifest.application.xml` のreceiverを、生成された `AndroidManifest.xml` の `<application>` に挿入する。
   5. Gradleで組み直す。
 - APKはデバッグ署名です。`--release` を付けても、署名設定がなければデバッグ署名になります。
-- `v*` タグのCI（`.forgejo/workflows/android.yml`）はarm64のrelease APKと `SHA256SUMS` をForgejoリリースへ添付し、リリース鍵で署名し直します（証明書は `android/release-signing-cert.sha256` で固定。命名規則と手順は [releases.md](releases.md)）。`build-android` はバージョン `X.Y.Z` から `versionCode = X*10000+Y*100+Z`（Y・Zは100未満）を設定します。
+- アプリのタグ（`vX.Y.Z`。版の正本は `dashboard-ui/Cargo.toml`、webの版・タグとは独立。[versioning.md](versioning.md)）のCI（`.forgejo/workflows/android.yml`）はarm64のrelease APKと `SHA256SUMS` をForgejoリリースへ添付し、リリース鍵で署名し直します（証明書は `android/release-signing-cert.sha256` で固定。命名規則と手順は [releases.md](releases.md)）。`build-android` はバージョン `X.Y.Z` から `versionCode = X*10000+Y*100+Z`（Y・Zは100未満）を設定します。
 - パッケージ名は `cc.attodao.ahd`、minSdk 24、targetSdk 34です。権限は、dxが既定で付けるINTERNETに加えて、`POST_NOTIFICATIONS`、`RECEIVE_BOOT_COMPLETED` と更新用の `REQUEST_INSTALL_PACKAGES` を使います（`Dioxus.toml`）。
 - 開発用サーバーにつなぐ場合：`AHD_SERVER_URL` を省略すると `http://localhost:8080` になります。`adb reverse tcp:8080 tcp:8080` でホストの開発サーバー（`PUBLIC_ORIGIN=http://localhost:8080`）へつなぎます。ただし `build-android` では `AHD_SERVER_URL` が必須なので、`AHD_SERVER_URL=http://localhost:8080` と明示します。
 - エミュレータは `devenv --profile android --profile android-emulator shell` で入ります（x86_64イメージ、KVMが必要）。
@@ -282,10 +282,13 @@ Android Credential Manager（`androidx.credentials`）でアプリ内からパ�
 
 - `app/updates.rs` の `use_update_check` が `App` の起動時に `mobile::updates::check` を `use_future` で1回だけ走らせます。起動・ログインはこれを待ちません。
 - `check` はForgejoの `GET /api/v1/repos/{owner}/{repo}/releases/latest` を1回呼び（接続10秒・全体30秒、リダイレクトなし、本文512 KiBまで）、`evaluate` でタグ（`v` 付きも可）をSemVer 2.0の順序で `CARGO_PKG_VERSION` と比べます。`draft`・`prerelease` やプレリリースのタグは `NotStable` として除外します。
+- 比べるのはアプリの版（`dashboard-ui/Cargo.toml`、アプリのタグ `vX.Y.Z`）だけです。webの版（ルートの `Cargo.toml`、タグ `web-vX.Y.Z`）はForgejoリリースを作らないので `releases/latest` に出ず、webだけのリリースではアプリは更新を検知しません。誤ってwebのタグでリリースを作っても、タグが `v` + SemVer でないため `BadTag` になり、更新ありにはなりません（[versioning.md](versioning.md)）。
+- アプリはwebのコンテンツをリモートで読み込みません。UIはAPKに組み込まれ、サーバーとはJSON API（`/api/v1/...`）でだけ通信します。そのためwebの更新（ブラウザ版UIの見た目など）はアプリの更新なしにはアプリへ届かず、webだけのリリースはアプリの更新を必要としません。共有UIの変更をアプリに出すにはアプリのリリースが要ります。webはアプリ1.8.0以降と互換を保つ規則です（[versioning.md](versioning.md) 2.5）。
+- 「このアプリについて」のバージョンもアプリの版です。web版の同じページはwebの版（ルートの `Cargo.toml`）を表示し、Cargo.lockへのリンクはそれぞれのタグ（`vX.Y.Z` / `web-vX.Y.Z`、1.8.0以前は共通の `vX.Y.Z`）を指します（`pages/about.rs`）。
 - 結果 `UpdateCheck` は `update_available`・`current`・`latest`・`release_notes`（リリース本文）・`release_url`・`asset`（`name`・`download_url`・`size`・`checksum_url`）です。アセットは `ahd-{os}-{version}-{arch}.{ext}`（Androidのarm64なら `ahd-android-X.Y.Z-arm64.apk`）と完全一致で選び、チェックサムは `{asset}.sha256`、なければ `SHA256SUMS` です。この端末向けのアセットがないリリースは更新ありにしません。
 - 成功した結果は `Signal<Option<UpdateCheck>>` のcontextに入ります（未完了・失敗の間は `None`）。後続の確認ダイアログ・ダウンロード・インストールはこのcontextを読みます。失敗（`Network`・`Status`・`Malformed`・`NotStable`・`BadTag`）は `mobile/log.rs` でlogcatのタグ `AHD` に出すだけです。
 - 取得先は既定で `https://git.attodao.cc` の `AttODao/AttOsHoYoDashboard`。ビルド時の環境変数 `AHD_UPDATE_FORGEJO_URL`・`AHD_UPDATE_REPOSITORY`・`AHD_UPDATE_TOKEN`（任意、`Authorization: token …`）で変えます。トークンはAPKに埋め込まれるため、読み取り専用で他に権限のないものに限ります。
-- バージョン比較・アセット選択・draft/prerelease除外・不正な応答は、Forgejoの応答を模したJSONで通常の `cargo test` から検査します（`mobile/updates.rs`）。
+- バージョン比較・アセット選択・draft/prerelease除外・webのタグの無視・不正な応答は、Forgejoの応答を模したJSONで通常の `cargo test` から検査します（`mobile/updates.rs`）。
 
 ### 5.6 更新の確認ダイアログとインストール
 

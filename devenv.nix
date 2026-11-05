@@ -65,11 +65,12 @@ in
     node dashboard-ui/tests/browser.mjs
     node dashboard-ui/tests/browser.mjs --normal-motion
   '';
-  # Release tag version rules and Forgejo asset publishing (docs/releases.md).
+  # Release tag version rules, release scope and Forgejo asset publishing (docs/releases.md).
   scripts.test-release.exec = ''
     set -e
     cd "$DEVENV_ROOT"
     bash scripts/release-version.test.sh
+    bash scripts/release-scope.test.sh
     node scripts/publish-release.test.mjs
   '';
 

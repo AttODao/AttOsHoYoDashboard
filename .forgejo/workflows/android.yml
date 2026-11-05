@@ -1,6 +1,8 @@
-# Build the release packages for every version tag and attach them to the Forgejo release.
+# Build the app's release packages for every app tag (vX.Y.Z, version from
+# dashboard-ui/Cargo.toml) and attach them to the Forgejo release.
 # Asset names, checksums, signing and test tags: docs/releases.md.
-# The container image is built and published by image.yml.
+# The web (container image) has its own tags, web-vX.Y.Z, published by image.yml.
+# `v*` is a glob on the tag name and does not match `web-v…`.
 name: android
 on:
   push:
@@ -26,6 +28,7 @@ jobs:
           set -eu
           bash scripts/release-version.sh "$GITHUB_REF_NAME" > release-version.env
           cat release-version.env
+          grep -qx COMPONENT=app release-version.env || { echo "Not an app tag: $GITHUB_REF_NAME" >&2; exit 1; }
           cat release-version.env >> "$GITHUB_ENV"
       - name: Install devenv
         run: |

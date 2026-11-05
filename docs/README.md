@@ -11,6 +11,7 @@
 | [Dashboard運用手順](dashboard-operations.md) | migration、bootstrap、TLS/Origin、秘密鍵、バックアップ、shutdownを確認する |
 | [通知の一覧とアプリへの移植状況](notifications-inventory.md) | web版のすべての通知の条件・内容・受信者と、アプリへ移植したか管理者専用として除外したかを確認する |
 | [Androidアプリ：web版からの変更点](android-changes.md) | Androidアプリで除外した機能、レイアウト、追加機能、web版と分岐したコードと影響を確認する |
+| [アプリとwebのバージョン分離](versioning.md) | アプリとwebのバージョンの置き場所、タグ（`vX.Y.Z` / `web-vX.Y.Z`）、共有コード変更時にどちらを上げるか、API互換のルール、分離の検証記録を確認する（手順は [リリースと配布物](releases.md)） |
 | [UIデザイン案](ui-design/README.md) | 旧略称AGD時代のR2ローカルプレビュー、設定集約案、旧Penpot案、反映待ち事項を確認する |
 
 ## HoYoLABクライアント
