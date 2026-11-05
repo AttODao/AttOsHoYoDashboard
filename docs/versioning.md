@@ -1,6 +1,6 @@
-# アプリとwebのバージョン分離（設計メモ）
+# アプリとwebのバージョン分離
 
-状態: **設計案**（t_ec22f080）。実装は後続タスク t_98babe64（バージョン定義・タグ・CI）と t_5f2f91ce（アプリの更新判定・バージョン表示）、検証と手順の最終化は t_15b4aabc が行う。実装が済んだら、このメモの「現状」節を履歴に縮め、手順は [releases.md](releases.md) に移す。
+状態: **実装済み**（PR #11。設計 t_ec22f080、実装 t_98babe64・t_5f2f91ce、統合検証 t_15b4aabc）。リリースの手順は [releases.md](releases.md) にあり、このメモは決定事項・その理由・検証記録を残す。
 
 このメモでいう2つの配布物は次のとおり。
 
@@ -11,60 +11,33 @@
 
 サーバーとブラウザ版UIは同じイメージに入り、必ず一緒にデプロイされるので、1つの「web」バージョンで扱う（分けない）。
 
-## 1. 現状（v1.8.0 時点の調査結果）
+## 早見表
 
-### 1.1 バージョンの定義場所
-
-| 場所 | 値 | 使われ方 |
+| | アプリ | web |
 | --- | --- | --- |
-| `Cargo.toml` `[package] version`（`attoshoyodashboard`） | 1.8.0 | サーバーのクレート。コード中では参照していない（`CARGO_PKG_VERSION` の利用は `src/` に無い）。`scripts/release-version.sh` がタグとの一致を確認 |
-| `dashboard-ui/Cargo.toml` `[package] version`（`attos-dashboard-ui`） | 1.8.0 | web UI とアプリの**両方**が使う共有クレート。下の4か所が `CARGO_PKG_VERSION` を読む |
-| `Cargo.lock` | 上2つの写し | `cargo update --workspace --offline` で追従 |
-| `docs/dashboard-api.json` `info.version` | 0.1.0 | OpenAPI文書の版。リリース番号とは無関係（今回も触らない） |
-| `CHANGELOG.md` | `## [1.8.0]` | web とアプリの変更を1項目にまとめて記載 |
+| バージョンの正本 | `dashboard-ui/Cargo.toml` の `[package] version` | ルート `Cargo.toml` の `[package] version` |
+| 正式タグ / テスト用タグ | `vX.Y.Z` / `vX.Y.Z-<suffix>` | `web-vX.Y.Z` / `web-vX.Y.Z-<suffix>` |
+| 起動するワークフロー | `.forgejo/workflows/android.yml` だけ | `.forgejo/workflows/image.yml` だけ |
+| 出力 | Forgejoリリース + `ahd-android-X.Y.Z-arm64.apk` + `SHA256SUMS` | イメージ `X.Y.Z`（正式版は `X.Y`・`latest` も）。Forgejoリリースは作らない |
+| リリースコミット | `Release app X.Y.Z` | `Release web X.Y.Z` |
+| CHANGELOG の見出し | `## [アプリ X.Y.Z] - 日付` | `## [web X.Y.Z] - 日付` |
+| 自動更新との関係 | `releases/latest` に出て、既存アプリが更新を検知する | `releases/latest` に出ないので、既存アプリは何も検知しない |
 
-`dashboard-ui` の `CARGO_PKG_VERSION` を読む箇所:
+どちらを上げるかは 2.4 の表と `scripts/release-scope.sh` で決める。両方上げるときは同じマージコミットに2つのタグを打つ（番号は別々でよい）。
 
-- `dashboard-ui/src/pages/about.rs` の `VERSION` — Aboutページの表示。web とアプリで同じ値（ファイル先頭コメントも「web and app share the same values」）。
-- `dashboard-ui/src/mobile/updates.rs` の `Version::current()` — 自動更新の比較対象。
-- `dashboard-ui/src/mobile/http.rs` の `USER_AGENT` — `AHD-Android/<version> (Android)`。サーバーへのAPI呼び出しとForgejoへの更新確認で送る。
-- dx が `dashboard-ui` のクレートバージョンをAPKの `versionName` に書き、`scripts/build-android.sh` がそこから `versionCode = X*10000+Y*100+Z` を計算する。`MainActivity.kt` の更新完了通知（`afterUpdate`）はこの `versionName` と比べる。
+## 1. 分離前の仕組み（v1.8.0 まで）と結合の原因
 
-環境変数でバージョンを渡す仕組みは無い（`AHD_SERVER_URL`・`AHD_UPDATE_*` は接続先だけ）。
+- 2つの `[package] version`（ルート `attoshoyodashboard` と `dashboard-ui` の `attos-dashboard-ui`）は常に同じ値で、`Release X.Y.Z` コミットが両方を上げた。`scripts/release-version.sh` は `vX.Y.Z` を**両方の**Cargo.tomlと照合した。
+- `image.yml` と `android.yml` はどちらも `push: tags: ['v*']`（パス指定なし）で動き、1つのタグでイメージとAPK・Forgejoリリースが両方出た。
+- そのため web だけ直して `vX.Y.Z` を打つと `releases/latest` が進み既存アプリが「更新あり」を出し、アプリだけ直して打つとイメージの `latest` も動いた。
 
-### 1.2 タグとリリース
+変わらなかった前提（分離後もそのまま使う）:
 
-- タグは `vX.Y.Z`（正式）と `vX.Y.Z-<suffix>`（テスト、例 `v1.8.0-test.1`）。changesets・semantic-release 等は使っていない。人が `Release X.Y.Z` コミット（両Cargo.toml + Cargo.lock + CHANGELOG）をmainにマージし、マージコミットに注釈付きタグを打つ（[releases.md](releases.md)「リリースの手順」）。
-- `scripts/release-version.sh <tag>` が `X.Y.Z` を**両方の**Cargo.tomlと照合し、`VERSION`・`APP_VERSION`・`VERSION_CODE`・`PRERELEASE` を出す。テストは `scripts/release-version.test.sh`（`devenv shell -- test-release`、`devenv test` に含まれる）。
-- Forgejoリリースは `android.yml` が `scripts/publish-release.sh` で作る（テストタグはプレリリース）。v1.0.0〜v1.3.0 はタグだけでリリースが無い。v1.4.0 以降は毎回リリース + APK がある。
+- `dashboard-ui` の `CARGO_PKG_VERSION` がアプリの版の唯一の置き場所: dx がAPKの `versionName` に使い、`build-android.sh` が `versionCode = X*10000+Y*100+Z` を計算し、`mobile/updates.rs` の `Version::current()`、`mobile/http.rs` の `USER_AGENT`（`AHD-Android/<version> (Android)`）、`MainActivity.kt` の更新完了通知がこれを使う。サーバーのクレート版はコード中で使っていない。`docs/dashboard-api.json` の `info.version`（0.1.0）はリリース番号と無関係。
+- 自動更新（`mobile/updates.rs`、起動時に1回）は `GET …/releases/latest` を1回呼び、draft・prerelease・SemVerプレリリースを除き、`tag_name` を「先頭 `v` + SemVer」として読み（読めなければ `BadTag`）、`ahd-android-<latest>-<arch>.apk` があり `latest > Version::current()` のときだけ更新ありとする。判定ロジックはアプリの版とアプリのリリースしか見ていなかった。
+- Forgejo の `releases/latest` は `is_draft=false AND is_prerelease=false AND is_tag=false` の中で最新を返す（Forgejo `models/repo/release.go` の `GetLatestReleaseByRepoID`）。**リリースを作らずタグだけをpushした場合は対象にならない**（v1.0.0〜v1.3.0 がその例。4 で `web-v1.9.0-test.1` でも確認）。
 
-### 1.3 CI/CD のトリガー
-
-| ワークフロー | トリガー | 出力 |
-| --- | --- | --- |
-| `.forgejo/workflows/image.yml` | `push: tags: ['v*']`（パス指定なし） | イメージ `X.Y.Z`（正式タグのときは `X.Y`・`latest` も） |
-| `.forgejo/workflows/android.yml` | `push: tags: ['v*']`（パス指定なし） | タグのForgejoリリース、`ahd-android-X.Y.Z-arm64.apk`、`SHA256SUMS` |
-
-mainへのpushやPRでは何も動かない（PR CIなし、テストは人が `devenv test`）。webの本番反映はイメージ公開後に attos-nix-modules の `modules/attos-hoyo-dashboard/nixos.nix` の `image =` 行（tag + digest）を更新するPR → server-nix の flake.lock 更新 → attobox で `nixos-rebuild switch`。
-
-### 1.4 自動更新の判定
-
-`dashboard-ui/src/mobile/updates.rs`（起動時に1回、`app/updates.rs::use_update_check` から）:
-
-1. `GET https://git.attodao.cc/api/v1/repos/AttODao/AttOsHoYoDashboard/releases/latest` を1回呼ぶ（`AHD_UPDATE_FORGEJO_URL`・`AHD_UPDATE_REPOSITORY` でビルド時に変更可）。
-2. `evaluate`: draft/prerelease は `NotStable`。`tag_name` を `Version::parse`（先頭の `v`/`V` だけを許す）し、読めなければ `BadTag`。SemVerプレリリースも `NotStable`。
-3. `ahd-android-<latest>-<arch>.apk` のアセットがあり、かつ `latest > Version::current()` のときだけ `update_available`。
-
-Forgejo の `releases/latest` は `is_draft=false AND is_prerelease=false AND is_tag=false` の中で作成日時が最新のものを返す（Forgejo `models/repo/release.go` の `GetLatestReleaseByRepoID`。2026-11-06 に確認。現在の値は `v1.8.0`）。**リリースを作らずタグだけをpushした場合は対象にならない**（v1.0.0〜v1.3.0 がその例で、一覧にも latest にも出ない）。
-
-### 1.5 結合している理由（問題の正体）
-
-更新判定ロジック自体はアプリのバージョン（`dashboard-ui` のクレートバージョン）とアプリのリリースだけを見ている。結合は次の2点にある。
-
-1. **1つの `v*` タグが両方のワークフローを起動する**。webだけ直して `vX.Y.Z` を打つとAPKとリリースも作られ、`releases/latest` が進み、既存アプリが「更新あり」を出す。アプリだけ直して打つとイメージも作られ `latest` が動く。
-2. **`release-version.sh` が両方のCargo.tomlに同じ値を要求する**ので、片方だけ上げることができない。`dashboard-ui` のバージョンはweb UIのAboutにも出る。
-
-### 1.6 アプリとwebの依存関係
+### 1.1 アプリとwebの依存関係
 
 - アプリはwebのコンテンツをリモート読み込みしない。UIはAPKに組み込まれ（`dashboard-ui` を `mobile` feature でビルド）、サーバーとはJSON APIでだけ話す。したがって**webだけの変更（ブラウザ版UIの見た目など）はアプリには届かない**。アプリに出したい共有UIの変更はアプリのリリースが必要。
 - アプリが依存するwebの部分:
@@ -82,7 +55,7 @@ Forgejo の `releases/latest` は `is_draft=false AND is_prerelease=false AND is
 | web | ルート `Cargo.toml` の `[package] version`（`attoshoyodashboard`） | イメージタグ・OCIラベル・web版Aboutの表示 |
 | アプリ | `dashboard-ui/Cargo.toml` の `[package] version`（`attos-dashboard-ui`） | dx がAPKの `versionName` に使うため、ここ以外に置けない。`Version::current()`・User-Agent・アプリ版Aboutの表示 |
 
-- 2つの値は独立して上げる。等しくある必要はない（現在はどちらも 1.8.0 から始まる）。
+- 2つの値は独立して上げる。等しくある必要はない（どちらも 1.8.0 から始まる）。
 - `dashboard-ui` はweb UIのビルドにも使われるが、**そのクレートバージョンはアプリのバージョンとして扱う**。web版UIが自分のバージョンを表示するときはルート `Cargo.toml` の値を使う（2.6）。
 - 新しいバージョンファイルや環境変数は作らない（`dashboard-ui` のクレートバージョン以外にアプリの版を置く場所は dx の都合で無く、webはサーバークレートの版で足りる）。
 
@@ -105,7 +78,7 @@ Forgejo の `releases/latest` は `is_draft=false AND is_prerelease=false AND is
 
 - `android.yml`: `on.push.tags: ['v*']` のまま（Forgejo のタグフィルタはglobで、`v*` は `web-v…` に一致しない）。`release-version.sh` の照合先を `dashboard-ui/Cargo.toml` だけにする。
 - `image.yml`: `on.push.tags: ['web-v*']` に変える。最初のステップで `release-version.sh` を実行し、ルート `Cargo.toml` と照合してからビルドする。`version="${TAG#web-v}"`、OCIラベル `org.opencontainers.image.version` も同じ値。
-- パス指定のトリガー（mainへのpushでの自動デプロイ）は**採用しない**。今もデプロイはタグ起点 + attos-nix-modules のPRで、Forgejo Actions の `paths` フィルタはタグpushには効かない。どちらを出すかは2.4のルールと `scripts/release-scope.sh`（3.1）で人が決める。
+- パス指定のトリガー（mainへのpushでの自動デプロイ）は**採用しない**。今もデプロイはタグ起点 + attos-nix-modules のPRで、Forgejo Actions の `paths` フィルタはタグpushには効かない。どちらを出すかは2.4のルールと `scripts/release-scope.sh`（3）で人が決める。
 
 ### 2.4 共有コードを変えたときにどちらを上げるか
 
@@ -149,71 +122,48 @@ Forgejo の `releases/latest` は `is_draft=false AND is_prerelease=false AND is
 - サーバー: `MIN_APP_VERSION` 定数を1か所（認証・HTTP境界の共通ミドルウェア）に置き、`AHD-Android/` で始まり版がそれ未満の要求に `426 Upgrade Required` + エラーコード `app_update_required` を返す。ブラウザ（UAが別）には影響しない。
 - アプリ: `app_update_required` を受けたら更新ダイアログを出す。**この処理を持たない古いアプリには汎用エラーとしか見えない**ので、強制を始める前に、この処理を入れたアプリを一度リリースしておく。
 
-## 3. 変更するファイルと方針
+## 3. 実装（どのファイルが何をするか）
 
-### 3.1 t_98babe64: バージョン定義・タグ・CI
-
-| ファイル | 変更 |
+| ファイル | 役割 |
 | --- | --- |
-| `scripts/release-version.sh` | タグの接頭辞で配布物を決める。`v…` → `COMPONENT=app`、`dashboard-ui/Cargo.toml` とだけ照合。`web-v…` → `COMPONENT=web`、ルート `Cargo.toml` とだけ照合。出力に `COMPONENT` を足す（app: `COMPONENT`・`VERSION`・`APP_VERSION`・`VERSION_CODE`・`PRERELEASE`、web: `COMPONENT`・`VERSION`・`PRERELEASE`）。`android.yml` は `COMPONENT=app` 以外なら失敗、`image.yml` は `web` 以外なら失敗させる（ステップ内で確認）。エラー文は「Tag must be vX.Y.Z or web-vX.Y.Z …」「Tag v1.9.0 must match dashboard-ui/Cargo.toml (1.8.0)」の形 |
-| `scripts/release-version.test.sh` | 両方の配布物について accepts/rejects を足す。必須ケース: アプリとwebで別の版（`1.9.0`/`1.8.1`）が通る、`v` タグはルートの版を見ない、`web-v` タグは `dashboard-ui` の版を見ない、`web-v1.8.1-test.1` がプレリリース、`app-v1.9.0`・`webv1.8.1`・`web-1.8.1` は拒否 |
-| `.forgejo/workflows/android.yml` | トリガーは `v*` のまま。「Verify version」で `COMPONENT=app` を確認。先頭コメントを「アプリのタグ（`vX.Y.Z`）でAPKを出す。webは `image.yml`（`web-v*`）」に |
-| `.forgejo/workflows/image.yml` | `tags: ['web-v*']`。checkout の直後に `bash scripts/release-version.sh "$GITHUB_REF_NAME" >> "$GITHUB_ENV"` + `COMPONENT=web` の確認。`version="${TAG#web-v}"`、OCIラベルも同じ。正式版だけ `X.Y`・`latest` を動かす判定はそのまま |
-| `scripts/release-scope.sh`（新規）+ `scripts/release-scope.test.sh` | `release-scope.sh [<app tag> [<web tag>]]`: 既定は最新の正式 `v*` / `web-v*` タグ（`web-v*` がまだ無ければ `v1.8.0`）から `HEAD` までの `git diff --name-only` を2.4の表で `web` / `app` / `shared` / `none` に分類して表示し、最後に「web: 上げる/不要」「app: 上げる/不要」「shared: 差分を読んで判断」を出す。判定はしない（表示だけ）。テストは一時リポジトリで各分類を確認。`devenv.nix` の `test-release` に追加 |
-| `devenv.nix` | `scripts.test-release` に `bash scripts/release-scope.test.sh` を追加 |
-| `docs/releases.md` | 冒頭の「`v*` タグで2つが動く」を、配布物ごとの表（2.2）に書き換える。「バージョンとタグ」「リリースの手順」を「アプリだけ」「webだけ」「両方」の3手順に分ける（下の3.4）。v1.8.0 以前の `v*` は両方を出していた注記。`web-v1.8.0` を作らない理由 |
-| `README.md` | 「リリースイメージ」節: `web-v*` タグで公開、`web-v1.2.3` → `1.2.3`・`1.2`・`latest`。2段落目（同じタグでandroid.ymlも起動）を削除し、アプリは `v*` と releases.md へのリンクに。164行目付近のAndroid節の「`v*` タグをpushすると」は「アプリのタグ `vX.Y.Z`（`dashboard-ui/Cargo.toml` の版）をpushすると」に |
-| `CHANGELOG.md` | 見出しを `## [アプリ 1.9.0] - 日付` / `## [web 1.8.1] - 日付` に分ける（1.8.0 以前の項目はそのまま）。冒頭の説明に「1.8.0 までは共通の版、以後はアプリとwebで別の版」。比較リンクは `[アプリ 1.9.0]: …/compare/v1.8.0...v1.9.0`、`[web 1.8.1]: …/compare/v1.8.0...web-v1.8.1`。アプリ項目には必要なweb版を書く（2.5） |
-| `docs/android-changes.md` | 59行目付近の「`v*` タグのCI」を「アプリのタグ（`vX.Y.Z`）のCI」に、バージョンの正本が `dashboard-ui/Cargo.toml` である旨 |
+| `scripts/release-version.sh` | タグの接頭辞で配布物を決める。`v…` → `COMPONENT=app`、`dashboard-ui/Cargo.toml` とだけ照合し `VERSION`・`APP_VERSION`・`VERSION_CODE`・`PRERELEASE` を出す。`web-v…` → `COMPONENT=web`、ルート `Cargo.toml` とだけ照合し `VERSION`・`PRERELEASE` を出す。`app-v…`・`web-1.8.1` などは拒否 |
+| `.forgejo/workflows/android.yml` | `tags: ['v*']`。「Verify version」で `COMPONENT=app` 以外なら失敗。APK・署名・`SHA256SUMS`・公開（`scripts/publish-release.sh`）は分離前と同じ |
+| `.forgejo/workflows/image.yml` | `tags: ['web-v*']`。「Verify version」で `COMPONENT=web` 以外なら失敗。イメージタグは `VERSION`（`web-v` を除いた値）、正式版だけ `X.Y`・`latest` も動かす。Forgejoリリースは作らない |
+| `scripts/release-scope.sh` | 前回の正式 `vX.Y.Z` / `web-vX.Y.Z`（`web-v` がまだ無ければ `v1.8.0`）から `HEAD` までの変更パスを 2.4 の表で `app`・`web`・`shared`・`none`・`other` に分類して表示する。判断はしない |
+| `scripts/release-version.test.sh`・`scripts/release-scope.test.sh` | 上2つのテスト。`devenv shell -- test-release`（`devenv test` に含まれる） |
+| `dashboard-ui/src/mobile/updates.rs` | 判定ロジックは v1.8.0 から**変更なし**（コメントとテストだけ追加）。`web-v…` のリリースが誤って作られても `BadTag` で更新にならないこと、新しい `v` タグなら更新になることをテストする |
+| `dashboard-ui/src/pages/about.rs` | Aboutの版を配布物ごとに表示する。アプリは `CARGO_PKG_VERSION`（`dashboard-ui`）、web版はルート `Cargo.toml` を `include_str!` して `[package] version` を読む。`Cargo.lock` のリンク先も配布物のタグ（web は `web-vX.Y.Z`、ただし 1.8.0 以前は `vX.Y.Z`） |
+| `docs/releases.md`・`README.md`・`CHANGELOG.md`・`docs/android-changes.md` | 手順・説明を配布物ごとに分けた |
 
-このタスクではバージョン番号を上げない（次のリリースで上げる）。
+リポジトリ外: attos-nix-modules・server-nix は変更不要（イメージのタグ形式 `X.Y.Z@sha256:…` は同じ）。Hermes スキル `attos-hoyo-dashboard-development` の手順8〜9は分離後の手順に更新済み。
 
-### 3.2 t_5f2f91ce: アプリの更新判定とバージョン表示
+## 4. 検証記録
 
-1.5 のとおり、判定ロジックはすでにアプリの版とアプリのリリースだけを見ている。分離後も `releases/latest` を使い続ける（v1.8.0 端末と同じ経路に揃えるため。web はForgejoリリースを作らないので latest は常にアプリのリリース）。
+実際の正式リリース（`vX.Y.Z`・`web-vX.Y.Z`）は、既存アプリに本当の更新を出しイメージの `latest` を動かすので打っていない。代わりに PR #11 の統合コミット（`1ed402d`）に、片方の版だけを 1.9.0 に上げた検証用コミット（mainには入れない）を作り、テスト用タグを本物のForgejoに push して確かめた。
 
-| ファイル | 変更 |
-| --- | --- |
-| `dashboard-ui/src/mobile/updates.rs` | ロジックは変えない。モジュールコメントと `Version::current()` のdocを「アプリのバージョン（`dashboard-ui/Cargo.toml`、アプリのタグ `vX.Y.Z` と同じ）。webの版（ルート `Cargo.toml`・`web-v*`）とは無関係」に。テストを追加: (a) `tag_name: "web-v1.9.0"` のリリースは `BadTag` で `update_available` にならない（誤ってwebのリリースを作った場合の確認）、(b) web がいくら進んでもアプリ版と同じタグなら更新なし（`v1.8.0` vs current `1.8.0`）、(c) アプリ版より新しい `v` タグ + APK で更新あり（既存テストで足りていれば追加不要） |
-| `dashboard-ui/src/pages/about.rs` | 表示する版を配布物ごとに分ける: アプリ（`cfg(feature = "mobile")`）は `env!("CARGO_PKG_VERSION")`、web は `include_str!("../../../Cargo.toml")` からルートの `[package] version` を読む純関数 `package_version(manifest: &str) -> Option<&str>`（`[package]` 表の `version = "…"` だけを見る。`[dependencies]` の `version` を拾わない）。const にできないので `fn version() -> &'static str` で返し、取れなければビルド時に気付けるよう単体テストで実ファイルが読めることを確認する。ファイル先頭コメントを更新。ラベルは今の「バージョン」のままでよい（どちらの版かは画面で自明） |
-| `dashboard-ui/src/mobile/http.rs` | 変更なし（`USER_AGENT` はアプリの版のまま。2.5.2 の判定に使う） |
-| `README.md` | 166行目付近の自動更新の説明に「比べるのはアプリの版（`dashboard-ui/Cargo.toml`）と、アプリのタグ `vX.Y.Z` のリリース。webのタグ `web-v*` はリリースを作らないので判定に関係しない」を追記 |
-| `docs/android-changes.md` | 5.5節（282行目付近）に同じ説明。「web更新はアプリに届かない（UIはAPKに組み込み）」を1.6の内容で追記 |
+| 検証用コミット | 変えた版 | タグ |
+| --- | --- | --- |
+| `38e8050`「TEST ONLY: web 1.9.0 …」 | ルート `Cargo.toml` だけ 1.9.0（アプリは 1.8.0 のまま） | `web-v1.9.0-test.1` |
+| `e2b36af`「TEST ONLY: app 1.9.0 …」 | `dashboard-ui/Cargo.toml` だけ 1.9.0（webは 1.8.0 のまま） | `v1.9.0-test.1` |
 
-最小対応アプリバージョンの確認は実装しない（2.5）。
+事前の状態: `releases/latest` = `v1.8.0`（id 43、アセット `ahd-android-1.8.0-arm64.apk`・`SHA256SUMS`）、レジストリの `1.8.0`・`1.8`・`latest` = `sha256:ac4882b8…29ad2`、最後のActions実行は run 24。
 
-#### 単体テスト以外の確認手順（PR本文に書くもの）
+| # | 検証内容 | 方法 | 結果 |
+| --- | --- | --- | --- |
+| 1 | webだけのリリースでwebだけが出て、アプリのリリースと更新判定が変わらない | `web-v1.9.0-test.1` をpushし、Actions（`/api/v1/repos/…/actions/tasks`）・リリース・レジストリを前後で比較。実機相当の確認として、本物の v1.8.0 リリースAPK（リリース鍵署名）を attodesk のエミュレーター（`ahd2`）に入れて起動し、本物のForgejoに対する更新確認のlogcatを見た | 動いたのは `image`（run 25、`head_sha` 38e8050、成功）だけで `android` は動かなかった。`releases/tags/web-v1.9.0-test.1` は404（リリース無し）、リリース一覧にも出ない。`releases/latest` は `v1.8.0` のまま。イメージは `1.9.0-test.1`（`sha256:a6498dd5…7597`、ラベル `org.opencontainers.image.version=1.9.0-test.1`）だけが増え、`1.8.0`・`1.8`・`latest` のdigestは不変、`1.9.0`・`1.9` は作られない。イメージ内のweb版wasmにはルート `Cargo.toml`（1.9.0）が埋め込まれている（web版Aboutの表示元）。v1.8.0 アプリのlogcat: `update check: current 1.8.0, latest 1.8.0, update available: false` |
+| 2 | アプリだけのリリースでアプリのリリースが出て、webのデプロイが走らない | `v1.9.0-test.1` をpushし、同じく比較。APKを取得して `sha256sum -c SHA256SUMS`、`aapt2 dump badging`、`apksigner verify --print-certs` | 動いたのは `android`（run 26、`head_sha` e2b36af、成功）だけで `image` は動かず、レジストリに `1.9.0*` 以外の変化なし（`1.9.0-test.1` はwebのテストタグ由来）。リリース `v1.9.0-test.1` はプレリリースで、アセットは `ahd-android-1.9.0-test.1-arm64.apk`（20133414 B）と `SHA256SUMS` だけ、チェックサム一致。APKは `versionCode=10900`・`versionName=1.9.0`、署名者は1つでリリース鍵（`2e2a3f41…44ae`、v1.8.0 と同じ）。テスト用なので `releases/latest` は `v1.8.0` のまま（テストタグが既存アプリに出ないことも確認できた） |
+| 3 | 共有コードの変更時に設計どおりの判断になる | `scripts/release-scope.sh` を統合コミットと、使い捨てのcloneで作った変更（共有 `pages/dashboard.rs`・アプリ専用 `mobile/updates.rs`・web専用 `src/main.rs`）に対して実行。`devenv shell -- test-release`（`release-version.test.sh`・`release-scope.test.sh`・`publish-release.test.mjs`） | 統合コミットでは `about.rs`（共有、両方の画面に効く）が `shared` と出て、app・web とも bump の判断材料が出る（2.4 のとおり両方上げる対象）。共有パスだけを変えた場合は app・web とも `decide` と差分コマンドが出て、自動では決めない（2.4 のとおり）。前回タグ `v1.9.0`・`web-v1.8.1` を置いた場合は各配布物が自分のタグから比較される。テストは全部通過 |
+| 4 | 既存版のアプリから新しいアプリへの自動更新が途切れない | (a) v1.8.0 タグのソースに、上の実際のForgejo応答（`releases/latest`、`releases/tags/v1.9.0-test.1`、それを正式版 `v1.9.0` に読み替えたもの、誤って作った `web-v1.9.0` リリース）を食わせる使い捨てテストを足し、`cargo test -p attos-dashboard-ui -- updates` を実行。(b) エミュレーターで v1.8.0 リリースAPKの上に `v1.9.0-test.1` のAPKを `adb install -r` | (a) v1.8.0 の `evaluate` で、latest → 更新なし、テスト用リリース → `NotStable`、正式版に読み替えた同じ応答 → 更新あり（`ahd-android-1.9.0-arm64.apk`、チェックサムは `SHA256SUMS`）、web のリリース → `BadTag`。13件通過。(b) 上書きインストール成功（`firstInstallTime` 不変 = データ保持、`versionName=1.9.0`）、起動後の更新確認は `current 1.9.0, latest 1.8.0, update available: false`。更新判定・ダウンロード・検証・インストールのコード（`mobile/`・`app/`・`android/`・`build-android.sh`・`publish-release.sh`）は v1.8.0 から変わっていない（`updates.rs` はコメントとテストだけ） |
 
-- web版Aboutの版: ルート `Cargo.toml` を一時的に 1.8.1 にして `devenv shell -- build-ui` → `test-ui` の About 確認、またはブラウザで `/about` を開いて 1.8.1 になること（元に戻す）。
-- アプリ版Aboutの版: `build-android` のAPKを attodesk のエミュレーターで開き、About が `dashboard-ui/Cargo.toml` の版であること。
-- 更新判定: 既存の updater E2E キット（attodesk `~/work/t5a`、Node のモック）で、`releases/latest` に `web-v1.9.0`（APKなし）を返すと「更新あり」が出ず logcat に `BadTag`、`v1.9.0` + APK で従来どおり更新ダイアログが出ること。
+確認できていないこと:
 
-### 3.3 リポジトリ外（t_98babe64 の完了時に忘れずに）
+- 正式な `vX.Y.Z` を本物の `releases/latest` に出したときの、v1.8.0 アプリの更新ダイアログからのダウンロードとインストールそのもの（本番の利用者に更新が出るため）。上の 4 と、v1.8.0 の更新機能のE2E（t_5a12c700、モックのForgejo）で代えた。最初のアプリの正式リリースの後、手元の端末で更新ダイアログが出て更新できることを確かめる。
+- 正式な `web-vX.Y.Z` で `X.Y`・`latest` が動くこと（`PRERELEASE=false` の分岐は分離前と同じコード）。最初のwebの正式リリースで確かめる。
+- 検証用のタグ `web-v1.9.0-test.1`・`v1.9.0-test.1`、プレリリース `v1.9.0-test.1`、イメージ `1.9.0-test.1` は残っている（削除にはトークンが要る）。検証用コミットはmainに入れない。
 
-- Hermes スキル `attos-hoyo-dashboard-development` の手順8〜9（`Release X.Y.Z` で両Cargo.tomlを上げる、`v*` タグでイメージが出る）と、`nix-container-image-updates` のAHDに関する記述を、`web-vX.Y.Z` でイメージ、`vX.Y.Z` でAPKに直す。
-- attos-nix-modules・server-nix は変更不要（イメージのタグ形式 `X.Y.Z@sha256:…` は同じ）。
+問題は見つからなかった。
 
-### 3.4 分離後のリリース手順（t_15b4aabc が releases.md に清書する骨子）
-
-**webだけ**
-
-1. ルート `Cargo.toml` の版を上げ、`cargo update --workspace --offline` で `Cargo.lock` を更新、`CHANGELOG.md` に `[web X.Y.Z]` を足した `Release web X.Y.Z` コミットをmainへ（`devenv test` を通す）。
-2. `git tag -a web-vX.Y.Z -m "Release web X.Y.Z" <マージコミット> && git push origin refs/tags/web-vX.Y.Z`
-3. `image` だけが動く。`android` が動かず、`releases/latest` が変わらないこと（`curl …/releases/latest | jq -r .tag_name`）を確認。
-4. attos-nix-modules の `image =` 行を `X.Y.Z@sha256:<index digest>` に更新するPR → server-nix の flake.lock → attobox で switch。
-
-**アプリだけ**
-
-1. `dashboard-ui/Cargo.toml` の版を上げ、`Cargo.lock` を更新、`CHANGELOG.md` に `[アプリ X.Y.Z]`（必要なweb版があれば記載）を足した `Release app X.Y.Z` コミットをmainへ。
-2. 新しいAPIに依存するなら、先にwebをリリース・デプロイしておく。
-3. `git tag -a vX.Y.Z -m "Release app X.Y.Z" <マージコミット> && git push origin refs/tags/vX.Y.Z`
-4. `android` だけが動く。リリースのアセットと `SHA256SUMS` を確認（今の手順3と同じ）。`image` が動かずレジストリの `latest` が変わらないこと。
-
-**両方**: 1つの `Release` コミットで両方の版を上げ（コミット名 `Release app X.Y.Z, web A.B.C`）、同じマージコミットに `web-vA.B.C` と `vX.Y.Z` を打つ。webのデプロイを先に済ませてからアプリのタグを打つと、2.5 の順序を自然に守れる。
-
-どれを出すかは `scripts/release-scope.sh` の出力と2.4の表で決める。
-
-## 4. 検討して採らなかった案
+## 5. 検討して採らなかった案
 
 - **`app-v*` / `web-v*` の対称なタグ**: v1.8.0 の更新判定が `app-v` を読めず、既存端末が更新を受け取れなくなる（2.2）。
 - **webもForgejoリリースを作る**: `releases/latest` がwebのリリースを返し、v1.8.0 端末は `BadTag`（新しい版でも誤判定の危険）。webのリリースノートはCHANGELOGで足りる。

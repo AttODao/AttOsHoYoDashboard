@@ -101,43 +101,92 @@ SHA256SUMS
 
 ## リリースの手順（人が行うこと）
 
-タグを打つ前に `devenv test` を通します（CIではテストを実行しません）。版を上げたら `cargo update --workspace --offline` で `Cargo.lock` を追従させます。
+### 共通の準備
+
+1. どちらを出すか決める。`devenv shell -- bash scripts/release-scope.sh` を実行し、[どちらをリリースするか](#どちらをリリースするか)の基準で、アプリだけ・webだけ・両方のどれかを選ぶ。`shared` の行が出たら、その差分（出力に `git diff` のコマンドが出ます）を読み、`platform::APP` / `cfg` で片側にしか効かないか確かめる。迷ったら両方。
+2. 新しい版を決める（SemVer。`Y`・`Z` は100未満）。2つの版は独立で、もう片方の版とそろえる必要はない。既に使われていないことを確かめる。
+   ```bash
+   git fetch --tags origin
+   git tag --list 'v*' 'web-v*' --sort=-version:refname | head
+   ```
+3. Release コミットを作る。上げるCargo.tomlの `[package] version` だけを書き換え、`Cargo.lock` を追従させ、`CHANGELOG.md` に項目を足す。
+   ```bash
+   devenv shell -- cargo update --workspace --offline   # Cargo.lock のワークスペースのクレート版だけが変わる
+   git diff --stat                                        # Cargo.toml（1つか2つ）・Cargo.lock・CHANGELOG.md だけのはず
+   devenv test                                            # CIではテストを実行しないので、ここで通す
+   ```
+   CHANGELOG の見出しは `## [アプリ X.Y.Z] - 日付` / `## [web X.Y.Z] - 日付`、比較リンクは前回の同じ配布物のタグから（[CHANGELOG.md](../CHANGELOG.md) の冒頭）。webの最初の独立リリースだけ `v1.8.0...web-vX.Y.Z` です。
+4. PRをmainにマージし、マージコミットのSHAを控える（以後のタグはそのSHAに打ちます。`origin/main` は後で動いていることがあります）。
 
 ### アプリだけ
 
-1. `dashboard-ui/Cargo.toml` の版を `X.Y.Z` に上げ、`Cargo.lock` を更新し、`CHANGELOG.md` に `[アプリ X.Y.Z]` の項目（新しいAPIが要るなら「web A.B.C 以降が必要」）を足した `Release app X.Y.Z` コミットをmainにマージする。
-2. 新しいAPIに依存するなら、先にwebをリリース・デプロイしておく（[versioning.md 2.5](versioning.md#25-互換性アプリ--web-api)）。
-3. マージコミットに注釈付きタグを付けてpushする。
+1. 準備の3で `dashboard-ui/Cargo.toml` だけを `X.Y.Z` に上げる。コミット名は `Release app X.Y.Z`。新しいAPIが要るなら CHANGELOG の項目に「web A.B.C 以降が必要」と書き、**先にwebをリリース・デプロイしておく**（[versioning.md 2.5](versioning.md#25-互換性アプリ--web-api)）。
+2. マージコミットに注釈付きタグを付けてpushする。
    ```bash
    git tag -a vX.Y.Z -m "Release app X.Y.Z" <マージコミット>
    git push origin refs/tags/vX.Y.Z
    ```
-4. Actionsの `android` だけが動いて成功し、`image` が動かないことを確認する。リリースのアセットは次で確かめられます。
+3. Actions（`https://git.attodao.cc/AttODao/AttOsHoYoDashboard/actions`）で `android` だけが動いて成功し、`image` が動かないことを確認する。リリースとアセットは次で確かめられます。
    ```bash
-   curl -sS https://git.attodao.cc/api/v1/repos/AttODao/AttOsHoYoDashboard/releases/tags/vX.Y.Z | jq -r '.prerelease, .assets[].name'
+   API=https://git.attodao.cc/api/v1/repos/AttODao/AttOsHoYoDashboard
+   curl -sS "$API/actions/tasks?limit=5" | jq -r '.workflow_runs[] | "\(.run_number) \(.workflow_id) \(.head_branch) \(.status)"'
+   curl -sS "$API/releases/tags/vX.Y.Z" | jq -r '.prerelease, .assets[].name'   # false、ahd-android-X.Y.Z-arm64.apk と SHA256SUMS
+   curl -sS "$API/releases/latest" | jq -r .tag_name                            # vX.Y.Z（既存アプリが次の起動で更新を検知する）
    curl -sSLO https://git.attodao.cc/AttODao/AttOsHoYoDashboard/releases/download/vX.Y.Z/ahd-android-X.Y.Z-arm64.apk
    curl -sSLO https://git.attodao.cc/AttODao/AttOsHoYoDashboard/releases/download/vX.Y.Z/SHA256SUMS
    sha256sum -c SHA256SUMS
    ```
-5. 失敗したジョブを再実行すると、同じ名前のアセットは置き換えられます。
+4. 失敗したジョブを再実行すると、同じ名前のアセットは置き換えられます。
+5. webのデプロイ（attos-nix-modules）は不要です。レジストリの `latest` も変わりません。
 
 ### webだけ
 
-1. ルート `Cargo.toml` の版を `X.Y.Z` に上げ、`Cargo.lock` を更新し、`CHANGELOG.md` に `[web X.Y.Z]` の項目を足した `Release web X.Y.Z` コミットをmainにマージする。
+1. 準備の3でルート `Cargo.toml` だけを `X.Y.Z` に上げる。コミット名は `Release web X.Y.Z`。`web-v1.8.0` は作らない（上の注意）ので、最初は 1.8.1 以上です。
 2. マージコミットに注釈付きタグを付けてpushする。
    ```bash
    git tag -a web-vX.Y.Z -m "Release web X.Y.Z" <マージコミット>
    git push origin refs/tags/web-vX.Y.Z
    ```
-3. Actionsの `image` だけが動いて成功し、`android` が動かないこと、`releases/latest` が変わらないことを確認する。
+3. Actionsで `image` だけが動いて成功し、`android` が動かないこと、Forgejoリリースが作られず `releases/latest` が変わらないこと（既存アプリは更新を検知しない）を確認する。
    ```bash
-   curl -sS https://git.attodao.cc/api/v1/repos/AttODao/AttOsHoYoDashboard/releases/latest | jq -r .tag_name   # アプリの最新タグのまま
+   API=https://git.attodao.cc/api/v1/repos/AttODao/AttOsHoYoDashboard
+   curl -sS "$API/actions/tasks?limit=5" | jq -r '.workflow_runs[] | "\(.run_number) \(.workflow_id) \(.head_branch) \(.status)"'
+   curl -sS "$API/releases/latest" | jq -r .tag_name                    # アプリの最新タグ vA.B.C のまま
+   curl -sS -o /dev/null -w '%{http_code}\n' "$API/releases/tags/web-vX.Y.Z"   # 404（リリースは無い）
    ```
-4. attos-nix-modules の `modules/attos-hoyo-dashboard/nixos.nix` の `image =` 行を `X.Y.Z@sha256:<index digest>` に更新するPR → server-nix の `flake.lock` 更新 → attobox で `nixos-rebuild switch`。
+4. イメージのindex digestを調べる。
+   ```bash
+   token=$(curl -sS 'https://git.attodao.cc/v2/token?service=container_registry&scope=repository:attodao/attoshoyodashboard:pull' | jq -r .token)
+   curl -sSI -H "Authorization: Bearer $token" -H 'Accept: application/vnd.oci.image.index.v1+json' \
+     https://git.attodao.cc/v2/attodao/attoshoyodashboard/manifests/X.Y.Z | grep -i docker-content-digest
+   ```
+5. attos-nix-modules の `modules/attos-hoyo-dashboard/nixos.nix` の `image =` 行を `X.Y.Z@sha256:<index digest>` に更新するPR → server-nix の `flake.lock` 更新 → attobox で `nixos-rebuild switch`。デプロイ後、ブラウザ版の About が `X.Y.Z` を表示します（アプリの About はアプリの版のまま）。
 
 ### 両方
 
-1つの `Release app X.Y.Z, web A.B.C` コミットで両方の版を上げ、同じマージコミットに `web-vA.B.C` と `vX.Y.Z` を打ちます。webのデプロイを済ませてからアプリのタグを打つと、互換性の順序（webが先）を守れます。
+1. 準備の3で両方のCargo.tomlを上げる（番号は別々でよい）。コミット名は `Release app X.Y.Z, web A.B.C`、CHANGELOG には `[web A.B.C]` と `[アプリ X.Y.Z]` の2項目を足す。
+2. 同じマージコミットに、**webのタグを先に**打つ。
+   ```bash
+   git tag -a web-vA.B.C -m "Release web A.B.C" <マージコミット>
+   git push origin refs/tags/web-vA.B.C
+   ```
+3. 「webだけ」の3〜5（イメージの確認とデプロイ）を済ませる。
+4. 同じマージコミットにアプリのタグを打ち、「アプリだけ」の3〜4を行う。
+   ```bash
+   git tag -a vX.Y.Z -m "Release app X.Y.Z" <マージコミット>
+   git push origin refs/tags/vX.Y.Z
+   ```
+   webのデプロイを済ませてからアプリのタグを打つと、互換性の順序（新しいAPIはwebが先）を守れます。アプリが新しいAPIに依存しないなら、2つのタグを続けて打ってもかまいません。
+
+### 共有コードを変えたとき
+
+`dashboard-ui` の共有部分（`pages/`・`components/`・`locales/`・`assets/` など）、`Cargo.lock` の依存更新、`rust-toolchain.toml` は、`release-scope.sh` が `shared` と表示し、自動では決まりません（規則は [versioning.md 2.4](versioning.md#24-共有コードを変えたときにどちらを上げるか)）。
+
+- 両方の利用者に見える変更（共通の画面・文言・API呼び出しの修正など）→ **両方**。
+- `if !crate::platform::APP` の中だけ、web専用ページだけ → **webだけ**。アプリのUIはAPKに組み込まれているので、webのリリースではアプリに届きません。
+- `platform::APP` / `#[cfg(feature = "mobile")]` の中だけ → **アプリだけ**。
+- 依存・toolchainの更新は普通は両方に効くが、急がない側は次のリリースにまとめてよい。
+- 迷ったら両方上げる（不要な更新は「少し使いづらい」程度、出し忘れは不具合）。
 
 ## テスト用タグで試す
 
@@ -152,7 +201,7 @@ git tag -a web-vX.Y.Z-test.N -m "Release workflow test" <コミット>
 git push origin refs/tags/web-vX.Y.Z-test.N
 ```
 
-- ワークフローはタグが指すコミットのものが使われるので、mainにマージする前のコミットでも試せます。
+- ワークフローはタグが指すコミットのものが使われるので、mainにマージする前のコミットでも試せます。版を上げたときの動きを確かめたいときは、片方のCargo.tomlだけを上げた検証用コミット（mainには入れない）を作り、そこにテスト用タグを打ちます（例 [versioning.md 4](versioning.md#4-検証記録)）。
 - アプリのテスト用リリースはプレリリースになるため、`/releases/latest` とアプリの自動更新には出てきません。`image.yml` は動きません。
 - webのテスト用タグは `X.Y.Z-test.N` タグのイメージだけを公開します（`X.Y`・`latest` は動きません）。`android.yml` は動かず、リリースも作られません。
 - 確認が済んだら、不要なテスト用リリースとタグはForgejoの画面（またはトークンを使うAPI）から削除してください。
