@@ -18,6 +18,7 @@ pub(crate) const EDGE_GUARD: f64 = 24.0;
 /// Elements whose touches never swipe: form controls (range sliders, text selection in
 /// inputs), switches and anything a caller marks with `data-swipe-ignore`. Horizontally
 /// scrollable elements are excluded separately by the collectors.
+#[cfg(any(target_arch = "wasm32", feature = "mobile"))]
 pub(crate) const IGNORE_SELECTOR: &str =
     "input,select,textarea,[contenteditable],[role=slider],[data-swipe-ignore]";
 

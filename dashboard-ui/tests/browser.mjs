@@ -598,6 +598,52 @@ try{
  assert.ok(await page.locator('#game-tab-starrail').evaluate(e=>e===document.activeElement));
  await page.keyboard.press('Home');await genshin.waitFor();
  await page.keyboard.press('End');await starrail.waitFor();
+ // Touch swipes on the panels switch tabs like a tap: left = next, right = previous, no wrap.
+ const touch=await context.newCDPSession(page);await touch.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
+ const drag=async(from,to,steps=6)=>{
+  await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:from.x,y:from.y}]});
+  for(let i=1;i<=steps;i++){await page.waitForTimeout(16);await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:from.x+(to.x-from.x)*i/steps,y:from.y+(to.y-from.y)*i/steps}]});}
+  await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.waitForTimeout(100);
+ };
+ const titleAt=async game=>{const box=await page.locator(`#game-title-${game}`).boundingBox();return box.y+box.height/2;};
+ const selectedGame=()=>page.locator('.game-tabs [aria-selected=true]').getAttribute('id');
+ let y=await titleAt('starrail');
+ await drag({x:100,y},{x:260,y});await genshin.waitFor();assert.ok(await starrail.isHidden());
+ assert.equal(await selectedGame(),'game-tab-genshin','a right swipe selects the previous tab');
+ y=await titleAt('genshin');
+ await drag({x:100,y},{x:260,y});assert.equal(await selectedGame(),'game-tab-genshin','the first tab stays at the start');
+ await drag({x:300,y},{x:140,y});await starrail.waitFor();assert.ok(await genshin.isHidden());
+ assert.equal(await selectedGame(),'game-tab-starrail','a left swipe selects the next tab');
+ await drag({x:300,y},{x:140,y});assert.equal(await selectedGame(),'game-tab-starrail','the last tab stays at the end');
+ // A tap on the tab bar still works after swipes.
+ await page.locator('#game-tab-genshin').click();await genshin.waitFor();
+ // Edge starts (system back gesture), slanted vertical drags and mouse drags never switch.
+ y=await titleAt('genshin');
+ await drag({x:10,y},{x:200,y});assert.equal(await selectedGame(),'game-tab-genshin','edge swipe is ignored');
+ await drag({x:300,y},{x:240,y:y+120});assert.equal(await selectedGame(),'game-tab-genshin','vertical drag is ignored');
+ await page.mouse.move(300,y);await page.mouse.down();await page.mouse.move(100,y,{steps:6});await page.mouse.up();
+ assert.equal(await selectedGame(),'game-tab-genshin','mouse drag is ignored');
+ // A vertical swipe scrolls the page natively and keeps the tab.
+ if(await page.evaluate(()=>document.documentElement.scrollHeight>innerHeight+200)){
+  await page.evaluate(()=>scrollTo(0,0));
+  await drag({x:200,y:700},{x:210,y:300},10);
+  assert.ok(await page.evaluate(()=>scrollY>0),'a vertical touch drag scrolls the dashboard');
+  assert.equal(await selectedGame(),'game-tab-genshin');
+  await page.evaluate(()=>scrollTo(0,0));
+ }
+ // Form controls and horizontally scrolling content keep their own drags.
+ const uidPicker=genshin.locator('select').first();
+ if(await uidPicker.count()){const box=await uidPicker.boundingBox();const py=box.y+box.height/2;await drag({x:box.x+box.width-30,y:py},{x:box.x+30,y:py});assert.equal(await selectedGame(),'game-tab-genshin','a swipe on the UID picker is ignored');}
+ await genshin.evaluate(panel=>{const strip=document.createElement('div');strip.id='swipe-probe';strip.style.cssText='overflow-x:auto;white-space:nowrap;height:48px';strip.textContent='x'.repeat(400);panel.prepend(strip);});
+ const probe=await page.locator('#swipe-probe').boundingBox();
+ await drag({x:300,y:probe.y+24},{x:120,y:probe.y+24});assert.equal(await selectedGame(),'game-tab-genshin','a swipe inside a horizontal scroller is ignored');
+ await page.locator('#swipe-probe').evaluate(e=>e.remove());
+ // Wide screens show both games and do not swipe.
+ await page.setViewportSize({width:1280,height:900});await page.waitForFunction(()=>document.getElementById('game-panels')?.dataset.swipeEnabled==='false');
+ y=await titleAt('genshin');await drag({x:600,y},{x:300,y});
+ await page.setViewportSize({width:390,height:844});await genshin.waitFor();
+ assert.equal(await selectedGame(),'game-tab-genshin','no swipe while both games are shown');
+ await touch.send('Emulation.setTouchEmulationEnabled',{enabled:false});await touch.detach();
  await page.setViewportSize({width:1280,height:900});
  // Pathname navigation supports back/forward and reload without bypassing auth gates.
  await menu('Settings');

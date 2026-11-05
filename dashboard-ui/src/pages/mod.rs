@@ -17,8 +17,4 @@ mod notifications;
 mod rewards;
 mod security;
 pub(super) mod shell;
-#[allow(
-    dead_code,
-    reason = "the dashboard and settings tabs adopt SwipeableTabs next"
-)]
 mod swipe_tabs;
