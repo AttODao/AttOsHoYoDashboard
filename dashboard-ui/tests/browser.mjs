@@ -130,7 +130,7 @@ const server=http.createServer(async(req,res)=>{
     if(req.method==='POST'){assert.ok(actor===user);assert.ok(body.username==='synthetic-created');assert.ok(validGenerated(body.temporary_password),'24-character WebCrypto candidate');if(failCreate)return json(res,{error:'unavailable'},503);const created={...other,id:uid(12),username:body.username,must_change_password:true};createdUsers.push(created);return json(res,created,201);}
     return json(res,[user,other,secondAdmin,...createdUsers].map(row=>({...row,created_at:hoursAgo(100),link_status:row===other?'verified':'not_configured',automatic_claims:row===other?2:0,last_login_at:row===user?hoursAgo(1):null})));
    }
-   if(p==='/api/v1/admin/audit'){assert.equal(req.method,'GET');return json(res,[{id:uid(60),action:'user_created',created_at:hoursAgo(1),actor:user.username,target:other.username},{id:uid(61),action:'signed_in',created_at:hoursAgo(2),actor:null,target:null}]);}
+   if(p==='/api/v1/admin/audit'){assert.equal(req.method,'GET');return json(res,[{id:uid(60),action:'user_created',created_at:hoursAgo(1),actor:user.username,target:other.username},{id:uid(61),action:'signed_in',created_at:hoursAgo(2),actor:null,target:null},{id:uid(62),action:'sign_in_failed',created_at:hoursAgo(3),actor:null,target:user.username}]);}
    if(p===`/api/v1/admin/users/${uid(12)}/temporary-password`){assert.equal(req.method,'PUT');assert.ok(validGenerated(body.temporary_password));res.writeHead(204);return res.end();}
    if(p===`/api/v1/admin/users/${other.id}`){
     assert.ok(actor===user);
@@ -978,6 +978,7 @@ try{
  assert.ok((await otherRowEarly.innerText()).includes('Never'));
  const audit=page.getByRole('table').filter({hasText:'User created'});
  assert.ok((await audit.innerText()).includes('System')&&(await audit.innerText()).includes('Deleted user'));
+ assert.ok((await audit.innerText()).includes('Sign-in failed')&&!(await audit.innerText()).includes('Other action'),'failed sign-ins have their own label');
  // Card titles are section headings below the page heading.
  for(const name of ['Create user','Manage users','Audit log'])assert.equal(await page.getByRole('heading',{name,exact:true,level:2}).count(),1,name);
  assert.equal(await page.locator('#admin-search').evaluate(e=>getComputedStyle(e).backgroundColor),await page.locator('#admin-create-username').evaluate(e=>getComputedStyle(e).backgroundColor),'search input uses the text field look');
