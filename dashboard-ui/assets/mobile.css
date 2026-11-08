@@ -2,8 +2,6 @@
 :root{--app-nav:64px;--safe-top:env(safe-area-inset-top,0px);--safe-right:env(safe-area-inset-right,0px);--safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px);-webkit-text-size-adjust:100%;text-size-adjust:100%}
 body{padding:var(--safe-top) var(--safe-right) 0 var(--safe-left);-webkit-tap-highlight-color:transparent}
 .app-nav{display:none}
-/* Match text fields for input types not styled by the shared stylesheet. */
-input:is([type=url],[type=number],[type=email],[type=search],[type=tel]){width:100%;min-width:0;min-height:48px;background:var(--elevated);border:1px solid var(--line);border-radius:8px;padding:10px 14px;color:var(--text)}
 /* Component buttons do not shrink (flex-shrink:0); cap them to their row so long labels wrap at large font scales. */
 body button[data-style][data-size]{max-width:100%}
 /* Give the inline HoYoLAB link a 48px touch area without moving its text. */

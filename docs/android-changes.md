@@ -92,7 +92,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 - 幅によらず：`viewport-fit=cover` を指定し、`env(safe-area-inset-*)` の分だけページの上と左右に余白を足して、システムバーやノッチと重ならないようにした。下側の余白は、600px以下では下部バーとボトムシートに足す。拡大縮小は無効（`user-scalable=no`）にした。
 - 幅によらず：タップ時のハイライトを消し、文字サイズの自動調整（`text-size-adjust`）を100%に固定した。
 - 幅によらず：dxのボタンは縮まない設定のため、行幅を上限にして、文字が大きいときは長いラベルを折り返すようにした。
-- 幅によらず：`type=url/number/email/search/tel` の入力欄は共有CSSでスタイルされていなかった（高さ31px）。アプリでは他の入力欄と同じ高さ48pxにした。
+- 幅によらず：`type=url/number/email/search/tel` の入力欄は共有CSSでスタイルされていなかった（高さ31px）。アプリでは他の入力欄と同じ高さ48pxにした。その後、web版でも同じ問題があったため、この指定は共有の `dashboard.css` に移した（`mobile.css` からは削除。アプリの見た目は変わらない）。
 
 ### ヘッダーと下部ナビゲーション（新規）
 

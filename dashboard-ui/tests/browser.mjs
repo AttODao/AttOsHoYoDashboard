@@ -663,6 +663,7 @@ try{
  await page.reload();await page.locator('#settings-tab-notifications[aria-selected=true]').waitFor();await idle();
  await page.locator('#webhook-url').waitFor();
  assert.equal(await page.title(),'Notifications – AHD','the notifications tab names the page');
+ for(const id of ['#webhook-url','#resin-warn'])assert.ok((await page.locator(id).boundingBox()).height>=48,id+' uses the 48px text field');
  // The web lists only the Webhook's choices and leaves the app's (app_events) untouched.
  assert.equal(await page.locator('#app-event-signed_in, .event-matrix').count(),0);
  await page.locator('#event-reward_failed').check();
@@ -979,6 +980,8 @@ try{
  assert.ok((await audit.innerText()).includes('System')&&(await audit.innerText()).includes('Deleted user'));
  // Card titles are section headings below the page heading.
  for(const name of ['Create user','Manage users','Audit log'])assert.equal(await page.getByRole('heading',{name,exact:true,level:2}).count(),1,name);
+ assert.equal(await page.locator('#admin-search').evaluate(e=>getComputedStyle(e).backgroundColor),await page.locator('#admin-create-username').evaluate(e=>getComputedStyle(e).backgroundColor),'search input uses the text field look');
+ assert.ok((await page.locator('#admin-search').boundingBox()).height>=48);
  await page.locator('#admin-search').fill(other.username);
  assert.equal(await page.locator('.admin-users tbody tr').count(),1);
  await page.locator('#admin-search').fill('');
