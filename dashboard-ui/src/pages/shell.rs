@@ -14,7 +14,7 @@ use crate::app::actions::spawn_action;
 use crate::app::navigation::open_web_version;
 use crate::app::preferences::{Preferences, use_preferences};
 use crate::app::session::logout;
-use crate::app::state::{AppState, Page, clear_status, set_page};
+use crate::app::state::{AppState, Page, STATUS_ID, clear_status, set_page};
 use crate::i18n::Language;
 use dioxus::prelude::*;
 
@@ -85,9 +85,9 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
     let tabs = settings_tabs(crate::platform::APP);
     let tab_index = tabs.iter().position(|(p, ..)| *p == page).unwrap_or(0);
     rsx! {
-        a { class: "skip-link", href: "#main", {ui.text("shell.skip_to_content")} }
+        SkipLink {}
         Header { state }
-        main { class: "container", id: "main", tabindex: "-1",
+        main { class: "container", id: CONTENT_ID, tabindex: "-1",
             Status { state }
             if is_settings {
                 div { class: "page-intro",
@@ -143,6 +143,23 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
                     DashboardPage { state }
                 }
             }
+        }
+    }
+}
+
+/// The `main` element's ID. Not "main": the Dioxus root element already uses that ID,
+/// so a "#main" fragment would land on the root instead of the page content.
+pub(super) const CONTENT_ID: &str = "content";
+
+/// The first focus stop: moves keyboard focus past the header to the page content.
+/// Focus moves explicitly because the fragment link alone does not move it here.
+#[component]
+pub(super) fn SkipLink() -> Element {
+    let ui = use_preferences();
+    rsx! {
+        a { class: "skip-link", href: "#{CONTENT_ID}",
+            onclick: move |event| { event.prevent_default(); focus_element(CONTENT_ID); },
+            {ui.text("shell.skip_to_content")}
         }
     }
 }
@@ -256,7 +273,8 @@ pub(super) fn Status(state: Signal<AppState>) -> Element {
     // Errors stay until dismissed; success and info lines clear themselves (see set_status).
     rsx! { div { class: "live-region", role: "status", "aria-live": "polite",
         if let Some(status) = status {
-            div { class: "status {status.kind}",
+            // Focusable so an action that fails can move focus here (see `actions::spawn_action`).
+            div { class: "status {status.kind}", id: STATUS_ID, tabindex: "-1",
                 p { {ui.text(status.message_key)} }
                 if status.kind == "error" {
                     button { class: "icon-button status-dismiss", r#type: "button", "aria-label": ui.text("shell.dismiss_message"),

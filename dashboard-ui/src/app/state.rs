@@ -55,6 +55,9 @@ pub(super) struct StatusLine {
 /// How long a success or info line stays before clearing itself.
 const STATUS_DISMISS_MS: u32 = 8_000;
 
+/// The shown status line's element ID; a failed action moves focus there.
+pub(super) const STATUS_ID: &str = "status-message";
+
 /// Manual reward runs being followed after their 202s; see `data::start_reward_poll`.
 #[derive(Clone, PartialEq)]
 pub(super) struct RewardPoll {

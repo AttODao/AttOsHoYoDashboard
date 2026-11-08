@@ -294,10 +294,12 @@ fn RefreshButton(state: Signal<AppState>, game: &'static str) -> Element {
     });
     rsx! {
         if shown {
+            // While loading the button stays enabled (aria-disabled): disabling it would drop
+            // keyboard focus to the page. Repeated presses are ignored instead.
             button {
                 r#type: "button", class: "icon-button refresh-button", id: "refresh-{game}",
-                disabled: loading, "aria-busy": loading, "aria-label": label, title: label,
-                onclick: move |_| { spawn_root(async move { load_game_status(state, game).await; }); },
+                "aria-disabled": loading, "aria-busy": loading, "aria-label": label, title: label,
+                onclick: move |_| { if !loading { spawn_root(async move { load_game_status(state, game).await; }); } },
                 Icon { name: "refresh" }
             }
         }

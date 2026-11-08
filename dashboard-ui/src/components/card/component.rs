@@ -38,8 +38,9 @@ pub fn CardTitle(
     #[props(extends=GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
+    // AHD: card titles are section headings (h2 under the page's h1), not plain text.
     rsx! {
-        div {
+        h2 {
             class: Styles::dx_card_title,
             "data-slot": "card-title",
             ..attributes,

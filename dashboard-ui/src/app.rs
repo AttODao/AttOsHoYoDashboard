@@ -166,14 +166,20 @@ fn page_title(page: Page, phase: Phase, ready: bool, ui: preferences::Preference
         (_, Page::Docs) => Some("docs.title"),
         (Phase::SignedOut, _) => Some("auth.sign_in"),
         (Phase::SignedIn, _) if !ready => Some("auth.setup"),
-        (Phase::SignedIn, Page::Dashboard) => Some("dashboard.dashboard"),
-        (Phase::SignedIn, Page::Uids) => Some("settings.uids"),
-        (Phase::SignedIn, Page::Rewards) => Some("settings.bonus"),
-        (Phase::SignedIn, Page::Link) => Some("settings.link"),
-        (Phase::SignedIn, Page::Security) => Some("settings.security"),
-        (Phase::SignedIn, Page::Delete) => Some("settings.delete"),
-        (Phase::SignedIn, Page::Admin) => Some("admin.admin_settings"),
-        (Phase::SignedIn, Page::About) => Some("about.title"),
+        // Exhaustive, so a new page cannot ship with the bare product name as its title.
+        (Phase::SignedIn, page) => Some(match page {
+            Page::Dashboard => "dashboard.dashboard",
+            Page::Uids => "settings.uids",
+            Page::Rewards => "settings.bonus",
+            Page::Link => "settings.link",
+            Page::Security => "settings.security",
+            Page::Notifications => "settings.notifications",
+            Page::Delete => "settings.delete",
+            Page::Admin => "admin.admin_settings",
+            Page::About => "about.title",
+            // Handled by the first arm; listed to keep the match exhaustive.
+            Page::Docs => "docs.title",
+        }),
         _ => None,
     };
     match key {
@@ -302,6 +308,10 @@ mod tests {
         assert_eq!(
             page_title(Page::Dashboard, Phase::Loading, false, ui),
             "AHD"
+        );
+        assert_eq!(
+            page_title(Page::Notifications, Phase::SignedIn, true, ui),
+            "通知 – AHD"
         );
     }
 }
