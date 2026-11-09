@@ -60,7 +60,12 @@ web版が出しているすべての通知について、発生条件・内容�
 - マイグレーション `m20261028_000011_app_notification_events` は `notification_settings.app_events`（jsonb、既定 `{}`）を追加し、既存の行には `events` をコピーします（それまでアプリはWebhookの選択に従っていたため、受け取る通知は変わりません）。downで列を削除します。
 - アプリは `GET /api/v1/me/notifications/app-devices/{id}/inbox?after={位置}` で新しい通知を読みます（1回50件まで）。読むたびに端末の最終確認時刻を更新します。
 - 受信箱の通知は3日、30日間読みに来ない端末は削除します（毎時の保守処理）。通知をOFFにすると `DELETE /api/v1/me/notifications/app-devices/{id}` で登録を消します。
-- FCMなどの外部プッシュサービスは使いません。サーバーに秘密の資格情報を置かずに済み、Googleのサービスがない端末でも動きます。その代わり、届くまでに最大15分程度（Dozeでさらに遅れることがある）かかります。
+- FCMは使いません。サーバーに外部サービスの資格情報を置かずに済み、Googleのサービスがない端末でも動きます。ポーリングだけでは届くまでに最大15分程度（Dozeでさらに遅れることがある）かかるため、UnifiedPushによる起床（`src/dashboard/notifications/push.rs`）を選べます：
+  - アプリは配信アプリ（ntfyなど）から受け取ったエンドポイントと、自分で作ったWeb Pushの鍵（P-256の公開鍵 `p256dh` と16バイトの `auth`）を `PUT /api/v1/me/notifications/app-devices/{id}/push` で送ります。サーバーのVAPID公開鍵は `GET …/push` で受け取ります（`HOYOLAB_COOKIE_KEY` から導出。鍵がないサーバーでは503）。`DELETE …/push` で消します。
+  - エンドポイントはユーザーが渡すURLなので、Webhook URLと同じ規則で検査します（HTTPS、公開のDNS名、認証情報・IPアドレス・ローカル名は不可、1000バイトまで）。鍵と一緒に封をして（`app_devices.push_subscription`、Webhook URLと同じAES-256-GCM、目的別の鍵、端末IDに結び付け）保存します。
+  - 受信箱に通知を入れた直後に、その端末へ暗号化した起床用のメッセージ（RFC 8291 aes128gcm、RFC 8292 VAPID、本文は `{"type":"inbox"}` だけ）を送ります。通知の内容や秘密は含みません。リダイレクトは追わず、10秒で打ち切り、同じユーザーの端末へは並行に送ります。
+  - プッシュサーバーが404/410を返したとき、保存した購読を開けないとき（`rekey` の後など）は購読を消します。端末の登録解除、ユーザーの無効化・削除の要求でも消します。それ以外の失敗は記録だけで、通知は受信箱に残り、アプリの次の確認で届きます。
+  - `/metrics` の `ahd_app_devices{delivery="push|poll"}` と `ahd_app_push_requests_total{outcome="sent|gone|failed"}` で状態を見られます。
 
 ### アプリ側
 
@@ -69,6 +74,7 @@ web版が出しているすべての通知について、発生条件・内容�
 - 通知の許可：「この端末に通知する」をONにしたとき、Android 13以降で許可がなければ `POST_NOTIFICATIONS` を求めます。拒否された場合は警告と「通知を許可する」「端末の通知設定を開く」を表示します。
 - アプリの予測通知（樹脂・開拓力・洞天宝銭の上限、派遣、参量物質変化器。[android-changes.md](android-changes.md) 5.2節）は残しています。同じ状態について、予測通知とサーバーの通知の両方が2時間以内に届いた場合は、後から来たほうを表示しません（タグ「ゲームアカウント:種類」が一致するもの）。
 - ログアウトやセッションの失効で、端末の受信を止めます。サーバー側の登録は30日後に消えます。別のユーザーでログインすると、そのユーザーで登録し直します。
+- UnifiedPush（`dashboard-ui/android/kotlin/AhdPush.kt`）：「UnifiedPushですぐに受け取る」をONにすると、配信アプリに登録し（AND_3。Android 14以降は送信元の共有、それ以前はPendingIntentで自分を名乗る）、届いたエンドポイントをサーバーへ送ります。プッシュを受け取ると、自分の鍵で復号できて `{"type":"inbox"}` のときだけ、上と同じ `AhdInbox.poll` で受信箱を読みます。読む位置（cursor）とタグで重複を防ぐので、プッシュとポーリングの両方で同じ通知が2回表示されることはありません。配信アプリが入っていない場合や登録に失敗した場合はその旨を表示し、15分ごとの確認だけで受け取ります。ログアウトでは、セッションがあるうちにサーバーの購読を消します。
 
 ## 5. 検証
 
@@ -80,7 +86,9 @@ web版が出しているすべての通知について、発生条件・内容�
 - `src/dashboard/db/tests.rs`：マイグレーションが既存の `events` をコピーし、downで列を消すこと。
   - `cookie_invalid` がCookieの版ごとに1回だけ入ること。
   - 端末の所有者の確認、10台の上限、登録解除、テスト送信、古い通知と端末の削除。
-- `src/dashboard/http/tests/notifications.rs`：Cookie認証での登録（Originが必要）・テスト送信・受信箱の読み取り（GETはOrigin不要）・解除。
+- `src/dashboard/http/tests/notifications.rs`：Cookie認証での登録（Originが必要）・テスト送信・受信箱の読み取り（GETはOrigin不要）・解除。プッシュの購読：VAPID公開鍵、URLと鍵の検査、封をした保存（平文が残らない）、他のユーザーの端末は404、削除、端末の登録解除で消えること。
+- `src/dashboard/notifications/push_tests.rs`：RFC 8291 付録Aの値での暗号化、VAPIDの署名、購読の検査、ローカルのモックのプッシュサーバー（201/404/410/500）への送信（ヘッダー、アプリ側での復号、内容を含まないこと、404/410と開けない購読の削除、件数）、利用者ごとの全削除。`auth/accounts_tests.rs`・`auth/deletion_tests.rs`：無効化と削除の要求で購読が消えること。
+- `dashboard-ui/android/test/AhdPushCryptoTest.kt`：アプリ側の復号をRFC 8291 付録Aで確認し、改ざん・別の鍵を拒否すること。`dashboard-ui/src/mobile/push.rs`：状態ごとの表示。
 - `src/dashboard/notifications/app.rs`：種類ごとの開く画面。`dashboard-ui/src/mobile/inbox.rs`：登録・継続・解除の判断。`dashboard-ui/src/app/navigation.rs`：通知の行き先から画面への対応。
 - エミュレータ（API 34）での手動確認：`resource_full`・`daily_unfinished`（アプリ表示中）、`sign_in_failed`・`reward_failed`・`cookie_invalid`（アプリを前面に出していない状態で定期ジョブから表示）、タップで開く画面、通知の許可の要求、OFF/ONでの登録解除と再登録。結果は [android-changes.md](android-changes.md) 5.3節にあります。
 

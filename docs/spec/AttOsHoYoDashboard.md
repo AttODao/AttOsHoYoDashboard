@@ -137,4 +137,4 @@ OpenAPI 3.1 の正本は [`../dashboard-api.json`](../dashboard-api.json)。現�
 
 ## 9. 対象外
 
-招待・自由登録、PAT/Scope、メール復旧、Cookie自動更新、複数HoYoLAB連携、別UID置換、CAPTCHA自動突破、他人へのゲームデータ共有、中国本土版、原神・崩壊：スターレイル以外、網羅的キャラクター戦績、push/email通知、native mobile app、SSR/fullstack新server、DST対応。
+招待・自由登録、PAT/Scope、メール復旧、Cookie自動更新、複数HoYoLAB連携、別UID置換、CAPTCHA自動突破、他人へのゲームデータ共有、中国本土版、原神・崩壊：スターレイル以外、網羅的キャラクター戦績、email通知、FCMによるプッシュ（Androidアプリのサーバー通知は受信箱のポーリングと、任意のUnifiedPushによる起床だけ）、native mobile app、SSR/fullstack新server、DST対応。

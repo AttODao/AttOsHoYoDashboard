@@ -268,6 +268,9 @@ impl Accounts {
         update.update(&tx).await?;
         Sessions::revoke_all(&tx, target).await?;
         super::api_tokens::ApiTokens::revoke_all(&tx, target).await?;
+        if !active {
+            crate::dashboard::notifications::push::revoke_all(&tx, target).await?;
+        }
         if active {
             use sea_orm::sea_query::Expr;
             if let Some(link) = hoyolab_account::Entity::find()

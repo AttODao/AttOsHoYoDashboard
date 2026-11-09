@@ -1,6 +1,7 @@
 //! Ordered migration registry; names and schema live in their individual migrations.
 mod account_activity;
 mod api_tokens;
+mod app_device_push;
 mod app_notification_events;
 mod app_notifications;
 mod dashboard_games;
@@ -32,6 +33,7 @@ impl MigratorTrait for Migrator {
             Box::new(remove_web_push::RemoveWebPush),
             Box::new(app_notification_events::AppNotificationEvents),
             Box::new(game_challenge_cache::GameChallengeCache),
+            Box::new(app_device_push::AppDevicePush),
         ]
     }
 }
