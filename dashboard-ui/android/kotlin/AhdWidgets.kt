@@ -80,7 +80,7 @@ object AhdWidgets {
             val account = record.getString("account")
             var connection: HttpURLConnection? = null
             val fetched = guarded(false) {
-                val cookie = AhdInbox.cookieHeader(context)
+                val cookie = AhdSessionStore.cookieHeader(context)
                 if (cookie == null) {
                     signOut(context)
                     return@guarded false

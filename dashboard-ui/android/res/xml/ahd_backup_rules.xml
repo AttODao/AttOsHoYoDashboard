@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older (android:fullBackupContent). The session cookie is sealed with a
+     Keystore key that is never backed up, and earlier versions kept it in plain text: keep
+     both files, and the temporary file of a write, out of backups. Copied into the generated
+     project and referenced from the manifest by scripts/build-android.sh. -->
+<full-backup-content>
+    <exclude domain="file" path="session-cookies.enc" />
+    <exclude domain="file" path=".session-cookies.enc.tmp" />
+    <exclude domain="file" path="session-cookies.json" />
+    <exclude domain="file" path=".session-cookies.json.tmp" />
+</full-backup-content>
