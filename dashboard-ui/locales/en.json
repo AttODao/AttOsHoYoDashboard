@@ -682,5 +682,19 @@
   "calendar.refresh_failed": "Could not refresh the calendar. What is shown may be out of date.",
   "calendar.not_fetched": "The calendar has not been fetched.",
   "calendar.empty": "Nothing is running or announced.",
-  "calendar.summary_next_end": "next ends in {duration}"
+  "calendar.summary_next_end": "next ends in {duration}",
+  "auth.server_label": "Server",
+  "auth.server_not_set": "No server is set.",
+  "auth.server_change": "Change server",
+  "auth.server_address": "Server address",
+  "auth.server_hint": "The address of an AHD server, such as https://ahd.example.com. Changing the server signs the app out and removes the notifications and saved data of the current server, including the home-screen widgets, from this device.",
+  "auth.server_save": "Check and change",
+  "auth.server_use_default": "Enter the default server",
+  "auth.server_error_empty": "Enter the server address.",
+  "auth.server_error_invalid": "This is not a server address. Enter an address such as https://ahd.example.com.",
+  "auth.server_error_insecure": "Enter an https:// address. http:// works only for localhost.",
+  "auth.server_error_unreachable": "Could not reach the server. Check the address and the network connection.",
+  "auth.server_error_not_ahd": "The server answered, but it is not an AHD server. Check the address.",
+  "auth.server_error_not_saved": "Could not change the server. Please try again.",
+  "messages.server_changed": "The server was changed. Sign in to the new server."
 }

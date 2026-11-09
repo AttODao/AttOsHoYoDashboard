@@ -11,6 +11,10 @@ body button[data-style][data-size]{max-width:100%}
 .event-matrix thead th:not(:first-child){width:5.5rem;padding:12px 4px;text-align:center}.event-matrix td{padding:0}
 .event-matrix tbody th{color:var(--text);font-size:16px;font-weight:500}
 .matrix-check{display:flex;align-items:center;justify-content:center;min-height:48px;cursor:pointer}
+/* Login page: the server in use and its change form, below the sign-in methods like .auth-alternatives. */
+.auth-server{display:grid;gap:16px;margin-top:24px;padding-top:24px;border-top:1px solid var(--decorative)}
+.auth-server h2{margin:0;font-size:18px}.auth-server-origin{margin:0;font-weight:500;overflow-wrap:anywhere}
+.auth-server-actions{display:flex;flex-direction:column;gap:12px;margin-top:8px}.auth-server button[data-style][data-size]{width:100%}
 @media(max-width:600px){
 /* Let bonus history controls wrap within the narrow viewport. */
 .history-tools{flex-wrap:wrap}.history-tools select{flex:1 1 10rem}

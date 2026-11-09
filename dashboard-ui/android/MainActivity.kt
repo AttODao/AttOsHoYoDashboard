@@ -275,6 +275,18 @@ object AhdNotifications {
     @JvmStatic fun rememberChannel(context: Context, name: String): Unit = guarded(Unit) {
         prefs(context).edit().putString("channel", name).apply()
     }
+    /**
+     * A server change: removes the shown game-status notices (reminders and server notices of
+     * the old server) and the memory of recent tags. The update notice stays.
+     */
+    @Synchronized @JvmStatic fun forgetServer(context: Context): Boolean = guarded(false) {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        for (shown in manager.activeNotifications) {
+            val gameStatus = if (Build.VERSION.SDK_INT >= 26) shown.notification.channelId == CHANNEL_ID else shown.id != AhdUpdater.NOTICE_ID
+            if (gameStatus) manager.cancel(shown.tag, shown.id)
+        }
+        prefs(context).edit().remove("recent").commit()
+    }
     @Suppress("DEPRECATION")
     private fun post(context: Context, id: Int, title: String, body: String, tag: String? = null, target: String = "/dashboard"): Boolean = guarded(false) {
         if (!permissionGranted(context)) false else {
@@ -555,10 +567,11 @@ object AhdInbox {
         pollNow(context)
         true
     }
+    /** Ends the registration; false when the stored state could not be removed. */
     @JvmStatic fun stop(context: Context): Boolean = guarded(false) {
-        prefs(context).edit().clear().commit()
+        val cleared = prefs(context).edit().clear().commit()
         context.getSystemService(JobScheduler::class.java).cancel(JOB_ID)
-        true
+        cleared
     }
     @JvmStatic fun pollNow(context: Context): Boolean = guarded(false) {
         restore(context)
@@ -675,7 +688,7 @@ class AhdInboxJob : JobService() {
 // system confirmation (also when this app is the installer of record, measured on Android 14).
 object AhdUpdater {
     const val ACTION_STATUS = "cc.attodao.ahd.UPDATE_STATUS"
-    private const val NOTICE_ID = 0x41485544
+    const val NOTICE_ID = 0x41485544
     private const val CHANNEL_ID = "app_updates"
     @Volatile @JvmStatic var listener: (() -> Unit)? = null
     @Volatile private var result: String? = null

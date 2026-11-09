@@ -27,7 +27,7 @@ pub(super) fn start(state: Signal<AppState>) {
             set_status(state, "messages.could_not_open_the_browser", "error");
             return;
         };
-        if crate::platform::open_external(&start_url(origin, &challenge(&verifier))).is_err() {
+        if crate::platform::open_external(&start_url(&origin, &challenge(&verifier))).is_err() {
             storage::remove(PENDING_FILE);
             set_status(state, "messages.could_not_open_the_browser", "error");
         } else {

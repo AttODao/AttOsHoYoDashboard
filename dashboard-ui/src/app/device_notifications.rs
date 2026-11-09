@@ -10,7 +10,7 @@ use crate::mobile::{
     inbox::{self, Config, Plan, Registered},
     notify,
     push::PushState,
-    reminders::{Outgoing, Schedule, Settings, forgets_schedule},
+    reminders::{Outgoing, SCHEDULE_FILE, Schedule, Settings, forgets_schedule},
     storage,
 };
 use dioxus::prelude::*;
@@ -20,7 +20,6 @@ use std::{
     rc::Rc,
 };
 const SETTINGS_FILE: &str = "device-notifications.json";
-const SCHEDULE_FILE: &str = "notification-schedule.json";
 /// While the app is visible the inbox is read at most this often (plus on every return).
 const FOREGROUND_POLL_MS: i64 = 60_000;
 
@@ -207,7 +206,7 @@ pub(super) fn use_device_notifications(state: Signal<AppState>) -> DeviceNotific
                         .await;
                         let config = result.ok().and_then(|view| {
                             Some(Config {
-                                origin: crate::mobile::http::server_origin()?.to_owned(),
+                                origin: crate::mobile::http::server_origin()?,
                                 device: view.get("id")?.as_str()?.to_owned(),
                                 owner: owner.to_string(),
                                 cursor: view.get("cursor")?.as_i64()?,

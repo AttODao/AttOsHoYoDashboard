@@ -76,8 +76,10 @@ pub(crate) fn write(name: &str, contents: &str) -> io::Result<()> {
     std::fs::rename(temporary, dir.join(name))
 }
 
-pub(crate) fn remove(name: &str) {
-    if let Some(dir) = data_dir() {
-        let _ = std::fs::remove_file(dir.join(name));
-    }
+/// Removes `name`; true when it is gone afterwards (also when it did not exist).
+pub(crate) fn remove(name: &str) -> bool {
+    data_dir().is_some_and(|dir| match std::fs::remove_file(dir.join(name)) {
+        Ok(()) => true,
+        Err(error) => error.kind() == io::ErrorKind::NotFound,
+    })
 }
