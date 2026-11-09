@@ -211,7 +211,12 @@ impl<G: Gateway> Games<G> {
                 if let Some(sample) = payload.as_ref().and_then(|summary| {
                     resource_history::sample_from_summary(&account.game_kind, fetched_at, summary)
                 }) {
-                    resource_history::record(&self.store.db, account.id, sample).await?;
+                    // The history is secondary: a failed snapshot must not fail the status.
+                    if let Err(error) =
+                        resource_history::record(&self.store.db, account.id, sample).await
+                    {
+                        tracing::warn!(error = %error, "resource history snapshot not recorded");
+                    }
                 }
                 Ok(GameStatus {
                     game_kind: account.game_kind,

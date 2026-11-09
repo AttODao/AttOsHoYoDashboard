@@ -6,7 +6,8 @@
 //! Spending only delays the cap, so the time before the projected cap is known to be
 //! below it even across a long gap or a detected spend; after that point, a long gap
 //! or a mismatch makes the time unknown instead of guessed. After the last snapshot the
-//! projection is trusted for `max_gap`; the cap is unknown beyond that.
+//! time before the projected cap stays below it (the same rule as above), and the
+//! projected cap is trusted for `max_gap`; the cap is unknown beyond that.
 use chrono::{DateTime, Duration, Utc};
 
 /// One observation of the resource.
@@ -66,6 +67,8 @@ fn cap_at(sample: &Sample, unit: Duration) -> DateTime<Utc> {
     if sample.current >= sample.maximum {
         return sample.at;
     }
+    // Counts are bounded to 0..=100000 (DB CHECK and `sample_from_summary`), so the
+    // difference fits in `i32`.
     let computed = sample.at + unit * (sample.maximum - sample.current) as i32;
     sample
         .full_at
