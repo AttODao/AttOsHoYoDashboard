@@ -55,7 +55,7 @@ Rustの `app/home_widgets.rs` はダッシュボードの変更ごとに選択�
 1. 各ゲームのクラスで `render(context, state, nowMs)` をoverrideします。`when (state)` で `SignedOut`、`NoAccount`、`Unavailable`、`Ready` を扱い、未準備の状態では `placeholder(context, state)` を利用できます。
 2. `Ready` の `state.snapshot.at(nowMs)` で樹脂・開拓力・宝銭を推定します。残り時間は `remainingSecondsAt(nowMs)`、派遣の完了数は `Expeditions.finishedAt(nowMs)` を使います。
 3. RemoteViews対応のビューだけを使い、ルートのidを `ahd_widget_root` にします。タップは `/dashboard?game=<key>` を開き、アプリはそのゲームのタブを選びます（`widgetOpenTarget`、Rustの `app/navigation.rs` `target_game`）。大きさで描き分ける場合は `render(context, state, nowMs, options)` をoverrideします（`options` は `AppWidgetManager.OPTION_APPWIDGET_*` のdp値。リサイズ時にも再描画されます）。文字はspで端末の文字サイズに合わせて大きくなるため、レイアウトの選択には `context.resources.configuration.fontScale` も使います（`GenshinWidgetLayout` / `StarRailWidgetLayout.forSize`）。表示サイズ（密度）の変更はウィジェットのdpが変わるので即座に再描画されますが、文字サイズの変更を知らせるbroadcastはなく（manifestのreceiverでは `CONFIGURATION_CHANGED` を受け取れず、裏のプロセスは凍結される）、ランチャーは前回のRemoteViewsを読み直すだけです。新しい文字サイズでのレイアウト選択は次の描画（アプリを開く、30分ごとの更新ジョブ、`updatePeriodMillis`）からです。
-   文言は `values/`（日本語、既定）と `values-en/`、面の色は `values/`・`values-night/` の `ahd_widget_*` です。
+   文言は `values/`（日本語、既定）と `values-en/` で、アプリの言語（`AhdLocale.localized`、`docs/android-changes.md` 5.7）で選びます。レイアウトに書いた文字列はランチャーがシステム言語で解決するため、表示する文言はすべてコードから入れます。面の色は `values/`・`values-night/` の `ahd_widget_*` です。
 4. Kotlinに `R.` 参照を追加せず、`context.resources.getIdentifier(name, type, context.packageName)` を使います。リソースはdxの最初のGradle実行の後にコピーされます。**MainActivity.ktから新しいKotlinファイルを参照してはいけません**（同じビルド順の制約）。
 5. 純粋モデルのテストは `android/test/` に追加します。先に `build-android` を実行し、`devenv --profile android shell -- test-android` でJUnitを実行します。Kotlinとテストの変更だけなら再ビルドせずに再コピーしてテストできます。
 
@@ -74,7 +74,7 @@ JobSchedulerは不正確でDoze中は遅延します。取得の間の数値は�
 
 ### Star Rail widget
 
-`kotlin/StarRailWidget.kt` renders `layout/ahd_widget_starrail.xml`: a Trailblaze Power arc (value, `/max`) with "全回復まで" and the time to full, the reserve and the fetch time beside it, then full-width bars for assignments (done/sent and time left on the value line), daily training and Simulated Universe weekly points (the realm-currency slot; reasons in `docs/android-changes.md`). The values come from the Android-free `kotlin/StarRailWidgetModel.kt` (`test/StarRailWidgetModelTest.kt`). Lines that can turn to the warning color exist twice in the layout (`name` / `name_full`) so the colors stay resources that follow dark mode. Strings are `values(-en)/ahd_widget_starrail_strings.xml` (Japanese default) and are set from code (layout strings are resolved by the launcher in the system locale, which would ignore a per-app language); colors are `values(-night)/ahd_widget_starrail_colors.xml`.
+`kotlin/StarRailWidget.kt` renders `layout/ahd_widget_starrail.xml`: a Trailblaze Power arc (value, `/max`) with "全回復まで" and the time to full, the reserve and the fetch time beside it, then full-width bars for assignments (done/sent and time left on the value line), daily training and Simulated Universe weekly points (the realm-currency slot; reasons in `docs/android-changes.md`). The values come from the Android-free `kotlin/StarRailWidgetModel.kt` (`test/StarRailWidgetModelTest.kt`). Lines that can turn to the warning color exist twice in the layout (`name` / `name_full`) so the colors stay resources that follow dark mode. Strings are `values(-en)/ahd_widget_starrail_strings.xml` (Japanese default) and are set from code in the app's language (`AhdLocale`; layout strings are resolved by the launcher in the system locale, which would ignore the app's language); colors are `values(-night)/ahd_widget_starrail_colors.xml`.
 
 When the time beside the arc would not fit, `StarRailWidgetLayout.forSize` (width ≥ 142dp + 90dp × font scale, height ≥ 148dp + 98dp × font scale; unknown size = regular) picks `layout/ahd_widget_starrail_compact.xml`: four bars (Trailblaze Power with "全回復まで 9時間00分" as its caption, reserve and fetch time on the next line, assignments with their time as the caption) and a one-line title that shrinks to fit. A 3×3 widget is compact at density 560 (about 200dp wide) and from font size about 150% at density 420. The fetch time and the message box (icon, text, "タップしてAHDを開く") use the same wording as the Genshin widget ("3:31 更新", "更新失敗 3:40").
 
@@ -121,8 +121,9 @@ views.addView(slot, AhdIndicators.arc(context, AhdArcSpec(
   The indicators draw no background: put them on the widget's own panel.
 - **Text**: `hoursMinutes` gives `3時間12分` / `3h 12m`, or `10分` / `10m` under an hour (rounded up like the dashboard) in
   the context's locale; Japanese is the default resource like the app, English is
-  `values-en`. To use the app's language instead of the system one, pass
-  `context.createConfigurationContext(config)` with that locale.
+  `values-en`. The widgets pass `AhdLocale.localized(context)`, a configuration context in the
+  app's language (the language saved in the app, else the per-app or system locale by the
+  rule of Rust `Language::for_locales`).
 - **Why level drawables**: RemoteViews cannot host custom views, and ProgressBar colors are
   settable only from API 31; a Canvas bitmap would freeze its colors (no dark-mode switch)
   and its density. See the header of `AhdIndicators.kt`.
