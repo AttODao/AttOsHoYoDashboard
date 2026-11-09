@@ -1,7 +1,7 @@
 //! Notification channels: per-user and administrator settings, sealed URLs and test sends.
 use super::{
     ADMIN_EVENTS, LANGUAGES, Notice, PERSONAL_EVENTS, RESIN_WARN_HOURS, WEBHOOK_FORMATS, delivery,
-    secret,
+    push, secret,
 };
 use crate::dashboard::{
     auth::{
@@ -197,6 +197,10 @@ pub(in crate::dashboard) struct TestResult {
 pub(in crate::dashboard) struct Notifications {
     pub(super) db: DatabaseConnection,
     pub(super) key: Option<Arc<CookieKey>>,
+    /// PUBLIC_ORIGIN, the VAPID contact subject of app push requests.
+    pub(super) origin: String,
+    /// App push outcomes since start, for `/metrics`.
+    pub(super) push_stats: push::Stats,
 }
 
 fn merged(stored: &Value, known: &[(&str, bool)]) -> BTreeMap<String, bool> {
@@ -274,7 +278,12 @@ impl ChannelInput {
                 let url = delivery::validate_webhook_url(raw)?;
                 let key =
                     key.ok_or(Error::Unavailable("notification storage is not configured"))?;
-                Ok(Some(Some(secret::seal(key, scope, &url)?)))
+                Ok(Some(Some(secret::seal(
+                    key,
+                    secret::Purpose::Webhook,
+                    scope,
+                    &url,
+                )?)))
             }
             Some(_) => Err(Error::Invalid("webhook_url must be a string or null")),
         }
@@ -286,8 +295,17 @@ impl ChannelInput {
 }
 
 impl Notifications {
-    pub(in crate::dashboard) fn new(db: DatabaseConnection, key: Option<Arc<CookieKey>>) -> Self {
-        Self { db, key }
+    pub(in crate::dashboard) fn new(
+        db: DatabaseConnection,
+        key: Option<Arc<CookieKey>>,
+        origin: &str,
+    ) -> Self {
+        Self {
+            db,
+            key,
+            origin: origin.to_owned(),
+            push_stats: push::Stats::default(),
+        }
     }
 
     async fn ready(&self, actor: &Identity) -> Result<Identity> {
@@ -305,7 +323,7 @@ impl Notifications {
     fn open_url(&self, scope: Uuid, sealed: Option<&[u8]>) -> Option<String> {
         let key = self.key.as_deref()?;
         // An unreadable URL (e.g. after a key change without rekey) acts as unset.
-        secret::open(key, scope, sealed?).ok()
+        secret::open(key, secret::Purpose::Webhook, scope, sealed?).ok()
     }
 
     pub(super) async fn personal_channel(

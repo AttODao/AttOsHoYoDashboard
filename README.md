@@ -109,7 +109,7 @@ HTTPSリバースプロキシから `http://127.0.0.1:8080` へパスを保持�
 | `/docs` / `/openapi.json` | API仕様の閲覧／OpenAPI JSON |
 | `/manifest.webmanifest` | ホーム画面追加用のWebマニフェスト |
 | `/health` | DB疎通と報酬ワーカーの生存確認。正常時 `{"status":"ok","worker":"ok"}`、ワーカー停止時は503 |
-| `/metrics` | `METRICS_TOKEN` 設定時のみ。Prometheus形式の件数・ワーカー状態・直近24時間に終わった報酬実行の結果・APIトークン数 |
+| `/metrics` | `METRICS_TOKEN` 設定時のみ。Prometheus形式の件数・ワーカー状態・直近24時間に終わった報酬実行の結果・APIトークン数・アプリの端末数（UnifiedPushの有無別）と起動後のプッシュ送信結果 |
 
 ## 開発とUI設計
 
@@ -143,7 +143,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 #### 通知
 
-「通知」ページの「この端末に通知する」をONにすると、web版のWebhookと同じ個人の通知（ログインボーナスの結果、Cookieの失効、ログイン、樹脂・開拓力、派遣、参量物質変化器、デイリー・週間）を、種類ごとの選択（Webhookとは別。サーバーの `app_events`）に従ってこの端末に表示します。種類ごとの選択は、同じページの表で「この端末」と「Webhook」の列を並べて設定します。アプリはサーバーに端末を登録し、受信箱（`/me/notifications/app-devices/{id}/inbox`）をセッションCookieで15分ごと（JobScheduler。アプリの表示中は1分ごと）に読みます。外部のプッシュサービスは使いません。タップすると通知を扱う画面（報酬・連携・セキュリティ・ダッシュボード）を開きます。管理者専用の通知は対象外です。一覧は [docs/notifications-inventory.md](docs/notifications-inventory.md) にあります。
+「通知」ページの「この端末に通知する」をONにすると、web版のWebhookと同じ個人の通知（ログインボーナスの結果、Cookieの失効、ログイン、樹脂・開拓力、派遣、参量物質変化器、デイリー・週間）を、種類ごとの選択（Webhookとは別。サーバーの `app_events`）に従ってこの端末に表示します。種類ごとの選択は、同じページの表で「この端末」と「Webhook」の列を並べて設定します。アプリはサーバーに端末を登録し、受信箱（`/me/notifications/app-devices/{id}/inbox`）をセッションCookieで15分ごと（JobScheduler。アプリの表示中は1分ごと）に読みます。UnifiedPushの配信アプリ（ntfyなど）が入っていれば、「UnifiedPushですぐに受け取る」をONにすると、受信箱に通知が入ったときにサーバーが暗号化した起床用のプッシュ（通知の内容は含まない）を送り、アプリはすぐに受信箱を読みます。FCMは使いません。配信アプリがない場合やプッシュが届かない場合は15分ごとの確認で届きます。タップすると通知を扱う画面（報酬・連携・セキュリティ・ダッシュボード）を開きます。管理者専用の通知は対象外です。一覧は [docs/notifications-inventory.md](docs/notifications-inventory.md) にあります。
 
 これとは別に、樹脂・開拓力と洞天宝銭の上限到達、派遣完了、参量物質変化器は、取得した状態から予測した時刻にAndroidのローカルアラームでも通知できます（同じ内容のサーバーの通知が2時間以内に届いた場合は片方だけを表示）。アラームは不正確でDozeにより遅れる場合があり、予測の更新はアプリが状態を読み込んだときだけです。強制停止すると次にアプリを起動するまでアラームと受信箱の確認は止まります。`dx serve` のAPKにはreceiverとジョブが入らないため、通知には `build-android` のAPKを使います。
 
@@ -191,13 +191,13 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | `dashboard-ui/src/app/swipe.rs` | タブの横スワイプの判定（距離・速度・縦横比・画面端の除外としきい値）と移動先のタブ。web版とアプリで共通、テストあり |
 | `dashboard-ui/src/pages/swipe_tabs.rs` | タブのパネルを包む `SwipeableTabs`（`use_horizontal_swipe_tabs`）：左スワイプで次・右スワイプで前のタブ、端ではバウンス、切り替えアニメーション。web版のタッチ収集（web-sys） |
 | `dashboard-ui/src/platform.rs` | web版とAndroidアプリの切り替え（`APP`）、両方で動くタイマーと時刻、web版を既定のブラウザで開く処理 |
-| `dashboard-ui/src/mobile/` | Androidアプリ専用：サーバーへの直接接続とセッションCookieの読み込み・保存（`http.rs`・`session.rs`。暗号化はKotlinの `AhdSessionStore`）、アプリ専用領域のファイル（`storage.rs`）、端末時刻（`time.rs`）、通知予測とJNIブリッジ（`reminders.rs`・`notify.rs`）、ウィジェットへ渡す内容とJNI（`widgets.rs`）、サーバーの受信箱への登録の判断（`inbox.rs`）、Forgejoリリースによる更新確認（`updates.rs`、インターフェースはファイル先頭のコメント）、APKのダウンロード・SHA-256とAPKの検証・PackageInstaller（`update_install.rs`）、logcatへの出力（`log.rs`）、戻るボタンと開いているダイアログのスタック（`back.rs`）、web版がweb-sysで行うDOM操作の `document::eval` 版（`dom.rs`）、タブの横スワイプのタッチ収集（`swipe.rs`） |
+| `dashboard-ui/src/mobile/` | Androidアプリ専用：サーバーへの直接接続とセッションCookieの読み込み・保存（`http.rs`・`session.rs`。暗号化はKotlinの `AhdSessionStore`）、アプリ専用領域のファイル（`storage.rs`）、端末時刻（`time.rs`）、通知予測とJNIブリッジ（`reminders.rs`・`notify.rs`）、ウィジェットへ渡す内容とJNI（`widgets.rs`）、サーバーの受信箱への登録の判断（`inbox.rs`）、UnifiedPushの状態の表示（`push.rs`）、Forgejoリリースによる更新確認（`updates.rs`、インターフェースはファイル先頭のコメント）、APKのダウンロード・SHA-256とAPKの検証・PackageInstaller（`update_install.rs`）、logcatへの出力（`log.rs`）、戻るボタンと開いているダイアログのスタック（`back.rs`）、web版がweb-sysで行うDOM操作の `document::eval` 版（`dom.rs`）、タブの横スワイプのタッチ収集（`swipe.rs`） |
 | `dashboard-ui/src/app/device_notifications.rs` | 端末通知の設定・予定の保存、状態変更時の再計算、サーバーの受信箱への端末登録と解除、表示中の確認、通知からの画面遷移 |
 | `dashboard-ui/src/app/updates.rs` | アプリ起動時の更新確認（`mobile::updates::check` をバックグラウンドで1回実行し、結果を `Signal<Option<UpdateCheck>>` のcontextで渡す。確認失敗はログのみ）、更新ダイアログの状態・スキップ・通知と「不明なアプリのインストール」の許可の確認（設定から戻ると続行）・ダウンロードとキャンセル・取り消されたインストールの検証済みAPKの保持 |
 | `dashboard-ui/src/pages/device_notifications.rs` | アプリの端末通知カード（全体のON/OFF・許可・登録状態・テスト） |
 | `dashboard-ui/android/res/` | ランチャーと通知のアイコン、アプリ名、DayNightテーマ、開発用サーバー（localhost）へのHTTPを許可するnetwork security config、セッションCookieをバックアップから除外する規則（`xml/ahd_backup_rules.xml`・`xml/ahd_data_extraction_rules.xml`）（`build-android` が生成プロジェクトへ上書き） |
-| `dashboard-ui/android/kotlin/` | `MainActivity.kt` の隣へ `build-android` がコピーするKotlin：ホーム画面ウィジェット用のバー型・丸型インジケーター（`AhdIndicators.kt`、規則は `AhdIndicatorModel.kt`）と、デバッグビルドだけのサンプル画面（`AhdIndicatorSamples.kt`）。使い方は `dashboard-ui/android/README.md`、JVMの検査は `android/tests/` と `test-android-kotlin` |
-| `dashboard-ui/android/MainActivity.kt` | AndroidのActivity（`Dioxus.toml` の `android_main_activity`）：ルートでの戻るをバックグラウンド化、設定変更時の文字サイズ反映、破棄時のプロセス終了、通知の権限要求・アラーム・receiver、セッションCookieをKeystoreで暗号化して保存する `AhdSessionStore`（形式と判断は `AhdSessionFormat`）、サーバーの受信箱を読む `AhdInbox` とそのジョブ（receiverとジョブの設定は `android/AndroidManifest.application.xml` を生成manifestへ挿入） |
+| `dashboard-ui/android/kotlin/` | `MainActivity.kt` の隣へ `build-android` がコピーするKotlin：ホーム画面ウィジェット用のバー型・丸型インジケーター（`AhdIndicators.kt`、規則は `AhdIndicatorModel.kt`）と、デバッグビルドだけのサンプル画面（`AhdIndicatorSamples.kt`）、UnifiedPushの接続（`AhdPush.kt`：配信アプリへの登録・receiver・前面化用service）と受信側のWeb Push復号（`AhdPushCrypto.kt`、RFC 8291。JVMテストは `android/test/`）。使い方は `dashboard-ui/android/README.md`、JVMの検査は `android/tests/` と `test-android-kotlin` |
+| `dashboard-ui/android/MainActivity.kt` | AndroidのActivity（`Dioxus.toml` の `android_main_activity`）：ルートでの戻るをバックグラウンド化、設定変更時の文字サイズ反映、破棄時のプロセス終了、通知の権限要求・アラーム・receiver、セッションCookieをKeystoreで暗号化して保存する `AhdSessionStore`（形式と判断は `AhdSessionFormat`）、サーバーの受信箱を読む `AhdInbox` とそのジョブ（receiverとジョブの設定は `android/AndroidManifest.application.xml`、UnifiedPushの配信アプリを見つけるための `<queries>` は `android/AndroidManifest.queries.xml` を生成manifestへ挿入） |
 | `dashboard-ui/src/pages/challenges.rs` | ダッシュボードの「高難度コンテンツ」欄：モードごとの到達状況とリセットまでの残り時間（共通の `Clock` で毎秒更新）、未挑戦・未開放・取得失敗の表示 |
 | `src/dashboard/games/summary.rs` | 上流ゲーム状態から画面用の要約への写像 |
 
@@ -212,7 +212,7 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | `src/dashboard/db/` | `entities/` に保存モデル、`migrations/` にスキーマ変更 |
 | `src/dashboard/hoyolab/` | Cookieの解析・暗号化保存・削除・鍵の再暗号化（`rekey`）、連携の検証・同期、ユーザー単位の操作ロック、管理者向けの連携の健全性と「要対応」の判定（`health.rs`、保存済みの行だけを読む） |
 | `src/dashboard/games/` | ゲームUID一覧・表示設定・状態キャッシュ（`service.rs`）、高難度コンテンツの要約とそのキャッシュ（`challenges.rs`、上流JSONからの防御的な読み取りは `challenge_summary.rs`） |
-| `src/dashboard/notifications/` | ユーザー・管理者のWebhookの設定、条件評価（上限・派遣完了・デイリー・週間など）、送信、重複排除、Androidアプリの端末登録と受信箱（`app.rs`） |
+| `src/dashboard/notifications/` | ユーザー・管理者のWebhookの設定、条件評価（上限・派遣完了・デイリー・週間など）、送信、重複排除、Androidアプリの端末登録と受信箱（`app.rs`）、UnifiedPushの購読の保存と起床用プッシュの送信（`push.rs`、RFC 8291/8292） |
 | `src/dashboard/rewards/` | 報酬設定・スケジュール・実行（定時と遅延実行の区別）、送信不確定時のガード、今月の報酬一覧のキャッシュ、ユーザー削除前の報酬確認 |
 | `src/dashboard/settings_transfer/` | 本人の設定の書き出しと読み込み：`ahd-settings` 形式（版1）と項目ごとの検証（`document.rs`）、現在の設定との比較・プレビュー・1トランザクションでの反映（`service.rs`）。報酬の時刻変更は `rewards::service::reschedule_in`、通知の保存は `notifications::channel::PersonalPreferences` を共用 |
 | `src/hoyolab/` | HoYoLAB上流APIの型付きクライアント（ダッシュボードの方針は含めない）。高難度コンテンツのGET（`challenge.rs`：モード・パス・クエリ）は未検証の形式のためJSONのまま返す |
@@ -273,7 +273,7 @@ webのタグ `web-vX.Y.Z`（ルート `Cargo.toml` の版）のpushで `.forgejo
 | ゲーム | `GET /game-accounts`、`PATCH /game-accounts/{id}`、`GET /game-accounts/{id}/status`、`GET /game-accounts/{id}/challenges` |
 | 報酬 | `GET /reward-settings`、`PATCH /reward-settings/{id}`、`POST /reward-settings/{id}/run`、`GET /reward-runs` |
 | 設定の移行 | `GET /me/settings/export`、`POST /me/settings/import/preview`・`/me/settings/import`（セッション専用） |
-| 通知 | `GET/PUT /me/notifications`、`POST /me/notifications/test`、`POST /me/notifications/app-devices`、`DELETE /me/notifications/app-devices/{id}`、`GET /me/notifications/app-devices/{id}/inbox`、`GET/PUT /admin/notifications`、`POST /admin/notifications/test` |
+| 通知 | `GET/PUT /me/notifications`、`POST /me/notifications/test`、`POST /me/notifications/app-devices`、`DELETE /me/notifications/app-devices/{id}`、`GET /me/notifications/app-devices/{id}/inbox`、`GET/PUT/DELETE /me/notifications/app-devices/{id}/push`、`GET/PUT /admin/notifications`、`POST /admin/notifications/test` |
 | ユーザー管理 | `GET /admin/users`（連携状態・自動受け取り数・最終ログイン、`needs_attention` と `hoyolab`（本人確認日時・ゲーム状態の最終取得成功日時・ゲームごとの自動受け取りと直近に終わった実行の状態・日時・sanitized error code）を含む。HoYoLABは呼ばず、Cookie・UID・上流raw errorは含まない。セッション専用）、`POST /admin/users`、`PATCH /admin/users/{id}`（`active` または `is_admin`）、`PUT /admin/users/{id}/temporary-password`、`GET /admin/audit` |
 | ユーザー削除 | `DELETE /me`、`DELETE /admin/users/{id}` |
 | サーバー設定 | `GET /server-settings` |

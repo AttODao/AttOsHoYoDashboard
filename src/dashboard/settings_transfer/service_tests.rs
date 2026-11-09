@@ -175,7 +175,7 @@ async fn export_round_trips_and_import_previews_then_applies_in_one_transaction(
     reward(db, link, "starrail", false, "07:00", "action_required").await;
     game(db, link, "genshin", "800000001", true).await;
     game(db, link, "starrail", "900000001", false).await;
-    let notifications = Notifications::new(db.clone(), Some(key()));
+    let notifications = Notifications::new(db.clone(), Some(key()), "https://ahd.example.test");
     let input: PersonalInput = serde_json::from_value(json!({
         "webhook_url": WEBHOOK,
         "webhook_format": "discord",

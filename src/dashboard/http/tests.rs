@@ -71,6 +71,7 @@ fn app(accounts: Accounts) -> App {
             crate::dashboard::notifications::channel::Notifications::new(
                 accounts.db.clone(),
                 config.cookie_key.clone(),
+                &config.origin,
             ),
         ),
         notifier_rewards_games: None,

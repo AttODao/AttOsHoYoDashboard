@@ -1,5 +1,6 @@
-//! This device's notification switch, permission and server registration. Which notices it
-//! shows is chosen per notice next to the Webhook (`notifications::EventMatrix`).
+//! This device's notification switch, permission, server registration and UnifiedPush
+//! ("receive instantly") switch. Which notices it shows is chosen per notice next to the
+//! Webhook (`notifications::EventMatrix`).
 use crate::app::{
     actions::{handle_api_error_for, spawn_action},
     device_notifications::{Server, use_device_context},
@@ -21,6 +22,8 @@ pub(super) fn DeviceNotificationsCard(state: Signal<AppState>) -> Element {
     let mut device = use_device_context();
     let enabled = device.settings.read().enabled;
     let server = (device.server)();
+    let push = (device.push)();
+    let push_line = push.line();
     rsx! {
         section { class: "panel page-stack",
             h3 { {ui.text("notifications.device_title")} }
@@ -46,6 +49,18 @@ pub(super) fn DeviceNotificationsCard(state: Signal<AppState>) -> Element {
                     Server::Registering => rsx! { p { role: "status", {ui.text("notifications.device_server_pending")} } },
                     Server::Failed => rsx! { p { class: "warning", role: "status", {ui.text("notifications.device_server_failed")} } },
                     Server::Off => rsx! {},
+                }
+            }
+            // Instant delivery needs the server registration; the inbox poll stays the fallback.
+            if enabled && server == Server::Active {
+                label { class: "check",
+                    input { id: "device-push-enabled", r#type: "checkbox", checked: push.wanted,
+                        "aria-describedby": push_line.as_ref().map(|_| "device-push-status"),
+                        onchange: move |event| device.set_push(event.checked()) }
+                    span { {ui.text("notifications.device_push_enabled")} }
+                }
+                if let Some((key, app, class)) = push_line.clone() {
+                    p { id: "device-push-status", class: class, role: "status", {ui.format(key, &[("app", &app)])} }
                 }
             }
             if enabled { p { class: "field-hint", {ui.format("notifications.device_scheduled", &[("count", &(device.upcoming)().to_string())])} } }

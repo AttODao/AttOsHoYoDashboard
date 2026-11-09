@@ -3761,6 +3761,240 @@
         ]
       }
     },
+    "/api/v1/me/notifications/app-devices/{id}/push": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "readAppPush",
+        "summary": "UnifiedPush setup for one of the current user's app installations: the server's VAPID public key to register with the distributor, and whether a push subscription is stored. 503 when the server has no HOYOLAB_COOKIE_KEY (push needs it for VAPID and sealing).",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppPushView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The app device id returned at registration."
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "setAppPush",
+        "summary": "Store (replace) the installation's UnifiedPush subscription. The endpoint follows the Webhook URL rules (HTTPS on a public host name, at most 1000 bytes) and is sealed at rest with the keys. When a notice reaches this installation's inbox, the server sends an encrypted wake-up (RFC 8291 aes128gcm, RFC 8292 VAPID) that names no notice; the app then reads its inbox. A 404 or 410 from the push server removes the subscription; account disable and deletion remove every subscription of the user.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The app device id returned at registration."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppPushInput"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "removeAppPush",
+        "summary": "Remove the installation's UnifiedPush subscription; the app keeps polling its inbox.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The app device id returned at registration."
+          }
+        ]
+      }
+    },
     "/api/v1/admin/notifications": {
       "get": {
         "tags": [
@@ -6194,6 +6428,50 @@
           "more": {
             "type": "boolean",
             "description": "More entries follow after cursor."
+          }
+        }
+      },
+      "AppPushView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "vapid_public_key",
+          "registered"
+        ],
+        "properties": {
+          "vapid_public_key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{87}$",
+            "description": "Uncompressed P-256 public key, base64url without padding (the UnifiedPush `vapid` extra). Derived from HOYOLAB_COOKIE_KEY, so it changes with `rekey`."
+          },
+          "registered": {
+            "type": "boolean",
+            "description": "Whether the server holds a push subscription for this installation."
+          }
+        }
+      },
+      "AppPushInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "p256dh",
+          "auth"
+        ],
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 1000,
+            "description": "The push resource URL the distributor gave the app (HTTPS on a public host name)."
+          },
+          "p256dh": {
+            "type": "string",
+            "description": "The app's Web Push public key: uncompressed P-256 point, base64url."
+          },
+          "auth": {
+            "type": "string",
+            "description": "The app's 16-byte Web Push authentication secret, base64url."
           }
         }
       },
