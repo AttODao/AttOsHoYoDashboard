@@ -3,9 +3,9 @@
 # dx generates and assembles the Gradle project; then the AHD launcher/notification resources,
 # label, theme and network security config (dashboard-ui/android/res) replace Dioxus' defaults, the
 # extra Kotlin sources (dashboard-ui/android/kotlin) join MainActivity.kt,
-# the activity keeps itself across configuration changes, the manifest receivers, the inbox
-# job service, UnifiedPush receiver/service and distributor queries, update receiver and
-# browser sign-in callbacks are inserted. Home-screen widget Kotlin
+# the activity keeps itself across configuration changes, the per-app language list, the manifest
+# receivers, the inbox job service, UnifiedPush receiver/service and distributor queries, update
+# receiver and browser sign-in callbacks are inserted. Home-screen widget Kotlin
 # sources, resources and JVM tests are copied before Gradle assembles again.
 set -euo pipefail
 cd "${DEVENV_ROOT:?run inside the devenv android profile}"
@@ -97,6 +97,11 @@ grep -q GenshinWidget "$manifest"
 grep -q StarRailWidget "$manifest"
 grep -q AhdWidgetJob "$manifest"
 grep -q AhdUpdateReceiver "$manifest"
+# Android 13+ lists the app under Settings > App languages (res/xml/ahd_locales.xml, AhdLocale).
+# Appended after android:hasCode so edits that match "<application android:hasCode=" still apply.
+grep -qF 'android:localeConfig=' "$manifest" \
+  || sed -i '0,/\(<application[^>]*android:hasCode="[^"]*"\)/s//\1 android:localeConfig="@xml\/ahd_locales"/' "$manifest"
+grep -qF 'android:localeConfig="@xml/ahd_locales"' "$manifest"
 if ! grep -qF 'android:scheme="cc.attodao.ahd"' "$manifest"; then
   awk '
     /<\/activity>/ && !inserted {

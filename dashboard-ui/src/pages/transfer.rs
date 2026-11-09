@@ -337,6 +337,7 @@ mod tests {
         Preferences {
             language: Language::English,
             theme: Theme::System,
+            ..Preferences::default()
         }
     }
 

@@ -276,7 +276,7 @@ Android Credential Manager（`androidx.credentials`）でアプリ内からパ�
 - バー型：ラベルと数値（`120/200`）を1行に、その下にバー、任意で残り時間などの補足。丸型：中央に数値またはアイコン、円弧の開いた下部に残り時間（`3時間12分`）。丸型は88dpと56dpの2サイズ（API 31未満のRemoteViewsはビューの大きさを変えられないため）。
 - 値なし（`null`）は空のトラックと「—」、上限の90%以上は「まもなく上限」の色、上限は上限の色で、数値も上限の色にします（ダッシュボードの `fill_level` と同じ規則）。色は原神がミント、スターレイルがラベンダー、まもなく上限・上限はダッシュボードのwarning色です（`res/values(-night)/ahd_indicator_colors.xml`）。
 - 描画：RemoteViewsは独自のViewを描けず、ProgressBarの色をコードから変えられるのはAPI 31からです（アプリはAPI 24以上）。そのため、バーは `<clip>`、円弧は回転したring `<shape android:useLevel="true">` のdrawableを `ImageView.setImageLevel` で伸ばします。色はレイアウトの `android:tint` で `values`／`values-night` から取るので、ランチャーが再inflateすればダークモードの切り替えにも追従します。Canvasで描いたBitmapは、描いた時点の色と密度に固定され、更新のたびにランチャーへ画像を送るため使っていません。
-- 文言は `values/ahd_indicator_strings.xml`（日本語、アプリと同じく既定）と `values-en`。端末のロケールで選ばれます。ウィジェットの文言（`ahd_widget_*`）も同じく `values` が日本語、`values-en` が英語です。
+- 文言は `values/ahd_indicator_strings.xml`（日本語、アプリと同じく既定）と `values-en`。ウィジェットは、アプリの言語（5.10節）の `createConfigurationContext` で選びます。ウィジェットの文言（`ahd_widget_*`）も同じく `values` が日本語、`values-en` が英語です。
 - 確認：デバッグビルドには、全状態（値なし・0%・50%・90%・100%）を両ゲーム・ライト／ダークで並べるサンプル画面 `AhdIndicatorSamplesActivity` が入ります（`adb shell am start -n cc.attodao.ahd/dev.dioxus.main.AhdIndicatorSamplesActivity`、release用のmanifestには入れません）。規則（状態の判定、drawableのlevel、数値と残り時間の表記）と、レイアウトのidや色の定義は `devenv --profile android shell -- test-android-kotlin` がJVMで検査します（`dashboard-ui/android/tests/AhdIndicatorModelTest.kt`）。
 - 確認した表示：エミュレータ（API 34、1080×2400）のサンプル画面で、密度420（日本語・英語）と密度160・文字200%、それぞれライト／ダーク。文字の欠けや円弧のつぶれはない。tintの既定モード（src_atop）では半透明のトラック色が白い図形の上で白く残るため、tintした全ビューを `tintMode="src_in"` にしている（JVM検査でも確認）。
 
@@ -383,6 +383,16 @@ attodeskのエミュレータ（AVD `ahd`、Android 14、x86_64）で、合成�
 
 ntfyはバッテリーの最適化から除外していないと、数時間後にサーバーとの接続が止まり、プッシュが届かなくなることがありました（ntfyを開くと再接続し、届くようになりました）。これは配信アプリ側の設定で、届かない間も15分ごとの確認で受け取ります。
 
+### 5.10 言語の初期値（端末のロケール）
+
+- 言語は、メニューで選んで保存したものが常に優先します。保存がない場合だけ、ロケールの一覧（優先順）から決めます。一覧を先頭から見て、最初に日本語（`ja`、`ja-JP` など）か英語（`en-*`）があればその言語、どちらもなければ英語です。一覧を読めなかったとき（空）は、従来どおり日本語です。規則は `i18n.rs` の `Language::for_locales`（純粋関数、テストあり）です。
+- アプリの一覧は、Android 13以降でアプリ別言語（設定の「アプリの言語」、または `cmd locale set-app-locales`）があればそれ、なければシステムの言語です（Kotlin `AhdLocale.deviceLocales` を `mobile/locale.rs` のJNIで呼ぶ）。設定の「アプリの言語」に出るよう、`build-android` がmanifestに `android:localeConfig="@xml/ahd_locales"`（日本語・英語）を入れます。
+- web版も同じ規則で、`navigator.languages`（なければ `navigator.language`）を使います。以前のweb版は `navigator.language` だけを見て、日本語以外はすべて英語でした（一覧の2番目以降の日本語は見ていなかった）。
+- 保存は、メニューで言語を選んだときだけ行います（`Preferences::choose_language`）。以前は初回起動（初回訪問）で決めた言語もそのまま保存していたため、すでに保存がある利用者（従来のアプリとweb版の利用者のほぼ全員）の言語は変わりません。保存がない間は、端末の言語を変えるとそれに従います。アプリはActivityを作り直さないため、ページが再び表示されたとき（`visibilitychange`、`preferences::use_device_language`）にロケールを読み直します。web版は次の読み込みからです。
+- 端末通知（5.2節）は、これまでどおりアプリの表示言語で作ります。ホーム画面ウィジェットのコードで入れる文言も、同じ言語（保存した言語、なければ同じ規則で決めた端末の言語）にそろえます。Kotlinの `AhdLocale` が `files/preferences.json` と端末のロケールから言語を決め（`languageFor` はRustと同じ規則で、`test/AhdLocaleTest.kt` が同じ例を検査）、その言語の `createConfigurationContext` で描きます。原神ウィジェットも、レイアウトの文字列（ゲーム名、樹脂、「全回復まで」、タップの案内）をコードから入れるようにしました。アプリは設定が変わるたびに `AhdLocale.languageChanged` を呼んでウィジェットを描き直します。アプリを開かずにアプリ別言語を変えた場合は、次の描画（30分ごとの更新など）から新しい言語になります（アプリ別言語の変更はアプリ自身にbroadcastされません）。
+- サーバーからの通知（5.3節）の文面は、サーバーが通知設定の言語（Webhookと共通）で作るため、この規則の対象外です。
+- 確認（エミュレータ API 34、新規インストール）：システムの言語を英語・日本語にして、それぞれログイン画面と、ウィジェットの未ログイン表示の言語を確かめました。詳細はPRの説明にあります。
+
 ## 6. web版との共通化と分岐
 
 ### 共通のまま使うもの
@@ -390,7 +400,7 @@ ntfyはバッテリーの最適化から除外していないと、数時間後�
 - 画面のコンポーネント（`pages/`）、状態管理（`app/state.rs`、`app/session.rs`、`app/actions.rs`、`app/data.rs`）、文言カタログ（`locales/*.json`）、`dashboard.css`、同梱フォント。
 - `api.rs` のパス検査、応答サイズの上限、エラー処理（送信部分の `fetch` だけを分岐）。
 - 画面とURLの対応（`navigation::page_path`／`page_from_path`）。アプリもWebView内のHistory APIを使うので、Androidの戻るボタンで前の画面へ戻れる。
-- 言語とテーマの判定（`Preferences::from_saved`）。保存先だけが違い、web版は `localStorage`、アプリは `files/preferences.json` に保存する。保存がない場合、アプリは日本語・端末のテーマで始まる。
+- 言語とテーマの判定（`Preferences::from_saved`、言語の規則は `Language::for_locales`）。保存先と保存がない場合の言語の取得元だけが違い、web版は `localStorage` と `navigator.languages`、アプリは `files/preferences.json` と端末のロケール（5.10節）。テーマは保存がなければ端末（ブラウザ）のダークモードに従う。
 
 ### 分岐のしかた
 
@@ -415,6 +425,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | DOM（フォーカス、checked、`<dialog>`、`matchMedia`、History、`hidden`） | web-sys | `document::eval`（`mobile/dom.rs`） | `pages/common.rs`、`app/navigation.rs`、`pages/dashboard.rs`、`app.rs` |
 | タブの横スワイプのタッチ収集 | web-sys（`pages/swipe_tabs.rs`） | `document::eval`（`mobile/swipe.rs`） | `pages/swipe_tabs.rs` の `SwipeableTabs`、判定は `app/swipe.rs` |
 | 言語とテーマの保存 | `localStorage` | `files/preferences.json` | `app/preferences.rs` |
+| 保存がない場合の言語の取得元 | `navigator.languages` | アプリ別言語→システムのロケール（`mobile/locale.rs`、Kotlin `AhdLocale.deviceLocales`） | `Preferences::load`、`Language::for_locales` |
 | 外部URL | （なし） | `webbrowser` | `platform::open_external` |
 
 `mobile/browser_login.rs`・`mobile/session.rs`・`mobile/time.rs`・`mobile/reminders.rs`・`mobile/updates.rs`（通信部分を除く）、`mobile/update_install.rs`（ハッシュ・APK情報・スキップ・進捗の純粋な検証と、一時ファイルのSink）は通常のテスト環境で動くため、通常の `cargo test` でもコンパイルしてテストします（`main.rs` の `cfg(any(feature = "mobile", test))`）。
@@ -431,6 +442,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/mobile/session.rs` | Cookie jarとサーバーURLの規則、保存先の一時的な失敗をログアウトと区別する規則（I/Oなし、テストあり） |
 | `dashboard-ui/src/mobile/storage.rs` | アプリ専用領域のファイル（JNIで `getFilesDir()`・`getCacheDir()` を取得） |
 | `dashboard-ui/src/mobile/time.rs` | 端末時刻での表示 |
+| `dashboard-ui/src/mobile/locale.rs` | 端末のロケール一覧の取得とウィジェットへの言語変更の通知（JNI、5.10節） |
 | `dashboard-ui/src/mobile/dom.rs` | `document::eval` によるDOM操作（pull-to-refreshのタッチ処理を含む） |
 | `dashboard-ui/src/mobile/swipe.rs` | タブの横スワイプのタッチ収集（`document::eval`）。判定は共通の `app/swipe.rs` |
 | `dashboard-ui/src/mobile/reminders.rs` | 通知時刻の予測、設定と予定の保存形式、通知文（テストあり） |
@@ -455,11 +467,12 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/android/res/**` | ランチャーアイコン、通知アイコン、アプリ名、色、DayNightテーマ（`values/styles.xml`） |
 | `dashboard-ui/android/README.md` | リソースの作り方 |
 | `dashboard-ui/android/kotlin/*.kt` | ウィジェット用インジケーター（`AhdIndicators.kt`、`AhdIndicatorModel.kt`）、デバッグ用サンプル画面（`AhdIndicatorSamples.kt`）、UnifiedPush（`AhdPush.kt`、`AhdPushCrypto.kt`。5.9節）。`build-android` が生成プロジェクトへコピーする |
+| `dashboard-ui/android/kotlin/AhdLocale.kt`, `android/test/AhdLocaleTest.kt`, `android/res/xml/ahd_locales.xml` | アプリ別言語・システムの言語の取得、ウィジェットの言語、設定の「アプリの言語」の一覧（5.10節） |
 | `dashboard-ui/android/test/AhdPushCryptoTest.kt` | Web Pushの復号をRFC 8291 付録Aで確認するJUnit（`test-android`） |
 | `dashboard-ui/android/AndroidManifest.queries.xml` | UnifiedPushの配信アプリを見つけるための `<queries>`（生成manifestの `<application>` の前に挿入） |
 | `dashboard-ui/android/tests/AhdIndicatorModelTest.kt` | インジケーターの規則とレイアウトのJVM検査（`test-android-kotlin`） |
 | `dashboard-ui/android/AndroidManifest.samples.xml` | デバッグビルドだけ生成manifestに挿入するサンプル画面のactivity |
-| `scripts/build-android.sh` | APKのビルド（2節）。生成manifestへの `launchMode="singleTask"`・`configChanges` の書き換えとreceiverの挿入も行う |
+| `scripts/build-android.sh` | APKのビルド（2節）。生成manifestへの `launchMode="singleTask"`・`configChanges`・`localeConfig` の書き換えとreceiverの挿入も行う |
 | `docs/android-changes.md` | 本書 |
 
 変更（web版と共有）：
@@ -473,7 +486,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/app/navigation.rs` | アプリ内History、`open_web_version`、`web_page_url` |
 | `dashboard-ui/src/app/data.rs` | APIトークン・管理者データを読み込まない分岐、`platform::sleep_ms` |
 | `dashboard-ui/src/app/display.rs` | 時刻表示のアプリ分岐 |
-| `dashboard-ui/src/app/preferences.rs` | 言語とテーマの保存のアプリ分岐 |
+| `dashboard-ui/src/app/preferences.rs` | 言語とテーマの保存のアプリ分岐、保存がない場合の端末のロケール、復帰時の読み直し（5.10節） |
 | `dashboard-ui/src/pages/shell.rs` | `settings_tabs`、メニュー項目の分岐、ヘッダーの設定ボタン、`AppNav` |
 | `dashboard-ui/src/pages/auth.rs` | パスワードフォーム、「パスキーでログイン」「ブラウザでログイン」、パスワード変更とweb版の許可画面への案内文 |
 | `dashboard-ui/src/pages/app_login.rs` | web版の `/app-login` 許可画面（アプリのログイン要求を承認してコードを発行する） |
@@ -517,7 +530,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 - **サーバーはビルド時に固定**：接続先は `AHD_SERVER_URL` の1つだけです。変えるにはビルドし直します。
 - **セッションCookieの保存**：Android Keystoreの鍵で暗号化して保存します（5.7節）。鍵はユーザー認証を要求しないため、端末のロック中でも受信箱とウィジェットのジョブが読めます。そのため、アプリとして動くコード（root化した端末で同じUIDとして動くものを含む）からは復号できます。暗号化が防ぐのは、ファイルだけを取り出した場合（バックアップ、ファイルのコピー）です。1.9.0以前のバージョンで作られたバックアップには平文のファイルが含まれている可能性があります。
 - **パスワード表示の自動マスク**：web版は、表示中のパスワードを、ウィンドウや入力欄からフォーカスが外れたときとページが非表示になったときに伏せます。アプリではこの処理を実装していません（表示ボタンでの切り替えはできます）。
-- **言語の初期値**：保存がない場合は日本語で始まり、端末のロケールは見ません。
+- **言語**：保存がない場合の言語は端末のロケールで決まります（5.10節）。サーバーからの通知（5.3節）の文面は、端末ではなく通知設定の言語に従います。ウィジェットピッカーに出る説明文は、ランチャーがシステム言語で解決します。
 - **通知**
   - アラームは不正確で、Dozeなどにより数分遅れることがあります。
   - 予測はアプリが状態を読み込んだ時点の値に基づきます。ゲーム内で樹脂を使った場合などは、次にアプリを開くまで早すぎる通知が出ることがあります。バックグラウンドでの再取得は行いません。
@@ -544,7 +557,6 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 
 - release署名と配布方法（ストア、または直接配布）を決める。
 - 接続先のサーバーをアプリ内で設定できるようにするかを検討する。
-- 端末のロケールから言語の初期値を決める。
 - 実機で確認する。
 
 ## ホーム画面ウィジェット（基盤）
@@ -557,7 +569,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 
 原神ウィジェット（`GenshinWidget.kt`）は、上段に天然樹脂の丸型、下段に洞天宝銭・探索派遣・デイリー任務の小さな丸型を3列に並べ、残り時間（全回復・満タン・派遣の最短／最長）と追加報酬の受取状況、取得時刻を表示します。幅210dp・高さ250dp未満（文字サイズが1より大きいときはその倍率をかけた大きさ未満）では4本のバーに切り替えます。文字サイズの変更は通知されないため、切り替わるのは次の描画（アプリを開く、30分ごとの更新）からで、それまでの間は文字200%だと樹脂の残り時間が下で切れたままです。面の色はダッシュボードの原神カード、樹脂・宝銭の90%以上と上限、全員帰還した派遣、追加報酬が未受取の4/4のデイリーはwarning色です。未ログイン・アカウントなし・未取得では案内とタップの案内を、更新に失敗したときは見出しの時刻を「更新失敗」で表示します。詳細は `dashboard-ui/android/README.md` の「Genshin widget」です。
 
-JobSchedulerはネットワーク接続時に30分周期でGETし、providerの `updatePeriodMillis` も30分です。ウィジェット全体のタップでアプリの `/dashboard?game=<genshin|starrail>` を開き、ダッシュボードはそのゲームのタブを選びます（`app/navigation.rs` の `target_game`。タブの選択は `AppState.dashboard_game` に置き、設定画面から戻っても保持します）。ログイン前に開いた場合もタブだけは先に選び、`/me` 後の状態の作り直しでも引き継ぎます。ジョブの時刻は不正確でDozeにより遅れ、取得間の樹脂・開拓力・宝銭は推定値です。選択はダッシュボードに追従し、サーバーの状態キャッシュTTLも適用されるため、常に最新の実値を保証しません。端末の言語を変えたときは、ランチャーがレイアウトの文言を読み直し、コードで入れる値や時刻はreceiverの `LOCALE_CHANGED` で描き直します。タッチではタップしたタブに `:hover` が残り、共通のボタンのhover枠が選択されていないタブの下線に見えるため、`mobile.css` で選択中でないタブのhover表示を消しています（ウィジェットから別のゲームのタブを開いたときに目立つ）。
+JobSchedulerはネットワーク接続時に30分周期でGETし、providerの `updatePeriodMillis` も30分です。ウィジェット全体のタップでアプリの `/dashboard?game=<genshin|starrail>` を開き、ダッシュボードはそのゲームのタブを選びます（`app/navigation.rs` の `target_game`。タブの選択は `AppState.dashboard_game` に置き、設定画面から戻っても保持します）。ログイン前に開いた場合もタブだけは先に選び、`/me` 後の状態の作り直しでも引き継ぎます。ジョブの時刻は不正確でDozeにより遅れ、取得間の樹脂・開拓力・宝銭は推定値です。選択はダッシュボードに追従し、サーバーの状態キャッシュTTLも適用されるため、常に最新の実値を保証しません。端末の言語を変えたときは、receiverの `LOCALE_CHANGED` で描き直します（文言はアプリの言語、5.10節）。タッチではタップしたタブに `:hover` が残り、共通のボタンのhover枠が選択されていないタブの下線に見えるため、`mobile.css` で選択中でないタブのhover表示を消しています（ウィジェットから別のゲームのタブを開いたときに目立つ）。
 
 ### スターレイルのウィジェット
 
@@ -572,6 +584,6 @@ JobSchedulerはネットワーク接続時に30分周期でGETし、providerの 
 - 未ログイン・アカウントなし・状態なし（取得失敗）では、原神と同じくアイコン・案内文・「タップしてAHDを開く」を表示します（ピッカーのプレビューは説明文）。描画で例外が起きた場合は、共通の案内表示に戻します。
 - 宝銭の枠：スターレイルには洞天宝銭がありません。HoYoLABのリアルタイムノートで取得でき、上限まで蓄積して週ごとにリセットされる「模擬宇宙の週間ポイント」（`current_rogue_score`/`max_rogue_score`）をこの枠に採用しました。予備開拓力は開拓力と同じ資源なので開拓力の欄に併記し、「歴戦余韻」は残り回数で蓄積ではないため採用していません。
 - 確認した表示（エミュレータ API 34、Pixel Launcher、1080×2400、日本語）：密度420の文字100%・200%、密度560の文字100%・130%で、両ウィジェットとも樹脂／開拓力の値と残り時間が欠けずに出ます。密度560と文字200%の組み合わせ（最大の表示サイズと最大の文字）は、どちらも下のバーが切れ、残り時間も省略されます（対象外）。文字が大きいとき、バーの名前（「デイリー…」「模擬…」）は値を優先して省略されます。
-- ゲーム名と各ラベルはコードから設定します。レイアウトの文字列はランチャー側のシステム言語で解決されるため、アプリ別言語（API 33以降）でも表示をそろえるためです。
+- ゲーム名と各ラベルはコードから設定します。レイアウトの文字列はランチャー側のシステム言語で解決されるため、アプリの言語（5.10節）で表示をそろえるためです。
 - 依頼の上限はスターレイルの `total_expedition_num` です。アプリから渡す状態にも含めるため、`models.rs` の `DailySummary` に `total_expedition_num` / `accepted_expedition_num` を追加しました。
 
