@@ -7,6 +7,7 @@ pub(super) mod app_nav;
 pub(super) mod app_update;
 pub(super) mod auth;
 mod calendar;
+mod cap_history;
 mod challenges;
 mod common;
 mod dashboard;

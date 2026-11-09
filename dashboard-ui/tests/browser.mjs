@@ -26,7 +26,7 @@ const appLoginChallenge='E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
 const user={id:uid(1),username:'synthetic-admin',is_admin:true,active:true,must_change_password:true};
 const other={...user,id:uid(9),username:'synthetic-other',is_admin:false,active:false,must_change_password:false};
 let runPlan=['queued','running','success'];
-let verified=false,cookieSaved=false,notificationSaves=[],statusMode=null,challengeMode=null,calendarMode=null,runProgress=[],passkeyDeletes=0,passkeys=[],credentialId,failLogout=false,allowLogin,allowSettings,expirePasswordSession=false,sessionExpired=false;
+let verified=false,cookieSaved=false,notificationSaves=[],statusMode=null,challengeMode=null,calendarMode=null,historyMode=null,runProgress=[],passkeyDeletes=0,passkeys=[],credentialId,failLogout=false,allowLogin,allowSettings,expirePasswordSession=false,sessionExpired=false;
 const createdUsers=[];
 const secondAdmin={...user,id:uid(14),username:'synthetic-second-admin',must_change_password:false};
 let failCreate=false,adminDeletes=0,loginFailureStatus=0,failPatch=false,passkeyHold=null,releasePasskeys=()=>{},adminPatchHold=null,releaseAdminPatch=()=>{};
@@ -184,6 +184,19 @@ const server=http.createServer(async(req,res)=>{
      item({kind:'event',name:'Synthetic Ended',ends_at:at(-60),finished:true})
     ]:[];
     return json(res,{game_kind,game_uid,region,visible,detected,items,fetched_at:new Date(Date.now()-20*60e3).toISOString(),error_code:null,error_at:null,stale:false});
+   }
+   const historyAccount=accounts.find(a=>p===`/api/v1/game-accounts/${a.id}/resource-history`);
+   if(historyAccount){
+    assert.equal(req.method,'GET');assert.ok(historyAccount.visible&&historyAccount.detected);
+    const {game_kind,game_uid,region,visible,detected}=historyAccount;
+    if(historyMode==='missing'){res.writeHead(404);return res.end();}
+    if(historyMode==='failed')return json(res,{error:'unavailable'},503);
+    // Genshin: 2h unknown, then recovering, then 3h 12m at the cap; Star Rail: nothing recorded.
+    const end=Date.now(),week=7*86400,iso=seconds=>new Date(end-(week-seconds)*1000).toISOString();
+    const parts=game_kind==='genshin'?[['unknown',7200],['below_cap',week-7200-11520],['at_cap',11520]]:[['unknown',week]];
+    let offset=0;const segments=parts.map(([state,seconds])=>{const segment={state,start:iso(offset),end:iso(offset+seconds),seconds};offset+=seconds;return segment;});
+    const at_cap_seconds=game_kind==='genshin'?11520:0,unknown_seconds=game_kind==='genshin'?7200:week;
+    return json(res,{game_kind,game_uid,region,visible,detected,resource:game_kind==='genshin'?'resin':'trailblaze_power',unit_seconds:game_kind==='genshin'?480:360,max_gap_seconds:5400,window_start:iso(0),window_end:iso(week),sample_count:game_kind==='genshin'?400:0,at_cap_seconds,unknown_seconds,segments});
    }
    const account=accounts.find(a=>p===`/api/v1/game-accounts/${a.id}/status`);
    if(account&&statusMode==='failed')return json(res,{...account,data:null,fetched_at:null,error_code:'network',error_at:new Date().toISOString(),stale:true});
@@ -551,6 +564,21 @@ try{
  assert.equal(await genshinCalendar.locator('details.calendar-details').getAttribute('open'),null,'the summary closes the details again');
  await starrail.locator('section.calendar-section').getByText('Nothing is running or announced.',{exact:true}).waitFor();
  assert.equal(await starrail.locator('section.calendar-section details').count(),0,'an empty calendar has nothing to expand');
+ // Time at cap over 7 days: under the resin (or Trailblaze Power) block, stored data only.
+ for(const n of [3,4])assert.equal(counts.get('/api/v1/game-accounts/'+uid(n)+'/resource-history')||0,0,'hidden or undetected UIDs never load the history');
+ const genshinHistory=genshin.locator('.cap-history');
+ await genshinHistory.locator('.cap-history-value').waitFor();
+ assert.ok(await genshin.evaluate(panel=>{const h=panel.querySelector('.cap-history'),r=panel.querySelector('.resource-block'),s=panel.querySelector('.resource-block.secondary');return h.previousElementSibling===r&&h.nextElementSibling===s;}),'the history sits between the resin and the realm currency');
+ assert.equal(await genshinHistory.locator('.cap-history-title').innerText(),'Time at cap (last 7 days)');
+ assert.equal(await genshinHistory.locator('.cap-history-value').innerText(),'3h 12m');
+ assert.deepEqual(await genshinHistory.locator('.cap-axis span').allInnerTexts(),['7 d ago','Now']);
+ assert.deepEqual(await genshinHistory.locator('.cap-legend li').allInnerTexts(),['At cap','Recovering','Unknown 2h 00m']);
+ assert.deepEqual(await genshinHistory.locator('rect.cap-segment').evaluateAll(rects=>rects.map(rect=>[rect.dataset.state,Math.round(parseFloat(rect.getAttribute('width'))*10)/10])),[['unknown',1.2],['below_cap',96.9],['at_cap',1.9]]);
+ assert.equal(await genshinHistory.locator('svg.cap-timeline').getAttribute('aria-hidden'),'true','the timeline is decorative; the sentence carries it');
+ assert.equal(await genshinHistory.locator('p.visually-hidden').textContent(),'Resin was at its cap for 3h 12m in the last 7 days, recovering for 6d 18h, and unknown (no records) for 2h 00m.');
+ assert.ok(await genshinHistory.evaluate(node=>{const box=node.getBoundingClientRect(),bar=node.querySelector('svg').getBoundingClientRect();return bar.width>=box.width-1&&bar.height>=10;}),'the timeline spans the card');
+ await starrail.locator('.cap-history').getByText('No history recorded yet.',{exact:true}).waitFor();
+ assert.equal(await starrail.locator('.cap-history svg').count(),0,'nothing recorded draws no timeline');
  await page.locator('#selected-genshin').selectOption(uid(6));
  await genshin.locator('.resource strong').getByText('31',{exact:true}).waitFor();
  assert.equal(await genshin.locator('time.recovery-at').count(),0,'invalid estimate is not rendered as a date');
@@ -584,6 +612,14 @@ try{
  await starrail.locator('section.calendar-section').waitFor({state:'detached'});
  assert.equal(await starrail.getByText('Could not refresh the calendar',{exact:false}).count(),0,'a missing endpoint is not reported as a failure');
  calendarMode=null;
+ // A failed refresh keeps the shown history and says so; a missing endpoint hides it.
+ historyMode='failed';await genshin.getByRole('button',{name:'Refresh',exact:true}).click();
+ await genshin.locator('.cap-history').getByText('Could not refresh the cap history. The shown history may be out of date.',{exact:true}).waitFor();
+ assert.equal(await genshin.locator('.cap-history-value').innerText(),'3h 12m');
+ historyMode='missing';await genshin.getByRole('button',{name:'Refresh',exact:true}).click();
+ await genshin.locator('.cap-history').waitFor({state:'detached'});
+ historyMode=null;await genshin.getByRole('button',{name:'Refresh',exact:true}).click();
+ await genshin.locator('.cap-history-value').waitFor();
  statusMode='recovering';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
  await starrail.locator('.resource strong').getByText('150',{exact:true}).waitFor();
  // The estimate is 7h 12m 4s away, so the countdown turns from 13m to 12m by the clock, without a refetch.

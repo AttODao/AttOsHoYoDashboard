@@ -682,5 +682,14 @@
   "calendar.refresh_failed": "Could not refresh the calendar. What is shown may be out of date.",
   "calendar.not_fetched": "The calendar has not been fetched.",
   "calendar.empty": "Nothing is running or announced.",
-  "calendar.summary_next_end": "next ends in {duration}"
+  "calendar.summary_next_end": "next ends in {duration}",
+  "history.title": "Time at cap (last 7 days)",
+  "history.minutes": "{minutes}m",
+  "history.unknown": "Unknown {duration}",
+  "history.no_data": "No history recorded yet.",
+  "history.legend_below": "Recovering",
+  "history.legend_unknown": "Unknown",
+  "history.axis_end": "Now",
+  "history.description": "{resource} was at its cap for {at_cap} in the last 7 days, recovering for {below}, and unknown (no records) for {unknown}.",
+  "history.refresh_failed": "Could not refresh the cap history. The shown history may be out of date."
 }

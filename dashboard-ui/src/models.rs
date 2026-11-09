@@ -161,6 +161,31 @@ pub struct GameCalendar {
     pub stale: bool,
 }
 
+/// Time the primary resource of one game account spent at its cap in the last 7 days.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct ResourceHistory {
+    pub game_kind: String,
+    pub game_uid: String,
+    pub region: String,
+    pub window_start: String,
+    pub window_end: String,
+    #[serde(default)]
+    pub sample_count: i64,
+    pub at_cap_seconds: i64,
+    pub unknown_seconds: i64,
+    #[serde(default)]
+    pub segments: Vec<HistorySegment>,
+}
+
+/// A stretch of the window: `at_cap`, `below_cap` or `unknown`.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct HistorySegment {
+    pub state: String,
+    pub start: String,
+    pub end: String,
+    pub seconds: i64,
+}
+
 /// One banner or event; an absent value means unknown.
 #[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
