@@ -1197,6 +1197,11 @@ try{
  assert.equal(await otherLink.locator('.run-state.error strong').innerText(),'Failed');
  assert.equal(await otherLink.locator('.run-state.success strong').innerText(),'Success');
  assert.equal(await ownRow.locator('td.admin-link .run-state').count(),0,'users without a link show no health lines');
+ // Health lines break between parts, never inside "Auto" or a date; the two-by-two actions leave the link column room.
+ assert.equal(await otherLink.locator('.health-line > *').evaluateAll(parts=>parts.filter(part=>getComputedStyle(part).display!=='inline-block').length),0);
+ assert.ok(await otherLink.locator('.health-line').evaluateAll(lines=>lines.every(line=>[...line.children].every(part=>part.getBoundingClientRect().height<2*parseFloat(getComputedStyle(part).fontSize)))),'no part of a health line is split across lines');
+ assert.ok((await otherLink.boundingBox()).width>=280,'the link column stays readable at 1280px');
+ assert.equal(await otherRowEarly.locator('.admin-user-actions button').evaluateAll(buttons=>new Set(buttons.map(button=>Math.round(button.getBoundingClientRect().y))).size),2,'actions form two rows');
  assert.equal(await ownRow.getByText('Needs attention',{exact:true}).count(),0);
  const attentionOnly=page.getByLabel('Only users who need attention (1)',{exact:true});
  await attentionOnly.focus();await page.keyboard.press('Space');

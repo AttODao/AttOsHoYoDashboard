@@ -501,13 +501,14 @@ fn GameHealthLine(game: AdminGameHealth) -> Element {
         .as_ref()
         .and_then(|run| run.error_code.clone());
     rsx! {
-        p { class: "run-state {tone}",
+        // Each part is an inline block, so a narrow column breaks between parts, not inside them.
+        p { class: "run-state health-line {tone}",
             strong { "{label}" }
-            " · " {game_name(&game.game_kind, prefs)}
+            " · " span { {game_name(&game.game_kind, prefs)} }
             if let Some(run) = &game.last_run {
-                " · " time { datetime: "{run.ended_at}", {datetime_text(Some(&run.ended_at), prefs)} }
+                " · " span { time { datetime: "{run.ended_at}", {datetime_text(Some(&run.ended_at), prefs)} } }
             }
-            if game.automatic { " · " {prefs.text("admin.automatic")} }
+            if game.automatic { " · " span { {prefs.text("admin.automatic")} } }
         }
         if let Some(reason) = reason { p { class: "run-reason", {error_text(Some(&reason), prefs)} } }
     }
