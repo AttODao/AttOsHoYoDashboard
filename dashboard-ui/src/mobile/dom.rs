@@ -139,13 +139,16 @@ impl Drop for Modal {
 /// is scrolled to the top moves `#pull-refresh` (CSS variables `--pull`/`--pull-turn`,
 /// `data-pulling`/`data-armed`), and releasing past the threshold calls `on_pull`.
 /// Open dialogs, touches on form controls and mostly horizontal swipes never pull.
-/// Dropping it removes the listeners.
+/// Dropping it removes the listeners. Each instance keeps its own listeners (the dashboard
+/// and the events page both pull): the next page mounts before the previous one is
+/// dropped, so a shared handle would let the old page remove the new page's listeners.
 pub(crate) struct PullToRefresh {
     task: Task,
+    id: u64,
 }
 
 const PULL_SCRIPT: &str = r#"
-if (window.__ahdPull) window.__ahdPull();
+const ID = __AHD_PULL_ID__;
 const THRESHOLD = 72, MAX = 112;
 const root = () => document.scrollingElement || document.documentElement;
 const indicator = () => document.getElementById("pull-refresh");
@@ -189,7 +192,8 @@ const end = (ev) => {
 };
 const listeners = [["touchstart", start], ["touchmove", move], ["touchend", end], ["touchcancel", end]];
 for (const [type, fn] of listeners) window.addEventListener(type, fn, { passive: true });
-window.__ahdPull = () => {
+window.__ahdPulls = window.__ahdPulls || {};
+window.__ahdPulls[ID] = () => {
   for (const [type, fn] of listeners) window.removeEventListener(type, fn);
   reset();
 };
@@ -197,22 +201,30 @@ window.__ahdPull = () => {
 
 impl PullToRefresh {
     pub(crate) fn attach(mut on_pull: impl FnMut() + 'static) -> Self {
-        let mut eval = document::eval(PULL_SCRIPT);
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut eval = document::eval(&pull_script(id));
         let task = spawn(async move {
             while eval.recv::<bool>().await.is_ok() {
                 on_pull();
             }
         });
-        Self { task }
+        Self { task, id }
     }
+}
+
+fn pull_script(id: u64) -> String {
+    PULL_SCRIPT.replace("__AHD_PULL_ID__", &id.to_string())
 }
 
 impl Drop for PullToRefresh {
     fn drop(&mut self) {
         self.task.cancel();
-        let _ = document::eval(
-            "if (window.__ahdPull) { window.__ahdPull(); delete window.__ahdPull; }",
-        );
+        let _ = document::eval(&format!(
+            "const remove = window.__ahdPulls && window.__ahdPulls[{id}]; \
+             if (remove) {{ delete window.__ahdPulls[{id}]; remove(); }}",
+            id = self.id
+        ));
     }
 }
 

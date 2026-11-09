@@ -1,7 +1,7 @@
-use super::calendar::CalendarSection;
 use super::cap_history::CapHistory;
 use super::challenges::ChallengeSection;
-use super::common::{Icon, LoadError, Metric, focus_element, game_name, pending, refresh_problem};
+use super::common::{Icon, LoadError, Metric, game_name, pending, refresh_problem};
+use super::game_tabs::{GameTabs, game_index, select_game_index, use_narrow_games};
 use super::rewards::AutomationSwitch;
 use super::swipe_tabs::SwipeableTabs;
 use crate::app::actions::spawn_root;
@@ -22,15 +22,11 @@ use uuid::Uuid;
 pub(super) fn DashboardPage(state: Signal<AppState>) -> Element {
     let ui = use_preferences();
     let active = use_memo(move || state.read().dashboard_game);
-    let select = move |game: &'static str| {
-        let mut state = state;
-        state.write().dashboard_game = game;
-    };
-    let mobile = use_mobile_dashboard();
+    let mobile = use_narrow_games();
     use_clock_provider();
     rsx! {
         div { class: "page-stack dashboard",
-            {pull_refresh(state)}
+            {pull_refresh(state, Page::Dashboard)}
             div { class: "page-intro",
                 h1 { {ui.text("dashboard.dashboard")} }
                 ClaimNow { state }
@@ -38,33 +34,12 @@ pub(super) fn DashboardPage(state: Signal<AppState>) -> Element {
             if state.read().accounts_error.is_some() {
                 LoadError { state, message: ui.text("dashboard.could_not_refresh_the_uid_list") }
             }
-            div { class: "game-tabs tabs", role: "tablist", "aria-label": ui.text("dashboard.games"),
-                for game in DASHBOARD_GAMES {
-                    button {
-                        r#type: "button", role: "tab", id: "game-tab-{game}",
-                        "aria-controls": "game-panel-{game}", "aria-selected": active() == game,
-                        tabindex: if active() == game { "0" } else { "-1" },
-                        onclick: move |_| select(game),
-                        onkeydown: move |event: KeyboardEvent| {
-                            if let Some(next) = next_game_tab(game, &event.key()) {
-                                event.prevent_default();
-                                select(next);
-                                focus_game_tab(next);
-                            }
-                        },
-                        {game_name(game, ui)}
-                    }
-                }
-            }
+            GameTabs { state, prefix: "game" }
             // Narrow screens show one game at a time: swiping the panels switches tabs like a tap.
             SwipeableTabs {
                 id: "game-panels", class: "dashboard-grid",
                 count: DASHBOARD_GAMES.len(), index: game_index(active()), enabled: mobile(),
-                on_change: move |index: usize| {
-                    if let Some(&game) = DASHBOARD_GAMES.get(index) {
-                        select(game);
-                    }
-                },
+                on_change: move |index: usize| select_game_index(state, index),
                 for game in DASHBOARD_GAMES {
                     GamePanel { key: "{game}", state, game, active: active() == game, mobile: mobile() }
                 }
@@ -149,84 +124,10 @@ fn claim_tone(signed: Option<bool>) -> &'static str {
     }
 }
 
-// One media listener, removed on unmount. CSS and semantics use the same 900px boundary.
-#[cfg(feature = "mobile")]
-fn use_mobile_dashboard() -> Signal<bool> {
-    crate::mobile::dom::use_media_query("(max-width:900px)")
-}
-
-#[cfg(not(feature = "mobile"))]
-fn use_mobile_dashboard() -> Signal<bool> {
-    let mut mobile = use_signal(|| false);
-    #[cfg(target_arch = "wasm32")]
-    {
-        let _listener = use_hook(move || {
-            use wasm_bindgen::JsCast;
-            let media = web_sys::window()?.match_media("(max-width:900px)").ok()??;
-            mobile.set(media.matches());
-            let observed = media.clone();
-            let callback =
-                wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::Event)>::new(move |_| {
-                    mobile.set(observed.matches())
-                });
-            media
-                .add_event_listener_with_callback("change", callback.as_ref().unchecked_ref())
-                .ok()?;
-            Some(std::rc::Rc::new(MobileDashboardListener {
-                media,
-                callback,
-            }))
-        });
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    let _ = &mut mobile;
-    mobile
-}
-
-#[cfg(target_arch = "wasm32")]
-struct MobileDashboardListener {
-    media: web_sys::MediaQueryList,
-    callback: wasm_bindgen::closure::Closure<dyn FnMut(web_sys::Event)>,
-}
-
-#[cfg(target_arch = "wasm32")]
-impl Drop for MobileDashboardListener {
-    fn drop(&mut self) {
-        use wasm_bindgen::JsCast;
-        let _ = self
-            .media
-            .remove_event_listener_with_callback("change", self.callback.as_ref().unchecked_ref());
-    }
-}
-
-fn next_game_tab(game: &str, key: &Key) -> Option<&'static str> {
-    match key {
-        Key::Home => Some("genshin"),
-        Key::End => Some("starrail"),
-        Key::ArrowLeft | Key::ArrowRight => Some(if game == "genshin" {
-            "starrail"
-        } else {
-            "genshin"
-        }),
-        _ => None,
-    }
-}
-
-/// The tab position of `game` for `SwipeableTabs`; unknown games count as the first tab.
-fn game_index(game: &str) -> usize {
-    DASHBOARD_GAMES
-        .iter()
-        .position(|candidate| *candidate == game)
-        .unwrap_or(0)
-}
-
-fn focus_game_tab(game: &'static str) {
-    focus_element(&format!("game-tab-{game}"));
-}
-
 /// Card order puts what players check first at the top: UID, then the primary
-/// resource with its full-recovery estimate and its time at cap over 7 days, other stats, the endgame summary, the
-/// collapsed event calendar, the login bonus, and the collapsed fetch details last.
+/// resource with its full-recovery estimate and its time at cap over 7 days, other stats, the endgame summary,
+/// the login bonus, and the collapsed fetch details last. Events and banners are not tied to
+/// a UID and live on the events page (`events.rs`).
 #[component]
 fn GamePanel(state: Signal<AppState>, game: &'static str, active: bool, mobile: bool) -> Element {
     let ui = use_preferences();
@@ -248,7 +149,6 @@ fn GamePanel(state: Signal<AppState>, game: &'static str, active: bool, mobile: 
             }
             GameStatusSection { state, game }
             ChallengeSection { state, game }
-            CalendarSection { state, game }
             BonusSection { state, game }
             StatusDetails { state, game }
         }
@@ -355,15 +255,13 @@ fn RefreshButton(state: Signal<AppState>, game: &'static str) -> Element {
     let ui = use_preferences();
     let snapshot = state.read();
     let shown = snapshot.accounts.is_some() && snapshot.selected_game_account(game).is_some();
-    // Busy until the status, the cap history, the endgame summary and the calendar of
-    // this refresh are back.
+    // Busy until the status, the cap history and the endgame summary of this refresh are back.
     let loading = snapshot
         .selected_accounts
         .get(game)
         .is_some_and(|selection| {
             (selection.loading && selection.generation == snapshot.generation)
                 || selection.challenges_loading
-                || selection.calendar_loading
                 || selection.history_loading
         });
     drop(snapshot);
@@ -386,21 +284,22 @@ fn RefreshButton(state: Signal<AppState>, game: &'static str) -> Element {
     }
 }
 
-/// App only: pulling the dashboard down at its top reloads UIDs, status and bonus settings.
+/// App only: pulling the page down at its top reloads it (the dashboard: UIDs, status and
+/// bonus settings; the events page: UIDs and calendars).
 #[cfg(feature = "mobile")]
-fn pull_refresh(state: Signal<AppState>) -> Element {
-    rsx! { PullRefresh { state } }
+pub(super) fn pull_refresh(state: Signal<AppState>, page: Page) -> Element {
+    rsx! { PullRefresh { state, page } }
 }
 
 #[cfg(not(feature = "mobile"))]
-fn pull_refresh(_state: Signal<AppState>) -> Element {
+pub(super) fn pull_refresh(_state: Signal<AppState>, _page: Page) -> Element {
     rsx! {}
 }
 
 #[cfg(feature = "mobile")]
 #[component]
-fn PullRefresh(state: Signal<AppState>) -> Element {
-    use crate::app::data::load_dashboard_data;
+fn PullRefresh(state: Signal<AppState>, page: Page) -> Element {
+    use crate::app::data::reload_page;
     let ui = use_preferences();
     let mut refreshing = use_signal(|| false);
     let _pull = use_hook(move || {
@@ -410,7 +309,7 @@ fn PullRefresh(state: Signal<AppState>) -> Element {
             }
             refreshing.set(true);
             spawn_root(async move {
-                load_dashboard_data(state, true).await;
+                reload_page(state, page).await;
                 refreshing.set(false);
             });
         }))
@@ -861,7 +760,7 @@ fn countdown_text(seconds_left: i64, reached: &str, ui: Preferences) -> String {
 #[derive(Clone, Copy)]
 struct Clock(Signal<u64>);
 
-fn use_clock_provider() {
+pub(super) fn use_clock_provider() {
     let mut tick = use_signal(|| 0u64);
     use_context_provider(|| Clock(tick));
     #[cfg(any(target_arch = "wasm32", feature = "mobile"))]
@@ -1145,24 +1044,5 @@ mod tests {
         assert_eq!(expedition_seconds(&row), None);
         assert_eq!(remaining_text(&row, None, ui), "soon");
         assert_eq!(remaining_text(&row, Some(3000), ui), "0時間50分");
-    }
-
-    #[test]
-    fn game_tab_keyboard_navigation_wraps_and_reaches_edges() {
-        assert_eq!(next_game_tab("genshin", &Key::ArrowLeft), Some("starrail"));
-        assert_eq!(next_game_tab("starrail", &Key::ArrowRight), Some("genshin"));
-        assert_eq!(next_game_tab("starrail", &Key::Home), Some("genshin"));
-        assert_eq!(next_game_tab("genshin", &Key::End), Some("starrail"));
-        assert_eq!(next_game_tab("genshin", &Key::Enter), None);
-    }
-
-    #[test]
-    fn swipe_index_follows_the_tab_order() {
-        assert_eq!(game_index("genshin"), 0);
-        assert_eq!(game_index("starrail"), 1);
-        assert_eq!(game_index("zzz"), 0);
-        for (index, game) in DASHBOARD_GAMES.iter().enumerate() {
-            assert_eq!(game_index(game), index);
-        }
     }
 }

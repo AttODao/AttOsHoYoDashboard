@@ -16,6 +16,10 @@ mod deletion;
 #[cfg(feature = "mobile")]
 mod device_notifications;
 pub(super) mod docs;
+mod event_list;
+mod event_timeline;
+mod events;
+mod game_tabs;
 mod hoyolab;
 mod notifications;
 mod rewards;

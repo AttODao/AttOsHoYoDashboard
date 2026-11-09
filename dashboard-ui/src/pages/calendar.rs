@@ -1,172 +1,49 @@
-use super::common::{pending, refresh_problem};
-use super::dashboard::{Freshness, use_clock};
-use crate::app::display::{compact_datetime, days_hours, error_text, seconds_since};
-use crate::app::preferences::{Preferences, use_preferences};
-use crate::app::state::AppState;
+//! What the event calendar of one game says, shared by both events-page layouts
+//! (`event_timeline.rs` across, `event_list.rs` down): which items run or are announced,
+//! their countdowns, names, status and notices.
+use crate::app::display::{days_hours, error_text};
+use crate::app::preferences::Preferences;
 use crate::models::{CalendarFeatured, CalendarItem, GameCalendar};
 use dioxus::prelude::*;
 
-/// Event calendar of the selected UID. Collapsed to one summary line ("3 running ·
-/// next ends in 2d 3h") so the card stays short on phones; the native disclosure
-/// opens the banners, events and announced items with their countdowns. Hidden until
-/// the game has a selected UID, and on servers without the endpoint (404).
+/// The rate-up line: 5-star items (or items without a rarity) with their icons, then the
+/// other names as quieter text.
 #[component]
-pub(super) fn CalendarSection(state: Signal<AppState>, game: &'static str) -> Element {
-    let ui = use_preferences();
-    let snapshot = state.read();
-    let Some(id) = snapshot
-        .accounts
-        .is_some()
-        .then(|| snapshot.selected_game_account(game))
-        .flatten()
-    else {
-        return rsx! {};
-    };
-    let selection = snapshot
-        .selected_accounts
-        .get(game)
-        .cloned()
-        .unwrap_or_default();
-    let calendar = snapshot
-        .account_calendars
-        .iter()
-        .find(|entry| entry.id == id)
-        .map(|entry| entry.calendar.clone());
-    let loading = pending(
-        selection.calendar_loading,
-        calendar.is_some(),
-        selection.calendar_error.is_some(),
-    );
-    drop(snapshot);
-    if selection.calendar_unavailable && calendar.is_none() {
-        return rsx! {};
-    }
+pub(super) fn FeaturedLine(item: CalendarItem) -> Element {
+    let (main, minor) = featured_parts(&item);
+    let has_main = !main.is_empty();
     rsx! {
-        section { class: "calendar-section", id: "calendar-{game}", "aria-labelledby": "calendar-title-{game}",
-            h3 { id: "calendar-title-{game}", {calendar_title(game, ui)} }
-            if let Some(key) = selection.calendar_error {
-                p { class: "warning", role: "status", {ui.text(refresh_problem(key, calendar.is_some(), "calendar.fetch_failed"))} }
-            }
-            div { "aria-busy": loading,
-                if let Some(calendar) = calendar {
-                    CalendarBody { calendar, game }
-                } else if loading {
-                    p { role: "status", {ui.text("dashboard.loading")} }
-                }
-            }
-        }
-    }
-}
-
-#[component]
-fn CalendarBody(calendar: GameCalendar, game: &'static str) -> Element {
-    let ui = use_preferences();
-    // The summary, the grouping and every countdown follow the shared clock.
-    let clock = use_clock();
-    let _ = clock();
-    let notice = calendar_notice(&calendar, ui);
-    let groups = calendar
-        .items
-        .as_deref()
-        .map(|items| Groups::from_items(items, seconds_since));
-    rsx! {
-        if let Some(notice) = notice {
-            p { class: "warning", role: "status", {notice} }
-        }
-        if let Some(groups) = groups {
-            if groups.is_empty() {
-                p { class: "calendar-empty", {ui.text("calendar.empty")} }
-                div { class: "refresh-row",
-                    Freshness { fetched_at: calendar.fetched_at.clone(), stale: calendar.stale }
-                }
-            } else {
-                details { class: "calendar-details",
-                    summary {
-                        span { class: "calendar-summary",
-                            for (index, part) in summary_parts(&groups, ui).into_iter().enumerate() {
-                                if index > 0 { " · " }
-                                span { class: "calendar-summary-part", "{part}" }
-                            }
-                        }
-                    }
-                    CalendarGroup { title: banners_title(game, ui), items: groups.banners.clone(), group: "banners" }
-                    CalendarGroup { title: ui.text("calendar.events"), items: groups.events.clone(), group: "events" }
-                    CalendarGroup { title: ui.text("calendar.upcoming"), items: groups.upcoming.clone(), group: "upcoming" }
-                    div { class: "refresh-row",
-                        Freshness { fetched_at: calendar.fetched_at.clone(), stale: calendar.stale }
+        if !main.is_empty() || !minor.is_empty() {
+            p { class: "calendar-featured",
+                for (index, featured) in main.into_iter().enumerate() {
+                    // Flex gaps separate the names on screen; readers get a separator.
+                    span { key: "{index}-{featured.icon.as_deref().unwrap_or_default()}",
+                        if index > 0 { span { class: "visually-hidden", " · " } }
+                        FeaturedName { featured }
                     }
                 }
-            }
-        }
-    }
-}
-
-#[component]
-fn CalendarGroup(title: &'static str, items: Vec<Timed>, group: &'static str) -> Element {
-    let ui = use_preferences();
-    if items.is_empty() {
-        return rsx! {};
-    }
-    rsx! {
-        div { class: "calendar-group", "data-group": group,
-            h4 { {title} }
-            ul { class: "calendar-list",
-                for (index, timed) in items.into_iter().enumerate() {
-                    CalendarRow { key: "{group}-{index}", countdown: countdown(&timed, ui), item: timed.item }
+                if !minor.is_empty() {
+                    if has_main { span { class: "visually-hidden", " · " } }
+                    span { class: "muted", "{minor}" }
                 }
             }
         }
     }
 }
 
-#[component]
-fn CalendarRow(item: CalendarItem, countdown: Option<(String, Option<String>)>) -> Element {
-    let ui = use_preferences();
-    let name = item
-        .name
-        .clone()
-        .unwrap_or_else(|| kind_name(&item.kind, ui).to_owned());
-    let status = status_text(&item, ui);
-    let quiet = item.locked == Some(true) || item.finished == Some(false);
+/// 5-star (or unrated) rate-up items, and the other names joined for one quiet line.
+fn featured_parts(item: &CalendarItem) -> (Vec<CalendarFeatured>, String) {
     let (main, minor): (Vec<_>, Vec<_>) = item
         .featured
         .iter()
         .cloned()
         .partition(|featured| featured.rarity.is_none_or(|rarity| rarity >= 5));
-    let has_main = !main.is_empty();
     let minor = minor
         .iter()
         .filter_map(|featured| featured.name.clone())
         .collect::<Vec<_>>()
         .join(" · ");
-    rsx! {
-        li { class: "calendar-item", "data-kind": "{item.kind}",
-            div { class: "calendar-head",
-                strong { class: "calendar-name", "{name}" }
-                if let Some((countdown, at)) = countdown {
-                    time { class: "calendar-left", datetime: at.clone(), title: compact_datetime(at.as_deref()), "{countdown}" }
-                }
-            }
-            if !main.is_empty() || !minor.is_empty() {
-                p { class: "calendar-featured",
-                    for (index, featured) in main.into_iter().enumerate() {
-                        // Flex gaps separate the names on screen; readers get a separator.
-                        span { key: "{index}-{featured.icon.as_deref().unwrap_or_default()}",
-                            if index > 0 { span { class: "visually-hidden", " · " } }
-                            FeaturedName { featured }
-                        }
-                    }
-                    if !minor.is_empty() {
-                        if has_main { span { class: "visually-hidden", " · " } }
-                        span { class: "muted", "{minor}" }
-                    }
-                }
-            }
-            if let Some(status) = status {
-                p { class: if quiet { "calendar-status quiet" } else { "calendar-status" }, "{status}" }
-            }
-        }
-    }
+    (main, minor)
 }
 
 /// A rate-up item: the official icon when it loads, and its name as text either way.
@@ -189,22 +66,40 @@ fn FeaturedName(featured: CalendarFeatured) -> Element {
 
 /// An item with the seconds elapsed since its start and end (negative before them).
 #[derive(Clone, PartialEq)]
-struct Timed {
-    item: CalendarItem,
-    since_start: Option<i64>,
-    since_end: Option<i64>,
+pub(super) struct Timed {
+    pub(super) item: CalendarItem,
+    pub(super) since_start: Option<i64>,
+    pub(super) since_end: Option<i64>,
+}
+
+impl Timed {
+    /// The start as Unix seconds, for a clock reading `now`.
+    pub(super) fn start(&self, now: i64) -> Option<i64> {
+        self.since_start.map(|since| now - since)
+    }
+
+    pub(super) fn end(&self, now: i64) -> Option<i64> {
+        self.since_end.map(|since| now - since)
+    }
+
+    pub(super) fn is_event(&self) -> bool {
+        self.item.kind == "event"
+    }
 }
 
 /// Running banners and events, and announced items; ended items are dropped.
 #[derive(Clone, PartialEq, Default)]
-struct Groups {
-    banners: Vec<Timed>,
-    events: Vec<Timed>,
-    upcoming: Vec<Timed>,
+pub(super) struct Groups {
+    pub(super) banners: Vec<Timed>,
+    pub(super) events: Vec<Timed>,
+    pub(super) upcoming: Vec<Timed>,
 }
 
 impl Groups {
-    fn from_items(items: &[CalendarItem], elapsed: impl Fn(Option<&str>) -> Option<i64>) -> Self {
+    pub(super) fn from_items(
+        items: &[CalendarItem],
+        elapsed: impl Fn(Option<&str>) -> Option<i64>,
+    ) -> Self {
         let mut groups = Self::default();
         for item in items {
             let timed = Timed {
@@ -226,18 +121,62 @@ impl Groups {
         groups
     }
 
-    fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.banners.is_empty() && self.events.is_empty() && self.upcoming.is_empty()
     }
 
     fn running(&self) -> impl Iterator<Item = &Timed> {
         self.banners.iter().chain(&self.events)
     }
+
+    /// Running items, banners first, each kind ending soonest first (unknown ends last).
+    pub(super) fn running_by_end(&self) -> Vec<Timed> {
+        let mut banners = self.banners.clone();
+        let mut events = self.events.clone();
+        for items in [&mut banners, &mut events] {
+            items.sort_by_key(|timed| {
+                (
+                    timed.since_end.is_none(),
+                    timed.since_end.map(|since| -since),
+                )
+            });
+        }
+        banners.extend(events);
+        banners
+    }
+
+    /// Announced items, starting soonest first.
+    pub(super) fn upcoming_by_start(&self) -> Vec<Timed> {
+        let mut upcoming = self.upcoming.clone();
+        upcoming.sort_by_key(|timed| timed.since_start.map(|since| -since));
+        upcoming
+    }
+
+    /// The two lanes of the timeline: banners (running and announced) and events, each in
+    /// start order (unknown starts first: they began before anything else), then end order.
+    pub(super) fn lanes(&self) -> [Vec<Timed>; 2] {
+        let (upcoming_events, upcoming_banners): (Vec<_>, Vec<_>) =
+            self.upcoming.iter().cloned().partition(Timed::is_event);
+        let mut banners = self.banners.clone();
+        banners.extend(upcoming_banners);
+        let mut events = self.events.clone();
+        events.extend(upcoming_events);
+        for lane in [&mut banners, &mut events] {
+            lane.sort_by_key(|timed| {
+                (
+                    timed.since_start.map(|since| -since),
+                    timed.since_end.is_none(),
+                    timed.since_end.map(|since| -since),
+                )
+            });
+        }
+        [banners, events]
+    }
 }
 
 /// "3 running", "1 upcoming" and "next ends in 2d 3h" as parts that wrap as a whole;
 /// unknown ends are left out of the nearest end.
-fn summary_parts(groups: &Groups, ui: Preferences) -> Vec<String> {
+pub(super) fn summary_parts(groups: &Groups, ui: Preferences) -> Vec<String> {
     let running = groups.running().count();
     let mut parts = vec![if running == 0 {
         ui.text("calendar.summary_none").to_owned()
@@ -266,7 +205,7 @@ fn summary_parts(groups: &Groups, ui: Preferences) -> Vec<String> {
 
 /// Time until an announced item starts, else until a running item ends, with the
 /// moment it counts down to.
-fn countdown(timed: &Timed, ui: Preferences) -> Option<(String, Option<String>)> {
+pub(super) fn countdown(timed: &Timed, ui: Preferences) -> Option<(String, Option<String>)> {
     if let Some(since) = timed.since_start.filter(|since| *since < 0) {
         let text = ui.format(
             "calendar.starts_in",
@@ -280,7 +219,7 @@ fn countdown(timed: &Timed, ui: Preferences) -> Option<(String, Option<String>)>
 }
 
 /// What the player did in an event, as reported; banners have no status.
-fn status_text(item: &CalendarItem, ui: Preferences) -> Option<String> {
+pub(super) fn status_text(item: &CalendarItem, ui: Preferences) -> Option<String> {
     if item.locked == Some(true) {
         return Some(ui.text("calendar.locked").to_owned());
     }
@@ -299,15 +238,29 @@ fn status_text(item: &CalendarItem, ui: Preferences) -> Option<String> {
     (item.finished == Some(false)).then(|| ui.text("calendar.not_finished").to_owned())
 }
 
-fn calendar_title(game: &str, ui: Preferences) -> &'static str {
-    ui.text(if game == "starrail" {
-        "calendar.title_starrail"
-    } else {
-        "calendar.title_genshin"
-    })
+/// Whether the status is a quiet one (locked or not completed yet).
+pub(super) fn quiet_status(item: &CalendarItem) -> bool {
+    item.locked == Some(true) || item.finished == Some(false)
 }
 
-fn banners_title(game: &str, ui: Preferences) -> &'static str {
+/// The shown name: upstream's, else the name of the kind.
+pub(super) fn display_name(item: &CalendarItem, ui: Preferences) -> String {
+    item.name
+        .clone()
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| kind_name(&item.kind, ui).to_owned())
+}
+
+/// The lane an item belongs to: wishes or warps for banners, events otherwise.
+pub(super) fn kind_label(item: &CalendarItem, game: &str, ui: Preferences) -> &'static str {
+    if item.kind == "event" {
+        ui.text("calendar.events")
+    } else {
+        banners_title(game, ui)
+    }
+}
+
+pub(super) fn banners_title(game: &str, ui: Preferences) -> &'static str {
     ui.text(if game == "starrail" {
         "calendar.banners_starrail"
     } else {
@@ -328,7 +281,7 @@ fn kind_name(kind: &str, ui: Preferences) -> &'static str {
 }
 
 /// A failed fetch without a calendar says only that; an outdated calendar says why.
-fn calendar_notice(calendar: &GameCalendar, ui: Preferences) -> Option<String> {
+pub(super) fn calendar_notice(calendar: &GameCalendar, ui: Preferences) -> Option<String> {
     let reason = calendar
         .error_code
         .as_deref()
@@ -468,8 +421,6 @@ mod tests {
     #[test]
     fn titles_and_fallback_names_follow_the_game_vocabulary() {
         let ui = Preferences::default();
-        assert_eq!(calendar_title("genshin", ui), "イベント・祈願");
-        assert_eq!(calendar_title("starrail", ui), "イベント・跳躍");
         assert_eq!(banners_title("genshin", ui), "祈願");
         assert_eq!(banners_title("starrail", ui), "跳躍");
         for (kind, name) in [
@@ -482,7 +433,85 @@ mod tests {
         ] {
             assert_eq!(kind_name(kind, ui), name);
         }
-        assert_eq!(calendar_title("starrail", english()), "Events & warps");
+        assert_eq!(banners_title("starrail", english()), "Warps");
+        let banner = item(serde_json::json!({"kind": "light_cone_banner", "name": " "}));
+        assert_eq!(display_name(&banner, ui), "光円錐イベント跳躍");
+        assert_eq!(kind_label(&banner, "starrail", ui), "跳躍");
+        let event = item(serde_json::json!({"kind": "event", "name": "Synthetic"}));
+        assert_eq!(display_name(&event, ui), "Synthetic");
+        assert_eq!(kind_label(&event, "genshin", english()), "Events");
+    }
+
+    #[test]
+    fn running_items_end_soonest_first_and_lanes_follow_the_start() {
+        let groups = groups(&[
+            item(
+                serde_json::json!({"kind": "event", "name": "late", "starts_at": "500", "ends_at": "-900"}),
+            ),
+            item(serde_json::json!({"kind": "event", "name": "open", "starts_at": "50"})),
+            item(
+                serde_json::json!({"kind": "character_banner", "name": "wish", "starts_at": "100", "ends_at": "-100"}),
+            ),
+            item(
+                serde_json::json!({"kind": "event", "name": "soon", "starts_at": "100", "ends_at": "-200"}),
+            ),
+            item(
+                serde_json::json!({"kind": "weapon_banner", "name": "next", "starts_at": "-50", "ends_at": "-990"}),
+            ),
+            item(
+                serde_json::json!({"kind": "event", "name": "later", "starts_at": "-300", "ends_at": "-999"}),
+            ),
+            item(
+                serde_json::json!({"kind": "event", "name": "next event", "starts_at": "-60", "ends_at": "-999"}),
+            ),
+        ]);
+        let names = |items: Vec<Timed>| {
+            items
+                .into_iter()
+                .map(|timed| timed.item.name.unwrap())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            names(groups.running_by_end()),
+            ["wish", "soon", "late", "open"]
+        );
+        assert_eq!(
+            names(groups.upcoming_by_start()),
+            ["next", "next event", "later"]
+        );
+        let [banners, events] = groups.lanes();
+        assert_eq!(names(banners), ["wish", "next"]);
+        assert_eq!(
+            names(events),
+            ["late", "soon", "open", "next event", "later"]
+        );
+        assert_eq!(groups.banners[0].start(1_000), Some(900));
+        assert_eq!(groups.banners[0].end(1_000), Some(1_100));
+        assert!(quiet_status(&item(
+            serde_json::json!({"kind": "event", "finished": false})
+        )));
+        assert!(!quiet_status(&item(
+            serde_json::json!({"kind": "event", "finished": true})
+        )));
+    }
+
+    #[test]
+    fn featured_items_split_into_five_stars_and_quiet_names() {
+        let banner = item(serde_json::json!({"kind": "character_banner", "featured": [
+            {"name": "Five", "rarity": 5, "icon": "https://example.invalid/five.png"},
+            {"name": "Four", "rarity": 4},
+            {"name": "Unrated"},
+            {"rarity": 4},
+            {"name": "Four B", "rarity": 4}
+        ]}));
+        let (main, minor) = featured_parts(&banner);
+        assert_eq!(
+            main.iter()
+                .map(|f| f.name.clone().unwrap())
+                .collect::<Vec<_>>(),
+            ["Five", "Unrated"]
+        );
+        assert_eq!(minor, "Four · Four B");
     }
 
     #[test]

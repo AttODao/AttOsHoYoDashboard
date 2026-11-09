@@ -51,6 +51,7 @@ pub(super) fn open_app_callback(code: &str) {
 fn page_path(page: Page) -> &'static str {
     match page {
         Page::Dashboard => "/dashboard",
+        Page::Events => "/events",
         Page::Uids => "/settings/games",
         Page::Rewards => "/settings/bonus",
         Page::Link => "/settings/link",
@@ -66,6 +67,7 @@ fn page_path(page: Page) -> &'static str {
 
 fn page_from_path(path: &str) -> Page {
     match path {
+        "/events" => Page::Events,
         "/settings" | "/settings/games" => Page::Uids,
         "/settings/bonus" => Page::Rewards,
         "/settings/link" => Page::Link,
@@ -340,12 +342,15 @@ mod tests {
             assert!(page_from_path(path) == Page::Dashboard);
         }
         assert!(page_from_path("/settings") == Page::Uids);
+        assert!(page_from_path("/events") == Page::Events);
+        assert_eq!(page_path(Page::Events), "/events");
     }
 
     #[test]
     fn every_page_roundtrips_to_a_fixed_same_origin_path() {
         for page in [
             Page::Dashboard,
+            Page::Events,
             Page::Uids,
             Page::Rewards,
             Page::Link,

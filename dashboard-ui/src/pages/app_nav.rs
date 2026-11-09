@@ -8,12 +8,14 @@ use dioxus::prelude::*;
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum NavTarget {
     Dashboard,
+    Events,
     Settings,
 }
 
 fn nav_target(page: Page) -> Option<NavTarget> {
     match page {
         Page::Dashboard => Some(NavTarget::Dashboard),
+        Page::Events => Some(NavTarget::Events),
         Page::Uids
         | Page::Rewards
         | Page::Link
@@ -25,27 +27,51 @@ fn nav_target(page: Page) -> Option<NavTarget> {
     }
 }
 
+/// The page entries of the bottom bar, left to right; the menu button follows them.
+const NAV: [NavTarget; 3] = [NavTarget::Dashboard, NavTarget::Events, NavTarget::Settings];
+
+impl NavTarget {
+    /// The page a tap opens (Settings opens its first tab).
+    fn page(self) -> Page {
+        match self {
+            NavTarget::Dashboard => Page::Dashboard,
+            NavTarget::Events => Page::Events,
+            NavTarget::Settings => Page::Uids,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            NavTarget::Dashboard => "dashboard.dashboard",
+            NavTarget::Events => "calendar.page_title",
+            NavTarget::Settings => "shell.settings",
+        }
+    }
+}
+
 #[component]
 pub(super) fn AppNav(state: Signal<AppState>, mut open: Signal<bool>) -> Element {
     let ui = use_preferences();
     let target = nav_target(state.read().page);
     rsx! {
         nav { class: "app-nav", "aria-label": ui.text("shell.app_navigation"),
-            button { r#type: "button",
-                "aria-current": (target == Some(NavTarget::Dashboard)).then_some("page"),
-                onclick: move |_| set_page(state, Page::Dashboard),
-                span { class: "app-nav-icon",
-                    svg { view_box: "0 0 24 24", "aria-hidden": "true", "focusable": "false",
-                        path { d: "M3 10.5 12 3l9 7.5M5.5 9v11h5v-6h3v6h5V9" }
+            for entry in NAV {
+                button { key: "{entry:?}", r#type: "button",
+                    "aria-current": (target == Some(entry)).then_some("page"),
+                    onclick: move |_| set_page(state, entry.page()),
+                    span { class: "app-nav-icon",
+                        match entry {
+                            NavTarget::Dashboard => rsx! {
+                                svg { view_box: "0 0 24 24", "aria-hidden": "true", "focusable": "false",
+                                    path { d: "M3 10.5 12 3l9 7.5M5.5 9v11h5v-6h3v6h5V9" }
+                                }
+                            },
+                            NavTarget::Events => rsx! { Icon { name: "calendar" } },
+                            NavTarget::Settings => rsx! { Icon { name: "settings" } },
+                        }
                     }
+                    span { class: "app-nav-label", {ui.text(entry.label())} }
                 }
-                span { class: "app-nav-label", {ui.text("dashboard.dashboard")} }
-            }
-            button { r#type: "button",
-                "aria-current": (target == Some(NavTarget::Settings)).then_some("page"),
-                onclick: move |_| set_page(state, Page::Uids),
-                span { class: "app-nav-icon", Icon { name: "settings" } }
-                span { class: "app-nav-label", {ui.text("shell.settings")} }
             }
             button { id: "ahd-app-menu-trigger", r#type: "button",
                 "aria-controls": "ahd-menu", "aria-haspopup": "dialog", "aria-expanded": open().to_string(),
@@ -82,6 +108,18 @@ mod tests {
     #[test]
     fn dashboard_targets_dashboard() {
         assert_eq!(nav_target(Page::Dashboard), Some(NavTarget::Dashboard));
+    }
+
+    #[test]
+    fn events_target_events_right_after_the_dashboard() {
+        assert_eq!(nav_target(Page::Events), Some(NavTarget::Events));
+        assert_eq!(
+            NAV,
+            [NavTarget::Dashboard, NavTarget::Events, NavTarget::Settings]
+        );
+        for entry in NAV {
+            assert_eq!(nav_target(entry.page()), Some(entry));
+        }
     }
 
     #[test]
