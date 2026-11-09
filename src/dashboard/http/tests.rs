@@ -12,6 +12,7 @@ mod passkeys;
 mod response;
 mod runtime;
 mod session;
+mod settings_transfer;
 mod ui;
 mod users;
 

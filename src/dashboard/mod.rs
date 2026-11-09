@@ -9,6 +9,7 @@ mod hoyolab;
 mod http;
 mod notifications;
 mod rewards;
+mod settings_transfer;
 
 #[cfg(test)]
 mod test_support;

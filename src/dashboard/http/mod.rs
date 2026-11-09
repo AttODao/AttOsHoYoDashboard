@@ -12,6 +12,7 @@ mod response;
 mod rewards;
 mod runtime;
 mod session;
+mod settings_transfer;
 mod ui;
 mod users;
 
@@ -127,6 +128,7 @@ fn router(app: App) -> Router {
         .merge(passkeys::protected_routes())
         .merge(app_login::protected_routes())
         .merge(notifications::protected_routes())
+        .merge(settings_transfer::protected_routes())
         .route_layer(from_fn_with_state(app.clone(), middleware::authenticate));
     Router::new()
         .route("/health", get(health))

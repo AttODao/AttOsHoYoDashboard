@@ -31,6 +31,9 @@ const createdUsers=[];
 const secondAdmin={...user,id:uid(14),username:'synthetic-second-admin',must_change_password:false};
 let failCreate=false,adminDeletes=0,loginFailureStatus=0,failPatch=false,passkeyHold=null,releasePasskeys=()=>{},adminPatchHold=null,releaseAdminPatch=()=>{};
 const rewardPatches=[];
+const settingsImports=[];
+const settingsExport={format:'ahd-settings',version:1,exported_at:'2026-11-09T01:02:03Z',rewards:[{game_kind:'genshin',enabled:true,local_time:'06:00'}],game_accounts:[{game_kind:'genshin',game_uid:'600000005',visible:true}],notifications:{webhook_configured:true,webhook_format:'discord',language:'ja',events:{reward_failed:true},app_events:{reward_failed:true},resin_warn_hours:2,daily_reminder_time:'21:00',weekly_reminder_time:'15:00'}};
+const settingsReport={changes:[{section:'rewards',game_kind:'genshin',setting:'local_time',from:'06:00',to:'07:30'},{section:'game_accounts',game_kind:'genshin',game_uid:'600000005',setting:'visible',from:true,to:false},{section:'notifications',setting:'events.reward_claimed',from:false,to:true},{section:'notifications',setting:'resin_warn_hours',from:2,to:6}],skipped:[{section:'game_accounts',game_kind:'starrail',game_uid:'900000001',reason:'uid_not_found'}],webhook:{in_file:true,configured:false}};
 const avatarIcon='https://act-webstatic.hoyoverse.com/game_record/genshin/character_side_icon/synthetic.png';
 const itemIcon='https://act-upload.hoyolab.com/game_record/hkrpg/item_icon/synthetic.png';
 const awardIcon='https://fastcdn.hoyoverse.com/static-resource-v2/synthetic-award.png';
@@ -120,6 +123,13 @@ const server=http.createServer(async(req,res)=>{
    if(p===`/api/v1/me/api-tokens/${uid(60)}`){assert.equal(req.method,'DELETE');apiTokens=apiTokens.filter(row=>row.id!==uid(60));res.writeHead(204);return res.end();}
    if(p==='/api/v1/me/notifications'&&req.method==='GET')return json(res,{webhook_configured:false,webhook_hint:null,webhook_format:'discord',language:'ja',events:{},app_events:{signed_in:true},last_delivery_at:null,last_delivery_ok:null,resin_warn_hours:2,daily_reminder_time:'21:00',weekly_reminder_time:'15:00'});
    if(p==='/api/v1/me/notifications'&&req.method==='PUT'){assert.ok(body.webhook_format);notificationSaves.push(body);res.writeHead(204);return res.end();}
+   if(p==='/api/v1/me/settings/export'){assert.equal(req.method,'GET');return json(res,settingsExport);}
+   if(p==='/api/v1/me/settings/import/preview'||p==='/api/v1/me/settings/import'){
+    assert.equal(req.method,'POST');assert.equal(body.format,'ahd-settings');settingsImports.push({path:p,body});
+    const errors=[{field:'version',code:'unsupported'}];
+    if(body.version!==1)return p.endsWith('/preview')?json(res,{valid:false,errors}):json(res,{error:'invalid_input',errors},400);
+    return json(res,{valid:true,...settingsReport});
+   }
    if(p==='/api/v1/admin/notifications'&&req.method==='GET')return json(res,{webhook_configured:false,webhook_hint:null,webhook_format:'discord',language:'ja',events:{},last_delivery_at:null,last_delivery_ok:null});
    if(p==='/api/v1/admin/notifications'&&req.method==='PUT'){res.writeHead(204);return res.end();}
       if(p===`/api/v1/me/sessions/${uid(51)}`){assert.equal(req.method,'DELETE');sessions=sessions.filter(row=>row.id!==uid(51));res.writeHead(204);return res.end();}
@@ -179,7 +189,7 @@ const server=http.createServer(async(req,res)=>{
   if(p==='/openapi.json'){assert.equal(req.method,'GET');counts.set(p,(counts.get(p)||0)+1);return json(res,JSON.parse(fs.readFileSync(path.join(root,'docs/dashboard-api.json'),'utf8')));}
   let file;
   if(p==='/settings'){res.writeHead(308,{'Location':'/settings/games'});return res.end();}
-  if(['/','/login','/app-login','/dashboard','/settings/games','/settings/bonus','/settings/link','/settings/security','/settings/notifications','/settings/delete','/admin','/about','/docs'].includes(p)){file=path.join(publicDir,'index.html');res.setHeader('Content-Type','text/html');res.setHeader('Content-Security-Policy',csp);}
+  if(['/','/login','/app-login','/dashboard','/settings/games','/settings/bonus','/settings/link','/settings/security','/settings/notifications','/settings/transfer','/settings/delete','/admin','/about','/docs'].includes(p)){file=path.join(publicDir,'index.html');res.setHeader('Content-Type','text/html');res.setHeader('Content-Security-Policy',csp);}
   else if(p.startsWith('/assets/')){file=path.resolve(publicDir,'.'+p);assert.ok(file.startsWith(path.join(publicDir,'assets')+path.sep));res.setHeader('Content-Type',({'.wasm':'application/wasm','.js':'text/javascript','.css':'text/css','.png':'image/png'})[path.extname(file)]||'application/octet-stream');}
   else {res.writeHead(404);return res.end();}
   res.end(fs.readFileSync(file));
@@ -727,6 +737,56 @@ try{
  assert.equal(saved.events.reward_failed,true);
  assert.ok(!('app_events' in saved),'the web keeps the app choices');
  assert.ok(!('webhook_url' in saved),'an empty URL field keeps the stored URL');
+ // Settings transfer: download the export, reject unreadable or invalid files, preview, then apply.
+ await page.locator('#settings-tab-transfer').click();await idle();
+ await page.waitForURL(origin+'/settings/transfer');
+ assert.equal(await page.title(),'Settings transfer – AHD');
+ const [download]=await Promise.all([page.waitForEvent('download'),page.locator('#transfer-download').click()]);
+ assert.equal(download.suggestedFilename(),'ahd-settings-2026-11-09.json');
+ assert.deepEqual(JSON.parse(fs.readFileSync(await download.path(),'utf8')),settingsExport,'the download is the export as returned');
+ await page.locator('.status.success').getByText('Settings downloaded.',{exact:true}).waitFor();
+ const settingsFile=page.locator('#settings-file');
+ assert.ok((await settingsFile.boundingBox()).height>=48,'the file input uses the 48px field');
+ const choose=async(name,content)=>{await settingsFile.setInputFiles({name,mimeType:'application/json',buffer:Buffer.from(content)});await idle();};
+ const importsBefore=settingsImports.length;
+ await choose('broken.json','not json');
+ await page.locator('#settings-file-error').getByText('The file is not valid JSON.',{exact:true}).waitFor();
+ assert.equal(await settingsFile.getAttribute('aria-invalid'),'true');
+ assert.equal(await settingsFile.getAttribute('aria-describedby'),'settings-file-hint settings-file-error');
+ await choose('large.json',JSON.stringify({...settingsExport,padding:'x'.repeat(17000)}));
+ await page.locator('#settings-file-error').getByText('The file is too large to import (16 KiB at most).',{exact:true}).waitFor();
+ assert.equal(settingsImports.length,importsBefore,'unreadable files are never sent');
+ await choose('newer.json',JSON.stringify({...settingsExport,version:2}));
+ const problems=page.locator('#transfer-problems');
+ await problems.waitFor();
+ assert.equal(await settingsFile.getAttribute('aria-invalid'),'false');
+ assert.ok((await problems.innerText()).includes('version · Unsupported format or version'));
+ assert.equal(await page.locator('#transfer-apply').count(),0,'a file with problems cannot be applied');
+ assert.deepEqual(settingsImports.map(entry=>entry.path),['/api/v1/me/settings/import/preview']);
+ await page.locator('#transfer-cancel').click();
+ await problems.waitFor({state:'detached'});
+ await page.waitForFunction(()=>document.activeElement?.id==='settings-file',null,{timeout:3000});
+ const chosen={...settingsExport,rewards:[{game_kind:'genshin',enabled:true,local_time:'07:30'}]};
+ await choose('ahd-settings.json',JSON.stringify(chosen));
+ const changes=page.locator('#transfer-changes li');
+ await changes.first().waitFor();
+ assert.deepEqual(settingsImports.at(-1),{path:'/api/v1/me/settings/import/preview',body:chosen});
+ assert.equal(await page.locator('#transfer-changes-title').innerText(),'Settings that change (4)');
+ assert.deepEqual(await changes.evaluateAll(rows=>rows.map(row=>[...row.children].map(cell=>cell.innerText))),[
+  ['Genshin Impact · automatic claim time','06:00 → 07:30'],
+  ['Genshin Impact UID 600000005 · shown on the dashboard','Visible → Hidden'],
+  ['Webhook · Login bonus claimed','OFF → ON'],
+  ['Warn this many hours before resin or stamina is full','2 h → 6 h'],
+ ]);
+ assert.deepEqual(await page.locator('#transfer-skipped li').evaluateAll(rows=>rows.map(row=>[...row.children].map(cell=>cell.innerText))),[['Honkai: Star Rail UID 900000001','This account has no such UID (it is not added)']]);
+ await page.locator('#transfer-webhook-note').getByText('The exporting account had a Webhook. The URL is never saved, so set it again on the Notifications tab.',{exact:true}).waitFor();
+ assert.doesNotMatch(await page.locator('#settings-panel').innerText(),/events\.|resin_warn_hours|uid_not_found/,'no raw API names');
+ await page.locator('#transfer-apply').click();
+ await page.locator('.status.success').getByText('Settings imported.',{exact:true}).waitFor();
+ assert.deepEqual(settingsImports.at(-1),{path:'/api/v1/me/settings/import',body:chosen},'apply sends the previewed file');
+ await page.locator('#transfer-changes').waitFor({state:'detached'});
+ await page.waitForFunction(()=>document.activeElement?.id==='settings-file',null,{timeout:3000});
+ assert.equal(await settingsFile.inputValue(),'','the applied file is cleared');
  await page.locator('a.wordmark').click();await dashboard();
  assert.equal(new URL(page.url()).pathname,'/dashboard');
  assert.equal(new URL(page.url()).hash,'');
@@ -771,7 +831,7 @@ try{
  failPatch=false;
  // Settings replaces the removed nav/schedule checkbox/input[type=time].
  await settings('bonus');
- assert.equal(await page.locator('.settings-tabs [role=tab]').count(),6);
+ assert.equal(await page.locator('.settings-tabs [role=tab]').count(),7);
  assert.equal(await page.locator('#settings-panel').getAttribute('aria-labelledby'),'settings-tab-bonus');
  assert.equal(await page.locator('#settings-panel input[type=time]').count(),0);
  assert.equal(await page.locator('#settings-panel input[role=switch]').count(),2,'each game has its automatic claiming switch here too');
@@ -866,6 +926,8 @@ try{
  // Touch swipes on the settings panel switch tabs like a tap (selected tab, URL and
  // history follow), stop at either end, and never start on form controls or from mouse drags.
  await page.setViewportSize({width:375,height:812});
+ // The narrow tab bar scrolls sideways; the selected tab is kept in view.
+ const tabInView=key=>page.waitForFunction(key=>{const tab=document.getElementById('settings-tab-'+key).getBoundingClientRect(),bar=document.querySelector('.settings-tabs').getBoundingClientRect();return tab.left>=bar.left-1&&tab.right<=bar.right+1;},key,{timeout:3000}).catch(async error=>{console.error('tab not in view',key,await page.evaluate(key=>{const t=document.getElementById('settings-tab-'+key).getBoundingClientRect(),b=document.querySelector('.settings-tabs');const r=b.getBoundingClientRect();return JSON.stringify({t:[t.left,t.right],b:[r.left,r.right],scroll:b.scrollLeft,sw:b.scrollWidth,cw:b.clientWidth,url:location.pathname});},key));throw error;});
  const settingsTouch=await context.newCDPSession(page);await settingsTouch.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1});
  const plainPoint=()=>page.evaluate(()=>{const panel=document.getElementById('settings-panel'),r=panel.getBoundingClientRect(),x=innerWidth/2;for(let y=Math.max(r.top,0)+8;y<Math.min(r.bottom,innerHeight)-8;y+=8){const e=document.elementFromPoint(x,y);if(e&&panel.contains(e)&&!e.closest('input,select,textarea,button,a,label,[role=slider],[data-swipe-ignore],.table-wrap'))return {x,y};}return null;});
  const settingsDrag=async(start,dx,dy=0)=>{await settingsTouch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[start]});for(let i=1;i<=4;i++)await settingsTouch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:start.x+dx*i/4,y:start.y+dy*i/4}]});await settingsTouch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});};
@@ -884,7 +946,10 @@ try{
  await page.mouse.move(first.x,first.y);await page.mouse.down();await page.mouse.move(first.x-150,first.y,{steps:5});await page.mouse.up();await staysOn('uids');
  await page.goBack();await page.locator('#settings-tab-bonus[aria-selected=true]').waitFor();await idle();
  await page.locator('#settings-tab-bonus').focus();await page.keyboard.press('End');await page.locator('#settings-tab-delete[aria-selected=true]').waitFor();await idle();
+ await tabInView('delete');
  await settingsDrag(await plainPoint(),-120);await staysOn('delete');
+ await swipeTo(120,'transfer','/settings/transfer');await tabInView('transfer');
+ await page.reload();await page.locator('#settings-tab-transfer[aria-selected=true]').waitFor();await idle();await tabInView('transfer');
  await swipeTo(120,'notifications','/settings/notifications');
  await settingsTouch.send('Emulation.setTouchEmulationEnabled',{enabled:false});await settingsTouch.detach();
  await page.setViewportSize({width:1280,height:900});
@@ -919,7 +984,10 @@ try{
  assert.equal(await page.locator('#settings-tab-security').getAttribute('aria-label'),'セキュリティ');
  await page.setViewportSize({width:375,height:812});
  assert.equal(await page.locator('#settings-tab-security').innerText(),'セキュリティ','the tab keeps its name at mobile width');
- assert.ok(await page.locator('.settings-tabs').evaluate(e=>e.scrollWidth<=e.clientWidth),'mobile settings tabs fit');
+ // Seven tabs may not fit: the bar scrolls on its own, labels stay whole and the selected tab stays in view.
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'the tab bar never widens the page');
+ assert.ok(await page.locator('.settings-tabs [role=tab]').evaluateAll(tabs=>tabs.every(tab=>tab.scrollWidth<=tab.clientWidth)),'tab labels are not clipped');
+ await tabInView('security');
  await page.setViewportSize({width:1280,height:900});
  assert.equal(await page.locator('#settings-tab-security').getAttribute('aria-selected'),'true');
  assert.equal(await page.locator('#settings-panel').getAttribute('aria-labelledby'),'settings-tab-security');
