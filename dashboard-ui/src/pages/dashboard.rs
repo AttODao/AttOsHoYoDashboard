@@ -226,7 +226,7 @@ fn focus_game_tab(game: &'static str) {
 
 /// Card order puts what players check first at the top: UID, then the primary
 /// resource with its full-recovery estimate and its time at cap over 7 days, other stats, the endgame summary, the
-/// collapsed event calendar, and the login bonus last.
+/// collapsed event calendar, the login bonus, and the collapsed fetch details last.
 #[component]
 fn GamePanel(state: Signal<AppState>, game: &'static str, active: bool, mobile: bool) -> Element {
     let ui = use_preferences();
@@ -250,6 +250,7 @@ fn GamePanel(state: Signal<AppState>, game: &'static str, active: bool, mobile: 
             ChallengeSection { state, game }
             CalendarSection { state, game }
             BonusSection { state, game }
+            StatusDetails { state, game }
         }
     }
 }
@@ -610,20 +611,42 @@ fn GameStatusCard(
             if let Some(key) = missing_payload_notice(status.data.as_ref()).filter(|_| status.error_code.is_none()) {
                 p { {ui.text(key)} }
             }
-            details { class: "status-details",
-                summary {
-                    {ui.text("dashboard.data_details")}
-                    if status.error_code.is_some() { " · " {error_text(status.error_code.as_deref(), ui)} }
-                }
-                dl { class: "metrics status-metadata",
-                    Metric { label: ui.text("dashboard.uid"), value: if status.game_uid.is_empty() { ui.text("dashboard.missing").to_owned() } else { status.game_uid.clone() } }
-                    Metric { label: ui.text("dashboard.region"), value: status.region.clone() }
-                    Metric { label: ui.text("dashboard.last_fetched"), value: date(&status.fetched_at, ui) }
-                    if let Some(code) = &status.error_code {
-                        Metric { label: ui.text("dashboard.error"), value: error_text(Some(code), ui).to_owned() }
-                        Metric { label: ui.text("dashboard.error_code"), value: code.clone() }
-                        Metric { label: ui.text("dashboard.error_at"), value: date(&status.error_at, ui) }
-                    }
+        }
+    }
+}
+
+/// The selected UID's fetch details (UID, region, last fetch, the error if any), collapsed
+/// as the last element of its game card, below the login bonus. Only a status payload has
+/// details; the summary line names the fetch error so it shows without opening.
+#[component]
+fn StatusDetails(state: Signal<AppState>, game: &'static str) -> Element {
+    let ui = use_preferences();
+    let snapshot = state.read();
+    let status: Option<GameStatus> = snapshot.selected_game_account(game).and_then(|id| {
+        snapshot
+            .account_statuses
+            .iter()
+            .find(|entry| entry.id == id)
+            .map(|entry| entry.status.clone())
+    });
+    drop(snapshot);
+    let Some(status) = status else {
+        return rsx! {};
+    };
+    rsx! {
+        details { class: "status-details",
+            summary {
+                {ui.text("dashboard.data_details")}
+                if status.error_code.is_some() { " · " {error_text(status.error_code.as_deref(), ui)} }
+            }
+            dl { class: "metrics status-metadata",
+                Metric { label: ui.text("dashboard.uid"), value: if status.game_uid.is_empty() { ui.text("dashboard.missing").to_owned() } else { status.game_uid.clone() } }
+                Metric { label: ui.text("dashboard.region"), value: status.region.clone() }
+                Metric { label: ui.text("dashboard.last_fetched"), value: date(&status.fetched_at, ui) }
+                if let Some(code) = &status.error_code {
+                    Metric { label: ui.text("dashboard.error"), value: error_text(Some(code), ui).to_owned() }
+                    Metric { label: ui.text("dashboard.error_code"), value: code.clone() }
+                    Metric { label: ui.text("dashboard.error_at"), value: date(&status.error_at, ui) }
                 }
             }
         }

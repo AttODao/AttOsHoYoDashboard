@@ -576,6 +576,10 @@ try{
  assert.equal(await genshinCalendar.locator('details.calendar-details').getAttribute('open'),null,'the summary closes the details again');
  await starrail.locator('section.calendar-section').getByText('Nothing is running or announced.',{exact:true}).waitFor();
  assert.equal(await starrail.locator('section.calendar-section details').count(),0,'an empty calendar has nothing to expand');
+ // Fetch details close each card: its last element, after the endgame, calendar and login bonus.
+ const detailsLast=()=>Promise.all([genshin,starrail].map(panel=>panel.evaluate(card=>{const last=card.lastElementChild;return Boolean(last?.matches('details.status-details'))&&card.querySelectorAll('details.status-details').length===1&&['.challenge-section','.calendar-section','.bonus-section'].every(selector=>{const section=card.querySelector(selector);return !section||Boolean(section.compareDocumentPosition(last)&Node.DOCUMENT_POSITION_FOLLOWING);});})));
+ assert.equal(await genshin.locator('.challenge-section, .calendar-section, .bonus-section').count(),3,'every section the details must follow is shown');
+ assert.deepEqual(await detailsLast(),[true,true],'fetch details are the last element of each game card');
  // Time at cap over 7 days: under the resin (or Trailblaze Power) block, stored data only.
  for(const n of [3,4])assert.equal(counts.get('/api/v1/game-accounts/'+uid(n)+'/resource-history')||0,0,'hidden or undetected UIDs never load the history');
  const genshinHistory=genshin.locator('.cap-history');
@@ -622,6 +626,8 @@ try{
  statusMode='stale';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
  await starrail.getByText('Data from 6 h ago (HoYoLAB is temporarily unavailable)',{exact:true}).waitFor();
  assert.ok(!(await starrail.innerText()).includes('http:503'),'raw codes stay out of the visible card');
+ assert.equal(await starrail.locator('details.status-details > summary').innerText(),'Fetch details · HoYoLAB is temporarily unavailable','the collapsed details still name the fetch error');
+ assert.deepEqual(await detailsLast(),[true,true],'a failed fetch keeps its details at the card bottom');
  // A failed first summary says only why; the refresh button reloads it with the status.
  challengeMode='failed';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
  await starrail.locator('section.challenge-section').getByText('Could not load the records (The HoYoLAB battle record is private)',{exact:true}).waitFor();
@@ -773,6 +779,53 @@ try{
  await openMenu();await page.keyboard.press('Escape');await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});
  releaseStatus();while(passedStatus<heldStatus)await page.waitForTimeout(50);
  await page.unroute(slowStatus);await page.locator('.resource strong').first().waitFor();await dashboard();
+ // The menu opens on every press. Returning to a hidden tab used to start the dashboard refresh
+ // with `spawn` from a raw browser listener, outside every Dioxus scope: that panic aborted the
+ // Wasm UI, so the menu button (and everything else) silently stopped responding.
+ const trigger=page.locator('#ahd-menu-trigger');
+ const settled=()=>page.locator('#ahd-menu').evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});
+ const pressMenu=async label=>{stage='menu press: '+label;await openMenu();assert.equal(await trigger.getAttribute('aria-expanded'),'true',label);};
+ const menuClosed=async label=>{await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});await settled();assert.equal(await trigger.getAttribute('aria-expanded'),'false',label+' resets the open state');};
+ const returnToTab=()=>page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));});
+ let releaseReturn,heldReturn=0,passedReturn=0;const returnHeld=new Promise(resolve=>releaseReturn=resolve);
+ await page.route(slowStatus,async route=>{heldReturn++;await returnHeld;await route.fallback();passedReturn++;});
+ await returnToTab();
+ for(let i=0;i<200&&heldReturn===0;i++)await page.waitForTimeout(50);
+ assert.deepEqual(errors,[],'returning to the tab does not abort the UI');
+ assert.ok(heldReturn>0,'returning to the tab refreshes the game status when no refresh ran in the last minute (none since the reload)');
+ for(const round of [1,2]){await pressMenu('during the held refresh #'+round);await page.keyboard.press('Escape');await menuClosed('Escape during the held refresh');}
+ releaseReturn();while(passedReturn<heldReturn)await page.waitForTimeout(50);
+ await page.unroute(slowStatus);await idle();
+ const closeWith=[['the close button',()=>page.locator('#ahd-menu .drawer-heading button').click()],['Escape',()=>page.keyboard.press('Escape')],['the backdrop',()=>page.mouse.click(10,100)]];
+ for(const round of [1,2])for(const [how,close] of closeWith){await pressMenu(`after ${how} #${round}`);await close();await menuClosed(how);}
+ await menu('About');await page.waitForURL(origin+'/about');
+ await pressMenu('after navigating from the menu');await page.keyboard.press('Escape');await menuClosed('Escape on About');
+ await page.locator('.wordmark').click();await dashboard();
+ await menu('Settings');await page.waitForURL(origin+'/settings/games');
+ await returnToTab();await page.waitForTimeout(200);
+ assert.deepEqual(errors,[],'returning to the tab on another page does not abort the UI');
+ await pressMenu('after returning to the tab on Settings');await page.keyboard.press('Escape');await menuClosed('Escape on Settings');
+ await page.goBack();await dashboard();
+ await pressMenu('after browser Back');await page.keyboard.press('Escape');await menuClosed('Escape after Back');
+ // A dialog that cannot be shown hands its state back instead of leaving the button dead.
+ await page.evaluate(()=>{const original=HTMLDialogElement.prototype.showModal;HTMLDialogElement.prototype.showModal=function(){HTMLDialogElement.prototype.showModal=original;throw new DOMException('synthetic failure','InvalidStateError');};});
+ await trigger.click();await page.waitForTimeout(300);
+ assert.equal(await page.locator('#ahd-menu[open]').count(),0,'the failed dialog stays closed');
+ assert.equal(await trigger.getAttribute('aria-expanded'),'false','a dialog that could not open does not stay marked open');
+ await pressMenu('after a dialog failed to open');await page.keyboard.press('Escape');await menuClosed('Escape after the retry');
+ stage='dashboard';
+ // At 360px the selected game's details still close its card, below the login bonus.
+ await page.setViewportSize({width:360,height:800});
+ await page.waitForFunction(()=>document.getElementById('game-panel-genshin')?.getAttribute('role')==='tabpanel');
+ assert.deepEqual(await detailsLast(),[true,true],'fetch details stay last on a narrow screen');
+ const narrowDetails=genshin.locator('details.status-details');
+ await narrowDetails.scrollIntoViewIfNeeded();
+ const [narrowBonus,narrowSummary,narrowCard]=[await genshin.locator('.bonus-section').boundingBox(),await narrowDetails.locator('summary').boundingBox(),await genshin.boundingBox()];
+ assert.ok(narrowSummary.y>=narrowBonus.y+narrowBonus.height&&narrowSummary.height>=48&&narrowSummary.x+narrowSummary.width<=narrowCard.x+narrowCard.width,'the details summary sits below the bonus inside the card with a 48px target');
+ await narrowDetails.locator('summary').focus();await page.keyboard.press('Enter');
+ await genshin.locator('.status-metadata').waitFor();
+ await page.screenshot({path:path.join(root,'target/ui-dashboard-details-360.png'),fullPage:true});
+ await page.keyboard.press('Enter');await genshin.locator('.status-metadata').waitFor({state:'hidden'});
  // Mobile ARIA tabs: hidden panel, roving focus and keyboard edges.
  await page.setViewportSize({width:390,height:844});
  await page.waitForFunction(()=>document.getElementById('game-panel-genshin')?.getAttribute('role')==='tabpanel');

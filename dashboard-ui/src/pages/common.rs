@@ -349,7 +349,16 @@ pub(super) fn use_modal(id: String, active: bool, back_closes: bool, onclose: Ev
             let mut modal = modal.borrow_mut();
             if active {
                 if modal.is_none() {
-                    *modal = Modal::open(&id, onclose);
+                    let opened = Modal::open(&id, onclose);
+                    let failed = opened.is_none();
+                    *modal = opened;
+                    drop(modal);
+                    // The dialog could not be shown (not in the document, or already open
+                    // without being modal): hand the state back, so the caller's open flag
+                    // never claims a dialog that is not there and the next press retries.
+                    if failed {
+                        onclose.call(());
+                    }
                 }
             } else {
                 modal.take();
