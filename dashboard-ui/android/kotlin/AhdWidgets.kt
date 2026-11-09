@@ -150,8 +150,9 @@ abstract class AhdGameWidget(val game: WidgetGame) : AppWidgetProvider() {
     // Resizing changes the size the layout is chosen for (render with options).
     override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: Bundle) =
         updateWidgets(context, manager, intArrayOf(id))
-    // Texts set from code (values, times) follow the locale only when drawn again; the launcher
-    // re-inflates the layout itself (receiver intent-filter in AndroidManifest.application.xml).
+    // Texts set from code (values, times) follow a system locale change (the app language when
+    // nothing is saved, AhdLocale) only when drawn again (receiver intent-filter in
+    // AndroidManifest.application.xml).
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_LOCALE_CHANGED) AhdWidgets.renderAll(context) else super.onReceive(context, intent)
     }
@@ -163,8 +164,10 @@ abstract class AhdGameWidget(val game: WidgetGame) : AppWidgetProvider() {
     fun updateWidgets(context: Context, manager: AppWidgetManager, ids: IntArray) {
         val now = System.currentTimeMillis()
         val state = AhdWidgets.state(context, game)
+        // Texts follow the app's language, not only the system locale (AhdLocale).
+        val localized = AhdLocale.localized(context)
         for (id in ids) {
-            val views = render(context, state, now, manager.getAppWidgetOptions(id))
+            val views = render(localized, state, now, manager.getAppWidgetOptions(id))
             views.setOnClickPendingIntent(rootId(context), openApp(context))
             manager.updateAppWidget(id, views)
         }

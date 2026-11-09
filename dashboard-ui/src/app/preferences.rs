@@ -17,6 +17,10 @@ pub(super) enum Theme {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub(super) struct Preferences {
     pub(super) language: Language,
+    /// True once the language is the user's own choice, which is saved. Until then the
+    /// language follows the browser or device locale and is not saved, so a later locale
+    /// change still applies.
+    pub(super) language_chosen: bool,
     pub(super) theme: Theme,
 }
 
@@ -63,26 +67,53 @@ impl Preferences {
         }
     }
 
-    /// Saved choices win; without one, the browser language and color scheme decide.
+    /// Saved choices win; without one, the locale list (browser `navigator.languages`, or the
+    /// app's per-app then system locales) and the color scheme decide.
     #[cfg(any(target_arch = "wasm32", feature = "mobile", test))]
-    fn from_saved(language: Option<&str>, theme: Option<&str>, browser_language: &str) -> Self {
+    fn from_saved(language: Option<&str>, theme: Option<&str>, locales: &[String]) -> Self {
+        let saved = match language {
+            Some("en") => Some(Language::English),
+            Some("ja") => Some(Language::Japanese),
+            _ => None,
+        };
         Self {
-            language: match language {
-                Some("en") => Language::English,
-                Some("ja") => Language::Japanese,
-                _ if browser_language.starts_with("ja") || browser_language.is_empty() => {
-                    Language::Japanese
-                }
-                _ => Language::English,
-            },
+            language: saved
+                .unwrap_or_else(|| Language::for_locales(locales.iter().map(String::as_str))),
+            language_chosen: saved.is_some(),
             theme: theme.map_or(Theme::System, Self::theme_from_code),
         }
+    }
+
+    /// The same preferences after the locale list changed: only an unchosen language follows.
+    #[cfg(any(feature = "mobile", test))]
+    fn follow_locales(self, locales: &[String]) -> Self {
+        if self.language_chosen {
+            return self;
+        }
+        Self {
+            language: Language::for_locales(locales.iter().map(String::as_str)),
+            ..self
+        }
+    }
+
+    /// The menu's language choice, saved from now on.
+    pub(super) fn choose_language(&mut self, language: Language) {
+        self.language = language;
+        self.language_chosen = true;
     }
 
     pub(super) fn load() -> Self {
         #[cfg(target_arch = "wasm32")]
         if let Some(window) = web_sys::window() {
-            let browser = window.navigator().language().unwrap_or_default();
+            let navigator = window.navigator();
+            let mut locales: Vec<String> = navigator
+                .languages()
+                .iter()
+                .filter_map(|tag| tag.as_string())
+                .collect();
+            if locales.is_empty() {
+                locales.extend(navigator.language());
+            }
             let storage = window.local_storage().ok().flatten();
             let saved = |key| {
                 storage
@@ -92,11 +123,11 @@ impl Preferences {
             return Self::from_saved(
                 saved("ahd-language").as_deref(),
                 saved("ahd-theme").as_deref(),
-                &browser,
+                &locales,
             );
         }
-        // The app keeps the same two codes in its private storage; without them it
-        // starts in Japanese and the system theme.
+        // The app keeps the same two codes in its private storage; without a saved language
+        // the device locale decides (docs/android-changes.md 5.7).
         #[cfg(feature = "mobile")]
         {
             let saved: Option<std::collections::BTreeMap<String, String>> =
@@ -106,7 +137,7 @@ impl Preferences {
             Self::from_saved(
                 saved.get("language").map(String::as_str),
                 saved.get("theme").map(String::as_str),
-                "",
+                &crate::mobile::locale::device_locales(),
             )
         }
         #[cfg(not(feature = "mobile"))]
@@ -140,16 +171,23 @@ impl Preferences {
             }
             if let Ok(Some(storage)) = window.local_storage() {
                 // Only non-sensitive preferences persist; never credentials or reveal state.
-                let _ = storage.set_item("ahd-language", self.language_code());
+                // An unchosen language is not saved, so it keeps following the browser.
+                if self.language_chosen {
+                    let _ = storage.set_item("ahd-language", self.language_code());
+                }
                 let _ = storage.set_item("ahd-theme", self.theme_code());
             }
         }
         #[cfg(feature = "mobile")]
         {
             crate::mobile::dom::apply_preferences(self.language_code(), self.theme_code());
-            let saved =
-                serde_json::json!({"language": self.language_code(), "theme": self.theme_code()});
+            let mut saved = serde_json::json!({"theme": self.theme_code()});
+            if self.language_chosen {
+                saved["language"] = self.language_code().into();
+            }
             let _ = crate::mobile::storage::write(APP_PREFERENCES, &saved.to_string());
+            // Widgets read the saved choice (or the device locale) from Kotlin.
+            crate::mobile::locale::language_changed();
         }
     }
 }
@@ -158,37 +196,103 @@ pub(super) fn use_preferences() -> Preferences {
     *use_context::<Signal<Preferences>>().read()
 }
 
+/// Follows a per-app or system language change made while the app was in the background
+/// (the activity is not recreated for locale changes): re-read the locales when the page
+/// becomes visible again.
+#[cfg(feature = "mobile")]
+pub(super) fn use_device_language(mut preferences: Signal<Preferences>) {
+    use_hook(move || {
+        let mut eval = document::eval(
+            "document.addEventListener('visibilitychange', () => { if (!document.hidden) dioxus.send(true); });",
+        );
+        spawn(async move {
+            while eval.recv::<bool>().await.is_ok() {
+                let current = *preferences.peek();
+                let next = current.follow_locales(&crate::mobile::locale::device_locales());
+                if next != current {
+                    preferences.set(next);
+                }
+            }
+        });
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn tags(tags: &[&str]) -> Vec<String> {
+        tags.iter().map(|tag| (*tag).to_owned()).collect()
+    }
+
     #[test]
     fn unknown_preferences_are_not_interpreted_as_settings() {
         assert_eq!(
-            Preferences::from_saved(Some("other"), Some("auto"), "ja-JP"),
+            Preferences::from_saved(Some("other"), Some("auto"), &tags(&["ja-JP"])),
             Preferences::default()
         );
-        let saved = Preferences::from_saved(Some("en"), Some("light"), "ja-JP");
+        let saved = Preferences::from_saved(Some("en"), Some("light"), &tags(&["ja-JP"]));
         assert_eq!(saved.language_code(), "en");
+        assert!(saved.language_chosen);
         assert_eq!(saved.theme_code(), "light");
         assert_eq!(
-            Preferences::from_saved(Some("ja"), Some("dark"), "en-US").theme_code(),
+            Preferences::from_saved(Some("ja"), Some("dark"), &tags(&["en-US"])).theme_code(),
             "dark"
         );
     }
 
     #[test]
+    fn a_saved_language_wins_over_any_locale() {
+        for locales in [tags(&["en-US"]), tags(&["fr-FR"]), tags(&[])] {
+            let saved = Preferences::from_saved(Some("ja"), None, &locales);
+            assert_eq!(saved.language_code(), "ja", "{locales:?}");
+            assert_eq!(saved.follow_locales(&tags(&["en-US"])), saved);
+        }
+        let saved = Preferences::from_saved(Some("en"), None, &tags(&["ja-JP"]));
+        assert_eq!(
+            saved.follow_locales(&tags(&["ja-JP"])).language_code(),
+            "en"
+        );
+    }
+
+    #[test]
     fn first_visit_follows_browser_language_and_color_scheme() {
-        let first = Preferences::from_saved(None, None, "en-GB");
+        let first = Preferences::from_saved(None, None, &tags(&["en-GB"]));
         assert_eq!(first.language_code(), "en");
+        assert!(!first.language_chosen);
         assert_eq!(first.theme, Theme::System);
         assert_eq!(first.resolved_theme(true), "light");
         assert_eq!(first.resolved_theme(false), "dark");
         assert_eq!(
-            Preferences::from_saved(None, None, "ja").language_code(),
+            Preferences::from_saved(None, None, &tags(&["ja"])).language_code(),
             "ja"
         );
-        let dark = Preferences::from_saved(None, Some("dark"), "ja");
+        // Neither Japanese nor English: English. Nothing readable: the Japanese default.
+        assert_eq!(
+            Preferences::from_saved(None, None, &tags(&["de-DE"])).language_code(),
+            "en"
+        );
+        assert_eq!(
+            Preferences::from_saved(None, None, &[]).language_code(),
+            "ja"
+        );
+        let dark = Preferences::from_saved(None, Some("dark"), &tags(&["ja"]));
         assert_eq!(dark.resolved_theme(true), "dark");
+    }
+
+    #[test]
+    fn an_unchosen_language_follows_locale_changes_until_the_user_picks_one() {
+        let first = Preferences::from_saved(None, Some("light"), &tags(&["ja-JP"]));
+        let moved = first.follow_locales(&tags(&["en-US", "ja-JP"]));
+        assert_eq!(moved.language_code(), "en");
+        assert_eq!(moved.theme_code(), "light");
+        assert!(!moved.language_chosen);
+        let mut chosen = moved;
+        chosen.choose_language(Language::Japanese);
+        assert!(chosen.language_chosen);
+        assert_eq!(
+            chosen.follow_locales(&tags(&["en-US"])).language_code(),
+            "ja"
+        );
     }
 }

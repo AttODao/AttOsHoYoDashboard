@@ -249,7 +249,7 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
                     div { class: "language-options",
                         label { r#for: "menu-language", {ui.text("shell.language")} }
                         select { id: "menu-language", value: if ui.language == Language::Japanese { "ja" } else { "en" },
-                            onchange: move |event| preferences.write().language = if event.value() == "en" { Language::English } else { Language::Japanese },
+                            onchange: move |event| preferences.write().choose_language(if event.value() == "en" { Language::English } else { Language::Japanese }),
                             option { value: "ja", lang: "ja", {ui.text("language.japanese")} }
                             option { value: "en", lang: "en", {ui.text("language.english")} }
                         }
