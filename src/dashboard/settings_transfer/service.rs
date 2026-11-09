@@ -29,8 +29,9 @@ pub(in crate::dashboard) struct SettingsTransfer {
     db: DatabaseConnection,
     timezone: ScheduleZone,
     operations: Operations,
-    /// The server is shutting down: like other reward changes, imports are refused.
-    closing: bool,
+    /// Whether the server is shutting down: like other reward changes, imports are then
+    /// refused. Asked after the owner's operation lock is held, as `CookieStore` does.
+    closing: Box<dyn Fn() -> bool + Send + Sync>,
 }
 
 /// One setting an import changes.
@@ -106,20 +107,28 @@ impl SettingsTransfer {
         db: DatabaseConnection,
         timezone: ScheduleZone,
         operations: Operations,
-        closing: bool,
+        closing: impl Fn() -> bool + Send + Sync + 'static,
     ) -> Self {
         Self {
             db,
             timezone,
             operations,
-            closing,
+            closing: Box::new(closing),
         }
     }
 
-    /// Locks the user and re-checks the session inside `tx`. Only browser sessions pass:
+    /// Re-checks the session inside `tx`, locking the user row first when `lock` is set
+    /// (writes only; export and preview just read). Only browser sessions pass:
     /// `Sessions::authenticate` never accepts an API token hash.
-    async fn session_locked(&self, tx: &DatabaseTransaction, actor: &Identity) -> Result<Uuid> {
-        lock_user(tx, actor.user.id).await?;
+    async fn session(
+        &self,
+        tx: &DatabaseTransaction,
+        actor: &Identity,
+        lock: bool,
+    ) -> Result<Uuid> {
+        if lock {
+            lock_user(tx, actor.user.id).await?;
+        }
         let fresh = Sessions::authenticate(tx, &actor.token_hash).await?;
         if fresh.user.id != actor.user.id {
             return Err(Error::Unauthorized);
@@ -131,7 +140,7 @@ impl SettingsTransfer {
     /// The user's settings as an `ahd-settings` file.
     pub(in crate::dashboard) async fn export(&self, actor: &Identity) -> Result<Value> {
         let tx = self.db.begin().await?;
-        let user = self.session_locked(&tx, actor).await?;
+        let user = self.session(&tx, actor, false).await?;
         let link = hoyolab_account::Entity::find()
             .filter(hoyolab_account::Column::OwnerUserId.eq(user))
             .one(&tx)
@@ -186,12 +195,12 @@ impl SettingsTransfer {
         file: &Value,
     ) -> Result<Outcome> {
         let tx = self.db.begin().await?;
-        let user = self.session_locked(&tx, actor).await?;
+        let user = self.session(&tx, actor, false).await?;
         let document = match document::parse(file) {
             Ok(document) => document,
             Err(errors) => return Ok(Outcome::Invalid(errors)),
         };
-        let (report, _) = self.plan(&tx, user, &document).await?;
+        let (report, _) = self.plan(&tx, user, &document, false).await?;
         tx.rollback().await?;
         Ok(Outcome::Planned(report))
     }
@@ -207,19 +216,19 @@ impl SettingsTransfer {
             Err(errors) => {
                 // Still reject a stale session before saying anything about the file.
                 let tx = self.db.begin().await?;
-                self.session_locked(&tx, actor).await?;
+                self.session(&tx, actor, false).await?;
                 tx.rollback().await?;
                 return Ok(Outcome::Invalid(errors));
             }
         };
-        if self.closing {
-            return Err(Error::Unavailable("server is shutting down"));
-        }
         // Serialize with the reward worker like a schedule change from the settings page.
         let _operation = self.operations.acquire(actor.user.id).await;
+        if (self.closing)() {
+            return Err(Error::Unavailable("server is shutting down"));
+        }
         let tx = self.db.begin().await?;
-        let user = self.session_locked(&tx, actor).await?;
-        let (report, writes) = self.plan(&tx, user, &document).await?;
+        let user = self.session(&tx, actor, true).await?;
+        let (report, writes) = self.plan(&tx, user, &document, true).await?;
         let now = Utc::now();
         for write in writes {
             match write {
@@ -253,12 +262,14 @@ impl SettingsTransfer {
         Ok(Outcome::Planned(report))
     }
 
-    /// Compares the file with the stored settings under row locks held by `tx`.
+    /// Compares the file with the stored settings. With `lock` (apply) the rows stay locked
+    /// by `tx` until it ends; a preview only reads, so it never waits behind the reward worker.
     async fn plan(
         &self,
         tx: &DatabaseTransaction,
         user: Uuid,
         document: &Document,
+        lock: bool,
     ) -> Result<(Report, Vec<Write>)> {
         let mut changes = Vec::new();
         let mut skipped = Vec::new();
@@ -271,8 +282,8 @@ impl SettingsTransfer {
             .filter(|link| link.auth_status == "verified" && link.hoyolab_uid.is_some());
         let (settings, games) = match &link {
             Some(link) => (
-                reward_rows(tx, link.id, true).await?,
-                game_rows(tx, link.id, true).await?,
+                reward_rows(tx, link.id, lock).await?,
+                game_rows(tx, link.id, lock).await?,
             ),
             None => (Vec::new(), Vec::new()),
         };
@@ -362,10 +373,12 @@ impl SettingsTransfer {
                 }
             }
         }
-        let stored = notification_setting::Entity::find_by_id(user)
-            .lock_exclusive()
-            .one(tx)
-            .await?;
+        let query = notification_setting::Entity::find_by_id(user);
+        let stored = if lock {
+            query.lock_exclusive().one(tx).await?
+        } else {
+            query.one(tx).await?
+        };
         let current = PersonalPreferences::from_row(stored.as_ref());
         let wanted = imported_preferences(&current, &document.notifications);
         let before = changes.len();

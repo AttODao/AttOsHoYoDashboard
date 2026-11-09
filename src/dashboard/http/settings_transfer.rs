@@ -24,11 +24,12 @@ pub(super) fn protected_routes() -> Router<App> {
 }
 
 fn service(app: &App) -> SettingsTransfer {
+    let cookies = app.cookies.clone();
     SettingsTransfer::new(
         app.accounts.db.clone(),
         app.config.timezone,
         app.operations.clone(),
-        app.cookies.as_ref().is_some_and(|store| store.is_closing()),
+        move || cookies.as_ref().is_some_and(|store| store.is_closing()),
     )
 }
 

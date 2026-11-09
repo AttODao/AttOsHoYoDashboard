@@ -32,7 +32,7 @@ fn transfer(db: &DatabaseConnection) -> SettingsTransfer {
         db.clone(),
         FixedOffset::east_opt(9 * 3600).unwrap().into(),
         Operations::default(),
-        false,
+        || false,
     )
 }
 
@@ -381,7 +381,7 @@ async fn imports_reject_bad_files_skip_unlinked_entries_and_need_a_live_session(
         db.clone(),
         FixedOffset::east_opt(9 * 3600).unwrap().into(),
         Operations::default(),
-        true,
+        || true,
     );
     assert!(matches!(
         closing.import(&owner, &file).await,
