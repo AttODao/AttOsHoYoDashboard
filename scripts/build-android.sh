@@ -61,6 +61,11 @@ grep -qF "android:configChanges=\"$config_changes\"" "$manifest"
 grep -q 'android:launchMode=' "$manifest" \
   || sed -i 's/<activity android:configChanges=/<activity android:launchMode="singleTask" android:configChanges=/' "$manifest"
 grep -qF 'android:launchMode="singleTask"' "$manifest"
+# The session cookie files never go into backups or device transfers (res/xml/ahd_*_rules.xml).
+grep -q 'android:dataExtractionRules=' "$manifest" \
+  || sed -i 's/<application android:hasCode=/<application android:fullBackupContent="@xml\/ahd_backup_rules" android:dataExtractionRules="@xml\/ahd_data_extraction_rules" android:hasCode=/' "$manifest"
+grep -qF 'android:fullBackupContent="@xml/ahd_backup_rules"' "$manifest"
+grep -qF 'android:dataExtractionRules="@xml/ahd_data_extraction_rules"' "$manifest"
 if ! grep -q AhdInboxJob "$manifest"; then
   awk '
     /<\/application>/ {

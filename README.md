@@ -138,7 +138,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 アプリのメニューの「ブラウザで開く」は、表示中の画面に対応するweb版のページ（`AHD_SERVER_URL` のオリジン＋同じパス）を端末の既定のブラウザで開きます（Androidの `Intent.ACTION_VIEW`、`webbrowser` クレート経由）。初回設定のパスワード変更画面と「セキュリティ」設定にも同じボタンがあります。ブラウザを開けなかったときはエラーを表示します。web版にはこのボタンはありません。
 
-アプリはビルド時に指定した1つのサーバーへRust（reqwest、rustls）から直接接続します。ログイン応答のセッションCookieをアプリ専用領域（`getFilesDir()`、他アプリから読めない）に保存し、以後の要求に `Cookie` と、サーバーが要求する `Origin`（＝サーバーのOrigin）を付けます。ログアウトや期限切れで削除されます。サーバー側の変更はありません。
+アプリはビルド時に指定した1つのサーバーへRust（reqwest、rustls）から直接接続します。ログイン応答のセッションCookieを、Android Keystoreの取り出せないAES-GCM鍵で暗号化してアプリ専用領域（`getFilesDir()` の `session-cookies.enc`）に保存し、以後の要求に `Cookie` と、サーバーが要求する `Origin`（＝サーバーのOrigin）を付けます。保存したCookieはバックアップと端末間の移行から除外します。1.9.0までの平文のファイルは最初の起動で暗号化して消すため、更新後もログインしたままです。復号できないファイル（別の端末で復元したデータなど）はログアウトとして扱います。ログアウトや期限切れで削除されます（[docs/android-changes.md](docs/android-changes.md) 5.7）。サーバー側の変更はありません。
 
 #### 通知
 
@@ -179,7 +179,7 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | `dashboard-ui/src/app/navigation.rs` | 通常パス・History API・認証状態に応じた転送と戻る／進むの対応 |
 | `dashboard-ui/src/app/home_widgets.rs` | 選択アカウント・状態とAndroidホーム画面ウィジェットの同期 |
 | `dashboard-ui/android/kotlin/` | ウィジェットのモデル・パーサー・推定、保存・JNI・更新ジョブとゲーム別provider（表示値の判断は `GenshinWidgetModel.kt`／`StarRailWidgetModel.kt`、描画は `GenshinWidget.kt`／`StarRailWidget.kt`） |
-| `dashboard-ui/android/test/` | ウィジェットモデルのKotlin JVMテスト |
+| `dashboard-ui/android/test/` | ウィジェットモデルとセッションCookieの保存形式・移行判断（`AhdSessionFormatTest.kt`）のKotlin JVMテスト |
 | `dashboard-ui/src/app/state.rs` | 画面状態、認証・初期設定ゲートと画面データ取得の起動 |
 | `dashboard-ui/src/app/session.rs` | `/me`による起動・再確認、初期設定ゲートのその場での再読み込み、ログアウト |
 | `dashboard-ui/src/app/actions.rs` | 操作の予約（busy）と完了・APIエラー処理。セッション世代とは独立。完了後、busyで失われたフォーカスを操作したボタンへ戻し、失敗時はエラー表示へ移す（web） |
@@ -189,13 +189,13 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | `dashboard-ui/src/app/swipe.rs` | タブの横スワイプの判定（距離・速度・縦横比・画面端の除外としきい値）と移動先のタブ。web版とアプリで共通、テストあり |
 | `dashboard-ui/src/pages/swipe_tabs.rs` | タブのパネルを包む `SwipeableTabs`（`use_horizontal_swipe_tabs`）：左スワイプで次・右スワイプで前のタブ、端ではバウンス、切り替えアニメーション。web版のタッチ収集（web-sys） |
 | `dashboard-ui/src/platform.rs` | web版とAndroidアプリの切り替え（`APP`）、両方で動くタイマーと時刻、web版を既定のブラウザで開く処理 |
-| `dashboard-ui/src/mobile/` | Androidアプリ専用：サーバーへの直接接続とセッションCookieの保存（`http.rs`・`session.rs`）、アプリ専用領域のファイル（`storage.rs`）、端末時刻（`time.rs`）、通知予測とJNIブリッジ（`reminders.rs`・`notify.rs`）、ウィジェットへ渡す内容とJNI（`widgets.rs`）、サーバーの受信箱への登録の判断（`inbox.rs`）、Forgejoリリースによる更新確認（`updates.rs`、インターフェースはファイル先頭のコメント）、APKのダウンロード・SHA-256とAPKの検証・PackageInstaller（`update_install.rs`）、logcatへの出力（`log.rs`）、戻るボタンと開いているダイアログのスタック（`back.rs`）、web版がweb-sysで行うDOM操作の `document::eval` 版（`dom.rs`）、タブの横スワイプのタッチ収集（`swipe.rs`） |
+| `dashboard-ui/src/mobile/` | Androidアプリ専用：サーバーへの直接接続とセッションCookieの読み込み・保存（`http.rs`・`session.rs`。暗号化はKotlinの `AhdSessionStore`）、アプリ専用領域のファイル（`storage.rs`）、端末時刻（`time.rs`）、通知予測とJNIブリッジ（`reminders.rs`・`notify.rs`）、ウィジェットへ渡す内容とJNI（`widgets.rs`）、サーバーの受信箱への登録の判断（`inbox.rs`）、Forgejoリリースによる更新確認（`updates.rs`、インターフェースはファイル先頭のコメント）、APKのダウンロード・SHA-256とAPKの検証・PackageInstaller（`update_install.rs`）、logcatへの出力（`log.rs`）、戻るボタンと開いているダイアログのスタック（`back.rs`）、web版がweb-sysで行うDOM操作の `document::eval` 版（`dom.rs`）、タブの横スワイプのタッチ収集（`swipe.rs`） |
 | `dashboard-ui/src/app/device_notifications.rs` | 端末通知の設定・予定の保存、状態変更時の再計算、サーバーの受信箱への端末登録と解除、表示中の確認、通知からの画面遷移 |
 | `dashboard-ui/src/app/updates.rs` | アプリ起動時の更新確認（`mobile::updates::check` をバックグラウンドで1回実行し、結果を `Signal<Option<UpdateCheck>>` のcontextで渡す。確認失敗はログのみ）、更新ダイアログの状態・スキップ・通知と「不明なアプリのインストール」の許可の確認（設定から戻ると続行）・ダウンロードとキャンセル・取り消されたインストールの検証済みAPKの保持 |
 | `dashboard-ui/src/pages/device_notifications.rs` | アプリの端末通知カード（全体のON/OFF・許可・登録状態・テスト） |
-| `dashboard-ui/android/res/` | ランチャーと通知のアイコン、アプリ名、DayNightテーマ、開発用サーバー（localhost）へのHTTPを許可するnetwork security config（`build-android` が生成プロジェクトへ上書き） |
+| `dashboard-ui/android/res/` | ランチャーと通知のアイコン、アプリ名、DayNightテーマ、開発用サーバー（localhost）へのHTTPを許可するnetwork security config、セッションCookieをバックアップから除外する規則（`xml/ahd_backup_rules.xml`・`xml/ahd_data_extraction_rules.xml`）（`build-android` が生成プロジェクトへ上書き） |
 | `dashboard-ui/android/kotlin/` | `MainActivity.kt` の隣へ `build-android` がコピーするKotlin：ホーム画面ウィジェット用のバー型・丸型インジケーター（`AhdIndicators.kt`、規則は `AhdIndicatorModel.kt`）と、デバッグビルドだけのサンプル画面（`AhdIndicatorSamples.kt`）。使い方は `dashboard-ui/android/README.md`、JVMの検査は `android/tests/` と `test-android-kotlin` |
-| `dashboard-ui/android/MainActivity.kt` | AndroidのActivity（`Dioxus.toml` の `android_main_activity`）：ルートでの戻るをバックグラウンド化、設定変更時の文字サイズ反映、破棄時のプロセス終了、通知の権限要求・アラーム・receiver、サーバーの受信箱を読む `AhdInbox` とそのジョブ（receiverとジョブの設定は `android/AndroidManifest.application.xml` を生成manifestへ挿入） |
+| `dashboard-ui/android/MainActivity.kt` | AndroidのActivity（`Dioxus.toml` の `android_main_activity`）：ルートでの戻るをバックグラウンド化、設定変更時の文字サイズ反映、破棄時のプロセス終了、通知の権限要求・アラーム・receiver、セッションCookieをKeystoreで暗号化して保存する `AhdSessionStore`（形式と判断は `AhdSessionFormat`）、サーバーの受信箱を読む `AhdInbox` とそのジョブ（receiverとジョブの設定は `android/AndroidManifest.application.xml` を生成manifestへ挿入） |
 | `src/dashboard/games/summary.rs` | 上流ゲーム状態から画面用の要約への写像 |
 
 ### バックエンドモジュール

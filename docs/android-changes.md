@@ -29,7 +29,7 @@
 WebViewのページからはサーバーのHttpOnly Cookieを扱えないため、アプリはRustから直接サーバーへ接続します（`mobile/http.rs`、reqwest + rustls）。
 
 - 接続先はビルド時の `AHD_SERVER_URL` に固定します。HTTPS、またはlocalhostのHTTPだけを受け付け、パスやクエリ、認証情報は付けられません（`mobile/session.rs::parse_origin`）。
-- ログイン応答の `Set-Cookie` をアプリ専用領域の `session-cookies.json`（`getFilesDir()`、パーミッション0600、原子的に書き換え）へ保存し、以後の要求に `Cookie` を付けます。ログアウトや期限切れで消えます。
+- ログイン応答の `Set-Cookie` をCookie jarに入れ、Android Keystoreの鍵で暗号化してアプリ専用領域の `session-cookies.enc`（`getFilesDir()`）へ保存し、以後の要求に `Cookie` を付けます。ログアウトや期限切れで消えます。暗号化と移行の詳細は5.7節にあります。
 - サーバーがCSRF対策で検査する `Origin` には、サーバー自身のOriginを送ります。リダイレクトは追いません（Cookieと `Origin` を別のホストへ送らないため）。
 - User-Agentは `AHD-Android/<バージョン> (Android)` です。セッション一覧では「Android」と表示されます。
 - パス検査、応答サイズの上限、エラーコードから表示文への変換は、web版と同じ `api.rs` の処理を使います。
@@ -213,7 +213,7 @@ web版がWebhookへ送る個人の通知を、すべてアプリでも受け取�
 **仕組み**
 
 - 「この端末に通知する」をONにすると、アプリはサーバーに端末を登録します（`POST /api/v1/me/notifications/app-devices`）。サーバーは、Webhookへ送るのと同じ箇所（`Notifier::deliver`）で、同じ通知をそのユーザーの受信箱に入れます。条件、重複排除、文面（通知設定の言語）はWebhookと同じです。通知する種類は、Webhook（`events`）とは別にアプリ用の選択（`app_events`）で決まります（既存の設定はWebhookの選択をコピーして移行）。
-- Kotlinの `AhdInbox`（`android/MainActivity.kt`）が、アプリ専用領域のセッションCookie（`files/session-cookies.json`）で受信箱を読み（`GET …/app-devices/{id}/inbox?after=…`）、Androidの通知を出します。読む時機は、JobSchedulerの定期ジョブ（15分ごと、ネットワーク接続時、アプリを閉じていても・再起動後も）、アプリの表示中の1分ごと、アプリに戻ったとき、登録直後とテスト送信直後です。
+- Kotlinの `AhdInbox`（`android/MainActivity.kt`）が、Keystoreで暗号化して保存したセッションCookie（`AhdSessionStore`、5.7節）で受信箱を読み（`GET …/app-devices/{id}/inbox?after=…`）、Androidの通知を出します。読む時機は、JobSchedulerの定期ジョブ（15分ごと、ネットワーク接続時、アプリを閉じていても・再起動後も）、アプリの表示中の1分ごと、アプリに戻ったとき、登録直後とテスト送信直後です。
 - 外部のプッシュサービス（FCMなど）は使いません。サーバーに外部サービスの資格情報が要らず、Googleのサービスがない端末でも動きます。その代わり、アプリを開いていないときは届くまで最大15分程度（Dozeではさらに遅れることがある）かかります。
 - 通知チャンネルは5.2節と同じ「ゲームの状態」です。サーバーの重複排除キーをタグにし、同じタグの通知は置き換えます。
 - タップすると、通知を扱う画面を開きます：ログインボーナスの結果 → 設定 › 報酬、Cookieの失効 → 設定 › 連携、ログイン・ログイン失敗 → 設定 › 認証・セキュリティ、テスト → 設定 › 通知、ゲームの状態 → ダッシュボード（`navigation::notification_target`）。
@@ -304,7 +304,20 @@ Android Credential Manager（`androidx.credentials`）でアプリ内からパ�
 - 更新後は `MY_PACKAGE_REPLACED` で「AHDを…に更新しました」の通知を出し、アプリの再表示も試みます。Android 10以降はバックグラウンドからのActivity起動が止められる（Android 14で `BAL_BLOCK` を確認）ので、通知のタップで開きます。通知が許可されていなければ通知も出ないため、ダイアログの「閉じたら、もう一度開いてください」が唯一の案内です。アプリ起動時にはこの通知を消します。
 - 確認方法（エミュレータ、x86_64）: `AHD_UPDATE_FORGEJO_URL=http://localhost:<port>`・`AHD_UPDATE_REPOSITORY=o/r` を付けて旧版と新版（`dashboard-ui/Cargo.toml` の版だけ上げる）を同じworktreeでビルドし（同じデバッグ鍵になる）、`releases/latest`・APK・`SHA256SUMS` を返すモックを `adb reverse` でつなぎます。更新あり／なし・後で・スキップ・キャンセル・ダウンロード中断・SHA-256不一致・一覧なし・別の鍵で署名したAPK・インストールの取り消し・1.7.0→1.7.1の更新を確認しました。通知と「不明なアプリのインストール」の許可の扱いは、使い捨てのForgejo（`releases/latest` とアセット）とAPI 34のエミュレータで、権限なしの新規インストールから確かめました（通知を拒否→ダウンロードせずに許可の案内→設定で許可して戻ると自動でダウンロード→確認画面で取り消し→「もう一度試す」はダウンロードなしで確認画面→更新。APKの取得はForgejoのログで1回。通知を許可した場合はその答えの後にダウンロードし、更新後に「更新しました」の通知が出る）。
 
-### 5.7 戻るボタンとダイアログ
+### 5.7 セッションCookieの暗号化保存
+
+セッションCookie（Rustの `mobile/session.rs::Jar`、`{"名前":"値"}` のJSON）は、Android Keystoreの鍵で暗号化してから保存します。
+
+- **鍵**：`AndroidKeyStore` の別名 `ahd_session_cookies`、AES-256、GCM、パディングなし。鍵は端末の外へ取り出せません。ユーザー認証（画面ロックの解除）を要求しないため、アプリを閉じていても端末がロック中でも、15分ごとの受信箱のジョブ（`AhdInbox`）と30分ごとのウィジェットのジョブ（`AhdWidgets`）がCookieを読めます。最初の保存時に作り、ログアウトしても消しません。
+- **形式**：`files/session-cookies.enc` に、`AHDS`・形式番号1・IVの長さ・IV（12バイト、暗号ごとにKeystoreが選ぶ）・暗号文とGCMタグを並べたバイト列を保存します。AADは `cc.attodao.ahd session-cookies v1` です。書き込みは一時ファイルからの置き換えです。
+- **処理の場所**：暗号化と復号はKotlinの `AhdSessionStore`（`android/MainActivity.kt`）が行います。Rustの `mobile/http.rs` は最初の要求のときに `read`、Cookieが変わったときに `write`、空になったときに `clear` を、ほかのJNI呼び出しと同じ方法（アクティビティのクラスローダー、`with_local_frame`、例外の消去。`mobile/notify.rs::call_on`）で呼びます。受信箱とウィジェットのジョブは `AhdSessionStore.cookieHeader` を直接呼びます。Android依存のない部分（形式、移行の判断、失敗の分類、JSONの検証、Cookieヘッダー）は `AhdSessionFormat` にあり、`android/test/AhdSessionFormatTest.kt` でテストします。
+- **移行**：1.9.0までは平文の `files/session-cookies.json` に保存していました。最初に読んだとき、平文のファイルしかなければ、それを暗号化して `session-cookies.enc` に書き、平文のファイルを消します。そのため更新後もログインしたままです。暗号化に失敗したときは平文のファイルを残して次回もう一度試します。両方のファイルがあるとき（暗号化の後、削除の前に止まった場合）は、暗号化した方を使い平文のファイルを消します。JSONとして読めない平文のファイルは消して、ログアウトとして扱います。
+- **復号できないとき**：鍵がない、別の鍵で暗号化されている（別の端末で復元したデータなど）、ファイルが壊れている場合は、ファイルを消してログアウトとして扱います。アプリは異常終了しません。次の `/me` が401になるので、通常のセッション切れと同じログアウトの理由（`messages.please_sign_in` など、`reminders::FORGETTING_SIGN_OUTS`）で通知の予定とウィジェットを消します。それ以外の消去はしません。
+- **Keystoreの一時的な失敗**：Keystoreが応答しないなどの失敗（Keystoreは処理中や起動直後の失敗も `InvalidKeyException` で報告するため、`KeyPermanentlyInvalidatedException` 以外の `InvalidKeyException` もここに含めます）では、ファイルを残し、ログアウトとしては扱いません。アプリの要求は通信エラーと同じ扱いで失敗し（予定は残ります）、次の要求でもう一度読みます。ウィジェットのジョブは失敗した更新として既存の表示を残し、受信箱のジョブは再試行します。同じプロセスで5回以上、5分以上にわたって続けて失敗したときは、壊れたKeystoreでアプリが使えなくなり続けないよう、復号できないときと同じくファイルを消してログアウトとして扱います（再ログインした後はメモリ上のCookieで動きます）。
+- **保存の失敗と排他**：Cookieが変わったのに保存できなかったときは、Rustが次の要求の後にもう一度保存します。ファイルの読み書きと移行は、アプリの要求とジョブのスレッドの間で1つのロックで排他します。
+- **バックアップ**：`session-cookies.enc` と旧形式の `session-cookies.json`（とそれぞれの一時ファイル）を、クラウドバックアップと端末間の移行から除外します（`android/res/xml/ahd_backup_rules.xml` はAndroid 11以前の `fullBackupContent`、`ahd_data_extraction_rules.xml` はAndroid 12以降の `dataExtractionRules`。`scripts/build-android.sh` がmanifestの `<application>` に追加）。Keystoreの鍵はもともとバックアップされません。
+
+### 5.8 戻るボタンとダイアログ
 
 - ダイアログ（`ModalDialog`・`ConfirmDialog`・メニューのボトムシート・更新ダイアログ）が開いているときに戻るボタンを押すと、いちばん上のダイアログだけを閉じます。閉じ方はEscapeと同じで、各ダイアログの `onclose` を呼びます（メニューは閉じる、更新の案内は「後で」、確認ダイアログはキャンセル）。何も開いていなければ、前の画面へ戻ります。最初の画面では、これまでどおりバックグラウンドへ移します（`moveTaskToBack`）。
 - 開いているダイアログの記録は `mobile/back.rs` の1か所です。アプリのダイアログはすべて `use_modal` → `mobile::dom::Modal` で開くので、`Modal` が開くときに登録し、破棄で外します（開いた順のスタック。いちばん上は最後に開いたもの）。ダイアログごとに戻るボタンの処理を書く必要はありません。
@@ -359,8 +372,8 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | --- | --- |
 | `dashboard-ui/src/platform.rs` | `APP`、`sleep_ms`、`now_ms`、`open_external` |
 | `dashboard-ui/src/mobile/mod.rs` | アプリ用モジュールの宣言 |
-| `dashboard-ui/src/mobile/http.rs` | サーバーへの直接接続、Cookieの保存、`server_origin` |
-| `dashboard-ui/src/mobile/session.rs` | Cookie jarとサーバーURLの規則（I/Oなし、テストあり） |
+| `dashboard-ui/src/mobile/http.rs` | サーバーへの直接接続、Cookie jarの読み込みと保存（Kotlinの `AhdSessionStore` をJNIで呼ぶ）、`server_origin` |
+| `dashboard-ui/src/mobile/session.rs` | Cookie jarとサーバーURLの規則、保存先の一時的な失敗をログアウトと区別する規則（I/Oなし、テストあり） |
 | `dashboard-ui/src/mobile/storage.rs` | アプリ専用領域のファイル（JNIで `getFilesDir()`・`getCacheDir()` を取得） |
 | `dashboard-ui/src/mobile/time.rs` | 端末時刻での表示 |
 | `dashboard-ui/src/mobile/dom.rs` | `document::eval` によるDOM操作（pull-to-refreshのタッチ処理を含む） |
@@ -373,7 +386,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/mobile/updates.rs` | Forgejoリリースの更新確認：SemVer比較、アセット選択、`releases/latest` の取得（5.5節、テストあり） |
 | `dashboard-ui/src/mobile/update_install.rs` | APKのダウンロード、SHA-256・パッケージ・署名者の検証、一時ファイル管理、PackageInstallerへのJNI（5.6節、テストあり） |
 | `dashboard-ui/src/mobile/log.rs` | logcat（タグ `AHD`）への出力 |
-| `dashboard-ui/src/mobile/back.rs` | 戻るボタン：開いているダイアログのスタック（テストあり）、`window.__ahdBack` の受け取り、`AhdBack.navigate` へのJNI（5.7節） |
+| `dashboard-ui/src/mobile/back.rs` | 戻るボタン：開いているダイアログのスタック（テストあり）、`window.__ahdBack` の受け取り、`AhdBack.navigate` へのJNI（5.8節） |
 | `dashboard-ui/src/app/device_notifications.rs` | 端末通知の予定の更新、通知タップ時の画面遷移 |
 | `dashboard-ui/src/app/updates.rs` | 起動時の更新確認と結果のcontext、ダイアログの状態・スキップ・ダウンロードタスクとキャンセル |
 | `dashboard-ui/src/pages/app_update.rs` | 更新の確認・進捗・失敗・再試行のダイアログ |
@@ -439,12 +452,12 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 
 - **Activityは1つだけ**：tao/wryはActivityの破棄・再生成と2つ目のインスタンスに対応しておらず、そのままだとプロセスが `FORTIFY: pthread_mutex_lock called on a destroyed mutex` で異常終了します。そのため次のようにしています（`android/MainActivity.kt`、`scripts/build-android.sh`）。
   - `launchMode="singleTask"` で、ランチャー・通知・`am start` のどこから開いても同じインスタンスを使います。通知のタップは `onNewIntent` で受け取ります。
-  - 最初の画面で戻るボタンを押すと、アプリを閉じずにバックグラウンドへ移します（ホームボタンと同じ）。それ以外の画面では、従来どおり前の画面へ戻ります。ダイアログが開いているときは、先にそれを閉じます（5.7節）。
+  - 最初の画面で戻るボタンを押すと、アプリを閉じずにバックグラウンドへ移します（ホームボタンと同じ）。それ以外の画面では、従来どおり前の画面へ戻ります。ダイアログが開いているときは、先にそれを閉じます（5.8節）。
   - ダークモード、文字サイズ、表示サイズ、太字、言語、キーボードなどの変更では、Activityを作り直さずにその場で反映します（`configChanges`）。WebViewは文字サイズを作成時にしか読まないため、変更時に `textZoom` を設定し直します。
   - 最近使ったアプリから消すなどでActivityが破棄されたときは、ネイティブの後始末を行わずにプロセスを終了します。次に開くと新しく起動します。
   - テーマはDayNightなので、アプリのテーマ「システム」は端末のダークモードに追従します（以前は常にライトでした）。
 - **サーバーはビルド時に固定**：接続先は `AHD_SERVER_URL` の1つだけです。変えるにはビルドし直します。
-- **セッションCookieの保存**：アプリ専用領域に平文で保存します（Android Keystoreは使っていません）。他のアプリからは読めませんが、root化した端末やバックアップでは読める可能性があります。
+- **セッションCookieの保存**：Android Keystoreの鍵で暗号化して保存します（5.7節）。鍵はユーザー認証を要求しないため、端末のロック中でも受信箱とウィジェットのジョブが読めます。そのため、アプリとして動くコード（root化した端末で同じUIDとして動くものを含む）からは復号できます。暗号化が防ぐのは、ファイルだけを取り出した場合（バックアップ、ファイルのコピー）です。1.9.0以前のバージョンで作られたバックアップには平文のファイルが含まれている可能性があります。
 - **パスワード表示の自動マスク**：web版は、表示中のパスワードを、ウィンドウや入力欄からフォーカスが外れたときとページが非表示になったときに伏せます。アプリではこの処理を実装していません（表示ボタンでの切り替えはできます）。
 - **言語の初期値**：保存がない場合は日本語で始まり、端末のロケールは見ません。
 - **通知**
@@ -468,7 +481,6 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 ### 今後の課題
 
 - release署名と配布方法（ストア、または直接配布）を決める。
-- セッションCookieをAndroid Keystoreで暗号化して保存する。
 - 予測できない通知（デイリー／週間の未完了、ログインボーナスの結果、Cookieの失効）が必要なら、FCMやUnifiedPushによるサーバーからのプッシュを検討する。サーバー側に送信の仕組みが必要になる。
 - 接続先のサーバーをアプリ内で設定できるようにするかを検討する。
 - 端末のロケールから言語の初期値を決める。
