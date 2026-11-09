@@ -7,11 +7,13 @@
         <exclude domain="file" path=".session-cookies.enc.tmp" />
         <exclude domain="file" path="session-cookies.json" />
         <exclude domain="file" path=".session-cookies.json.tmp" />
+        <exclude domain="sharedpref" path="ahd_push.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="session-cookies.enc" />
         <exclude domain="file" path=".session-cookies.enc.tmp" />
         <exclude domain="file" path="session-cookies.json" />
         <exclude domain="file" path=".session-cookies.json.tmp" />
+        <exclude domain="sharedpref" path="ahd_push.xml" />
     </device-transfer>
 </data-extraction-rules>

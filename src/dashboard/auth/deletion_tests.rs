@@ -7,7 +7,7 @@ use crate::dashboard::{
         password::token_hash,
         sessions::{Credential, Identity, IssuedSession, Sessions},
     },
-    db::entities::{audit, deletion_request, passkey, user},
+    db::entities::{app_device, audit, deletion_request, passkey, user},
     error::Error,
     test_support::{PASSWORD, TEMP_PASSWORD, TestDatabase},
 };
@@ -190,6 +190,16 @@ async fn self_request_disables_revokes_and_finishes_later() {
         .await
         .unwrap();
     let passkey = stub_passkey(&test.db, member.user.id).await;
+    let device = app_device::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        user_id: Set(member.user.id),
+        created_at: Set(Utc::now()),
+        last_seen_at: Set(Utc::now()),
+        push_subscription: Set(Some(vec![7; 40])),
+    }
+    .insert(&test.db)
+    .await
+    .unwrap();
 
     accounts
         .request_deletion(
@@ -236,6 +246,13 @@ async fn self_request_disables_revokes_and_finishes_later() {
             .unwrap()
             .is_none()
     );
+    // The app installation stops being woken at once; the row goes with the user.
+    let pending_device = app_device::Entity::find_by_id(device.id)
+        .one(&test.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(pending_device.push_subscription, None);
     assert!(
         user::Entity::find_by_id(member.user.id)
             .one(&test.db)
@@ -248,6 +265,13 @@ async fn self_request_disables_revokes_and_finishes_later() {
     accounts.finish_deletion(member.user.id).await.unwrap();
     assert!(
         user::Entity::find_by_id(member.user.id)
+            .one(&test.db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        app_device::Entity::find_by_id(device.id)
             .one(&test.db)
             .await
             .unwrap()

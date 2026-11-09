@@ -93,7 +93,11 @@ struct Fixture {
 async fn fixture() -> Fixture {
     let fixture = TestDatabase::new().await;
     let key = key();
-    let notifications = Arc::new(Notifications::new(fixture.db.clone(), Some(key.clone())));
+    let notifications = Arc::new(Notifications::new(
+        fixture.db.clone(),
+        Some(key.clone()),
+        "https://ahd.example.test",
+    ));
     let games = Arc::new(Games::new(Arc::new(CookieStore::for_test(
         fixture.db.clone(),
         key,

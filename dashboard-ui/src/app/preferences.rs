@@ -127,7 +127,7 @@ impl Preferences {
             );
         }
         // The app keeps the same two codes in its private storage; without a saved language
-        // the device locale decides (docs/android-changes.md 5.9).
+        // the device locale decides (docs/android-changes.md 5.10).
         #[cfg(feature = "mobile")]
         {
             let saved: Option<std::collections::BTreeMap<String, String>> =

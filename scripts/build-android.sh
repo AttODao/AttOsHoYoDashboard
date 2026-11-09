@@ -3,8 +3,9 @@
 # dx generates and assembles the Gradle project; then the AHD launcher/notification resources,
 # label, theme and network security config (dashboard-ui/android/res) replace Dioxus' defaults, the
 # extra Kotlin sources (dashboard-ui/android/kotlin) join MainActivity.kt,
-# the activity keeps itself across configuration changes, the per-app language list, the manifest receivers, the inbox
-# job service, update receiver and browser sign-in callbacks are inserted. Home-screen widget Kotlin
+# the activity keeps itself across configuration changes, the per-app language list, the manifest
+# receivers, the inbox job service, UnifiedPush receiver/service and distributor queries, update
+# receiver and browser sign-in callbacks are inserted. Home-screen widget Kotlin
 # sources, resources and JVM tests are copied before Gradle assembles again.
 set -euo pipefail
 cd "${DEVENV_ROOT:?run inside the devenv android profile}"
@@ -76,6 +77,20 @@ if ! grep -q AhdInboxJob "$manifest"; then
   ' "$manifest" > "$manifest.tmp"
   mv "$manifest.tmp" "$manifest"
 fi
+# UnifiedPush distributor visibility sits next to <application>, not inside it.
+if ! grep -q 'org.unifiedpush.android.distributor.REGISTER' "$manifest"; then
+  awk '
+    /<application/ && !inserted {
+      while ((getline line < "dashboard-ui/android/AndroidManifest.queries.xml") > 0) print line
+      close("dashboard-ui/android/AndroidManifest.queries.xml")
+      inserted = 1
+    }
+    { print }
+  ' "$manifest" > "$manifest.tmp"
+  mv "$manifest.tmp" "$manifest"
+fi
+grep -q 'org.unifiedpush.android.distributor.REGISTER' "$manifest"
+grep -q AhdPushReceiver "$manifest"
 grep -q AhdBootReceiver "$manifest"
 grep -q AhdInboxJob "$manifest"
 grep -q GenshinWidget "$manifest"

@@ -142,6 +142,7 @@ impl Accounts {
         Sessions::revoke_all(&tx, target).await?;
         super::super::passkeys::Passkeys::revoke_all(&tx, target).await?;
         super::super::api_tokens::ApiTokens::revoke_all(&tx, target).await?;
+        crate::dashboard::notifications::push::revoke_all(&tx, target).await?;
 
         deletion_request::ActiveModel {
             user_id: Set(target),

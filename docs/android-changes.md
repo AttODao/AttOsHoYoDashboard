@@ -8,7 +8,7 @@
 
 - 新しいフロントエンドは作りません。web版と同じDioxus（RSX）コード、同じ画面構成、同じ文言カタログ、同じ `dashboard.css` をそのまま使います。
 - アプリ固有の処理はCargo feature `mobile` の中に閉じ込めます。web版は従来どおり既定の `web` feature でビルドし、アプリのコードはwasmに入りません。
-- アプリは既存の `/api/v1` を、ブラウザと同じセッションCookie認証で呼びます。サーバーへの追加は、web版の通知をアプリへ届けるための端末登録と受信箱（5.3節）だけです。
+- アプリは既存の `/api/v1` を、ブラウザと同じセッションCookie認証で呼びます。サーバーへの追加は、web版の通知をアプリへ届けるための端末登録と受信箱（5.3節）と、その受信箱をUnifiedPushで知らせる購読（5.9節）だけです。
 - ブラウザでしか動かない機能（WebAuthn）と、アプリに不要な機能（管理者機能など。3節）は、アプリで表示も遷移もしません。必要なときは「ブラウザで開く」（5.1節）でweb版に移ります。
 
 ### 使用したDioxusの仕組み
@@ -141,7 +141,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 
 ### 設定：通知
 
-- ページの説明文は出さず、「この端末への通知」カード（全体のON/OFF・許可・登録状態・テスト。5.2節・5.3節）を先頭に置く。
+- ページの説明文は出さず、「この端末への通知」カード（全体のON/OFF・許可・登録状態・「UnifiedPushですぐに受け取る」とその状態・テスト。5.2節・5.3節・5.9節）を先頭に置く。
 - その下の1枚のパネルで、通知の種類ごとに「この端末」と「Webhook」のON/OFFを並べた表（`pages/notifications.rs` の `EventMatrix`）、リマインダー、Webhookの設定（URL・形式・言語）をまとめて扱い、「保存」で全部を保存する。項目は名前だけで、機能の説明文は出さない。
 - 「この端末」の列はサーバーのアプリ用の選択（`app_events`）を送る。樹脂・開拓力の上限、派遣、参量物質変化器はこの選択が5.2節の予測通知にも適用され（保存の成功時に端末の設定へ反映）、洞天宝銭の上限は予測通知だけなので「Webhook」の列が空欄になる。web版は表を出さず、Webhookの選択だけを送る（`app_events` を送らないので、アプリで選んだ内容は変わらない）。
 - Webhook URLと樹脂の警告値の入力欄は、上記のとおり48pxにした（幅によらず）。
@@ -215,7 +215,7 @@ web版がWebhookへ送る個人の通知を、すべてアプリでも受け取�
 
 - 「この端末に通知する」をONにすると、アプリはサーバーに端末を登録します（`POST /api/v1/me/notifications/app-devices`）。サーバーは、Webhookへ送るのと同じ箇所（`Notifier::deliver`）で、同じ通知をそのユーザーの受信箱に入れます。条件、重複排除、文面（通知設定の言語）はWebhookと同じです。通知する種類は、Webhook（`events`）とは別にアプリ用の選択（`app_events`）で決まります（既存の設定はWebhookの選択をコピーして移行）。
 - Kotlinの `AhdInbox`（`android/MainActivity.kt`）が、Keystoreで暗号化して保存したセッションCookie（`AhdSessionStore`、5.7節）で受信箱を読み（`GET …/app-devices/{id}/inbox?after=…`）、Androidの通知を出します。読む時機は、JobSchedulerの定期ジョブ（15分ごと、ネットワーク接続時、アプリを閉じていても・再起動後も）、アプリの表示中の1分ごと、アプリに戻ったとき、登録直後とテスト送信直後です。
-- 外部のプッシュサービス（FCMなど）は使いません。サーバーに外部サービスの資格情報が要らず、Googleのサービスがない端末でも動きます。その代わり、アプリを開いていないときは届くまで最大15分程度（Dozeではさらに遅れることがある）かかります。
+- FCMは使いません。サーバーに外部サービスの資格情報が要らず、Googleのサービスがない端末でも動きます。ポーリングだけでは、アプリを開いていないときに届くまで最大15分程度（Dozeではさらに遅れることがある）かかります。UnifiedPushの配信アプリがあれば、5.9節のプッシュですぐに読みに行けます。
 - 通知チャンネルは5.2節と同じ「ゲームの状態」です。サーバーの重複排除キーをタグにし、同じタグの通知は置き換えます。
 - タップすると、通知を扱う画面を開きます：ログインボーナスの結果 → 設定 › 報酬、Cookieの失効 → 設定 › 連携、ログイン・ログイン失敗 → 設定 › 認証・セキュリティ、テスト → 設定 › 通知、ゲームの状態 → ダッシュボード（`navigation::notification_target`）。
 - 通知の許可は5.2節と同じです（ONにしたときにAndroid 13以降なら `POST_NOTIFICATIONS` を求め、拒否されたら警告と設定へのボタンを出す）。
@@ -275,7 +275,7 @@ Android Credential Manager（`androidx.credentials`）でアプリ内からパ�
 - バー型：ラベルと数値（`120/200`）を1行に、その下にバー、任意で残り時間などの補足。丸型：中央に数値またはアイコン、円弧の開いた下部に残り時間（`3時間12分`）。丸型は88dpと56dpの2サイズ（API 31未満のRemoteViewsはビューの大きさを変えられないため）。
 - 値なし（`null`）は空のトラックと「—」、上限の90%以上は「まもなく上限」の色、上限は上限の色で、数値も上限の色にします（ダッシュボードの `fill_level` と同じ規則）。色は原神がミント、スターレイルがラベンダー、まもなく上限・上限はダッシュボードのwarning色です（`res/values(-night)/ahd_indicator_colors.xml`）。
 - 描画：RemoteViewsは独自のViewを描けず、ProgressBarの色をコードから変えられるのはAPI 31からです（アプリはAPI 24以上）。そのため、バーは `<clip>`、円弧は回転したring `<shape android:useLevel="true">` のdrawableを `ImageView.setImageLevel` で伸ばします。色はレイアウトの `android:tint` で `values`／`values-night` から取るので、ランチャーが再inflateすればダークモードの切り替えにも追従します。Canvasで描いたBitmapは、描いた時点の色と密度に固定され、更新のたびにランチャーへ画像を送るため使っていません。
-- 文言は `values/ahd_indicator_strings.xml`（日本語、アプリと同じく既定）と `values-en`。ウィジェットは、アプリの言語（5.9節）の `createConfigurationContext` で選びます。ウィジェットの文言（`ahd_widget_*`）も同じく `values` が日本語、`values-en` が英語です。
+- 文言は `values/ahd_indicator_strings.xml`（日本語、アプリと同じく既定）と `values-en`。ウィジェットは、アプリの言語（5.10節）の `createConfigurationContext` で選びます。ウィジェットの文言（`ahd_widget_*`）も同じく `values` が日本語、`values-en` が英語です。
 - 確認：デバッグビルドには、全状態（値なし・0%・50%・90%・100%）を両ゲーム・ライト／ダークで並べるサンプル画面 `AhdIndicatorSamplesActivity` が入ります（`adb shell am start -n cc.attodao.ahd/dev.dioxus.main.AhdIndicatorSamplesActivity`、release用のmanifestには入れません）。規則（状態の判定、drawableのlevel、数値と残り時間の表記）と、レイアウトのidや色の定義は `devenv --profile android shell -- test-android-kotlin` がJVMで検査します（`dashboard-ui/android/tests/AhdIndicatorModelTest.kt`）。
 - 確認した表示：エミュレータ（API 34、1080×2400）のサンプル画面で、密度420（日本語・英語）と密度160・文字200%、それぞれライト／ダーク。文字の欠けや円弧のつぶれはない。tintの既定モード（src_atop）では半透明のトラック色が白い図形の上で白く残るため、tintした全ビューを `tintMode="src_in"` にしている（JVM検査でも確認）。
 
@@ -329,7 +329,60 @@ Android Credential Manager（`androidx.credentials`）でアプリ内からパ�
 - 更新ダイアログの `dismiss`（Escape・背景のタップ・戻るボタン）は、状態を `peek` した値のガードを持ったまま書き込んでいたため、案内（Prompt）で閉じると `AlreadyBorrowed` でpanicし、次のWebViewのリクエストでアプリが異常終了していました。状態を先にコピーしてから書き込むように直しました。
 - 確認方法（API 34のx86_64エミュレータ、実際の `input keyevent KEYCODE_BACK`／`input tap`）：メニュー（ダッシュボード・設定）、Cookie削除の確認ダイアログ（閉じてもCookieは残り、次の戻るで前の画面）、更新の案内（「後で」になる）・ダウンロード中（2回押しても閉じず、前面のまま、ダウンロードは続く）・キャンセル後の案内・失敗表示、何も開いていない最初の画面（バックグラウンドへ移り、同じActivityで戻る）。背景のタップで閉じる動作も変わらないことを確かめました。logcatに `FORTIFY`・`Fatal signal`・`panicked` は出ませんでした。インストール中と通知の許可待ちは、ダウンロード中と同じ `Flow::back_closes` の判断で、エミュレータでは確認していません。
 
-### 5.9 言語の初期値（端末のロケール）
+### 5.9 UnifiedPushによるサーバーからのプッシュ
+
+5.3節の受信箱に通知が入ったことを、UnifiedPush（[仕様 AND_3.0.0](https://unifiedpush.org/developers/spec/android/)）で端末に知らせます。デイリー／週間の未完了、ログインボーナスの結果、Cookieの失効など、予測できない通知が15分の確認を待たずに届きます。FCMやGoogleのサービスは使わず、利用者が選んだ配信アプリ（ntfyなど）とそのサーバーを使います。
+
+**仕組み**
+
+- 設定 › 通知の「この端末への通知」カードで、サーバーへの登録が済むと「UnifiedPushですぐに受け取る」（既定はOFF）が出ます。ONにすると、`AhdPush`（`android/kotlin/AhdPush.kt`）が次を行います。
+  1. サーバーのVAPID公開鍵を読みます（`GET …/app-devices/{id}/push`）。
+  2. P-256の鍵ペアと16バイトの `auth` を作り、配信アプリへ `org.unifiedpush.android.distributor.REGISTER`（`token`、`vapid`、`message`。Android 14以降は送信元の共有、それ以前は `pi`。旧仕様の配信アプリ向けに `application` も付ける）を送ります。
+  3. 配信アプリの `NEW_ENDPOINT` を受けたら、エンドポイントと公開鍵・`auth` をサーバーへ送ります（`PUT …/push`）。
+- サーバーは受信箱に通知を入れるたびに、暗号化した起床用のメッセージ（`{"type":"inbox"}` だけ。通知の内容や秘密は含まない）をエンドポイントへ送ります。
+- `AhdPushReceiver` が `MESSAGE` を受けると、確認応答（`MESSAGE_ACK`）を返し、自分の鍵で復号できたときだけ `AhdInbox.poll` を `goAsync` のスレッドで実行して受信箱を読みます。復号は `AhdPushCrypto.kt`（RFC 8291、JCAだけ）です。復号できないメッセージは無視します。
+- 重複：プッシュでもポーリングでも同じ `AhdInbox.poll`（同期化され、読んだ位置を保存する）を通るので、同じ通知が2回表示されることはありません。予測通知との重なりは5.2節のタグの規則のままです。
+- 配信アプリの選び方：前回の配信アプリが入っていればそれ、1つだけならそれ、複数あれば `unifiedpush://link` の既定のアプリ、なければ名前順の最初です（選択画面は出しません）。
+- 再登録：アプリの起動ごとに1回 `REGISTER` を送り直し（仕様の整合性確認）、配信アプリかサーバーのVAPID鍵が変わったら新しいtokenと鍵で登録し直します。`REGISTRATION_FAILED` の後は次回に新しいtokenを使います。
+- 前面化：配信アプリが数秒バインドできるように、`org.unifiedpush.android.connector.RAISE_TO_FOREGROUND` のservice（`AhdPushForegroundService`）を公開します。
+- OFFにすると、配信アプリへ `UNREGISTER` を送り、サーバーの購読を消します（`DELETE …/push`）。ログアウトでは、セッションがあるうちにサーバーの購読を消してからログアウトします。「この端末に通知する」をOFFにしたとき、ログアウト・セッションの失効、別のユーザーでのログインでも配信アプリの登録を解除します（スイッチの選択は残り、次の登録で使います）。配信アプリが `UNREGISTERED` を送ってきたときは、サーバーの購読を消して失敗の表示にします。
+- Android 11以降のパッケージの可視性のため、`REGISTER` を受ける配信アプリと `unifiedpush://link` を `<queries>` に入れます（`android/AndroidManifest.queries.xml` を `build-android` が挿入）。receiverとserviceは `android/AndroidManifest.application.xml` にあります。
+- Kotlinからページへの状態の通知は `AhdPageEvents`（`MainActivity.kt`）を通し、Activityが表示中（RESUMED）のときだけ送ります。表示中でない間のページ更新はWebViewを止めるためで（7節）、アプリに戻ったときにページが状態を読み直します。
+
+**表示**（スイッチの下の1行）
+
+| 状態 | 表示 |
+| --- | --- |
+| 配信アプリが入っていない | 「UnifiedPushのアプリ（ntfyなど）が入っていません。通知は15分おきの確認で受け取ります。」（警告） |
+| 登録中 | 「{配信アプリ名}に登録しています…」 |
+| 受け取り中 | 「{配信アプリ名}からすぐに受け取ります。」 |
+| サーバーがエンドポイントを拒否（HTTPSの公開アドレスでない） | 「UnifiedPushのアプリのサーバーがHTTPSの公開アドレスでないため使えません。…」（警告） |
+| その他の失敗 | 「すぐに受け取る設定ができませんでした。通知は15分おきの確認で受け取ります。」（警告） |
+
+**保存先**
+
+| 場所 | 内容 |
+| --- | --- |
+| SharedPreferences `ahd_push` | スイッチ、配信アプリ、token、登録に使ったVAPID鍵、Web Pushの鍵（秘密鍵はPKCS#8でアプリ専用領域に平文。この鍵で読めるのは秘密を含まない起床用のメッセージだけのため、Keystoreでは暗号化しない）、エンドポイント、状態。この端末の配信アプリに結び付くため、バックアップと端末間の移行から除外する（`ahd_backup_rules.xml`・`ahd_data_extraction_rules.xml`） |
+| サーバーの `app_devices.push_subscription` | エンドポイントと公開鍵・`auth`（封をして保存。5.3節の端末と一緒に消える） |
+
+**エミュレータでの確認**
+
+attodeskのエミュレータ（AVD `ahd`、Android 14、x86_64）で、合成バックエンドと配信アプリntfy（F-Droid版）、公開の `ntfy.sh` を使って確かめました。エンドポイントはHTTPSの公開アドレスである必要があるため、バックエンドの外向き通信は `ntfy.sh:443` だけを通すプロキシ経由にしました（HoYoLABなどは遮断）。
+
+| 確認 | 結果 |
+| --- | --- |
+| 配信アプリなし（ntfyを無効化） | 「UnifiedPushのアプリ（ntfyなど）が入っていません。…」を表示し、受信箱は15分ごとの確認のまま |
+| ONにする | ntfyへ `REGISTER`、`NEW_ENDPOINT` を受けて `PUT …/push`、DBの `push_subscription` が入り、「ntfyからすぐに受け取ります。」 |
+| アプリをバックグラウンドにし、受信箱のジョブを `cmd jobscheduler cancel` で消してから、テスト通知を送る | ポーリングなし（ジョブは登録されていない）で、送信の0.4秒後にAndroidの通知が出た |
+| 同じ条件で、ワーカーがCookieの失効を検出する（`auth_status` を `cookie_invalid` に変更） | 受信箱に入ってから約0.5秒後に通知が出た（検出まではワーカーの周期の約56秒） |
+| OFFにしてから、テスト通知を送る | 15秒たっても出ず、受信箱のジョブを実行すると出た（ポーリングだけで届き、2回は出ない） |
+| ログアウト | ログアウトの前に `DELETE …/push` が届き、DBの `push_subscription` が空になった |
+| Keystoreで暗号化したセッションCookie（5.7節）との組み合わせ | ログイン後は `session-cookies.enc` だけがあり、`AhdInbox.deviceRequest` の `GET`/`PUT …/push` と起床後の受信箱の読み込みがそのCookieで動いた |
+
+ntfyはバッテリーの最適化から除外していないと、数時間後にサーバーとの接続が止まり、プッシュが届かなくなることがありました（ntfyを開くと再接続し、届くようになりました）。これは配信アプリ側の設定で、届かない間も15分ごとの確認で受け取ります。
+
+### 5.10 言語の初期値（端末のロケール）
 
 - 言語は、メニューで選んで保存したものが常に優先します。保存がない場合だけ、ロケールの一覧（優先順）から決めます。一覧を先頭から見て、最初に日本語（`ja`、`ja-JP` など）か英語（`en-*`）があればその言語、どちらもなければ英語です。一覧を読めなかったとき（空）は、従来どおり日本語です。規則は `i18n.rs` の `Language::for_locales`（純粋関数、テストあり）です。
 - アプリの一覧は、Android 13以降でアプリ別言語（設定の「アプリの言語」、または `cmd locale set-app-locales`）があればそれ、なければシステムの言語です（Kotlin `AhdLocale.deviceLocales` を `mobile/locale.rs` のJNIで呼ぶ）。設定の「アプリの言語」に出るよう、`build-android` がmanifestに `android:localeConfig="@xml/ahd_locales"`（日本語・英語）を入れます。
@@ -346,7 +399,7 @@ Android Credential Manager（`androidx.credentials`）でアプリ内からパ�
 - 画面のコンポーネント（`pages/`）、状態管理（`app/state.rs`、`app/session.rs`、`app/actions.rs`、`app/data.rs`）、文言カタログ（`locales/*.json`）、`dashboard.css`、同梱フォント。
 - `api.rs` のパス検査、応答サイズの上限、エラー処理（送信部分の `fetch` だけを分岐）。
 - 画面とURLの対応（`navigation::page_path`／`page_from_path`）。アプリもWebView内のHistory APIを使うので、Androidの戻るボタンで前の画面へ戻れる。
-- 言語とテーマの判定（`Preferences::from_saved`、言語の規則は `Language::for_locales`）。保存先と保存がない場合の言語の取得元だけが違い、web版は `localStorage` と `navigator.languages`、アプリは `files/preferences.json` と端末のロケール（5.9節）。テーマは保存がなければ端末（ブラウザ）のダークモードに従う。
+- 言語とテーマの判定（`Preferences::from_saved`、言語の規則は `Language::for_locales`）。保存先と保存がない場合の言語の取得元だけが違い、web版は `localStorage` と `navigator.languages`、アプリは `files/preferences.json` と端末のロケール（5.10節）。テーマは保存がなければ端末（ブラウザ）のダークモードに従う。
 
 ### 分岐のしかた
 
@@ -388,11 +441,12 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/mobile/session.rs` | Cookie jarとサーバーURLの規則、保存先の一時的な失敗をログアウトと区別する規則（I/Oなし、テストあり） |
 | `dashboard-ui/src/mobile/storage.rs` | アプリ専用領域のファイル（JNIで `getFilesDir()`・`getCacheDir()` を取得） |
 | `dashboard-ui/src/mobile/time.rs` | 端末時刻での表示 |
-| `dashboard-ui/src/mobile/locale.rs` | 端末のロケール一覧の取得とウィジェットへの言語変更の通知（JNI、5.9節） |
+| `dashboard-ui/src/mobile/locale.rs` | 端末のロケール一覧の取得とウィジェットへの言語変更の通知（JNI、5.10節） |
 | `dashboard-ui/src/mobile/dom.rs` | `document::eval` によるDOM操作（pull-to-refreshのタッチ処理を含む） |
 | `dashboard-ui/src/mobile/swipe.rs` | タブの横スワイプのタッチ収集（`document::eval`）。判定は共通の `app/swipe.rs` |
 | `dashboard-ui/src/mobile/reminders.rs` | 通知時刻の予測、設定と予定の保存形式、通知文（テストあり） |
-| `dashboard-ui/src/mobile/notify.rs` | Kotlinの通知処理を呼ぶJNIブリッジ |
+| `dashboard-ui/src/mobile/notify.rs` | Kotlinの通知処理（受信箱・UnifiedPushを含む）を呼ぶJNIブリッジ |
+| `dashboard-ui/src/mobile/push.rs` | UnifiedPushの状態から表示する1行の決定（I/Oなし、テストあり） |
 | `dashboard-ui/src/mobile/browser_login.rs` | ブラウザ経由ログインのPKCE・コールバックURL・保存要求の規則（I/Oなし、テストあり） |
 | `dashboard-ui/src/mobile/login_intent.rs` | Kotlinが受け取ったコールバックを一度だけ取り出すJNIブリッジとWebViewイベント |
 | `dashboard-ui/src/app/browser_login.rs` | ブラウザ経由ログインの開始と、コールバック受信後のコード交換 |
@@ -411,8 +465,10 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/android/AndroidManifest.activity.xml` | 生成manifestのactivityに挿入する `cc.attodao.ahd://login` のintent-filter |
 | `dashboard-ui/android/res/**` | ランチャーアイコン、通知アイコン、アプリ名、色、DayNightテーマ（`values/styles.xml`） |
 | `dashboard-ui/android/README.md` | リソースの作り方 |
-| `dashboard-ui/android/kotlin/*.kt` | ウィジェット用インジケーター（`AhdIndicators.kt`、`AhdIndicatorModel.kt`）とデバッグ用サンプル画面（`AhdIndicatorSamples.kt`）。`build-android` が生成プロジェクトへコピーする |
-| `dashboard-ui/android/kotlin/AhdLocale.kt`, `android/test/AhdLocaleTest.kt`, `android/res/xml/ahd_locales.xml` | アプリ別言語・システムの言語の取得、ウィジェットの言語、設定の「アプリの言語」の一覧（5.9節） |
+| `dashboard-ui/android/kotlin/*.kt` | ウィジェット用インジケーター（`AhdIndicators.kt`、`AhdIndicatorModel.kt`）、デバッグ用サンプル画面（`AhdIndicatorSamples.kt`）、UnifiedPush（`AhdPush.kt`、`AhdPushCrypto.kt`。5.9節）。`build-android` が生成プロジェクトへコピーする |
+| `dashboard-ui/android/kotlin/AhdLocale.kt`, `android/test/AhdLocaleTest.kt`, `android/res/xml/ahd_locales.xml` | アプリ別言語・システムの言語の取得、ウィジェットの言語、設定の「アプリの言語」の一覧（5.10節） |
+| `dashboard-ui/android/test/AhdPushCryptoTest.kt` | Web Pushの復号をRFC 8291 付録Aで確認するJUnit（`test-android`） |
+| `dashboard-ui/android/AndroidManifest.queries.xml` | UnifiedPushの配信アプリを見つけるための `<queries>`（生成manifestの `<application>` の前に挿入） |
 | `dashboard-ui/android/tests/AhdIndicatorModelTest.kt` | インジケーターの規則とレイアウトのJVM検査（`test-android-kotlin`） |
 | `dashboard-ui/android/AndroidManifest.samples.xml` | デバッグビルドだけ生成manifestに挿入するサンプル画面のactivity |
 | `scripts/build-android.sh` | APKのビルド（2節）。生成manifestへの `launchMode="singleTask"`・`configChanges`・`localeConfig` の書き換えとreceiverの挿入も行う |
@@ -429,7 +485,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/app/navigation.rs` | アプリ内History、`open_web_version`、`web_page_url` |
 | `dashboard-ui/src/app/data.rs` | APIトークン・管理者データを読み込まない分岐、`platform::sleep_ms` |
 | `dashboard-ui/src/app/display.rs` | 時刻表示のアプリ分岐 |
-| `dashboard-ui/src/app/preferences.rs` | 言語とテーマの保存のアプリ分岐、保存がない場合の端末のロケール、復帰時の読み直し（5.9節） |
+| `dashboard-ui/src/app/preferences.rs` | 言語とテーマの保存のアプリ分岐、保存がない場合の端末のロケール、復帰時の読み直し（5.10節） |
 | `dashboard-ui/src/pages/shell.rs` | `settings_tabs`、メニュー項目の分岐、ヘッダーの設定ボタン、`AppNav` |
 | `dashboard-ui/src/pages/auth.rs` | パスワードフォーム、「パスキーでログイン」「ブラウザでログイン」、パスワード変更とweb版の許可画面への案内文 |
 | `dashboard-ui/src/pages/app_login.rs` | web版の `/app-login` 許可画面（アプリのログイン要求を承認してコードを発行する） |
@@ -473,7 +529,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 - **サーバーはビルド時に固定**：接続先は `AHD_SERVER_URL` の1つだけです。変えるにはビルドし直します。
 - **セッションCookieの保存**：Android Keystoreの鍵で暗号化して保存します（5.7節）。鍵はユーザー認証を要求しないため、端末のロック中でも受信箱とウィジェットのジョブが読めます。そのため、アプリとして動くコード（root化した端末で同じUIDとして動くものを含む）からは復号できます。暗号化が防ぐのは、ファイルだけを取り出した場合（バックアップ、ファイルのコピー）です。1.9.0以前のバージョンで作られたバックアップには平文のファイルが含まれている可能性があります。
 - **パスワード表示の自動マスク**：web版は、表示中のパスワードを、ウィンドウや入力欄からフォーカスが外れたときとページが非表示になったときに伏せます。アプリではこの処理を実装していません（表示ボタンでの切り替えはできます）。
-- **言語**：保存がない場合の言語は端末のロケールで決まります（5.9節）。サーバーからの通知（5.3節）の文面は、端末ではなく通知設定の言語に従います。ウィジェットピッカーに出る説明文は、ランチャーがシステム言語で解決します。
+- **言語**：保存がない場合の言語は端末のロケールで決まります（5.10節）。サーバーからの通知（5.3節）の文面は、端末ではなく通知設定の言語に従います。ウィジェットピッカーに出る説明文は、ランチャーがシステム言語で解決します。
 - **通知**
   - アラームは不正確で、Dozeなどにより数分遅れることがあります。
   - 予測はアプリが状態を読み込んだ時点の値に基づきます。ゲーム内で樹脂を使った場合などは、次にアプリを開くまで早すぎる通知が出ることがあります。バックグラウンドでの再取得は行いません。
@@ -481,6 +537,10 @@ web版と同じ処理をアプリ用に置き換えた箇所：
   - 強制停止やアプリの更新でOSがアラームを消します。次にアプリを起動したとき、またはパッケージ更新時のreceiverで戻ります。
   - 通知をタップしてダッシュボードへ移っても、スクロール位置はそのままです。
   - `dx serve` のAPKにはreceiverが入りません。
+  - UnifiedPushで受け取れるのは、配信アプリのサーバーがHTTPSの公開アドレスのときだけです（サーバーがWebhook URLと同じ規則でエンドポイントを検査するため。LAN内のntfyなどは使えず、15分ごとの確認になります）。配信アプリが複数あるときに選ぶ画面はありません（5.9節）。
+  - `ntfy.sh` は購読者のいなくなったトピックへの送信に404/410ではなく507を返すため、配信アプリ側で登録が消えた購読はサーバーで「失敗」のまま残ります。端末の登録が30日使われずに消えるときに一緒に消えます。
+  - プッシュを受けた後の受信箱の読み込みは、receiverの `goAsync` の時間内で行います。通知が多くページをまたぐ場合、残りは次の確認で届きます。
+  - セッションの失効（期限切れ・管理者による失効）では、セッションがないためサーバーの購読を消せません。配信アプリの登録は解除するので、プッシュサーバーが404/410を返せば次の送信で購読は消えます。ntfy.shは登録のなくなったトピックに507を返すため失敗として数えるだけで、購読は端末の登録と一緒に30日後に消えます（ログアウトでは先に消すので残りません）。
 - **ビルド**：release署名にはCIの署名用secretが必要です（未設定ならビルドごとのデバッグ署名）。`dx serve` ではDioxusの既定のアイコンと名前になります。
 
 ### 未確認の項目
@@ -495,7 +555,6 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 ### 今後の課題
 
 - release署名と配布方法（ストア、または直接配布）を決める。
-- 予測できない通知（デイリー／週間の未完了、ログインボーナスの結果、Cookieの失効）が必要なら、FCMやUnifiedPushによるサーバーからのプッシュを検討する。サーバー側に送信の仕組みが必要になる。
 - 接続先のサーバーをアプリ内で設定できるようにするかを検討する。
 - 実機で確認する。
 
@@ -509,7 +568,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 
 原神ウィジェット（`GenshinWidget.kt`）は、上段に天然樹脂の丸型、下段に洞天宝銭・探索派遣・デイリー任務の小さな丸型を3列に並べ、残り時間（全回復・満タン・派遣の最短／最長）と追加報酬の受取状況、取得時刻を表示します。幅210dp・高さ250dp未満（文字サイズが1より大きいときはその倍率をかけた大きさ未満）では4本のバーに切り替えます。文字サイズの変更は通知されないため、切り替わるのは次の描画（アプリを開く、30分ごとの更新）からで、それまでの間は文字200%だと樹脂の残り時間が下で切れたままです。面の色はダッシュボードの原神カード、樹脂・宝銭の90%以上と上限、全員帰還した派遣、追加報酬が未受取の4/4のデイリーはwarning色です。未ログイン・アカウントなし・未取得では案内とタップの案内を、更新に失敗したときは見出しの時刻を「更新失敗」で表示します。詳細は `dashboard-ui/android/README.md` の「Genshin widget」です。
 
-JobSchedulerはネットワーク接続時に30分周期でGETし、providerの `updatePeriodMillis` も30分です。ウィジェット全体のタップでアプリの `/dashboard?game=<genshin|starrail>` を開き、ダッシュボードはそのゲームのタブを選びます（`app/navigation.rs` の `target_game`。タブの選択は `AppState.dashboard_game` に置き、設定画面から戻っても保持します）。ログイン前に開いた場合もタブだけは先に選び、`/me` 後の状態の作り直しでも引き継ぎます。ジョブの時刻は不正確でDozeにより遅れ、取得間の樹脂・開拓力・宝銭は推定値です。選択はダッシュボードに追従し、サーバーの状態キャッシュTTLも適用されるため、常に最新の実値を保証しません。端末の言語を変えたときは、receiverの `LOCALE_CHANGED` で描き直します（文言はアプリの言語、5.9節）。タッチではタップしたタブに `:hover` が残り、共通のボタンのhover枠が選択されていないタブの下線に見えるため、`mobile.css` で選択中でないタブのhover表示を消しています（ウィジェットから別のゲームのタブを開いたときに目立つ）。
+JobSchedulerはネットワーク接続時に30分周期でGETし、providerの `updatePeriodMillis` も30分です。ウィジェット全体のタップでアプリの `/dashboard?game=<genshin|starrail>` を開き、ダッシュボードはそのゲームのタブを選びます（`app/navigation.rs` の `target_game`。タブの選択は `AppState.dashboard_game` に置き、設定画面から戻っても保持します）。ログイン前に開いた場合もタブだけは先に選び、`/me` 後の状態の作り直しでも引き継ぎます。ジョブの時刻は不正確でDozeにより遅れ、取得間の樹脂・開拓力・宝銭は推定値です。選択はダッシュボードに追従し、サーバーの状態キャッシュTTLも適用されるため、常に最新の実値を保証しません。端末の言語を変えたときは、receiverの `LOCALE_CHANGED` で描き直します（文言はアプリの言語、5.10節）。タッチではタップしたタブに `:hover` が残り、共通のボタンのhover枠が選択されていないタブの下線に見えるため、`mobile.css` で選択中でないタブのhover表示を消しています（ウィジェットから別のゲームのタブを開いたときに目立つ）。
 
 ### スターレイルのウィジェット
 
@@ -524,6 +583,6 @@ JobSchedulerはネットワーク接続時に30分周期でGETし、providerの 
 - 未ログイン・アカウントなし・状態なし（取得失敗）では、原神と同じくアイコン・案内文・「タップしてAHDを開く」を表示します（ピッカーのプレビューは説明文）。描画で例外が起きた場合は、共通の案内表示に戻します。
 - 宝銭の枠：スターレイルには洞天宝銭がありません。HoYoLABのリアルタイムノートで取得でき、上限まで蓄積して週ごとにリセットされる「模擬宇宙の週間ポイント」（`current_rogue_score`/`max_rogue_score`）をこの枠に採用しました。予備開拓力は開拓力と同じ資源なので開拓力の欄に併記し、「歴戦余韻」は残り回数で蓄積ではないため採用していません。
 - 確認した表示（エミュレータ API 34、Pixel Launcher、1080×2400、日本語）：密度420の文字100%・200%、密度560の文字100%・130%で、両ウィジェットとも樹脂／開拓力の値と残り時間が欠けずに出ます。密度560と文字200%の組み合わせ（最大の表示サイズと最大の文字）は、どちらも下のバーが切れ、残り時間も省略されます（対象外）。文字が大きいとき、バーの名前（「デイリー…」「模擬…」）は値を優先して省略されます。
-- ゲーム名と各ラベルはコードから設定します。レイアウトの文字列はランチャー側のシステム言語で解決されるため、アプリの言語（5.9節）で表示をそろえるためです。
+- ゲーム名と各ラベルはコードから設定します。レイアウトの文字列はランチャー側のシステム言語で解決されるため、アプリの言語（5.10節）で表示をそろえるためです。
 - 依頼の上限はスターレイルの `total_expedition_num` です。アプリから渡す状態にも含めるため、`models.rs` の `DailySummary` に `total_expedition_num` / `accepted_expedition_num` を追加しました。
 

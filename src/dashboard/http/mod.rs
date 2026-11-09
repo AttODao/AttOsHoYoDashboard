@@ -66,6 +66,7 @@ pub(super) async fn serve(accounts: Accounts, config: Config) -> Result<()> {
         crate::dashboard::notifications::channel::Notifications::new(
             db.clone(),
             config.cookie_key.clone(),
+            &config.origin,
         ),
     );
     let notifier_rewards_games = cookies.as_ref().map(|cookies| {
