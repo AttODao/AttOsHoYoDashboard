@@ -103,7 +103,7 @@ HTTPSリバースプロキシから `http://127.0.0.1:8080` へパスを保持�
 | `/` | セッション確認後、未ログインなら `/login`、ログイン済みなら `/dashboard` |
 | `/login` / `/dashboard` | ログイン／ダッシュボード。初期設定未完了時は設定ゲートを表示 |
 | `/settings` | `/settings/games` へ308転送 |
-| `/settings/games` / `/settings/bonus` / `/settings/link` / `/settings/security` / `/settings/notifications` / `/settings/delete` | 各設定画面（認証必須） |
+| `/settings/games` / `/settings/bonus` / `/settings/link` / `/settings/security` / `/settings/notifications` / `/settings/transfer` / `/settings/delete` | 各設定画面（認証必須。設定の移行と削除はweb版だけ） |
 | `/admin` | 管理者画面（管理者権限必須） |
 | `/about` | このアプリについて：作者・バージョン・ライセンス・Forgejoリポジトリへのリンク（認証必須） |
 | `/docs` / `/openapi.json` | API仕様の閲覧／OpenAPI JSON |
@@ -187,7 +187,8 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | `dashboard-ui/src/app/actions.rs` | 操作の予約（busy）と完了・APIエラー処理。セッション世代とは独立。完了後、busyで失われたフォーカスを操作したボタンへ戻し、失敗時はエラー表示へ移す（web） |
 | `dashboard-ui/src/app/data.rs` | セッション世代に結び付いた画面データの取得（未取得と空を区別、リソースごとに最新の要求の応答だけを反映）、全ゲームの手動受け取りとその後の報酬状態のGET追従 |
 | `dashboard-ui/src/app/display.rs` | 数値・ブラウザのローカル時刻による簡潔な月日／24時間表示、データの経過時間、上限への近さ、サーバー時刻とブラウザ時刻の換算、エラーコードの表示文への対応付け |
-| `dashboard-ui/src/pages/` | 画面、メニュー、設定、ユーザー管理、このアプリについて、アプリ更新ダイアログ（`pages/app_update.rs`） |
+| `dashboard-ui/src/pages/` | 画面、メニュー、設定、ユーザー管理、このアプリについて、アプリ更新ダイアログ（`pages/app_update.rs`）、設定の移行（`pages/transfer.rs`：書き出し・読み込みのプレビューと反映。web版だけ） |
+| `dashboard-ui/src/app/settings_file.rs` | 設定の移行のブラウザ側：書き出したJSONのダウンロードと、選んだファイルの読み込み（16 KiBまで・JSONとして読めること）。web-sys、web版だけ |
 | `dashboard-ui/src/app/swipe.rs` | タブの横スワイプの判定（距離・速度・縦横比・画面端の除外としきい値）と移動先のタブ。web版とアプリで共通、テストあり |
 | `dashboard-ui/src/pages/swipe_tabs.rs` | タブのパネルを包む `SwipeableTabs`（`use_horizontal_swipe_tabs`）：左スワイプで次・右スワイプで前のタブ、端ではバウンス、切り替えアニメーション。web版のタッチ収集（web-sys） |
 | `dashboard-ui/src/platform.rs` | web版とAndroidアプリの切り替え（`APP`）、両方で動くタイマーと時刻、web版を既定のブラウザで開く処理 |
@@ -214,6 +215,7 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | `src/dashboard/games/` | ゲームUID一覧・表示設定・状態キャッシュ（`service.rs`）、高難度コンテンツの要約とそのキャッシュ（`challenges.rs`、上流JSONからの防御的な読み取りは `challenge_summary.rs`） |
 | `src/dashboard/notifications/` | ユーザー・管理者のWebhookの設定、条件評価（上限・派遣完了・デイリー・週間など）、送信、重複排除、Androidアプリの端末登録と受信箱（`app.rs`）、UnifiedPushの購読の保存と起床用プッシュの送信（`push.rs`、RFC 8291/8292） |
 | `src/dashboard/rewards/` | 報酬設定・スケジュール・実行（定時と遅延実行の区別）、送信不確定時のガード、今月の報酬一覧のキャッシュ、ユーザー削除前の報酬確認 |
+| `src/dashboard/settings_transfer/` | 本人の設定の書き出しと読み込み：`ahd-settings` 形式（版1）と項目ごとの検証（`document.rs`）、現在の設定との比較・プレビュー・1トランザクションでの反映（`service.rs`）。報酬の時刻変更は `rewards::service::reschedule_in`、通知の保存は `notifications::channel::PersonalPreferences` を共用 |
 | `src/hoyolab/` | HoYoLAB上流APIの型付きクライアント（ダッシュボードの方針は含めない）。高難度コンテンツのGET（`challenge.rs`：モード・パス・クエリ）は未検証の形式のためJSONのまま返す |
 
 ## HoYoLAB連携
@@ -271,11 +273,13 @@ webのタグ `web-vX.Y.Z`（ルート `Cargo.toml` の版）のpushで `.forgejo
 | HoYoLAB | `GET /me/hoyolab`、`PUT`・`DELETE /me/hoyolab/cookie`、`POST /me/hoyolab/verify`・`/me/hoyolab/sync` |
 | ゲーム | `GET /game-accounts`、`PATCH /game-accounts/{id}`、`GET /game-accounts/{id}/status`、`GET /game-accounts/{id}/challenges` |
 | 報酬 | `GET /reward-settings`、`PATCH /reward-settings/{id}`、`POST /reward-settings/{id}/run`、`GET /reward-runs` |
+| 設定の移行 | `GET /me/settings/export`、`POST /me/settings/import/preview`・`/me/settings/import`（セッション専用） |
 | 通知 | `GET/PUT /me/notifications`、`POST /me/notifications/test`、`POST /me/notifications/app-devices`、`DELETE /me/notifications/app-devices/{id}`、`GET /me/notifications/app-devices/{id}/inbox`、`GET/PUT/DELETE /me/notifications/app-devices/{id}/push`、`GET/PUT /admin/notifications`、`POST /admin/notifications/test` |
 | ユーザー管理 | `GET /admin/users`（連携状態・自動受け取り数・最終ログイン、`needs_attention` と `hoyolab`（本人確認日時・ゲーム状態の最終取得成功日時・ゲームごとの自動受け取りと直近に終わった実行の状態・日時・sanitized error code）を含む。HoYoLABは呼ばず、Cookie・UID・上流raw errorは含まない。セッション専用）、`POST /admin/users`、`PATCH /admin/users/{id}`（`active` または `is_admin`）、`PUT /admin/users/{id}/temporary-password`、`GET /admin/audit` |
 | ユーザー削除 | `DELETE /me`、`DELETE /admin/users/{id}` |
 | サーバー設定 | `GET /server-settings` |
 
+- 設定の移行（設定の「設定の移行」タブ、web版だけ）は、ログインボーナスの自動受け取り（ON/OFF・時刻）、ゲームUIDの表示、通知の選択（Webhookとアプリの種類ごとの選択・形式・言語・樹脂の警告時間・リマインダー時刻）を `{"format":"ahd-settings","version":1,…}` のJSONにします。HoYoLAB Cookie・Webhook URL・パスワード・パスキー・セッション・APIトークンは含めず、Webhookは設定済みかどうか（`webhook_configured`）だけを書きます。読み込みは項目ごとに検証し（問題があれば項目のパスと種類を一覧にして何も反映しない）、プレビューで変わる設定を示してから1トランザクションで反映します。このアカウントにないUIDやゲームは追加せず、理由付きで飛ばします。報酬・UIDの反映にはHoYoLAB連携の検証済みが必要です。言語・テーマはブラウザの設定（サーバーに保存しない）なので対象外です。
 - ゲーム種別は `genshin`／`starrail`。状態レスポンスの `stale` と取得日時を確認してください。
 - `GET /game-accounts/{id}/challenges` は高難度コンテンツの現在の期間の要約です（原神：深境螺旋・幻想シアター・幽境の激戦、スターレイル：混沌の記憶・虚構叙事・末日の幻影・異相の仲裁）。モードごとに期間名・開始／終了日時・星・到達階層・幕・難易度・最速クリア秒数・戦闘回数を返し、キャラクターごとの戦績は返しません。上流のフィールド名は実応答で未検証のため、値はすべてnullになり得て、nullは「不明」を意味します（未開放や非公開とはみなしません）。一部のモードだけ失敗した場合はそのモードの `error_code` に理由が入ります。
 - 報酬操作の `{id}` は報酬設定のUUIDで、ゲームUIDではありません。検証・同期・手動受け取りのPOSTには `{}` を送ります。

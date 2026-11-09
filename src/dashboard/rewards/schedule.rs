@@ -81,12 +81,8 @@ impl From<FixedOffset> for ScheduleZone {
     }
 }
 
-pub(in crate::dashboard) fn next_due(
-    now: DateTime<Utc>,
-    time: &str,
-    zone: impl Into<ScheduleZone>,
-) -> Result<DateTime<Utc>> {
-    let zone = zone.into();
+/// A reward time: exactly `HH:MM` with ASCII digits.
+fn local_clock(time: &str) -> Result<NaiveTime> {
     if time.len() != 5
         || time.as_bytes()[2] != b':'
         || !time
@@ -96,8 +92,21 @@ pub(in crate::dashboard) fn next_due(
     {
         return Err(Error::Invalid("time must be HH:MM"));
     }
-    let clock = NaiveTime::parse_from_str(time, "%H:%M")
-        .map_err(|_| Error::Invalid("time must be HH:MM"))?;
+    NaiveTime::parse_from_str(time, "%H:%M").map_err(|_| Error::Invalid("time must be HH:MM"))
+}
+
+/// Whether `time` is a valid reward time (`HH:MM`).
+pub(in crate::dashboard) fn valid_local_time(time: &str) -> bool {
+    local_clock(time).is_ok()
+}
+
+pub(in crate::dashboard) fn next_due(
+    now: DateTime<Utc>,
+    time: &str,
+    zone: impl Into<ScheduleZone>,
+) -> Result<DateTime<Utc>> {
+    let zone = zone.into();
+    let clock = local_clock(time)?;
     let mut date = zone.local_date(now);
     // Two days always reach a strictly later tick, even across a DST change.
     for _ in 0..3 {
@@ -130,7 +139,9 @@ mod tests {
         );
         for bad in ["6:00", "24:00", "00:60", "06:00:00", "-1:00", "０６:００"] {
             assert!(next_due(now, bad, offset).is_err());
+            assert!(!valid_local_time(bad));
         }
+        assert!(valid_local_time("06:00") && valid_local_time("23:59"));
     }
 
     fn at(value: &str) -> DateTime<Utc> {

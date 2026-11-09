@@ -336,6 +336,58 @@ pub struct ApiTokenView {
     pub last_used_at: Option<String>,
 }
 
+/// One problem in a settings file, from the import preview.
+#[derive(Clone, PartialEq, Debug, Deserialize)]
+pub struct SettingsFieldError {
+    /// A path such as `rewards[0].local_time`; `$` is the whole file.
+    pub field: String,
+    pub code: String,
+}
+
+/// One setting a settings import changes.
+#[derive(Clone, PartialEq, Debug, Deserialize)]
+pub struct SettingsChange {
+    pub section: String,
+    #[serde(default)]
+    pub game_kind: Option<String>,
+    #[serde(default)]
+    pub game_uid: Option<String>,
+    pub setting: String,
+    pub from: serde_json::Value,
+    pub to: serde_json::Value,
+}
+
+/// A settings file entry the import leaves alone, and why.
+#[derive(Clone, PartialEq, Debug, Deserialize)]
+pub struct SettingsSkipped {
+    pub section: String,
+    pub game_kind: String,
+    #[serde(default)]
+    pub game_uid: Option<String>,
+    pub reason: String,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug, Default, Deserialize)]
+pub struct SettingsWebhookNote {
+    pub in_file: bool,
+    pub configured: bool,
+}
+
+/// `POST /me/settings/import/preview` and `POST /me/settings/import`: the planned or
+/// applied changes, or (preview only) the file's problems.
+#[derive(Clone, PartialEq, Debug, Deserialize)]
+pub struct SettingsImportReport {
+    pub valid: bool,
+    #[serde(default)]
+    pub changes: Vec<SettingsChange>,
+    #[serde(default)]
+    pub skipped: Vec<SettingsSkipped>,
+    #[serde(default)]
+    pub webhook: SettingsWebhookNote,
+    #[serde(default)]
+    pub errors: Vec<SettingsFieldError>,
+}
+
 /// The one response that carries an API token's plaintext; never Debug or Serialize it.
 #[derive(Deserialize)]
 pub struct IssuedApiToken {

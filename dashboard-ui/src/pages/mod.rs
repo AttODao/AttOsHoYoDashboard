@@ -19,3 +19,4 @@ mod rewards;
 mod security;
 pub(super) mod shell;
 mod swipe_tabs;
+mod transfer;

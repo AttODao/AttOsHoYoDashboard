@@ -19,6 +19,7 @@ fn nav_target(page: Page) -> Option<NavTarget> {
         | Page::Link
         | Page::Security
         | Page::Notifications
+        | Page::Transfer
         | Page::Delete => Some(NavTarget::Settings),
         Page::Admin | Page::Docs | Page::About => None,
     }
@@ -91,6 +92,7 @@ mod tests {
             Page::Link,
             Page::Security,
             Page::Notifications,
+            Page::Transfer,
             Page::Delete,
         ] {
             assert_eq!(nav_target(page), Some(NavTarget::Settings));

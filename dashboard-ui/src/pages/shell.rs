@@ -10,6 +10,7 @@ use super::notifications::NotificationsPage;
 use super::rewards::RewardsPage;
 use super::security::SecurityPage;
 use super::swipe_tabs::SwipeableTabs;
+use super::transfer::TransferPage;
 use crate::app::actions::spawn_action;
 use crate::app::navigation::open_web_version;
 use crate::app::preferences::{Preferences, use_preferences};
@@ -45,7 +46,7 @@ fn menu_items(app: bool, admin: bool) -> Vec<MenuItem> {
     items
 }
 
-const SETTINGS: [(Page, &str, &str, &str); 6] = [
+const SETTINGS: [(Page, &str, &str, &str); 7] = [
     (Page::Uids, "uids", "settings.uids", "dashboard.games"),
     (
         Page::Rewards,
@@ -66,10 +67,17 @@ const SETTINGS: [(Page, &str, &str, &str); 6] = [
         "settings.notifications",
         "settings.notifications_short",
     ),
+    (
+        Page::Transfer,
+        "transfer",
+        "settings.transfer",
+        "settings.transfer_short",
+    ),
     (Page::Delete, "delete", "settings.delete", "security.delete"),
 ];
 
-/// Settings tabs in this build; the app leaves account deletion to the web version.
+/// Settings tabs in this build; the app leaves the settings file and account deletion to
+/// the web version.
 fn settings_tabs(app: bool) -> Vec<(Page, &'static str, &'static str, &'static str)> {
     SETTINGS
         .into_iter()
@@ -84,6 +92,27 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
     let is_settings = SETTINGS.iter().any(|(p, ..)| *p == page);
     let tabs = settings_tabs(crate::platform::APP);
     let tab_index = tabs.iter().position(|(p, ..)| *p == page).unwrap_or(0);
+    // A narrow tab bar scrolls sideways: keep the selected tab in view after taps, keys,
+    // history and deep links. Only page changes run this, so manual scrolling is left alone.
+    // On a fresh load the stylesheet and fonts can arrive after the first render and change
+    // the tab widths, so the reveal is repeated briefly.
+    let selected = use_memo(move || state.read().page);
+    use_effect(move || {
+        let page = selected();
+        if let Some((_, key, ..)) = SETTINGS.iter().find(|(p, ..)| *p == page) {
+            let id = format!("settings-tab-{key}");
+            reveal_horizontally(&id);
+            spawn(async move {
+                for delay in [100, 400, 1000] {
+                    crate::platform::sleep_ms(delay).await;
+                    if *selected.peek() != page {
+                        return;
+                    }
+                    reveal_horizontally(&id);
+                }
+            });
+        }
+    });
     rsx! {
         SkipLink {}
         Header { state }
@@ -129,6 +158,7 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
                             Page::Link => rsx! { LinkPage { state } },
                             Page::Security => rsx! { SecurityPage { state } },
                             Page::Notifications => rsx! { NotificationsPage { state } },
+                            Page::Transfer if !crate::platform::APP => rsx! { TransferPage { state } },
                             Page::Delete if !crate::platform::APP => rsx! { DeletePage { state } },
                             _ => rsx! {},
                         }
@@ -316,17 +346,19 @@ mod tests {
     }
 
     #[test]
-    fn app_settings_tabs_leave_out_account_deletion() {
-        assert!(
-            settings_tabs(false)
-                .iter()
-                .any(|(page, ..)| *page == Page::Delete)
-        );
-        assert!(
-            !settings_tabs(true)
-                .iter()
-                .any(|(page, ..)| *page == Page::Delete)
-        );
+    fn app_settings_tabs_leave_out_the_settings_file_and_account_deletion() {
+        for web_only in [Page::Transfer, Page::Delete] {
+            assert!(
+                settings_tabs(false)
+                    .iter()
+                    .any(|(page, ..)| *page == web_only)
+            );
+            assert!(
+                !settings_tabs(true)
+                    .iter()
+                    .any(|(page, ..)| *page == web_only)
+            );
+        }
         assert!(next_settings(Page::Uids, &Key::ArrowLeft, true) == Some(Page::Notifications));
         assert!(next_settings(Page::Notifications, &Key::ArrowRight, true) == Some(Page::Uids));
         assert!(next_settings(Page::Delete, &Key::ArrowRight, true).is_none());
@@ -344,7 +376,8 @@ mod tests {
         };
         assert!(swipe(Page::Uids, SwipeDirection::Next, false) == Some(Page::Rewards));
         assert!(swipe(Page::Rewards, SwipeDirection::Previous, false) == Some(Page::Uids));
-        assert!(swipe(Page::Notifications, SwipeDirection::Next, false) == Some(Page::Delete));
+        assert!(swipe(Page::Notifications, SwipeDirection::Next, false) == Some(Page::Transfer));
+        assert!(swipe(Page::Transfer, SwipeDirection::Next, false) == Some(Page::Delete));
         assert!(swipe(Page::Uids, SwipeDirection::Previous, false).is_none());
         assert!(swipe(Page::Delete, SwipeDirection::Next, false).is_none());
         assert!(swipe(Page::Notifications, SwipeDirection::Next, true).is_none());
