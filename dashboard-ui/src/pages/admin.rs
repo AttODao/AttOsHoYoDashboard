@@ -1,14 +1,15 @@
-use super::common::{ConfirmDialog, Field, LoadError, ModalDialog, PasswordInput};
+use super::common::{ConfirmDialog, Field, LoadError, ModalDialog, PasswordInput, game_name};
 use super::notifications::AdminChannelCard;
+use super::rewards::{reward_label, run_tone};
 use crate::app::actions::spawn_action;
 use crate::app::credentials::{self, CopyState, CredentialResult};
 use crate::app::data::{load_admin_audit, load_admin_users};
-use crate::app::display::datetime_text;
+use crate::app::display::{datetime_text, error_text};
 use crate::app::preferences::use_preferences;
 use crate::app::session::{refresh_me, signed_out};
 use crate::app::state::{AppState, Page, Phase, generation_matches, set_page, set_status};
 use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle};
-use crate::models::{AuditEntry, UserView};
+use crate::models::{AdminGameHealth, AuditEntry, UserView};
 use dioxus::prelude::*;
 use serde_json::json;
 
@@ -72,6 +73,8 @@ fn AdminCard(state: Signal<AppState>) -> Element {
     let prefs = use_preferences();
     let mut username = use_signal(String::new);
     let mut result = use_signal(|| None::<CredentialResult>);
+    let mut search = use_signal(String::new);
+    let mut attention_only = use_signal(|| false);
     let generation = state.read().generation;
     use_effect(move || {
         let generation = state.read().generation;
@@ -84,13 +87,8 @@ fn AdminCard(state: Signal<AppState>) -> Element {
         return rsx! { p { role: "alert", {prefs.text("admin.administrator_access_required")} } };
     }
     let users = state.read().admin_users.clone().unwrap_or_default();
-    let mut search = use_signal(String::new);
-    let needle = search().trim().to_lowercase();
-    let shown: Vec<UserView> = users
-        .iter()
-        .filter(|user| needle.is_empty() || user.username.to_lowercase().contains(&needle))
-        .cloned()
-        .collect();
+    let shown = visible_users(&users, &search(), attention_only());
+    let attention = users.iter().filter(|user| needs_attention(user)).count();
     let mut create = move |_: ()| {
         if !is_admin(state) || state.read().busy || username.read().is_empty() {
             return;
@@ -155,9 +153,15 @@ fn AdminCard(state: Signal<AppState>) -> Element {
                     else if state.read().admin_users.is_none() { p { role: "status", {prefs.text("admin.loading_users")} } }
                     else if users.is_empty() { p { {prefs.text("admin.no_users")} } }
                     else {
-                        div { class: "admin-search",
-                            label { r#for: "admin-search", {prefs.text("admin.search_users")} }
-                            input { id: "admin-search", r#type: "search", autocomplete: "off", value: "{search}", oninput: move |event| search.set(event.value()) }
+                        div { class: "admin-filters",
+                            div { class: "admin-search",
+                                label { r#for: "admin-search", {prefs.text("admin.search_users")} }
+                                input { id: "admin-search", r#type: "search", autocomplete: "off", value: "{search}", oninput: move |event| search.set(event.value()) }
+                            }
+                            div { class: "checkbox-row",
+                                input { id: "admin-attention-only", r#type: "checkbox", checked: attention_only(), onchange: move |event| attention_only.set(event.checked()) }
+                                label { r#for: "admin-attention-only", {prefs.format("admin.needs_attention_only", &[("count", &attention.to_string())])} }
+                            }
                         }
                         if shown.is_empty() { p { role: "status", {prefs.text("admin.no_matching_users")} } }
                         else {
@@ -404,9 +408,21 @@ fn AdminUserRow(
             td {
                 span { class: status_class, {if user.active { prefs.text("admin.active") } else { prefs.text("admin.inactive") }} }
             }
-            td {
+            td { class: "admin-link",
                 "{link}"
+                if needs_attention(&user) { " " span { class: "status warn", {prefs.text("admin.needs_attention")} } }
                 if claims > 0 { span { class: "role-chip", {prefs.format("admin.automatic_claims", &[("count", &claims.to_string())])} } }
+                if let Some(health) = user.hoyolab.as_ref().filter(|_| linked(&user)) {
+                    p { class: "run-reason",
+                        if let Some(at) = health.status_fetched_at.as_deref() {
+                            {prefs.text("admin.status_fetched")} " "
+                            time { datetime: "{at}", {datetime_text(Some(at), prefs)} }
+                        } else {
+                            {prefs.text("admin.status_not_fetched")}
+                        }
+                    }
+                    for game in health.games.iter().cloned() { GameHealthLine { key: "{game.game_kind}", game } }
+                }
             }
             td { {user.last_login_at.as_deref().map_or_else(|| prefs.text("admin.never_signed_in").to_owned(), |at| datetime_text(Some(at), prefs))} }
             td {
@@ -473,6 +489,68 @@ fn AdminUserRow(
             }
         }
     }
+}
+
+/// One game's last reward outcome; the reason uses the sanitized code's message only.
+#[component]
+fn GameHealthLine(game: AdminGameHealth) -> Element {
+    let prefs = use_preferences();
+    let (tone, label) = game_outcome(&game, prefs);
+    let reason = game
+        .last_run
+        .as_ref()
+        .and_then(|run| run.error_code.clone());
+    rsx! {
+        p { class: "run-state {tone}",
+            strong { "{label}" }
+            " · " {game_name(&game.game_kind, prefs)}
+            if let Some(run) = &game.last_run {
+                " · " time { datetime: "{run.ended_at}", {datetime_text(Some(&run.ended_at), prefs)} }
+            }
+            if game.automatic { " · " {prefs.text("admin.automatic")} }
+        }
+        if let Some(reason) = reason { p { class: "run-reason", {error_text(Some(&reason), prefs)} } }
+    }
+}
+
+/// Style and label of a game's health line: a pending HoYoLAB check wins over the
+/// last run, which wins over having no run at all.
+fn game_outcome(
+    game: &AdminGameHealth,
+    prefs: crate::app::preferences::Preferences,
+) -> (&'static str, String) {
+    if game.setting_status == "action_required" {
+        return ("error", prefs.text("rewards.action_required").to_owned());
+    }
+    match &game.last_run {
+        // A stopped run was cancelled on purpose (claiming turned off or the Cookie removed).
+        Some(run) if run.state == "stopped" => ("", reward_label(&run.state, prefs)),
+        Some(run) => (run_tone(&run.state), reward_label(&run.state, prefs)),
+        None => ("", prefs.text("admin.no_reward_runs").to_owned()),
+    }
+}
+
+/// A link row exists (also after the owner removed the Cookie).
+fn linked(user: &UserView) -> bool {
+    user.link_status
+        .as_deref()
+        .is_some_and(|status| status != "not_configured")
+}
+
+/// The server decides who needs attention; older servers without the flag mean "no".
+fn needs_attention(user: &UserView) -> bool {
+    user.needs_attention.unwrap_or(false)
+}
+
+/// Rows matching the name search and, when asked, only those needing attention.
+fn visible_users(users: &[UserView], search: &str, attention_only: bool) -> Vec<UserView> {
+    let needle = search.trim().to_lowercase();
+    users
+        .iter()
+        .filter(|user| needle.is_empty() || user.username.to_lowercase().contains(&needle))
+        .filter(|user| !attention_only || needs_attention(user))
+        .cloned()
+        .collect()
 }
 
 fn link_label(status: Option<&str>, prefs: crate::app::preferences::Preferences) -> &'static str {
@@ -614,7 +692,96 @@ mod tests {
             created_at: None,
             link_status: None,
             automatic_claims: None,
+            needs_attention: None,
+            hoyolab: None,
         }
+    }
+
+    #[test]
+    fn listing_rows_with_link_health_deserialize_and_older_rows_default_to_no_attention() {
+        let row: UserView = serde_json::from_value(json!({
+            "id": uuid::Uuid::from_u128(1), "username": "mock-user", "is_admin": false,
+            "active": true, "must_change_password": false, "last_login_at": null,
+            "created_at": "2026-11-01T00:00:00Z", "link_status": "verified",
+            "automatic_claims": 1, "needs_attention": true,
+            "hoyolab": {"verified_at": null, "status_fetched_at": "2026-11-09T01:00:00Z",
+                "games": [{"game_kind": "genshin", "automatic": true, "setting_status": "ready",
+                    "last_run": {"state": "failed", "ended_at": "2026-11-09T00:00:00Z", "error_code": "network"}}]}
+        }))
+        .unwrap();
+        assert!(needs_attention(&row));
+        assert!(linked(&row));
+        let games = &row.hoyolab.as_ref().unwrap().games;
+        assert_eq!(
+            games[0].last_run.as_ref().unwrap().error_code.as_deref(),
+            Some("network")
+        );
+        let old = user(2, true, false);
+        assert!(!needs_attention(&old));
+        assert!(!linked(&old));
+    }
+
+    #[test]
+    fn user_filter_combines_name_search_and_attention() {
+        let mut alice = user(1, true, false);
+        alice.username = "Alice".into();
+        alice.needs_attention = Some(true);
+        let mut bob = user(2, true, false);
+        bob.username = "bob".into();
+        bob.needs_attention = Some(false);
+        let carol = UserView {
+            username: "carol".into(),
+            ..user(3, true, false)
+        };
+        let users = [alice, bob, carol];
+        let names =
+            |rows: Vec<UserView>| rows.into_iter().map(|row| row.username).collect::<Vec<_>>();
+        assert_eq!(
+            names(visible_users(&users, "", false)),
+            ["Alice", "bob", "carol"]
+        );
+        assert_eq!(names(visible_users(&users, "", true)), ["Alice"]);
+        assert_eq!(names(visible_users(&users, " ALI ", false)), ["Alice"]);
+        assert!(visible_users(&users, "bob", true).is_empty());
+    }
+
+    #[test]
+    fn game_health_prefers_pending_checks_then_the_last_run() {
+        let ui = crate::app::preferences::Preferences::default();
+        let mut game = AdminGameHealth {
+            game_kind: "starrail".into(),
+            automatic: false,
+            setting_status: "ready".into(),
+            last_run: None,
+        };
+        assert_eq!(
+            game_outcome(&game, ui),
+            ("", ui.text("admin.no_reward_runs").to_owned())
+        );
+        game.last_run = Some(crate::models::AdminLastRun {
+            state: "already_claimed".into(),
+            ended_at: "2026-11-09T00:00:00Z".into(),
+            error_code: None,
+        });
+        assert_eq!(
+            game_outcome(&game, ui),
+            ("success", ui.text("rewards.already_claimed").to_owned())
+        );
+        game.last_run.as_mut().unwrap().state = "stopped".into();
+        assert_eq!(
+            game_outcome(&game, ui),
+            ("", ui.text("dashboard.stopped").to_owned())
+        );
+        game.last_run.as_mut().unwrap().state = "unknown".into();
+        assert_eq!(
+            game_outcome(&game, ui),
+            ("error", ui.text("dashboard.unknown_outcome").to_owned())
+        );
+        game.setting_status = "action_required".into();
+        assert_eq!(
+            game_outcome(&game, ui),
+            ("error", ui.text("rewards.action_required").to_owned())
+        );
     }
 
     #[test]

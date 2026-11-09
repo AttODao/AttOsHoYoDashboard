@@ -1,7 +1,7 @@
 //! User view DTO and account-management routes; lifecycle rules remain in Accounts.
 use super::App;
 use crate::dashboard::{
-    auth::sessions::Identity,
+    auth::{administration::UserOverview, sessions::Identity},
     db::entities::user,
     error::{Error, Result},
 };
@@ -129,6 +129,62 @@ struct AdminUserView {
     created_at: DateTime<Utc>,
     link_status: String,
     automatic_claims: u64,
+    needs_attention: bool,
+    hoyolab: LinkHealthView,
+}
+
+/// Stored link health only: states, times and sanitized error codes.
+#[derive(Serialize)]
+struct LinkHealthView {
+    verified_at: Option<DateTime<Utc>>,
+    status_fetched_at: Option<DateTime<Utc>>,
+    games: Vec<GameHealthView>,
+}
+
+#[derive(Serialize)]
+struct GameHealthView {
+    game_kind: String,
+    automatic: bool,
+    setting_status: String,
+    last_run: Option<LastRunView>,
+}
+
+#[derive(Serialize)]
+struct LastRunView {
+    state: String,
+    ended_at: DateTime<Utc>,
+    error_code: Option<String>,
+}
+
+impl From<UserOverview> for AdminUserView {
+    fn from(row: UserOverview) -> Self {
+        let health = row.hoyolab;
+        Self {
+            created_at: row.user.created_at,
+            user: UserView::from(row.user),
+            automatic_claims: health.automatic_claims(),
+            needs_attention: health.needs_attention(),
+            link_status: health.status,
+            hoyolab: LinkHealthView {
+                verified_at: health.verified_at,
+                status_fetched_at: health.status_fetched_at,
+                games: health
+                    .games
+                    .into_iter()
+                    .map(|game| GameHealthView {
+                        game_kind: game.game_kind,
+                        automatic: game.automatic,
+                        setting_status: game.setting_status,
+                        last_run: game.last_run.map(|run| LastRunView {
+                            state: run.state,
+                            ended_at: run.ended_at,
+                            error_code: run.error_code,
+                        }),
+                    })
+                    .collect(),
+            },
+        }
+    }
 }
 
 async fn list_users(
@@ -140,12 +196,7 @@ async fn list_users(
             .user_overview(&actor)
             .await?
             .into_iter()
-            .map(|row| AdminUserView {
-                created_at: row.user.created_at,
-                user: UserView::from(row.user),
-                link_status: row.link_status,
-                automatic_claims: row.automatic_claims,
-            })
+            .map(AdminUserView::from)
             .collect(),
     ))
 }

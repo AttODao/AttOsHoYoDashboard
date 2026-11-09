@@ -311,7 +311,7 @@ fn schedule_parts(value: &str) -> Option<(String, String)> {
 }
 
 /// Inline style of the last-run line: in flight, settled well, or needs attention.
-fn run_tone(state: &str) -> &'static str {
+pub(super) fn run_tone(state: &str) -> &'static str {
     match state {
         _ if reward_run_in_flight(state) => "pending",
         "success" | "already_claimed" => "success",
@@ -319,7 +319,7 @@ fn run_tone(state: &str) -> &'static str {
     }
 }
 
-fn reward_label(value: &str, preferences: Preferences) -> String {
+pub(super) fn reward_label(value: &str, preferences: Preferences) -> String {
     match value {
         "ready" => preferences.text("dashboard.ready"),
         "pending" | "queued" => preferences.text("rewards.queued"),
