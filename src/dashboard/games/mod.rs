@@ -36,6 +36,9 @@ mod service_tests;
 #[cfg(test)]
 #[path = "summary_tests.rs"]
 mod summary_tests;
+#[cfg(test)]
+#[path = "upstream_json_tests.rs"]
+mod upstream_json_tests;
 
 pub(in crate::dashboard) use calendar::GameCalendar;
 pub(in crate::dashboard) use challenges::GameChallenges;

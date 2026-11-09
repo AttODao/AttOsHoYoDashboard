@@ -2,12 +2,12 @@
 //! account with their periods and the player's progress, read defensively from
 //! untyped upstream JSON. The field names come from genshin.py
 //! (`GenshinEventCalendar`, `HSREventCalendar`) and are not verified live, so a
-//! missing field stays unknown (`None`). The endgame lists of the calendar
+//! missing field stays unknown (`None`). Periods are read in every form genshin.py
+//! accepts (Unix seconds, date mappings, server-time text): Genshin events carry
+//! their period only as date mappings when their timestamps are zero. The endgame lists of the calendar
 //! (`fixed_act_list`, `challenge_list`) are left out: the endgame summary already
 //! shows those modes. Descriptions, reward lists and strategy links are not read.
-use super::upstream_json::{
-    boolean, integer, object, objects, server_offset, text, unix, wall_clock_text,
-};
+use super::upstream_json::{boolean, integer, moment, object, objects, server_offset, text};
 use attoshoyodashboard::game::GameKind;
 use chrono::{DateTime, Duration, FixedOffset, Utc};
 use serde::{Deserialize, Serialize};
@@ -70,7 +70,7 @@ pub(in crate::dashboard::games) fn summarize(
     let zone = server_offset(region);
     let mut items = match game {
         GameKind::Genshin(_) => genshin(source, zone, now),
-        GameKind::Starrail(_) => starrail(source),
+        GameKind::Starrail(_) => starrail(source, zone),
     };
     items.retain(|item| item.ends_at.is_none_or(|end| end > now));
     items.sort_by_key(|item| (item.ends_at.is_none(), item.ends_at));
@@ -123,16 +123,17 @@ fn genshin(
     items
 }
 
-/// Unix-second timestamps, else `YYYY-MM-DD HH:MM:SS` server time, and for the end
-/// the countdown from the fetch.
+/// `start_timestamp`/`end_timestamp` (Unix seconds; zero is unknown), else
+/// `start_time`/`end_time` (a date mapping with or without `tzinfo`, or server-time
+/// text), and for the end the countdown from the fetch.
 fn genshin_period(
     source: &Map<String, Value>,
     kind: &str,
     zone: Option<FixedOffset>,
     now: DateTime<Utc>,
 ) -> CalendarItem {
-    let starts_at = unix(source.get("start_timestamp"))
-        .or_else(|| wall_clock_text(source.get("start_time"), zone));
+    let starts_at = moment(source.get("start_timestamp"), zone)
+        .or_else(|| moment(source.get("start_time"), zone));
     // Before the start the countdown may count to the start, so it only stands in for
     // the end of an item that is known to have begun (or has no known start).
     let countdown = integer(source.get("countdown_seconds"))
@@ -142,14 +143,14 @@ fn genshin_period(
     CalendarItem {
         kind: kind.to_owned(),
         starts_at,
-        ends_at: unix(source.get("end_timestamp"))
-            .or_else(|| wall_clock_text(source.get("end_time"), zone))
+        ends_at: moment(source.get("end_timestamp"), zone)
+            .or_else(|| moment(source.get("end_time"), zone))
             .or(countdown),
         ..CalendarItem::default()
     }
 }
 
-fn starrail(source: &Map<String, Value>) -> Vec<CalendarItem> {
+fn starrail(source: &Map<String, Value>, zone: Option<FixedOffset>) -> Vec<CalendarItem> {
     let mut items = Vec::new();
     for (pools, kind, entries, icon) in [
         (
@@ -166,7 +167,7 @@ fn starrail(source: &Map<String, Value>) -> Vec<CalendarItem> {
         ),
     ] {
         for pool in objects(source.get(pools)) {
-            let mut item = starrail_period(pool, kind);
+            let mut item = starrail_period(pool, kind, zone);
             item.id = integer(pool.get("id"));
             item.name = short_text(pool.get("name"));
             item.version = short_text(pool.get("version"));
@@ -179,7 +180,7 @@ fn starrail(source: &Map<String, Value>) -> Vec<CalendarItem> {
         if text(event.get("act_time_type")).as_deref() == Some("ActTimeTypeLong") {
             continue;
         }
-        let mut item = starrail_period(event, "event");
+        let mut item = starrail_period(event, "event", zone);
         item.id = integer(event.get("id"));
         item.name = short_text(event.get("name"));
         item.version = short_text(event.get("version"));
@@ -197,13 +198,23 @@ fn starrail(source: &Map<String, Value>) -> Vec<CalendarItem> {
     items
 }
 
-/// `time_info.start_ts`/`end_ts` in Unix seconds; zero or absent is unknown.
-fn starrail_period(source: &Map<String, Value>, kind: &str) -> CalendarItem {
+/// `time_info.start_ts`/`end_ts` (Unix seconds; zero or absent is unknown), else
+/// `time_info.start_time`/`end_time` in any form `moment` reads.
+fn starrail_period(
+    source: &Map<String, Value>,
+    kind: &str,
+    zone: Option<FixedOffset>,
+) -> CalendarItem {
     let time = object(source.get("time_info"));
+    let at = |timestamp: &str, wall: &str| {
+        time.and_then(|time| {
+            moment(time.get(timestamp), zone).or_else(|| moment(time.get(wall), zone))
+        })
+    };
     CalendarItem {
         kind: kind.to_owned(),
-        starts_at: time.and_then(|time| unix(time.get("start_ts"))),
-        ends_at: time.and_then(|time| unix(time.get("end_ts"))),
+        starts_at: at("start_ts", "start_time"),
+        ends_at: at("end_ts", "end_time"),
         ..CalendarItem::default()
     }
 }

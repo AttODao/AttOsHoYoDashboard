@@ -8,7 +8,7 @@ use attoshoyodashboard::{
     game::{Game, Genshin, Starrail},
     hoyolab::Error as UpstreamError,
 };
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Datelike, Duration, FixedOffset, SubsecRound, Timelike, Utc};
 use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -113,7 +113,7 @@ async fn the_calendar_is_cached_refetched_at_boundaries_and_kept_when_a_refresh_
         Some(end.timestamp())
     );
     let row = stored(&fixture.db, account.id).await;
-    assert_eq!(row.payload_version, 1);
+    assert_eq!(row.payload_version, 2);
     let stored_text = row.payload.as_ref().unwrap().to_string();
     assert!(!stored_text.contains("private description") && !stored_text.contains("item_id"));
     assert!(!format!("{result:?}").contains("Synthetic"));
@@ -218,4 +218,60 @@ async fn private_records_back_off_and_action_required_games_are_not_fetched() {
         .unwrap()
         .unwrap();
     assert_eq!(link.auth_status, "verified");
+}
+
+/// A Genshin date mapping (genshin.py's `DateTime`) in the server time of `os_usa`, the
+/// region of the test accounts.
+fn usa_mapping(at: DateTime<Utc>) -> Value {
+    let local = at.with_timezone(&FixedOffset::west_opt(5 * 3600).unwrap());
+    json!({"year": local.year(), "month": local.month(), "day": local.day(),
+           "hour": local.hour(), "minute": local.minute(), "second": local.second()})
+}
+
+#[tokio::test]
+async fn calendars_summarized_by_an_older_version_are_fetched_again_within_the_ttl() {
+    let fixture = TestDatabase::new().await;
+    let actor = ready_identity(&fixture.db, "owner").await;
+    let key = key();
+    let link = verified_link(&fixture.db, &key, actor.user.id, "123").await;
+    let account = game(&fixture.db, link.id, "genshin", "800000001", true, true).await;
+    let start = (Utc::now() - Duration::days(3)).trunc_subsecs(0);
+    let end = start + Duration::days(10);
+    let gateway = MockGateway::with_calendars([Ok(json!({
+        "act_list": [{"id": 9, "name": "Synthetic Record", "start_timestamp": "0",
+                      "end_timestamp": "0", "start_time": usa_mapping(start),
+                      "end_time": usa_mapping(end), "countdown_seconds": 0,
+                      "is_finished": false}]
+    }))]);
+    // A fresh calendar stored by 2.1.0 (version 1), whose summary lost the event's period.
+    let fetched_at = Utc::now() - Duration::minutes(1);
+    game_calendar_cache::ActiveModel {
+        game_account_id: Set(account.id),
+        fetched_at: Set(Some(fetched_at)),
+        updated_at: Set(fetched_at),
+        payload: Set(Some(
+            json!([{"kind": "event", "id": 9, "name": "Synthetic Record",
+            "version": null, "starts_at": null, "ends_at": null, "finished": false,
+            "locked": null, "progress": null, "progress_total": null, "featured": []}]),
+        )),
+        payload_version: Set(1),
+        error_code: Set(None),
+        error_at: Set(None),
+    }
+    .insert(&fixture.db)
+    .await
+    .unwrap();
+    let games = service(fixture.db.clone(), key, gateway.clone());
+
+    let result = games.calendar(&actor, account.id).await.unwrap();
+    assert_eq!(gateway.calendar_calls(), [Genshin::KIND]);
+    let items = result.items.unwrap();
+    assert_eq!(
+        (items[0].starts_at, items[0].ends_at),
+        (Some(start), Some(end))
+    );
+    assert_eq!(stored(&fixture.db, account.id).await.payload_version, 2);
+    // The refreshed calendar is served from the cache again.
+    games.calendar(&actor, account.id).await.unwrap();
+    assert_eq!(gateway.calendar_calls().len(), 1);
 }
