@@ -3,6 +3,7 @@ use super::App;
 use crate::dashboard::{
     auth::sessions::Sessions,
     error::Result,
+    games::Games,
     rewards::{deletion, service::Rewards},
 };
 use std::{
@@ -113,6 +114,9 @@ async fn rewards(app: App, mut stop: watch::Receiver<bool>) {
             _ = maintenance.tick() => {
                 if let Err(error) = rewards.cleanup_history().await {
                     tracing::error!(error = %error, "reward history cleanup failed");
+                }
+                if let Err(error) = Games::new(cookies.clone()).cleanup_resource_history().await {
+                    tracing::error!(error = %error, "resource history cleanup failed");
                 }
                 let games = app.notifier_rewards_games.clone();
                 if let Some(games) = games {

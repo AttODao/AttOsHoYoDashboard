@@ -19,6 +19,9 @@ pub(super) struct Tuning {
     /// since) are served without an upstream request; the schedule changes only with
     /// new banners, and the player's event progress may lag by this much.
     pub calendar_ttl: Duration,
+    /// Resin and Trailblaze Power snapshots older than this are deleted. At least the
+    /// 7 days the dashboard summarizes.
+    pub resource_history_days: i64,
     /// Initial try plus retries for one reward run (the schema allows at most 4).
     pub max_attempts: i32,
     /// Wait before retrying a transient reward GET failure.
@@ -32,6 +35,7 @@ impl Default for Tuning {
             status_ttl: Duration::minutes(5),
             challenge_ttl: Duration::minutes(60),
             calendar_ttl: Duration::minutes(60),
+            resource_history_days: 7,
             max_attempts: 4,
             retry_delay: Duration::seconds(10),
         }
@@ -86,6 +90,13 @@ impl Tuning {
                 5..=1440,
                 "CALENDAR_CACHE_TTL_MINUTES must be 5 to 1440",
             )?),
+            resource_history_days: bounded(
+                read,
+                "RESOURCE_HISTORY_DAYS",
+                defaults.resource_history_days,
+                7..=90,
+                "RESOURCE_HISTORY_DAYS must be 7 to 90",
+            )?,
             max_attempts: bounded(
                 read,
                 "REWARD_MAX_ATTEMPTS",

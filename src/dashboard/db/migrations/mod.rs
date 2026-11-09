@@ -13,6 +13,7 @@ mod initial_accounts;
 mod notifications;
 mod passkeys;
 mod remove_web_push;
+mod resource_history;
 
 use sea_orm_migration::prelude::*;
 
@@ -36,6 +37,7 @@ impl MigratorTrait for Migrator {
             Box::new(game_challenge_cache::GameChallengeCache),
             Box::new(app_device_push::AppDevicePush),
             Box::new(game_calendar_cache::GameCalendarCache),
+            Box::new(resource_history::ResourceHistory),
         ]
     }
 }

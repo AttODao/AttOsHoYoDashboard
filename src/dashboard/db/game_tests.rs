@@ -3,8 +3,8 @@ use super::*;
 use crate::dashboard::{
     db::entities::{
         deletion_request, game_account, game_calendar_cache, game_challenge_cache,
-        game_status_cache, hoyolab_account, reward_attempt, reward_guard, reward_run,
-        reward_setting, reward_status_cache, user,
+        game_status_cache, hoyolab_account, resource_history, reward_attempt, reward_guard,
+        reward_run, reward_setting, reward_status_cache, user,
     },
     test_support::TestDatabase,
 };
@@ -55,11 +55,19 @@ async fn insert_game_account(
     db: &DatabaseConnection,
     hoyolab_account_id: Uuid,
 ) -> game_account::Model {
+    insert_game_account_uid(db, hoyolab_account_id, "800000001").await
+}
+
+async fn insert_game_account_uid(
+    db: &DatabaseConnection,
+    hoyolab_account_id: Uuid,
+    uid: &str,
+) -> game_account::Model {
     game_account::ActiveModel {
         id: Set(Uuid::new_v4()),
         hoyolab_account_id: Set(hoyolab_account_id),
         game_kind: Set("genshin".to_owned()),
-        game_uid: Set("800000001".to_owned()),
+        game_uid: Set(uid.to_owned()),
         region: Set("os_usa".to_owned()),
         last_detected_at: Set(Utc::now()),
         ..Default::default()
@@ -131,7 +139,7 @@ async fn dashboard_games_migration_is_ordered_reversible_and_updates_hoyolab_sta
         .map(|row| row.try_get("", "version").unwrap())
         .collect();
     assert_eq!(
-        names.iter().rev().nth(10).map(String::as_str),
+        names.iter().rev().nth(11).map(String::as_str),
         Some("m20261013_000004_dashboard_games")
     );
 
@@ -146,8 +154,8 @@ async fn dashboard_games_migration_is_ordered_reversible_and_updates_hoyolab_sta
         .await
         .unwrap();
 
-    // The later Cookie-removal, activity, notification, API token, app notification, Web Push removal, app event, challenge cache, app push and calendar cache migrations are undone first.
-    migrations::Migrator::down(&fixture.db, Some(11))
+    // The later Cookie-removal, activity, notification, API token, app notification, Web Push removal, app event, challenge cache, app push, calendar cache and resource history migrations are undone first.
+    migrations::Migrator::down(&fixture.db, Some(12))
         .await
         .unwrap();
     let row = fixture
@@ -674,6 +682,82 @@ async fn game_calendar_cache_checks_versions_and_errors_redacts_payload_and_casc
 }
 
 #[tokio::test]
+async fn resource_history_checks_values_and_goes_with_the_game_account_and_the_user() {
+    let fixture = TestDatabase::new().await;
+    let owner = insert_user(&fixture.db, "owner").await;
+    let account = insert_hoyolab(&fixture.db, owner.id).await;
+    let game = insert_game_account(&fixture.db, account.id).await;
+    let other = insert_game_account_uid(&fixture.db, account.id, "800000002").await;
+    // Whole seconds: PostgreSQL keeps microseconds, so the duplicate below must match exactly.
+    let now = chrono::SubsecRound::trunc_subsecs(Utc::now(), 0);
+    for (id, at) in [
+        (game.id, now),
+        (game.id, now - chrono::Duration::minutes(5)),
+        (other.id, now),
+    ] {
+        resource_history::ActiveModel {
+            game_account_id: Set(id),
+            fetched_at: Set(at),
+            current: Set(120),
+            maximum: Set(200),
+            full_at: Set(Some(at + chrono::Duration::minutes(640))),
+        }
+        .insert(&fixture.db)
+        .await
+        .unwrap();
+    }
+    for sql in [
+        // Unknown account, negative value, zero cap, and a duplicate fetch.
+        format!(
+            "INSERT INTO resource_history (game_account_id, fetched_at, current, maximum) \
+             VALUES ('{}', NOW(), 1, 200)",
+            Uuid::new_v4()
+        ),
+        format!(
+            "INSERT INTO resource_history (game_account_id, fetched_at, current, maximum) \
+             VALUES ('{}', NOW() - interval '1 day', -1, 200)",
+            game.id
+        ),
+        format!(
+            "INSERT INTO resource_history (game_account_id, fetched_at, current, maximum) \
+             VALUES ('{}', NOW() - interval '1 day', 1, 0)",
+            game.id
+        ),
+        format!(
+            "INSERT INTO resource_history (game_account_id, fetched_at, current, maximum) \
+             VALUES ('{}', '{}', 1, 200)",
+            game.id,
+            now.to_rfc3339()
+        ),
+    ] {
+        exec_err(&fixture.db, sql).await;
+    }
+
+    game_account::Entity::delete_by_id(game.id)
+        .exec(&fixture.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        resource_history::Entity::find()
+            .count(&fixture.db)
+            .await
+            .unwrap(),
+        1
+    );
+    user::Entity::delete_by_id(owner.id)
+        .exec(&fixture.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        resource_history::Entity::find()
+            .count(&fixture.db)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
 async fn reward_status_cache_allows_initial_failure_default_version_and_cascade() {
     let fixture = TestDatabase::new().await;
     let owner = insert_user(&fixture.db, "owner").await;
@@ -833,7 +917,7 @@ async fn removed_cookie_state_requires_no_ciphertext_and_reverts_by_deleting_the
     )
     .await;
 
-    migrations::Migrator::down(db, Some(10)).await.unwrap();
+    migrations::Migrator::down(db, Some(11)).await.unwrap();
     // The entity now names a column the older schema lacks: count with raw SQL.
     let remaining = db
         .query_one_raw(Statement::from_string(

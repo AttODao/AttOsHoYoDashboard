@@ -202,6 +202,7 @@ fn tuning_defaults_and_bounds() {
         ("STATUS_CACHE_TTL_MINUTES", "15"),
         ("CHALLENGE_CACHE_TTL_MINUTES", "180"),
         ("CALENDAR_CACHE_TTL_MINUTES", "30"),
+        ("RESOURCE_HISTORY_DAYS", "30"),
         ("REWARD_MAX_ATTEMPTS", "2"),
         ("REWARD_RETRY_DELAY_SECONDS", "60"),
     ])
@@ -213,6 +214,8 @@ fn tuning_defaults_and_bounds() {
     assert_eq!(Tuning::default().challenge_ttl, Duration::minutes(60));
     assert_eq!(tuning.calendar_ttl, Duration::minutes(30));
     assert_eq!(Tuning::default().calendar_ttl, Duration::minutes(60));
+    assert_eq!(tuning.resource_history_days, 30);
+    assert_eq!(Tuning::default().resource_history_days, 7);
     assert_eq!(tuning.max_attempts, 2);
     assert_eq!(tuning.retry_delay, Duration::seconds(60));
     for pair in [
@@ -223,6 +226,8 @@ fn tuning_defaults_and_bounds() {
         ("CHALLENGE_CACHE_TTL_MINUTES", "1441"),
         ("CALENDAR_CACHE_TTL_MINUTES", "4"),
         ("CALENDAR_CACHE_TTL_MINUTES", "1441"),
+        ("RESOURCE_HISTORY_DAYS", "6"),
+        ("RESOURCE_HISTORY_DAYS", "91"),
         ("REWARD_MAX_ATTEMPTS", "5"),
         ("REWARD_RETRY_DELAY_SECONDS", "x"),
     ] {

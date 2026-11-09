@@ -126,7 +126,7 @@ async fn bearer_reads_need_no_origin_and_record_last_use() {
 }
 
 #[tokio::test]
-async fn both_scopes_reach_the_challenge_summary_and_calendar_reads() {
+async fn both_scopes_reach_the_challenge_summary_calendar_and_resource_history_reads() {
     let db = TestDatabase::new().await;
     let (accounts, admin) = db.ready_admin().await;
     let app = app(accounts);
@@ -137,6 +137,7 @@ async fn both_scopes_reach_the_challenge_summary_and_calendar_reads() {
         for path in [
             format!("/api/v1/game-accounts/{id}/challenges"),
             format!("/api/v1/game-accounts/{id}/calendar"),
+            format!("/api/v1/game-accounts/{id}/resource-history"),
         ] {
             // The token passes the boundary and the scope check and reaches the
             // handler, which still applies the setup gate (no verified HoYoLAB link).
