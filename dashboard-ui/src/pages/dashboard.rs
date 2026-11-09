@@ -1,7 +1,7 @@
 use super::calendar::CalendarSection;
 use super::cap_history::CapHistory;
 use super::challenges::ChallengeSection;
-use super::common::{Icon, LoadError, Metric, focus_element, game_name};
+use super::common::{Icon, LoadError, Metric, focus_element, game_name, pending, refresh_problem};
 use super::rewards::AutomationSwitch;
 use super::swipe_tabs::SwipeableTabs;
 use crate::app::actions::spawn_root;
@@ -88,11 +88,14 @@ fn ClaimNow(state: Signal<AppState>) -> Element {
         .as_ref()
         .is_some_and(|poll| poll.page == Page::Dashboard);
     let loaded = snapshot.rewards_error.is_none();
+    let today = claim_summary(&snapshot.rewards);
     drop(snapshot);
     let blocked = match &targets {
         RunAll::Ready(_) => None,
         RunAll::Blocked(key) => Some(*key),
     };
+    // "All claimed" already says it for every game.
+    let summarize = loaded && !today.is_empty() && blocked != Some("rewards.all_claimed_today");
     rsx! {
         div { class: "claim-now",
             button {
@@ -107,7 +110,42 @@ fn ClaimNow(state: Signal<AppState>) -> Element {
             } else if let Some(key) = blocked.filter(|_| loaded) {
                 p { id: "claim-now-hint", class: "field-hint", {ui.text(key)} }
             }
+            // Today's claim per game beside the control that claims it; the bonus section at
+            // the bottom of each card keeps the details.
+            if summarize {
+                p { class: "claim-summary", id: "claim-summary",
+                    span { class: "claim-summary-label", {ui.text("dashboard.today_s_reward")} }
+                    for (game, signed) in today {
+                        span { class: "run-state claim-summary-game {claim_tone(signed)}", "data-game": game,
+                            span { class: "visually-hidden", " · " }
+                            {game_name(game, ui)} " " strong { {received(signed, ui)} }
+                        }
+                    }
+                }
+            }
         }
+    }
+}
+
+/// Today's claim state per dashboard game, in tab order, for the games with a setting.
+fn claim_summary(settings: &[RewardSetting]) -> Vec<(&'static str, Option<bool>)> {
+    DASHBOARD_GAMES
+        .iter()
+        .filter_map(|game| {
+            settings
+                .iter()
+                .find(|setting| setting.game_kind == *game)
+                .map(|setting| (*game, setting.is_sign))
+        })
+        .collect()
+}
+
+/// The status colour of a claim state: claimed, still open, or unknown.
+fn claim_tone(signed: Option<bool>) -> &'static str {
+    match signed {
+        Some(true) => "success",
+        Some(false) => "pending",
+        None => "",
     }
 }
 
@@ -199,8 +237,12 @@ fn GamePanel(state: Signal<AppState>, game: &'static str, active: bool, mobile: 
             "aria-labelledby": if mobile { format!("game-tab-{game}") } else { format!("game-title-{game}") },
             "data-selected": active, hidden: mobile && !active,
             tabindex: if mobile { "0" } else { "-1" },
+            // The age of the shown status sits beside the control that renews it.
             div { class: "game-heading",
-                h2 { class: "game-title", id: "game-title-{game}", {game_name(game, ui)} }
+                div { class: "game-heading-text",
+                    h2 { class: "game-title", id: "game-title-{game}", {game_name(game, ui)} }
+                    StatusFreshness { state, game }
+                }
                 // The app refreshes by pulling the dashboard down instead.
                 if !crate::platform::APP { RefreshButton { state, game } }
             }
@@ -244,7 +286,11 @@ fn GameStatusSection(mut state: Signal<AppState>, game: &'static str) -> Element
     });
     let accounts_loaded = snapshot.accounts.is_some();
     let accounts_failed = snapshot.accounts_error.is_some();
-    let loading = selection.loading && selection.generation == snapshot.generation;
+    let loading = pending(
+        selection.loading && selection.generation == snapshot.generation,
+        status.is_some(),
+        selection.error.is_some(),
+    );
     drop(snapshot);
     rsx! {
         if !accounts_loaded {
@@ -273,22 +319,33 @@ fn GameStatusSection(mut state: Signal<AppState>, game: &'static str) -> Element
             }
             if let Some(key) = selection.error {
                 // Without a payload there is nothing that could be outdated.
-                p { class: "warning", role: "status", {ui.text(refresh_error_key(key, status.is_some()))} }
+                p { class: "warning", role: "status", {ui.text(refresh_problem(key, status.is_some(), "dashboard.status_fetch_failed"))} }
             }
             div { "aria-busy": loading,
                 if let Some(status) = status.clone() {
                     GameStatusCard { status, history, history_error: selection.history_error }
                 } else if loading {
                     p { role: "status", {ui.text("dashboard.loading")} }
-                } else if selection.error.is_none() {
-                    p { {ui.text("dashboard.status_has_not_been_fetched")} }
                 }
-            }
-            div { class: "refresh-row",
-                Freshness { fetched_at: status.as_ref().and_then(|status| status.fetched_at.clone()), stale: status.as_ref().is_some_and(|status| status.stale) }
             }
         }
     }
+}
+
+/// Age of the selected UID's status, under the game title.
+#[component]
+fn StatusFreshness(state: Signal<AppState>, game: &'static str) -> Element {
+    let snapshot = state.read();
+    let status = snapshot.selected_game_account(game).and_then(|id| {
+        snapshot
+            .account_statuses
+            .iter()
+            .find(|entry| entry.id == id)
+            .map(|entry| (entry.status.fetched_at.clone(), entry.status.stale))
+    });
+    drop(snapshot);
+    let (fetched_at, stale) = status.unwrap_or_default();
+    rsx! { Freshness { fetched_at, stale } }
 }
 
 /// Web refresh control: a circular-arrow icon button at the card's top right.
@@ -423,11 +480,7 @@ fn BonusToday(state: Signal<AppState>, setting: RewardSetting) -> Element {
     let ui = use_preferences();
     let clock = use_clock();
     let _ = clock();
-    let tone = match setting.is_sign {
-        Some(true) => "success",
-        Some(false) => "pending",
-        None => "",
-    };
+    let tone = claim_tone(setting.is_sign);
     let needs_link = matches!(
         setting.auth_status.as_str(),
         "action_required" | "cookie_invalid"
@@ -453,7 +506,8 @@ fn BonusToday(state: Signal<AppState>, setting: RewardSetting) -> Element {
             if setting.enabled {
                 {ui.text("dashboard.next_run")} ": "
                 strong { {date(&setting.next_run_at, ui)} }
-                if let Some(next_in) = next_in { " · " {ui.format("dashboard.in_duration", &[("duration", &next_in)])} }
+                // The countdown moves to the next line as a whole rather than splitting "13h 05m".
+                if let Some(next_in) = next_in { " · " span { class: "inline-unit", {ui.format("dashboard.in_duration", &[("duration", &next_in)])} } }
             } else {
                 {ui.text("dashboard.automation_off")}
             }
@@ -599,7 +653,8 @@ fn Resource(
                 else if fill == "near" { span { class: "status warn cap-badge", {ui.text("dashboard.near_cap")} } }
             }
             div { class: "resource", "data-fill": fill,
-                strong { {number(current, ui)} }
+                // A missing value is a word in the body face, not a display numeral.
+                strong { class: if current.is_none() { "missing" } else { "" }, {number(current, ui)} }
                 if let Some(maximum) = maximum { span { "/ {maximum}" } }
             }
             if let (Some(value), Some(max)) = (current, maximum) {
@@ -813,15 +868,6 @@ fn expedition_label(name: Option<&str>, index: usize, ui: Preferences) -> String
         })
 }
 
-/// A failed refresh only warns about outdated data when a payload is shown.
-fn refresh_error_key(key: &'static str, has_status: bool) -> &'static str {
-    if key == "dashboard.refresh_failed" && !has_status {
-        "dashboard.status_fetch_failed"
-    } else {
-        key
-    }
-}
-
 /// One warning per status: a failed fetch without data says only that it
 /// failed; stale data says how old it is, with the failure reason if known.
 fn freshness_notice(status: &GameStatus, ui: Preferences) -> Option<String> {
@@ -967,18 +1013,6 @@ mod tests {
 
     #[test]
     fn failed_fetches_without_data_do_not_also_claim_outdated_data() {
-        assert_eq!(
-            refresh_error_key("dashboard.refresh_failed", false),
-            "dashboard.status_fetch_failed"
-        );
-        assert_eq!(
-            refresh_error_key("dashboard.refresh_failed", true),
-            "dashboard.refresh_failed"
-        );
-        assert_eq!(
-            refresh_error_key("dashboard.status_identity_mismatch", false),
-            "dashboard.status_identity_mismatch"
-        );
         let ui = Preferences::default();
         let mut status: GameStatus = serde_json::from_value(serde_json::json!({
             "game_kind": "genshin", "game_uid": "600000000", "region": "os_asia",
@@ -999,6 +1033,32 @@ mod tests {
         status.stale = false;
         status.error_code = None;
         assert_eq!(freshness_notice(&status, ui), None);
+    }
+
+    #[test]
+    fn the_claim_summary_follows_the_tab_order_and_skips_games_without_a_setting() {
+        let setting = |game: &str, signed: Option<bool>| -> RewardSetting {
+            serde_json::from_value(serde_json::json!({
+                "id": uuid::Uuid::from_u128(1), "game_kind": game, "enabled": true,
+                "local_time": "06:00", "auth_status": "ready", "is_sign": signed
+            }))
+            .unwrap()
+        };
+        assert_eq!(
+            claim_summary(&[
+                setting("starrail", Some(true)),
+                setting("genshin", Some(false))
+            ]),
+            [("genshin", Some(false)), ("starrail", Some(true))]
+        );
+        assert_eq!(
+            claim_summary(&[setting("starrail", None)]),
+            [("starrail", None)]
+        );
+        assert!(claim_summary(&[]).is_empty());
+        assert_eq!(claim_tone(Some(true)), "success");
+        assert_eq!(claim_tone(Some(false)), "pending");
+        assert_eq!(claim_tone(None), "");
     }
 
     #[test]

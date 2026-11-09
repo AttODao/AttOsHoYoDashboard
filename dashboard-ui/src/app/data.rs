@@ -67,7 +67,13 @@ pub(super) async fn load_dashboard_data(state: Signal<AppState>, include_account
     if !current_ready_page_generation(state, generation, Page::Dashboard) {
         return;
     }
+    // The login bonus (a stored read behind the claim control) comes before the
+    // per-game history, endgame and calendar reads, which may wait on HoYoLAB.
     load_rewards(state).await;
+    if !current_ready_page_generation(state, generation, Page::Dashboard) {
+        return;
+    }
+    load_selected_details(state).await;
 }
 
 /// Resources refreshed by overlapping loads (page entry, polling and the
@@ -200,11 +206,9 @@ pub(super) async fn load_accounts(mut state: Signal<AppState>) {
     }
 }
 
-// Keep the polling entry point stable; each game has its own selection and request guard.
-// Every game's status comes first, then the time-at-cap histories (stored data only,
-// including the snapshot this status fetch just added); the endgame summaries and then
-// the event calendars (slower, rarely changing) follow.
-pub(super) async fn load_selected_status(state: Signal<AppState>) {
+// Each game has its own selection and request guard. Every game's status comes first;
+// `load_dashboard_data` then reads the login bonus before `load_selected_details`.
+async fn load_selected_status(state: Signal<AppState>) {
     let Some(generation) = ready_generation(state) else {
         return;
     };
@@ -214,6 +218,15 @@ pub(super) async fn load_selected_status(state: Signal<AppState>) {
         }
         load_game_status(state, game).await;
     }
+}
+
+/// The time-at-cap histories first (stored data only, including the snapshot the
+/// status fetch just added), then the endgame summaries and the event calendars
+/// (slower, rarely changing).
+async fn load_selected_details(state: Signal<AppState>) {
+    let Some(generation) = ready_generation(state) else {
+        return;
+    };
     for game in DASHBOARD_GAMES {
         if !current_ready_page_generation(state, generation, Page::Dashboard) {
             return;

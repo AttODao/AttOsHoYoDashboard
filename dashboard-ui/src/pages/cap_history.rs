@@ -1,3 +1,4 @@
+use super::common::refresh_problem;
 use crate::app::display::{days_hours, hours_minutes};
 use crate::app::preferences::{Preferences, use_preferences};
 use crate::models::{HistorySegment, ResourceHistory};
@@ -45,7 +46,7 @@ pub(super) fn CapHistory(
                 }
             }
             if let Some(key) = error {
-                p { class: "warning", role: "status", {ui.text(key)} }
+                p { class: "warning", role: "status", {ui.text(refresh_problem(key, history.is_some(), "history.fetch_failed"))} }
             }
             if let Some(totals) = totals {
                 svg {

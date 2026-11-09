@@ -1,3 +1,4 @@
+use super::common::{pending, refresh_problem};
 use super::dashboard::{Freshness, use_clock};
 use crate::app::display::{compact_datetime, days_hours, error_text, seconds_since};
 use crate::app::preferences::{Preferences, use_preferences};
@@ -31,7 +32,11 @@ pub(super) fn CalendarSection(state: Signal<AppState>, game: &'static str) -> El
         .iter()
         .find(|entry| entry.id == id)
         .map(|entry| entry.calendar.clone());
-    let loading = selection.calendar_loading;
+    let loading = pending(
+        selection.calendar_loading,
+        calendar.is_some(),
+        selection.calendar_error.is_some(),
+    );
     drop(snapshot);
     if selection.calendar_unavailable && calendar.is_none() {
         return rsx! {};
@@ -40,15 +45,13 @@ pub(super) fn CalendarSection(state: Signal<AppState>, game: &'static str) -> El
         section { class: "calendar-section", id: "calendar-{game}", "aria-labelledby": "calendar-title-{game}",
             h3 { id: "calendar-title-{game}", {calendar_title(game, ui)} }
             if let Some(key) = selection.calendar_error {
-                p { class: "warning", role: "status", {ui.text(key)} }
+                p { class: "warning", role: "status", {ui.text(refresh_problem(key, calendar.is_some(), "calendar.fetch_failed"))} }
             }
             div { "aria-busy": loading,
                 if let Some(calendar) = calendar {
                     CalendarBody { calendar, game }
                 } else if loading {
                     p { role: "status", {ui.text("dashboard.loading")} }
-                } else if selection.calendar_error.is_none() {
-                    p { {ui.text("calendar.not_fetched")} }
                 }
             }
         }
