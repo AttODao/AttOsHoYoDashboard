@@ -31,7 +31,7 @@ flowchart TB
 - `src/dashboard/http/mod.rs`: API・static route compositionと単一HTTP listener・worker lifetime。`ui.rs`はcompiled UI・通常パスの`/login`／`/dashboard`／各`/settings/...`／`/admin`／`/about`・公開`/docs`・`/assets`・`/openapi.json`を提供し、`/settings`を`/settings/games`へ308転送する。未知のパスやAPIをSPAへfallbackしない。CLIの`serve`がmigrationと空DBの初期管理者作成を行い、事前に構築したAccountsをserverへ渡す。
 - `src/dashboard/auth/`: user lifecycle、password/session、passkey registration（resident key preferred）/authentication（ユーザー名指定とdiscoverable）、deletion requestと削除完了のretry backoff。`passkeys/decoy.rs`は利用可能なpasskeyのないユーザー名に返す、実ユーザーと同じ形のpasskey login options（完了できないchallengeとHMAC由来のcredential ID 1件）を作る。`app_logins.rs`はAndroidアプリのブラウザ経由ログイン（PKCE S256）を扱う。ブラウザのセッションが承認したchallengeを、ハッシュ化したワンタイムコード（120秒・最大256件・プロセス内メモリ）に結び付け、交換時はコードを先に消費してからverifierを定数時間で比較し、user lockの中で承認したブラウザのセッションがまだ有効なことを確かめてから新しいセッションを発行する（管理者の復旧・無効化・削除やブラウザのログアウトで未交換のコードも無効になる）。`login_limit.rs`がpassword・passkey共通のユーザー名ごとのログイン試行枠と、ログイン中の現在パスワード確認（パスワード変更・削除要求）のユーザーIDごとの別枠を持つ（HTTPはIPやglobal枠を持たない）。
 - `src/dashboard/hoyolab/`: owner operation lock、identity/roles整合性検証・sync。`credentials.rs`がCredentials/CookieKeyの窓口を持ち、`credentials/parser.rs`がCookie解析・正規化、`credentials/crypto.rs`がAES-256-GCM保存を担当する。Cookie claimは本人確認の証拠にせず、暗号化v1のnonce・AAD・保存形式は維持する。
-- `src/dashboard/games/`: owned game UID list、visibility、curated status cache。`live_tests.rs`は既定ignoreの別承認付き派遣GET検査で、ローカルdevenvの保存済みCookieをメモリ内で使用し、DB read-only transactionと件数・状態・公式画像hostだけの非機密出力を要求する。
+- `src/dashboard/games/`: owned game UID list、visibility、curated status cache（`service.rs`）、高難度コンテンツの要約cache（`challenges.rs`、上流JSONの防御的な読み取りは純関数の `challenge_summary.rs`）。`challenges.rs`は`Games`の別implとして`service.rs`の認可・`action_required`判定・保存前の再確認を共有し、方針を重複させない。`live_tests.rs`は既定ignoreの別承認付き派遣GET検査で、ローカルdevenvの保存済みCookieをメモリ内で使用し、DB read-only transactionと件数・状態・公式画像hostだけの非機密出力を要求する。
 - `src/dashboard/rewards/service.rs`: settings・manual enqueue・historyと共通のactor/link/credential version再検査。`service/cache.rs`がrefresh・TTL・cache upsertを持つ。認可再検査はcache専用ではないためserviceに残す。
 - `src/dashboard/rewards/service/worker/`: serviceの子workerを維持し、`scheduler.rs`にtick・due schedule・history cleanup、`attempt.rs`にprepare・POST・GET確認、`state.rs`にdurable may-have-sent・guard・完了transaction、`deletion.rs`に削除時のGET-only確認を置く。owner operation lock、DB transaction/row lock、POST前のdurable記録と不確定時の再送禁止は移動前と同じ境界を保つ。fixed-offset計算は`rewards/schedule.rs`、guardを報酬日（UTC+8の0時区切り）に限定する共通判定は`rewards/guard.rs`。削除完了前の報酬側判定（未解決guard・`may_have_sent` runの抽出、Cookie keyなしでは削除を保留）は`rewards/deletion.rs`が持ち、HTTP runtimeは呼び出すだけにする。
 - `src/hoyolab/client/`: typed upstream protocol client。Dashboard policyをここへ混ぜない。
@@ -58,7 +58,7 @@ APIとschedulerは同じDB/業務処理を使う。単一process/instance前提�
 
 - Protected routeはsession cookieをDB上のhashへ照合する。HTTPS時のcookie名は `__Host-attos_session`、localhost非secure時は `attos_session`。
 - Safe method以外は `Origin` headerが `PUBLIC_ORIGIN` と完全一致する必要がある。ただし `Authorization: Bearer` がちょうど1つあり `Cookie` headerを持たない要求は除く。CSRFには自動で付く資格情報が要るが、ブラウザはcookieを自動で付けても、Bearer headerはCORS preflightなしにcross-siteで付けない。AHDはpreflightに応じない。
-- `Authorization` headerがある要求はAPIトークンだけで認証し、セッションcookieも持つ要求は401とする（`auth/api_tokens.rs`）。scope `read` はdashboardデータの読み取り7ルート（`GET /me`・`/server-settings`・`/me/hoyolab`・`/game-accounts`・`/game-accounts/{id}/status`・`/reward-settings`・`/reward-runs`）、`run` はそれに `POST /reward-settings/{id}/run` を加える。判定はmiddlewareがrouterのmatched pathで `permits` を呼んで行う。その他のrouteはセッション専用で、業務層の再認証もセッション専用の `Sessions::authenticate` のままにする。トークンで届くroute（`CookieStore::actor_locked`・`status`）だけが `sessions::reauthenticate` で資格情報の種類ごとに再認証する。
+- `Authorization` headerがある要求はAPIトークンだけで認証し、セッションcookieも持つ要求は401とする（`auth/api_tokens.rs`）。scope `read` はdashboardデータの読み取り8ルート（`GET /me`・`/server-settings`・`/me/hoyolab`・`/game-accounts`・`/game-accounts/{id}/status`・`/game-accounts/{id}/challenges`・`/reward-settings`・`/reward-runs`）、`run` はそれに `POST /reward-settings/{id}/run` を加える。判定はmiddlewareがrouterのmatched pathで `permits` を呼んで行う。その他のrouteはセッション専用で、業務層の再認証もセッション専用の `Sessions::authenticate` のままにする。トークンで届くroute（`CookieStore::actor_locked`・`status`）だけが `sessions::reauthenticate` で資格情報の種類ごとに再認証する。
 - Responseには `X-Content-Type-Options: nosniff` を付与する。API・HTML shell・error responseは `Cache-Control: no-store`。`/assets` の成功responseのうち、content hash付きの名前（DXの`-dxh<hex>`、self-hosted fontの`-<sha256先頭12桁>`）は `public, max-age=31536000, immutable`、それ以外は `no-cache` とする。Dioxus HTML shellにはCSPも付与する。DX 0.7.10のexternal module loaderを許可し、`script-src 'self' 'wasm-unsafe-eval'`、`style-src 'self'`、`img-src 'self' https://upload-os-bbs.hoyolab.com https://act-upload.hoyolab.com https://act-webstatic.hoyoverse.com`、`connect-src 'self'`、`object-src 'none'`、`frame-ancestors 'none'`、`base-uri 'none'` を使う。`'unsafe-inline'` と一般の `'unsafe-eval'` は使わない。release bundleのCSP・WASM動作はChromiumと合成fixtureで検証済み。
 - Body limitは16KiB。JSON DTOは `serde(deny_unknown_fields)` を使う。
 - Error DTOは `{ "error": code, "message": sanitized }`。上流message、driver source、秘密値は返さない。
@@ -75,6 +75,7 @@ APIとschedulerは同じDB/業務処理を使う。単一process/instance前提�
 | `hoyolab_accounts` | owner 1:1、nullable verified UID unique、encrypted credentials、credential_version、auth_status |
 | `game_accounts` | link配下のgame_kind/game_uid/region、visible、detected、last_detected_at |
 | `game_status_cache` | UIDごとのlatest curated payload version 2、fetched/error timestamps |
+| `game_challenge_cache` | UIDごとの高難度コンテンツ要約（モードの配列、payload version 1）、fetched/error timestamps、game account削除でcascade |
 | `reward_settings` | link × game、enabled、local_time、auth_status、next_run_at |
 | `reward_runs` / `reward_attempts` | durable reward execution and attempts, 5-day history |
 | `reward_guard` | POST may-have-sent durable guard |
@@ -121,6 +122,14 @@ Lockはowner単位で、別ユーザーはglobal serializeしない。DB table l
 - upstream successではcurated summaryだけを保存する。failureでは旧payload/fetched_atを保持し、error_code/error_atを更新する。
 - retcode 10102（戦績・リアルタイムノート非公開）はgame statusのerror_codeとしてだけ表示し、reward settingは変更しない（ログインボーナスは戦績の公開設定に依存しない）。直近5分以内の10102はnote再取得を控え、それ以降は再取得して公開設定の変更から自動で回復する。cookie invalid classはlinkを `cookie_invalid` にする。
 
+### 6.1 Endgame challenge cache
+
+- `Games::challenges` は `status` と同じ所有者ロック・ready verified link・owned/visible/detected・`action_required`・保存前再確認を使う（セッションとAPIトークンのどちらでも呼べる。トークン経路は `ready_link`／`actor_locked` の `reauthenticate`）。
+- 上流は `attoshoyodashboard::challenge::Challenge`（モード・パス・クエリ）ごとのGETで、型付けせずJSONのまま `challenge_summary::summarize` に渡す。要約は `ModeSummary`（全フィールドnullable）。キャラクター別戦績は読まない。
+- fresh条件：payload version 1、payloadがモード配列として読める、cache全体のerror_codeなし、`0 <= now - fetched_at <= TTL`、かつ取得後に終わった期間がない。TTLは全モード成功なら `CHALLENGE_CACHE_TTL_MINUTES`（既定60分）、一部失敗なら `STATUS_CACHE_TTL_MINUTES`。終わった期間を取得後に検出したときだけ取り直すので、上流が終了済みの期間を返し続けても再取得が毎回にはならない。
+- 取得はモードを順に。Cookie無効なら中断してlinkを `cookie_invalid`。全モード失敗なら旧payload/fetched_atを保持してerror_code/error_atを記録、`upstream:10102` は `STATUS_CACHE_TTL_MINUTES` の間再取得しない。
+- 時刻：Unix秒はそのまま、年月日時分のオブジェクトはサーバー（`os_usa`/`prod_official_usa` UTC-5、`os_euro`/`prod_official_eur` UTC+1、`os_asia`/`os_cht`/`prod_official_asia`/`prod_official_cht` UTC+8）の時刻。未知のサーバーは `null`。
+
 ## 7. Reward worker
 
 ```mermaid
@@ -151,4 +160,4 @@ Deletion request verifies actor password, reauthenticates current session, locks
 
 ## 9. API contract
 
-Manual OpenAPI 3.1 is maintained at [`../dashboard-api.json`](../dashboard-api.json). It documents API routes: auth, passkeys, admin/me, HoYoLAB status/cookie/verify/sync, game accounts/status, reward settings/runs, health, and `/openapi.json`. The standalone Dashboard's `/` and `/docs` are not API operations. The compiled `/assets/{...}` subtree is served from `DASHBOARD_UI_DIR/assets` for browser-internal hashed assets only and is not an OpenAPI operation.
+Manual OpenAPI 3.1 is maintained at [`../dashboard-api.json`](../dashboard-api.json). It documents API routes: auth, passkeys, admin/me, HoYoLAB status/cookie/verify/sync, game accounts/status/challenges, reward settings/runs, health, and `/openapi.json`. The standalone Dashboard's `/` and `/docs` are not API operations. The compiled `/assets/{...}` subtree is served from `DASHBOARD_UI_DIR/assets` for browser-internal hashed assets only and is not an OpenAPI operation.

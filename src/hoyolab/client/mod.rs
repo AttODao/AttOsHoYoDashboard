@@ -8,6 +8,7 @@ use reqwest::{
 use serde::Deserialize;
 
 use super::{
+    challenge::Challenge,
     error::{Error, Result},
     game::Game as GameSpec,
     models::{ApiResponse, account::Account},
@@ -82,6 +83,23 @@ impl HoyolabClient {
         self.record(game, account, G::NOTE_PATH).await
     }
 
+    /// The current period of one endgame mode as untyped JSON (`data` of the envelope).
+    pub async fn challenge(
+        &self,
+        challenge: Challenge,
+        account: &RecordAccount,
+    ) -> Result<serde_json::Value> {
+        let data = self
+            .record_data(
+                challenge.record_base(),
+                account,
+                challenge.path(),
+                challenge.query(),
+            )
+            .await?;
+        parse(&data)
+    }
+
     pub async fn daily_info<G: GameSpec>(&self, game: G) -> Result<G::DailyInfo> {
         self.daily(game, "info", reqwest::Method::GET).await
     }
@@ -102,21 +120,32 @@ impl HoyolabClient {
         account: &RecordAccount,
         endpoint: &str,
     ) -> Result<T> {
+        let data = self
+            .record_data(G::RECORD_BASE, account, endpoint, &[])
+            .await?;
+        parse(&data)
+    }
+
+    async fn record_data(
+        &self,
+        base: &str,
+        account: &RecordAccount,
+        endpoint: &str,
+        extra: &[(&str, &str)],
+    ) -> Result<Box<RawValue>> {
         if account.uid.is_empty()
             || !account.uid.bytes().all(|b| b.is_ascii_digit())
             || account.server.trim().is_empty()
         {
             return Err("ゲームUIDまたはserverが不正です".into());
         }
-        let url = format!("{}/{endpoint}", G::RECORD_BASE);
-        let data = self
-            .get(
-                &url,
-                &[("role_id", &account.uid), ("server", &account.server)],
-                None,
-            )
-            .await?;
-        parse(&data)
+        let url = format!("{base}/{endpoint}");
+        let mut query = vec![
+            ("role_id", account.uid.as_str()),
+            ("server", account.server.as_str()),
+        ];
+        query.extend_from_slice(extra);
+        self.get(&url, &query, None).await
     }
 
     async fn daily<G: GameSpec, T: serde::de::DeserializeOwned>(

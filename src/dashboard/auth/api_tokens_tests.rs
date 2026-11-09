@@ -276,6 +276,7 @@ fn scope_policy_allows_only_dashboard_reads_and_the_manual_run() {
         "/api/v1/me/hoyolab",
         "/api/v1/game-accounts",
         "/api/v1/game-accounts/{id}/status",
+        "/api/v1/game-accounts/{id}/challenges",
         "/api/v1/reward-settings",
         "/api/v1/reward-runs",
     ];
