@@ -9,6 +9,7 @@ mod display;
 mod home_widgets;
 mod navigation;
 mod preferences;
+mod server;
 mod session;
 mod settings_file;
 mod state;

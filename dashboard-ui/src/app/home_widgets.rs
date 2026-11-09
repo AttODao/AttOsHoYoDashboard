@@ -24,7 +24,7 @@ pub(super) fn use_home_widgets(state: Signal<AppState>) {
                 if let Ok(key) = serde_json::to_string(&p)
                     && last.borrow().as_ref() != Some(&key)
                     && let Some(origin) = http::server_origin()
-                    && widgets::publish(origin, &p)
+                    && widgets::publish(&origin, &p)
                 {
                     *last.borrow_mut() = Some(key);
                 }

@@ -691,5 +691,19 @@
   "history.legend_unknown": "不明",
   "history.axis_end": "現在",
   "history.description": "{resource}は直近7日間のうち{at_cap}上限に達していました（回復中{below}、記録がなく不明{unknown}）。",
-  "history.refresh_failed": "上限の記録を更新できませんでした。表示中の内容は最新ではない可能性があります。"
+  "history.refresh_failed": "上限の記録を更新できませんでした。表示中の内容は最新ではない可能性があります。",
+  "auth.server_label": "接続先サーバー",
+  "auth.server_not_set": "接続先サーバーが設定されていません。",
+  "auth.server_change": "サーバーを変更",
+  "auth.server_address": "サーバーのアドレス",
+  "auth.server_hint": "AHDサーバーのアドレスです（https://ahd.example.com など）。変更すると、アプリはログアウトし、今のサーバーの通知と、画面に表示するために保存したデータをこの端末から消去します。",
+  "auth.server_save": "確認して変更",
+  "auth.server_use_default": "既定のサーバーを入力",
+  "auth.server_error_empty": "サーバーのアドレスを入力してください。",
+  "auth.server_error_invalid": "サーバーのアドレスとして使えません。https://ahd.example.com のようなアドレスを入力してください。",
+  "auth.server_error_insecure": "https:// のアドレスを入力してください。http:// はlocalhostだけで使えます。",
+  "auth.server_error_unreachable": "サーバーに接続できませんでした。アドレスと通信状態を確認してください。",
+  "auth.server_error_not_ahd": "応答はありましたが、AHDのサーバーではありません。アドレスを確認してください。",
+  "auth.server_error_not_saved": "サーバーを変更できませんでした。もう一度お試しください。",
+  "messages.server_changed": "接続先サーバーを変更しました。新しいサーバーにログインしてください。"
 }

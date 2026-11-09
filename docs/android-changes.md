@@ -28,9 +28,9 @@
 
 WebViewのページからはサーバーのHttpOnly Cookieを扱えないため、アプリはRustから直接サーバーへ接続します（`mobile/http.rs`、reqwest + rustls）。
 
-- 接続先はビルド時の `AHD_SERVER_URL` に固定します。HTTPS、またはlocalhostのHTTPだけを受け付け、パスやクエリ、認証情報は付けられません（`mobile/session.rs::parse_origin`）。
+- 接続先の既定はビルド時の `AHD_SERVER_URL` です。利用者はログイン画面の「接続先サーバー」で別のサーバーに変えられます（5.11節）。どちらもHTTPS、またはlocalhostのHTTPだけを受け付け、保存するのはOriginだけです（パスやクエリ、認証情報は持ちません。`mobile/session.rs::parse_origin`、`mobile/server.rs`）。
 - ログイン応答の `Set-Cookie` をCookie jarに入れ、Android Keystoreの鍵で暗号化してアプリ専用領域の `session-cookies.enc`（`getFilesDir()`）へ保存し、以後の要求に `Cookie` を付けます。ログアウトや期限切れで消えます。暗号化と移行の詳細は5.7節にあります。
-- サーバーがCSRF対策で検査する `Origin` には、サーバー自身のOriginを送ります。リダイレクトは追いません（Cookieと `Origin` を別のホストへ送らないため）。
+- サーバーがCSRF対策で検査する `Origin` には、選択中のサーバー自身のOriginを送ります。リダイレクトは追いません（Cookieと `Origin` を別のホストへ送らないため）。
 - User-Agentは `AHD-Android/<バージョン> (Android)` です。セッション一覧では「Android」と表示されます。
 - パス検査、応答サイズの上限、エラーコードから表示文への変換は、web版と同じ `api.rs` の処理を使います。
 
@@ -109,7 +109,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 
 ### ログイン・初回設定
 
-- アプリ内にはユーザー名とパスワードのフォームを置き、その下に「パスキーでログイン」「ブラウザでログイン」を表示する（3節・5.3節）。
+- アプリ内にはユーザー名とパスワードのフォームを置き、その下に「パスキーでログイン」「ブラウザでログイン」を表示する（3節・5.3節）。いちばん下に「接続先サーバー」の欄を置く（5.11節）。
 - パスワード変更が必須の場合は、変更フォームの代わりに案内文と「ブラウザで開く」を表示する。
 - レイアウトはweb版の600px以下と同じ。
 
@@ -161,7 +161,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 | 設定 › 認証・セキュリティ | `/settings/security`（パスワード変更とAPIトークン） |
 | 初回設定でパスワード変更が必須の画面 | `/dashboard`（web版がログイン後に初回設定へ転送する） |
 
-- URLは `AHD_SERVER_URL` のOrigin（`mobile::http::server_origin()`）と、既存の `navigation::page_path(page)` をつないだもの（`navigation::web_page_url`。単体テストあり）。
+- URLは選択中のサーバーのOrigin（`mobile::http::server_origin()`。既定は `AHD_SERVER_URL`、5.11節）と、既存の `navigation::page_path(page)` をつないだもの（`navigation::web_page_url`。単体テストあり）。
 - `crate::platform::open_external` が `webbrowser` クレート（1.2、`hardened`）で開きます。Androidでは `Intent.ACTION_VIEW` で既定のブラウザを起動します。
 - ブラウザが見つからない場合や、サーバーURLが使えない場合は、エラー行「ブラウザを開けませんでした。」（`messages.could_not_open_the_browser`）を表示します。
 - ブラウザ側にはアプリのセッションがないので、web版のログイン画面から入ります。アプリとブラウザのセッションは別物です。
@@ -395,6 +395,23 @@ ntfyはバッテリーの最適化から除外していないと、数時間後�
 - サーバーからの通知（5.3節）の文面は、サーバーが通知設定の言語（Webhookと共通）で作るため、この規則の対象外です。
 - 確認（エミュレータ API 34、新規インストール）：システムの言語を英語・日本語にして、それぞれログイン画面と、ウィジェットの未ログイン表示の言語を確かめました。詳細はPRの説明にあります。
 
+### 5.11 接続先サーバーの変更
+
+- ログイン画面の下に「接続先サーバー」の欄を置き、選択中のサーバーのOriginを表示する。「サーバーを変更」でアドレスの入力欄を開き、「確認して変更」で変える。既定のサーバー以外を使っているときは「既定のサーバーを入力」（ビルド時の `AHD_SERVER_URL` を入力欄に入れる）も出す。web版には表示しない（web版の接続先は常にページ自身のOrigin）。
+- 入力の規則（`mobile/server.rs::origin_from_input`、純粋関数、テストあり）：前後の空白を除き、スキームがなければ `https://` を補う。HTTPSだけを受け付け、HTTPは `localhost`／`127.0.0.1` だけ（開発用。`network_security_config.xml` と同じ範囲）。認証情報（`user@`）付き、`https`/`http` 以外のスキーム、ホストのないものは使えない。パス・クエリ・フラグメントは捨て、Originだけを保存する（ページのURLを貼り付けても使える）。
+- 変える前に、新しいサーバーの `GET /health` を確かめる（Cookieも `Origin` も送らない。15秒で打ち切り、応答は16KiBまで）。200の `{"status":"ok"}` か、503の `{"status":"degraded"}`（バックグラウンド処理の停止中）だけをAHDのサーバーとみなす（`health_answer`）。接続できない場合とAHDのサーバーでない場合は、それぞれの理由を入力欄の直下に表示し、何も変えない。
+- 変えるときは、次の順で古いサーバーの状態をすべて消す（`app/server.rs::change`）。
+  1. 古いサーバーのセッションCookieが残っていれば（通信エラーでログイン画面になった場合など）、5秒以内のベストエフォートで、この端末の受信箱の登録（UnifiedPushの購読を含む）を削除し、ログアウトを送る。応答がなくても続ける（サーバー側の端末登録は30日、セッションは期限で消える）。
+  2. UnifiedPushの配信アプリの登録と鍵（「すぐに受け取る」のスイッチは端末の設定として残す）、受信箱の登録、表示中のゲーム状態の通知（更新の通知は残す）、ホーム画面ウィジェットのデータ、通知の予定（`notification-schedule.json`）、ブラウザ経由ログインの待ち（`browser-login.json`）を消す（`app/server.rs::forget_local_server_data`、`mobile/server.rs::PER_SERVER_FILES`）。どれか1つでも消せなければ変更をやめ、エラーを表示する（古いサーバーを選んだまま）。
+  3. Cookie jarを空にし、Keystoreで暗号化した `session-cookies.enc` を消してから、新しいOriginを `files/server-origin.txt` に保存する（`http::switch_server`。jarのロックを持ったまま行う。既定のサーバーを選んだ場合はファイルを消すので、既定を変えたビルドに更新したとき、サーバーを選んでいない利用者は新しい既定に従う）。Cookieを消せなければ変更をやめ、エラーを表示する。古いCookieが新しいサーバーへ送られることはない。
+  4. 画面の状態を新しい `AppState` に置き換え（ダッシュボードのデータを含む）、「接続先サーバーを変更しました。新しいサーバーにログインしてください。」と表示する。この理由は通知の予定と受信箱を忘れるサインアウトの理由（`FORGETTING_SIGN_OUTS`）に含まれる。
+- 新しいサーバーを選択中として保存するのは、古いサーバーの状態をすべて消した後だけです。途中で失敗したり、アプリが終了したりした場合は、古いサーバーを選んだままになります。
+- 要求はOriginとCookieを同じロックの中で読むので、あるサーバーへ別のサーバーのCookieを送ることはない。変更の後に古いサーバーから届いた応答の `Set-Cookie` は、jarに入れない（要求を送ったOriginが選択中のものと違う場合）。
+- 言語、テーマ、どの端末通知を使うか、スキップした更新など端末の設定は残す。
+- ブラウザで開く（5.1節）、ブラウザ経由のパスワード／パスキーログイン（5.3節）、受信箱、ウィジェットは、選択中のサーバーを使う。
+- 更新の確認（5.5節・5.6節）は、接続先とは関係なく、ビルド時の `AHD_UPDATE_*`（既定は `git.attodao.cc` の `AttODao/AttOsHoYoDashboard`）のForgejoリリースを使い続ける。別のサーバーを選んでも、そのサーバーからAPKを取得することはない。
+- サーバーの変更はログイン画面だけで行う（ログイン中は表示しない）。
+
 ## 6. web版との共通化と分岐
 
 ### 共通のまま使うもの
@@ -430,7 +447,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | 保存がない場合の言語の取得元 | `navigator.languages` | アプリ別言語→システムのロケール（`mobile/locale.rs`、Kotlin `AhdLocale.deviceLocales`） | `Preferences::load`、`Language::for_locales` |
 | 外部URL | （なし） | `webbrowser` | `platform::open_external` |
 
-`mobile/browser_login.rs`・`mobile/session.rs`・`mobile/time.rs`・`mobile/reminders.rs`・`mobile/updates.rs`（通信部分を除く）、`mobile/update_install.rs`（ハッシュ・APK情報・スキップ・進捗の純粋な検証と、一時ファイルのSink）は通常のテスト環境で動くため、通常の `cargo test` でもコンパイルしてテストします（`main.rs` の `cfg(any(feature = "mobile", test))`）。
+`mobile/browser_login.rs`・`mobile/server.rs`・`mobile/session.rs`・`mobile/time.rs`・`mobile/reminders.rs`・`mobile/updates.rs`（通信部分を除く）、`mobile/update_install.rs`（ハッシュ・APK情報・スキップ・進捗の純粋な検証と、一時ファイルのSink）は通常のテスト環境で動くため、通常の `cargo test` でもコンパイルしてテストします（`main.rs` の `cfg(any(feature = "mobile", test))`）。
 
 ### 変更したファイル
 
@@ -440,7 +457,10 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | --- | --- |
 | `dashboard-ui/src/platform.rs` | `APP`、`sleep_ms`、`now_ms`、`open_external` |
 | `dashboard-ui/src/mobile/mod.rs` | アプリ用モジュールの宣言 |
-| `dashboard-ui/src/mobile/http.rs` | サーバーへの直接接続、Cookie jarの読み込みと保存（Kotlinの `AhdSessionStore` をJNIで呼ぶ）、`server_origin` |
+| `dashboard-ui/src/mobile/http.rs` | サーバーへの直接接続、Cookie jarの読み込みと保存（Kotlinの `AhdSessionStore` をJNIで呼ぶ）、選択中のサーバー（`server_origin`・`switch_server`）と `/health` の確認 |
+| `dashboard-ui/src/mobile/server.rs` | 接続先サーバーの入力の規則、保存値、`/health` の判定、サーバーごとのファイル（I/Oなし、テストあり。5.11節） |
+| `dashboard-ui/src/app/server.rs` | 接続先サーバーの変更：確認、古いサーバーからの退出、サーバーごとの状態の消去（5.11節） |
+| `dashboard-ui/src/pages/app_server.rs` | ログイン画面の「接続先サーバー」欄（5.11節） |
 | `dashboard-ui/src/mobile/session.rs` | Cookie jarとサーバーURLの規則、保存先の一時的な失敗をログアウトと区別する規則（I/Oなし、テストあり） |
 | `dashboard-ui/src/mobile/storage.rs` | アプリ専用領域のファイル（JNIで `getFilesDir()`・`getCacheDir()` を取得） |
 | `dashboard-ui/src/mobile/time.rs` | 端末時刻での表示 |
@@ -529,7 +549,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
   - ダークモード、文字サイズ、表示サイズ、太字、言語、キーボードなどの変更では、Activityを作り直さずにその場で反映します（`configChanges`）。WebViewは文字サイズを作成時にしか読まないため、変更時に `textZoom` を設定し直します。
   - 最近使ったアプリから消すなどでActivityが破棄されたときは、ネイティブの後始末を行わずにプロセスを終了します。次に開くと新しく起動します。
   - テーマはDayNightなので、アプリのテーマ「システム」は端末のダークモードに追従します（以前は常にライトでした）。
-- **サーバーはビルド時に固定**：接続先は `AHD_SERVER_URL` の1つだけです。変えるにはビルドし直します。
+- **接続先サーバー**：同時に使えるサーバーは1つだけです。変えると古いサーバーからログアウトし、そのサーバーの通知とデータを端末から消します（5.11節）。HTTPのサーバー（localhostを除く）と、独自CAの証明書のサーバーには接続できません。
 - **セッションCookieの保存**：Android Keystoreの鍵で暗号化して保存します（5.7節）。鍵はユーザー認証を要求しないため、端末のロック中でも受信箱とウィジェットのジョブが読めます。そのため、アプリとして動くコード（root化した端末で同じUIDとして動くものを含む）からは復号できます。暗号化が防ぐのは、ファイルだけを取り出した場合（バックアップ、ファイルのコピー）です。1.9.0以前のバージョンで作られたバックアップには平文のファイルが含まれている可能性があります。
 - **パスワード表示の自動マスク**：web版は、表示中のパスワードを、ウィンドウや入力欄からフォーカスが外れたときとページが非表示になったときに伏せます。アプリではこの処理を実装していません（表示ボタンでの切り替えはできます）。
 - **言語**：保存がない場合の言語は端末のロケールで決まります（5.10節）。サーバーからの通知（5.3節）の文面は、端末ではなく通知設定の言語に従います。ウィジェットピッカーに出る説明文は、ランチャーがシステム言語で解決します。
@@ -558,7 +578,6 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 ### 今後の課題
 
 - release署名と配布方法（ストア、または直接配布）を決める。
-- 接続先のサーバーをアプリ内で設定できるようにするかを検討する。
 - 実機で確認する。
 
 ## ホーム画面ウィジェット（基盤）

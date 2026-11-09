@@ -3,18 +3,22 @@ use crate::{i18n::Language, models::GameStatus};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// App-private file with the predicted schedule; it belongs to one server (`mobile::server`).
+pub(crate) const SCHEDULE_FILE: &str = "notification-schedule.json";
 /// Keep due reminders for an hour so a schedule re-push does not cancel an
 /// inexact Android alarm that is still waiting for delivery.
 pub(crate) const GRACE_MS: i64 = 60 * 60 * 1000;
 
 /// Sign-out reasons after which the account no longer uses this device: logout, an expired or revoked session (401)
-/// and account deletion. Any other reason (network or server errors during the session check) keeps the schedule.
-const FORGETTING_SIGN_OUTS: [&str; 5] = [
+/// account deletion and a change of server on the login page. Any other reason (network or server errors during the
+/// session check) keeps the schedule.
+const FORGETTING_SIGN_OUTS: [&str; 6] = [
     "messages.signed_out",
     "messages.logout_unconfirmed",
     "messages.please_sign_in",
     "messages.please_sign_in_again",
     "deletion.user_deletion_accepted_processing_pending",
+    "messages.server_changed",
 ];
 pub(crate) fn forgets_schedule(is_signed_out: bool, status_key: Option<&str>) -> bool {
     is_signed_out && status_key.is_some_and(|key| FORGETTING_SIGN_OUTS.contains(&key))
@@ -302,6 +306,7 @@ mod tests {
             "messages.please_sign_in",
             "messages.please_sign_in_again",
             "deletion.user_deletion_accepted_processing_pending",
+            "messages.server_changed",
         ];
         // SignedIn, Loading and Unchecked all pass false to the pure helper.
         for key in preserved_keys
