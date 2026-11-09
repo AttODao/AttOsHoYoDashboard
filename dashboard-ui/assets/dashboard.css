@@ -114,3 +114,5 @@ textarea[aria-invalid=true]{border-color:var(--danger)}
 .form-grid>.field{margin-bottom:0}
 /* Bare label/value pairs in a metric list read like the Metric component (no browser dd indent). */
 .metric-list>dt{font-size:14px;color:var(--muted)}.metric-list>dd{margin:0;overflow-wrap:anywhere}
+/* Admin user list: name search and the needs-attention filter share one row; link health reads like the reward history lines. */
+.admin-filters{display:flex;flex-wrap:wrap;align-items:end;gap:12px 32px}.admin-filters .admin-search{flex:1 1 16rem}.admin-filters .checkbox-row input{flex-shrink:0}.admin-users tr>:nth-child(3){min-width:10rem}.admin-link .run-state,.admin-link .run-reason{margin:6px 0 0;font-size:14px;color:var(--muted)}.admin-link time{font-variant-numeric:tabular-nums;white-space:nowrap}

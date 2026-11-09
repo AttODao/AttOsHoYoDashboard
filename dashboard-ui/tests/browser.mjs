@@ -128,7 +128,9 @@ const server=http.createServer(async(req,res)=>{
    if(p==='/api/v1/server-settings'){await settingsGate;return json(res,{timezone_offset:'+09:00',session_ttl_days:7});}
    if(p==='/api/v1/admin/users'){
     if(req.method==='POST'){assert.ok(actor===user);assert.ok(body.username==='synthetic-created');assert.ok(validGenerated(body.temporary_password),'24-character WebCrypto candidate');if(failCreate)return json(res,{error:'unavailable'},503);const created={...other,id:uid(12),username:body.username,must_change_password:true};createdUsers.push(created);return json(res,created,201);}
-    return json(res,[user,other,secondAdmin,...createdUsers].map(row=>({...row,created_at:hoursAgo(100),link_status:row===other?'verified':'not_configured',automatic_claims:row===other?2:0,last_login_at:row===user?hoursAgo(1):null})));
+    // Only stored link health: no UIDs, Cookies or raw upstream errors, just sanitized codes.
+    const health=row=>row===other?{verified_at:hoursAgo(50),status_fetched_at:hoursAgo(2),games:[{game_kind:'genshin',automatic:true,setting_status:'ready',last_run:{state:'failed',ended_at:hoursAgo(3),error_code:'network'}},{game_kind:'starrail',automatic:true,setting_status:'ready',last_run:{state:'success',ended_at:hoursAgo(4),error_code:null}}]}:{verified_at:null,status_fetched_at:null,games:[]};
+    return json(res,[user,other,secondAdmin,...createdUsers].map(row=>({...row,created_at:hoursAgo(100),link_status:row===other?'verified':'not_configured',automatic_claims:row===other?2:0,needs_attention:row===other,hoyolab:health(row),last_login_at:row===user?hoursAgo(1):null})));
    }
    if(p==='/api/v1/admin/audit'){assert.equal(req.method,'GET');return json(res,[{id:uid(60),action:'user_created',created_at:hoursAgo(1),actor:user.username,target:other.username},{id:uid(61),action:'signed_in',created_at:hoursAgo(2),actor:null,target:null},{id:uid(62),action:'sign_in_failed',created_at:hoursAgo(3),actor:null,target:user.username}]);}
    if(p===`/api/v1/admin/users/${uid(12)}/temporary-password`){assert.equal(req.method,'PUT');assert.ok(validGenerated(body.temporary_password));res.writeHead(204);return res.end();}
@@ -976,6 +978,25 @@ try{
  const otherRowEarly=page.getByRole('row').filter({has:page.getByRole('rowheader',{name:new RegExp('^'+other.username)})});
  assert.ok((await otherRowEarly.innerText()).includes('Verified')&&(await otherRowEarly.innerText()).includes('Auto-claim 2'));
  assert.ok((await otherRowEarly.innerText()).includes('Never'));
+ // Per-user link health: the failed run shows its localized reason, never the raw code.
+ const otherLink=otherRowEarly.locator('td.admin-link');
+ const linkText=await otherLink.innerText();
+ for(const part of ['Needs attention','Status fetched ','Failed · Genshin Impact','Success · Honkai: Star Rail','Could not reach HoYoLAB','Auto'])assert.ok(linkText.includes(part),part+' in '+linkText);
+ assert.ok(!/\bnetwork\b/.test(linkText),'raw error code stays out of the table');
+ assert.equal(await otherLink.locator('.run-state.error strong').innerText(),'Failed');
+ assert.equal(await otherLink.locator('.run-state.success strong').innerText(),'Success');
+ assert.equal(await ownRow.locator('td.admin-link .run-state').count(),0,'users without a link show no health lines');
+ assert.equal(await ownRow.getByText('Needs attention',{exact:true}).count(),0);
+ const attentionOnly=page.getByLabel('Only users who need attention (1)',{exact:true});
+ await attentionOnly.focus();await page.keyboard.press('Space');
+ assert.ok(await attentionOnly.isChecked(),'the filter is keyboard operable');
+ assert.equal(await page.locator('.admin-users tbody tr').count(),1);
+ assert.ok((await page.locator('.admin-users tbody th').innerText()).startsWith(other.username));
+ await page.locator('#admin-search').fill(user.username);
+ await page.getByText('No matching users',{exact:true}).waitFor();
+ await page.locator('#admin-search').fill('');
+ await attentionOnly.uncheck();
+ assert.ok((await page.locator('.admin-users tbody tr').count())>=3);
  const audit=page.getByRole('table').filter({hasText:'User created'});
  assert.ok((await audit.innerText()).includes('System')&&(await audit.innerText()).includes('Deleted user'));
  assert.ok((await audit.innerText()).includes('Sign-in failed')&&!(await audit.innerText()).includes('Other action'),'failed sign-ins have their own label');
