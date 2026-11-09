@@ -19,6 +19,33 @@ pub struct UserView {
     pub link_status: Option<String>,
     #[serde(default)]
     pub automatic_claims: Option<u64>,
+    #[serde(default)]
+    pub needs_attention: Option<bool>,
+    #[serde(default)]
+    pub hoyolab: Option<AdminLinkHealth>,
+}
+
+/// Stored HoYoLAB link health in the administrator listing (no identifiers).
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct AdminLinkHealth {
+    pub verified_at: Option<String>,
+    pub status_fetched_at: Option<String>,
+    pub games: Vec<AdminGameHealth>,
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct AdminGameHealth {
+    pub game_kind: String,
+    pub automatic: bool,
+    pub setting_status: String,
+    pub last_run: Option<AdminLastRun>,
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct AdminLastRun {
+    pub state: String,
+    pub ended_at: String,
+    pub error_code: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]

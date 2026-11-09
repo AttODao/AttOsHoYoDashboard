@@ -4,11 +4,15 @@ use super::{
     sessions::{Identity, Sessions},
 };
 use crate::dashboard::{
-    db::entities::{audit, hoyolab_account, reward_setting, user},
+    db::entities::{audit, user},
     error::Result,
+    hoyolab::health::{self, LinkHealth},
 };
 use chrono::{DateTime, Utc};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+use sea_orm::{
+    AccessMode, ColumnTrait, EntityTrait, IsolationLevel, QueryFilter, QueryOrder, QuerySelect,
+    TransactionTrait,
+};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -19,10 +23,8 @@ mod tests;
 /// One user as administrators see them, with linkage health but no secrets.
 pub(in crate::dashboard) struct UserOverview {
     pub(in crate::dashboard) user: user::Model,
-    /// The HoYoLAB link state, or `not_configured`.
-    pub(in crate::dashboard) link_status: String,
-    /// Games with automatic claiming ON.
-    pub(in crate::dashboard) automatic_claims: u64,
+    /// Stored link state, last status fetch and last reward runs; no upstream calls.
+    pub(in crate::dashboard) hoyolab: LinkHealth,
 }
 
 pub(in crate::dashboard) struct AuditEntry {
@@ -43,36 +45,27 @@ impl Accounts {
     ) -> Result<Vec<UserOverview>> {
         let fresh = Sessions::authenticate(&self.db, &actor.token_hash).await?;
         require_admin(&fresh.user)?;
+        // One read-only snapshot, so users, links, settings and runs agree.
+        let tx = self
+            .db
+            .begin_with_config(
+                Some(IsolationLevel::RepeatableRead),
+                Some(AccessMode::ReadOnly),
+            )
+            .await?;
         let users = user::Entity::find()
             .order_by_asc(user::Column::Username)
-            .all(&self.db)
+            .all(&tx)
             .await?;
-        let links: HashMap<Uuid, hoyolab_account::Model> = hoyolab_account::Entity::find()
-            .all(&self.db)
-            .await?
-            .into_iter()
-            .map(|link| (link.owner_user_id, link))
-            .collect();
-        let mut enabled: HashMap<Uuid, u64> = HashMap::new();
-        for setting in reward_setting::Entity::find()
-            .filter(reward_setting::Column::Enabled.eq(true))
-            .all(&self.db)
-            .await?
-        {
-            *enabled.entry(setting.hoyolab_account_id).or_default() += 1;
-        }
+        let mut links = health::by_owner(&tx).await?;
+        tx.commit().await?;
         Ok(users
             .into_iter()
-            .map(|user| {
-                let link = links.get(&user.id);
-                UserOverview {
-                    link_status: link
-                        .map_or_else(|| "not_configured".to_owned(), |l| l.auth_status.clone()),
-                    automatic_claims: link
-                        .and_then(|link| enabled.get(&link.id).copied())
-                        .unwrap_or_default(),
-                    user,
-                }
+            .map(|user| UserOverview {
+                hoyolab: links
+                    .remove(&user.id)
+                    .unwrap_or_else(LinkHealth::not_configured),
+                user,
             })
             .collect())
     }
