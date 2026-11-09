@@ -276,17 +276,19 @@ pub(super) fn reset_checked(id: &str, checked: bool) {
     let _ = (id, checked);
 }
 
-/// Native modal dialog with a labelled heading; Escape, backdrop and focus
-/// restoration come from `use_modal`.
+/// Native modal dialog with a labelled heading; Escape, backdrop, the app's Back key and
+/// focus restoration come from `use_modal`. `back_closes: false` keeps it open on Back
+/// while it must stay (the app only; the browser's Back is unchanged).
 #[component]
 pub(super) fn ModalDialog(
     id: String,
     title: &'static str,
     onclose: EventHandler<()>,
+    #[props(default = true)] back_closes: bool,
     children: Element,
 ) -> Element {
     let title_id = format!("{id}-title");
-    use_modal(id.clone(), true, onclose);
+    use_modal(id.clone(), true, back_closes, onclose);
     rsx! {
         dialog { id, class: "modal-dialog", "aria-labelledby": title_id.clone(),
             div { class: "form-stack", h2 { id: title_id, "{title}" } {children} }
@@ -320,10 +322,12 @@ pub(super) fn ConfirmDialog(
     }
 }
 
-/// Own the native modal, its browser listeners, scroll lock and focus restoration.
-pub(super) fn use_modal(id: String, active: bool, onclose: EventHandler<()>) {
+/// Own the native modal, its browser listeners, scroll lock and focus restoration. In the app
+/// it is also the topmost entry for Android's Back key (`mobile::back`) while `back_closes`.
+pub(super) fn use_modal(id: String, active: bool, back_closes: bool, onclose: EventHandler<()>) {
     #[cfg(target_arch = "wasm32")]
     {
+        let _ = back_closes;
         let modal = use_hook(|| std::rc::Rc::new(std::cell::RefCell::new(None::<Modal>)));
         use_effect(use_reactive!(|active, id| {
             let mut modal = modal.borrow_mut();
@@ -341,11 +345,16 @@ pub(super) fn use_modal(id: String, active: bool, onclose: EventHandler<()>) {
         let modal = use_hook(|| {
             std::rc::Rc::new(std::cell::RefCell::new(None::<crate::mobile::dom::Modal>))
         });
-        use_effect(use_reactive!(|active, id| {
+        // Updated while rendering, not in an effect: a Back press right after the state
+        // changed must already see the new rule.
+        if let Some(open) = modal.borrow().as_ref() {
+            open.set_back_closes(back_closes);
+        }
+        use_effect(use_reactive!(|active, id, back_closes| {
             let mut modal = modal.borrow_mut();
             if active {
                 if modal.is_none() {
-                    *modal = Some(crate::mobile::dom::Modal::open(&id, onclose));
+                    *modal = Some(crate::mobile::dom::Modal::open(&id, back_closes, onclose));
                 }
             } else {
                 modal.take();
@@ -353,7 +362,7 @@ pub(super) fn use_modal(id: String, active: bool, onclose: EventHandler<()>) {
         }));
     }
     #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
-    let _ = (id, active, onclose);
+    let _ = (id, active, back_closes, onclose);
 }
 
 #[cfg(target_arch = "wasm32")]

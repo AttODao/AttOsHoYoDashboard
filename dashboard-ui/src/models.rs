@@ -119,6 +119,36 @@ pub struct GameStatus {
     pub stale: bool,
 }
 
+/// Endgame challenge summary of one game account (current period per mode).
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct GameChallenges {
+    pub game_kind: String,
+    pub game_uid: String,
+    pub region: String,
+    pub modes: Option<Vec<ChallengeMode>>,
+    pub fetched_at: Option<String>,
+    pub error_code: Option<String>,
+    pub stale: bool,
+}
+
+/// Every progress field is optional: each mode reports a different subset, and an
+/// absent value means unknown, never locked or empty.
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ChallengeMode {
+    pub mode: String,
+    pub unlocked: Option<bool>,
+    pub has_data: Option<bool>,
+    pub name: Option<String>,
+    pub ends_at: Option<String>,
+    pub stars: Option<i64>,
+    pub max_floor: Option<String>,
+    pub max_round: Option<i64>,
+    pub difficulty: Option<i64>,
+    pub best_seconds: Option<i64>,
+    pub error_code: Option<String>,
+}
+
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct DailySummary {
     pub current_resin: Option<i64>,

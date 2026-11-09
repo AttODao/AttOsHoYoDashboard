@@ -126,6 +126,26 @@ async fn bearer_reads_need_no_origin_and_record_last_use() {
 }
 
 #[tokio::test]
+async fn both_scopes_reach_the_challenge_summary_read() {
+    let db = TestDatabase::new().await;
+    let (accounts, admin) = db.ready_admin().await;
+    let app = app(accounts);
+    let session = cookie(&app, admin.user.id).await;
+    let path = format!("/api/v1/game-accounts/{}/challenges", Uuid::new_v4());
+    for scope in ["read", "run"] {
+        let (_, token) = issue(&app, &session, scope).await;
+        // The token passes the boundary and the scope check and reaches the handler,
+        // which still applies the setup gate (no verified HoYoLAB link here).
+        error(
+            call(&app, bearer("GET", &path, &token, None)).await,
+            StatusCode::FORBIDDEN,
+            "initial_setup_required",
+        )
+        .await;
+    }
+}
+
+#[tokio::test]
 async fn the_manual_run_needs_the_run_scope_and_no_origin() {
     let db = TestDatabase::new().await;
     let (accounts, admin) = db.ready_admin().await;

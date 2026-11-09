@@ -90,6 +90,129 @@ async fn implemented_endpoints_use_production_urls_over_local_tls() {
     assert!(serde_json::from_str::<GameKind>("\"unknown\"").is_err());
 }
 
+#[tokio::test]
+async fn challenge_endpoints_request_the_current_period_with_documented_queries() {
+    use crate::challenge::Challenge;
+    let genshin = "/event/game_record/genshin/api";
+    let starrail = "/game_record/hkrpg/api";
+    let common = "role_id=1&server=test_server";
+    let mut expected: Vec<ExpectedRequest> = [
+        (
+            "sg-public-api.hoyolab.com",
+            genshin,
+            "spiralAbyss",
+            "&schedule_type=1",
+        ),
+        (
+            "sg-public-api.hoyolab.com",
+            genshin,
+            "role_combat",
+            "&need_detail=false",
+        ),
+        (
+            "sg-public-api.hoyolab.com",
+            genshin,
+            "hard_challenge",
+            "&need_detail=false",
+        ),
+        (
+            "bbs-api-os.hoyolab.com",
+            starrail,
+            "challenge",
+            "&schedule_type=1&need_all=true",
+        ),
+        (
+            "bbs-api-os.hoyolab.com",
+            starrail,
+            "challenge_story",
+            "&schedule_type=1&need_all=true",
+        ),
+        (
+            "bbs-api-os.hoyolab.com",
+            starrail,
+            "challenge_boss",
+            "&schedule_type=1&need_all=true",
+        ),
+        (
+            "bbs-api-os.hoyolab.com",
+            starrail,
+            "challenge_peak",
+            "&schedule_type=1",
+        ),
+    ]
+    .into_iter()
+    .map(|(host, base, path, extra)| {
+        record_get(
+            host,
+            &format!("{base}/{path}?{common}{extra}"),
+            ok(json!({"path": path, "future_field": [1, 2]})),
+        )
+    })
+    .collect();
+    expected.push(record_get(
+        "bbs-api-os.hoyolab.com",
+        "/game_record/hkrpg/api/challenge?role_id=2&server=test_server&schedule_type=1&need_all=true",
+        json!({"retcode": 10102, "message": "private", "data": null}).to_string(),
+    ));
+    let server = TlsMockServer::start(expected);
+    let client = HoyolabClient::with_http(server.client(UA), COOKIE_VALUE).unwrap();
+    let account = account_for_uid(RECORD_UID);
+
+    let mut modes = Challenge::for_game(Genshin::KIND).to_vec();
+    modes.extend_from_slice(Challenge::for_game(Starrail::KIND));
+    assert_eq!(modes.len(), 7);
+    for challenge in modes {
+        let data = client.challenge(challenge, &account).await.unwrap();
+        // The raw data object is returned whole, unknown fields included.
+        assert_eq!(data["path"], challenge.path());
+        assert_eq!(data["future_field"], json!([1, 2]));
+    }
+    let error = client
+        .challenge(Challenge::MemoryOfChaos, &account_for_uid("2"))
+        .await
+        .unwrap_err();
+    assert!(matches!(error, Error::Upstream { code: 10102 }));
+    assert!(
+        client
+            .challenge(Challenge::SpiralAbyss, &account_for_uid("not-a-uid"))
+            .await
+            .is_err()
+    );
+    server.assert_finished();
+}
+
+#[test]
+fn challenge_modes_belong_to_their_game_and_have_stable_ids() {
+    use crate::challenge::Challenge;
+    let ids: Vec<_> = Challenge::for_game(Genshin::KIND)
+        .iter()
+        .map(|mode| {
+            assert_eq!(mode.game(), Genshin::KIND);
+            mode.id()
+        })
+        .collect();
+    assert_eq!(
+        ids,
+        ["spiral_abyss", "imaginarium_theater", "stygian_onslaught"]
+    );
+    let ids: Vec<_> = Challenge::for_game(Starrail::KIND)
+        .iter()
+        .map(|mode| {
+            assert_eq!(mode.game(), Starrail::KIND);
+            mode.id()
+        })
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            "memory_of_chaos",
+            "pure_fiction",
+            "apocalyptic_shadow",
+            "anomaly_arbitration"
+        ]
+    );
+}
+
 fn expected_requests() -> Vec<ExpectedRequest> {
     vec![
         record_get(

@@ -33,13 +33,18 @@ pub(crate) fn UpdateDialog(updates: Updates) -> Element {
         )
     };
     // The native dialog keeps the handler it was opened with: read the state when it fires.
-    let dismiss = move |_| match *updates.flow.peek() {
-        Flow::Prompt => updates.later(),
-        Flow::Downloading(_) | Flow::Verifying => updates.cancel(),
-        _ => updates.close(),
+    // Copied out first: a guard kept through the match would make the writes below panic
+    // (AlreadyBorrowed), which poisons the WebView's request lock and aborts the app.
+    let dismiss = move |_| {
+        let current = updates.flow.peek().clone();
+        match current {
+            Flow::Prompt => updates.later(),
+            Flow::Downloading(_) | Flow::Verifying => updates.cancel(),
+            _ => updates.close(),
+        }
     };
     rsx! {
-        ModalDialog { id: "app-update-dialog", title: ui.text("update.title"), onclose: dismiss,
+        ModalDialog { id: "app-update-dialog", title: ui.text("update.title"), onclose: dismiss, back_closes: flow.back_closes(),
             dl { class: "metric-list",
                 div { class: "metric", dt { {ui.text("update.current_version")} } dd { "{current}" } }
                 div { class: "metric", dt { {ui.text("update.new_version")} } dd { "{check.latest}" } }

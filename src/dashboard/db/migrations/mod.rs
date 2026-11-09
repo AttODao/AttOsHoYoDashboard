@@ -4,6 +4,7 @@ mod api_tokens;
 mod app_notification_events;
 mod app_notifications;
 mod dashboard_games;
+mod game_challenge_cache;
 mod hoyolab_accounts;
 mod hoyolab_cookie_removal;
 mod initial_accounts;
@@ -30,6 +31,7 @@ impl MigratorTrait for Migrator {
             Box::new(app_notifications::AppNotifications),
             Box::new(remove_web_push::RemoveWebPush),
             Box::new(app_notification_events::AppNotificationEvents),
+            Box::new(game_challenge_cache::GameChallengeCache),
         ]
     }
 }

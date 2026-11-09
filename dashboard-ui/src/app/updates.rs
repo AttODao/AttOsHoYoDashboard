@@ -21,6 +21,19 @@ pub(crate) enum Flow {
     Installing,
     Failed(UpdateError),
 }
+impl Flow {
+    /// Whether Android's Back key may dismiss the dialog: not while the permission answer is
+    /// pending or the APK downloads, is verified or installs (its buttons still stop those).
+    pub(crate) fn back_closes(&self) -> bool {
+        !matches!(
+            self,
+            Flow::AwaitingNotificationAnswer
+                | Flow::Downloading(_)
+                | Flow::Verifying
+                | Flow::Installing
+        )
+    }
+}
 /// Texts of the "updated" notification: title, body, channel name.
 type NoticeTexts = (String, String, &'static str);
 #[derive(Clone, Copy, PartialEq)]
