@@ -11,7 +11,8 @@ use axum::{
 use tower_http::services::ServeDir;
 
 const OPENAPI: &str = include_str!("../../../docs/dashboard-api.json");
-// DX emits an external loader. Only expedition and check-in reward images may use the official image CDNs;
+// DX emits an external loader. Only expedition, check-in reward and event calendar images may use the
+// official image CDNs (the calendar summary keeps only these hosts: `games/calendar_summary.rs`);
 // scripts, styles and API connections remain same-origin.
 const CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' https://upload-os-bbs.hoyolab.com https://act-upload.hoyolab.com https://act-webstatic.hoyoverse.com https://fastcdn.hoyoverse.com; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'";
 

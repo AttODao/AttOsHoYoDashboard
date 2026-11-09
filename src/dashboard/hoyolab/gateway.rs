@@ -41,6 +41,13 @@ pub(in crate::dashboard) trait Gateway: Send + Sync + 'static {
         challenge: Challenge,
         account: &RecordAccount,
     ) -> impl Future<Output = Result<Value>> + Send;
+    /// The account's event and banner calendar, as raw upstream `data` (read-only).
+    fn calendar(
+        &self,
+        cookie: &Credentials,
+        game: GameKind,
+        account: &RecordAccount,
+    ) -> impl Future<Output = Result<Value>> + Send;
     fn daily(
         &self,
         cookie: &Credentials,
@@ -96,6 +103,16 @@ impl Gateway for LiveGateway {
     ) -> Result<Value> {
         HoyolabClient::new(cookie.as_str())?
             .challenge(challenge, account)
+            .await
+    }
+    async fn calendar(
+        &self,
+        cookie: &Credentials,
+        game: GameKind,
+        account: &RecordAccount,
+    ) -> Result<Value> {
+        HoyolabClient::new(cookie.as_str())?
+            .event_calendar(game, account)
             .await
     }
     async fn daily(&self, cookie: &Credentials, game: GameKind) -> Result<DailyState> {

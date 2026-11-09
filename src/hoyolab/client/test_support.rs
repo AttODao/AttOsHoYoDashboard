@@ -58,6 +58,8 @@ pub struct ExpectedRequest {
     absent_headers: Vec<String>,
     status: u16,
     body: Vec<u8>,
+    /// The exact request body; empty unless `request_body` sets one.
+    request_body: Vec<u8>,
 }
 
 struct Request {
@@ -95,7 +97,13 @@ impl ExpectedRequest {
             absent_headers: Vec::new(),
             status,
             body,
+            request_body: Vec::new(),
         }
+    }
+
+    pub fn request_body(mut self, body: &str) -> Self {
+        self.request_body = body.as_bytes().to_vec();
+        self
     }
 
     pub fn header(mut self, name: &str, value: &str) -> Self {
@@ -451,10 +459,11 @@ fn compare(expected: &ExpectedRequest, request: &Request) -> Vec<String> {
             expected.host, other
         )),
     }
-    if !request.body.is_empty() {
+    if request.body != expected.request_body {
         errors.push(format!(
-            "expected empty body, got {} bytes",
-            request.body.len()
+            "body mismatch: expected {:?}, got {:?}",
+            String::from_utf8_lossy(&expected.request_body),
+            String::from_utf8_lossy(&request.body)
         ));
     }
     for (name, value) in &expected.required_headers {

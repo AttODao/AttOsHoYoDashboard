@@ -2335,6 +2335,83 @@
         "description": "Genshin: Spiral Abyss, Imaginarium Theater, Stygian Onslaught. Star Rail: Memory of Chaos, Pure Fiction, Apocalyptic Shadow, Anomaly Arbitration. Summaries only (period, stars/floor/act/difficulty, reset time), never per-character records. Cached for CHALLENGE_CACHE_TTL_MINUTES (default 60) and refetched once a period has ended since the fetch; a summary with a failed mode is retried after STATUS_CACHE_TTL_MINUTES. Upstream field names are unverified, so every progress field is nullable and null means unknown."
       }
     },
+    "/api/v1/game-accounts/{id}/calendar": {
+      "get": {
+        "tags": [
+          "games"
+        ],
+        "operationId": "getGameAccountCalendar",
+        "summary": "Return the cached event calendar (running and announced banners and events) for one owned visible detected UID.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameCalendar"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          },
+          {
+            "ahdApiToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Genshin: character, weapon and chronicled wishes and events from the read-only POST act_calendar (body: only role_id and server). Star Rail: character and light cone warps and events from GET get_act_calender (long-running modes such as Simulated Universe are left out). Endgame modes are left to /challenges. Items that had ended at the fetch are omitted; items are ordered by their end, unknown ends last. Featured items carry an icon only when it is an https URL on the official image hosts allowed by the UI CSP. Cached for CALENDAR_CACHE_TTL_MINUTES (default 60) and refetched once an item has started or ended since the fetch; after a failed refresh the last calendar is returned as stale for STATUS_CACHE_TTL_MINUTES before upstream is asked again. Upstream field names are unverified, so every field except kind and featured is nullable and null means unknown."
+      }
+    },
     "/api/v1/reward-settings": {
       "get": {
         "tags": [
@@ -5046,6 +5123,209 @@
           },
           "stale": {
             "type": "boolean"
+          }
+        }
+      },
+      "GameCalendar": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "game_kind",
+          "game_uid",
+          "region",
+          "visible",
+          "detected",
+          "items",
+          "fetched_at",
+          "error_code",
+          "error_at",
+          "stale"
+        ],
+        "properties": {
+          "game_kind": {
+            "$ref": "#/components/schemas/GameKind"
+          },
+          "game_uid": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "visible": {
+            "type": "boolean"
+          },
+          "detected": {
+            "type": "boolean"
+          },
+          "items": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CalendarItem"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Banners and events ordered by their end; null when nothing has been fetched (or the UID is hidden). An empty array means the calendar reported nothing running or announced."
+          },
+          "fetched_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "stale": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CalendarItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "id",
+          "name",
+          "version",
+          "starts_at",
+          "ends_at",
+          "finished",
+          "locked",
+          "progress",
+          "progress_total",
+          "featured"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "character_banner",
+              "weapon_banner",
+              "chronicled_banner",
+              "light_cone_banner",
+              "event"
+            ],
+            "description": "Genshin wishes are character/weapon/chronicled banners, Star Rail warps character/light cone banners."
+          },
+          "id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Upstream pool or event ID."
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Name as reported upstream (game language), single line, at most 120 characters."
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Game version of the banner or event."
+          },
+          "starts_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "A start after fetched_at marks an announced (upcoming) item."
+          },
+          "ends_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "finished": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "The player finished the event, when reported."
+          },
+          "locked": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Star Rail: the event is not open to the player yet."
+          },
+          "progress": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Progress reported by the event (Star Rail progress, Genshin double-reward runs used)."
+          },
+          "progress_total": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Total for progress; set only together with it."
+          },
+          "featured": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "$ref": "#/components/schemas/CalendarFeatured"
+            },
+            "description": "Rate-up characters, weapons or light cones of a banner; empty for events."
+          }
+        }
+      },
+      "CalendarFeatured": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "rarity",
+          "icon"
+        ],
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rarity": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "description": "https image on an official HoYoverse image host; load it without a Referer."
           }
         }
       },

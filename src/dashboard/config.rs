@@ -15,6 +15,10 @@ pub(super) struct Tuning {
     /// Endgame challenge summaries younger than this (and still in their period) are
     /// served without upstream GETs; they change only when the player challenges a mode.
     pub challenge_ttl: Duration,
+    /// Event calendars younger than this (with no banner or event starting or ending
+    /// since) are served without an upstream request; the schedule changes only with
+    /// new banners, and the player's event progress may lag by this much.
+    pub calendar_ttl: Duration,
     /// Initial try plus retries for one reward run (the schema allows at most 4).
     pub max_attempts: i32,
     /// Wait before retrying a transient reward GET failure.
@@ -27,6 +31,7 @@ impl Default for Tuning {
             history_days: 5,
             status_ttl: Duration::minutes(5),
             challenge_ttl: Duration::minutes(60),
+            calendar_ttl: Duration::minutes(60),
             max_attempts: 4,
             retry_delay: Duration::seconds(10),
         }
@@ -73,6 +78,13 @@ impl Tuning {
                 defaults.challenge_ttl.num_minutes(),
                 5..=1440,
                 "CHALLENGE_CACHE_TTL_MINUTES must be 5 to 1440",
+            )?),
+            calendar_ttl: Duration::minutes(bounded(
+                read,
+                "CALENDAR_CACHE_TTL_MINUTES",
+                defaults.calendar_ttl.num_minutes(),
+                5..=1440,
+                "CALENDAR_CACHE_TTL_MINUTES must be 5 to 1440",
             )?),
             max_attempts: bounded(
                 read,

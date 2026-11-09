@@ -2,8 +2,9 @@
 use super::*;
 use crate::dashboard::{
     db::entities::{
-        deletion_request, game_account, game_challenge_cache, game_status_cache, hoyolab_account,
-        reward_attempt, reward_guard, reward_run, reward_setting, reward_status_cache, user,
+        deletion_request, game_account, game_calendar_cache, game_challenge_cache,
+        game_status_cache, hoyolab_account, reward_attempt, reward_guard, reward_run,
+        reward_setting, reward_status_cache, user,
     },
     test_support::TestDatabase,
 };
@@ -130,7 +131,7 @@ async fn dashboard_games_migration_is_ordered_reversible_and_updates_hoyolab_sta
         .map(|row| row.try_get("", "version").unwrap())
         .collect();
     assert_eq!(
-        names.iter().rev().nth(8).map(String::as_str),
+        names.iter().rev().nth(9).map(String::as_str),
         Some("m20261013_000004_dashboard_games")
     );
 
@@ -145,8 +146,8 @@ async fn dashboard_games_migration_is_ordered_reversible_and_updates_hoyolab_sta
         .await
         .unwrap();
 
-    // The later Cookie-removal, activity, notification, API token, app notification, Web Push removal, app event and challenge cache migrations are undone first.
-    migrations::Migrator::down(&fixture.db, Some(9))
+    // The later Cookie-removal, activity, notification, API token, app notification, Web Push removal, app event, challenge cache and calendar cache migrations are undone first.
+    migrations::Migrator::down(&fixture.db, Some(10))
         .await
         .unwrap();
     let row = fixture
@@ -615,6 +616,64 @@ async fn game_challenge_cache_checks_versions_and_errors_redacts_payload_and_cas
 }
 
 #[tokio::test]
+async fn game_calendar_cache_checks_versions_and_errors_redacts_payload_and_cascades() {
+    let fixture = TestDatabase::new().await;
+    let owner = insert_user(&fixture.db, "owner").await;
+    let account = insert_hoyolab(&fixture.db, owner.id).await;
+    let game = insert_game_account(&fixture.db, account.id).await;
+
+    let cache = game_calendar_cache::ActiveModel {
+        game_account_id: Set(game.id),
+        updated_at: Set(Utc::now()),
+        payload: Set(Some(serde_json::json!({"private_record": "do-not-log"}))),
+        payload_version: Set(1),
+        error_code: Set(Some("upstream:10102".to_owned())),
+        error_at: Set(Some(Utc::now())),
+        ..Default::default()
+    }
+    .insert(&fixture.db)
+    .await
+    .unwrap();
+    assert_debug_allowlist(
+        &cache,
+        &format!(
+            "GameCalendarCache {{ game_account_id: {:?}, fetched_at: {:?}, updated_at: {:?}, .. }}",
+            cache.game_account_id, cache.fetched_at, cache.updated_at
+        ),
+    );
+    for sql in [
+        format!(
+            "INSERT INTO game_calendar_cache (game_account_id, updated_at, payload_version) \
+             VALUES ('{}', NOW(), 1)",
+            Uuid::new_v4()
+        ),
+        format!(
+            "UPDATE game_calendar_cache SET payload_version = 0 WHERE game_account_id = '{}'",
+            game.id
+        ),
+        format!(
+            "UPDATE game_calendar_cache SET error_code = 'message with spaces' \
+             WHERE game_account_id = '{}'",
+            game.id
+        ),
+    ] {
+        exec_err(&fixture.db, sql).await;
+    }
+
+    game_account::Entity::delete_by_id(game.id)
+        .exec(&fixture.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        game_calendar_cache::Entity::find()
+            .count(&fixture.db)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
 async fn reward_status_cache_allows_initial_failure_default_version_and_cascade() {
     let fixture = TestDatabase::new().await;
     let owner = insert_user(&fixture.db, "owner").await;
@@ -774,7 +833,7 @@ async fn removed_cookie_state_requires_no_ciphertext_and_reverts_by_deleting_the
     )
     .await;
 
-    migrations::Migrator::down(db, Some(8)).await.unwrap();
+    migrations::Migrator::down(db, Some(9)).await.unwrap();
     // The entity now names a column the older schema lacks: count with raw SQL.
     let remaining = db
         .query_one_raw(Statement::from_string(

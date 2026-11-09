@@ -31,13 +31,16 @@ use std::{
 };
 use uuid::Uuid;
 
-/// Upstream replies in call order; shared with the challenge tests of this module.
+/// Upstream replies in call order; shared with the challenge and calendar tests of
+/// this module.
 #[derive(Clone)]
 pub(super) struct MockGateway {
     notes: Arc<Mutex<VecDeque<UpstreamResult<Value>>>>,
     calls: Arc<AtomicUsize>,
     challenges: Arc<Mutex<VecDeque<UpstreamResult<Value>>>>,
     challenge_calls: Arc<Mutex<Vec<Challenge>>>,
+    calendars: Arc<Mutex<VecDeque<UpstreamResult<Value>>>>,
+    calendar_calls: Arc<Mutex<Vec<GameKind>>>,
 }
 
 impl MockGateway {
@@ -47,6 +50,8 @@ impl MockGateway {
             calls: Arc::new(AtomicUsize::new(0)),
             challenges: Arc::new(Mutex::new(VecDeque::new())),
             challenge_calls: Arc::new(Mutex::new(Vec::new())),
+            calendars: Arc::new(Mutex::new(VecDeque::new())),
+            calendar_calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -62,6 +67,12 @@ impl MockGateway {
         gateway
     }
 
+    pub(super) fn with_calendars(replies: impl IntoIterator<Item = UpstreamResult<Value>>) -> Self {
+        let gateway = Self::empty();
+        gateway.calendars.lock().unwrap().extend(replies);
+        gateway
+    }
+
     fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
     }
@@ -69,6 +80,11 @@ impl MockGateway {
     /// The modes requested so far, in order.
     pub(super) fn challenge_calls(&self) -> Vec<Challenge> {
         self.challenge_calls.lock().unwrap().clone()
+    }
+
+    /// The games whose calendar was requested so far, in order.
+    pub(super) fn calendar_calls(&self) -> Vec<GameKind> {
+        self.calendar_calls.lock().unwrap().clone()
     }
 }
 
@@ -102,6 +118,20 @@ impl Gateway for MockGateway {
             .unwrap()
             .pop_front()
             .expect("unexpected challenge call")
+    }
+
+    async fn calendar(
+        &self,
+        _: &Credentials,
+        game: GameKind,
+        _: &RecordAccount,
+    ) -> UpstreamResult<Value> {
+        self.calendar_calls.lock().unwrap().push(game);
+        self.calendars
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("unexpected calendar call")
     }
 
     async fn daily(&self, _: &Credentials, _: GameKind) -> UpstreamResult<DailyState> {

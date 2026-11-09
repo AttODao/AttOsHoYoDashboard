@@ -58,6 +58,14 @@ impl Gateway for NoUpstream {
     ) -> UpstreamResult<Value> {
         panic!("challenge must not be called by notifier tests")
     }
+    async fn calendar(
+        &self,
+        _: &Credentials,
+        _: GameKind,
+        _: &RecordAccount,
+    ) -> UpstreamResult<Value> {
+        panic!("calendar must not be called by notifier tests")
+    }
     async fn daily(&self, _: &Credentials, _: GameKind) -> UpstreamResult<DailyState> {
         panic!("daily must not be called by notifier tests")
     }

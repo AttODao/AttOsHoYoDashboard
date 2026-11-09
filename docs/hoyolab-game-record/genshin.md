@@ -342,3 +342,5 @@ need_stats=false
 
 祈願プールには`pool_id`、`version_name`、開始・終了時刻、対象キャラクター／武器が入り、イベントには`id`、`name`、`desc`、期間、報酬一覧、進行状態が入ります。
 
+POSTですが状態を変えない照会です（genshin.pyの`get_genshin_event_calendar`）。genshin.pyのモデル（`GenshinEventCalendar`）では、祈願プールは`pool_name`・`start_timestamp`／`end_timestamp`（Unix秒）・`start_time`／`end_time`・`countdown_seconds`・`avatars[]`（`name`・`icon`・`rarity`）・`weapon[]`、イベントは`start_timestamp`／`end_timestamp`・`countdown_seconds`・`is_finished`・`double_detail`（`total`・`left`）・`explore_detail`などを持ちます。`fixed_act_list`は深境螺旋・幻想シアター・幽境の激戦の概要です。いずれも実応答では未検証です。
+

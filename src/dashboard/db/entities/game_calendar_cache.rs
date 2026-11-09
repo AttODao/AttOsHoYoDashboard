@@ -1,0 +1,23 @@
+//! Latest event calendar per game account; diagnostics omit payload and error details.
+use sea_orm::entity::prelude::*;
+
+#[derive(Clone, PartialEq, DeriveEntityModel, derive_more::Debug)]
+#[debug(
+    "GameCalendarCache {{ game_account_id: {game_account_id:?}, fetched_at: {fetched_at:?}, updated_at: {updated_at:?}, .. }}"
+)]
+#[sea_orm(table_name = "game_calendar_cache")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub game_account_id: Uuid,
+    pub fetched_at: Option<DateTimeUtc>,
+    pub updated_at: DateTimeUtc,
+    pub payload: Option<Json>,
+    pub payload_version: i32,
+    pub error_code: Option<String>,
+    pub error_at: Option<DateTimeUtc>,
+}
+
+// Generated ActiveModel diagnostics include payload and error_code: never log/instrument it.
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+impl ActiveModelBehavior for ActiveModel {}
