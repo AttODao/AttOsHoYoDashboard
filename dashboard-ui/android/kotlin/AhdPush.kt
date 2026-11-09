@@ -155,21 +155,21 @@ object AhdPush {
         }
     }
 
-    /** Ends the distributor registration and drops the keys; the switch keeps its value. */
-    @Synchronized private fun forget(context: Context) {
+    /** Ends the distributor registration and drops the keys; the switch keeps its value. False when they could not be removed. */
+    @Synchronized private fun forget(context: Context): Boolean {
         val prefs = prefs(context)
         val token = prefs.getString("token", null)
         val distributor = prefs.getString("distributor", null)
         if (token != null && distributor != null) guarded(Unit) { send(context, UNREGISTER, distributor, token) }
-        prefs.edit().remove("token").remove("vapid").remove("private").remove("public").remove("auth")
+        return prefs.edit().remove("token").remove("vapid").remove("private").remove("public").remove("auth")
             .remove("endpoint").remove("status").remove("reason").commit()
     }
 
-    /** The inbox registration ended (sign-out, notifications off, another user): stop push too. */
+    /** The inbox registration ended (sign-out, notifications off, another user, a server change): stop push too. */
     @JvmStatic fun stop(context: Context): Boolean = guarded(false) {
-        forget(context)
+        val forgotten = forget(context)
         changed()
-        true
+        forgotten
     }
 
     private fun fail(context: Context, reason: String) {

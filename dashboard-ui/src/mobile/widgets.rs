@@ -60,15 +60,18 @@ pub(crate) fn publish(origin: &str, publication: &Publication) -> bool {
         == Some("true")
 }
 
+/// Clears the widget data; true when it is gone.
 #[cfg(feature = "mobile")]
-pub(crate) fn sign_out() {
+pub(crate) fn sign_out() -> bool {
     super::notify::call_on(
         WIDGETS,
         "signOut",
         "(Landroid/content/Context;)Z",
         &[],
         true,
-    );
+    )
+    .as_deref()
+        == Some("true")
 }
 
 #[cfg(test)]

@@ -118,10 +118,10 @@ pub(super) fn open_web_version(state: Signal<AppState>, page: Page) {
     #[cfg(feature = "mobile")]
     let origin = crate::mobile::http::server_origin();
     #[cfg(not(feature = "mobile"))]
-    let origin: Option<&str> = None;
+    let origin: Option<String> = None;
     let opened = origin
         .ok_or(())
-        .and_then(|origin| crate::platform::open_external(&web_page_url(origin, page)));
+        .and_then(|origin| crate::platform::open_external(&web_page_url(&origin, page)));
     if opened.is_err() {
         super::state::set_status(state, "messages.could_not_open_the_browser", "error");
     }

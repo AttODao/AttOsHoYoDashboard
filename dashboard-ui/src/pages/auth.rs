@@ -1,3 +1,4 @@
+use super::app_server::ServerSetting;
 use super::common::{Field, Icon, PasswordInput};
 use super::hoyolab::CookieCard;
 use super::security::PasswordCard;
@@ -115,6 +116,9 @@ pub(in crate::app) fn LoginPage(mut state: Signal<AppState>, app_login: bool) ->
                         }
                         p { {ui.text("auth.passkey_in_browser_hint")} }
                     }
+                }
+                if crate::platform::APP {
+                    ServerSetting { state }
                 }
             }
         }

@@ -169,8 +169,9 @@ pub(crate) fn inbox_configure(channel: &str, config: &super::inbox::Config) -> b
     .as_deref()
         == Some("true")
 }
-pub(crate) fn inbox_stop() {
-    let _ = call_on(INBOX, "stop", "(Landroid/content/Context;)Z", &[], true);
+/// Ends the inbox registration; true when its stored state is gone.
+pub(crate) fn inbox_stop() -> bool {
+    call_on(INBOX, "stop", "(Landroid/content/Context;)Z", &[], true).as_deref() == Some("true")
 }
 pub(crate) fn inbox_poll_now() {
     let _ = call_on(INBOX, "pollNow", "(Landroid/content/Context;)Z", &[], true);
@@ -199,7 +200,12 @@ pub(crate) fn push_set_wanted(wanted: bool) {
 pub(crate) fn push_sync() {
     let _ = call_on(PUSH, "sync", "(Landroid/content/Context;)Z", &[], true);
 }
-/// Ends the distributor registration when the inbox registration ends.
-pub(crate) fn push_stop() {
-    let _ = call_on(PUSH, "stop", "(Landroid/content/Context;)Z", &[], true);
+/// Ends the distributor registration when the inbox registration ends; true when the keys
+/// and the token are gone.
+pub(crate) fn push_stop() -> bool {
+    call_on(PUSH, "stop", "(Landroid/content/Context;)Z", &[], true).as_deref() == Some("true")
+}
+/// A server change: removes the shown game-status notices of the old server.
+pub(crate) fn forget_server() -> bool {
+    call("forgetServer", "(Landroid/content/Context;)Z", &[], true).as_deref() == Some("true")
 }
