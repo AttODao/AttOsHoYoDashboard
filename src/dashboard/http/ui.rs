@@ -35,6 +35,7 @@ pub(super) fn routes(app: &App) -> Router<App> {
         .route("/login", get(index))
         .route("/app-login", get(index))
         .route("/dashboard", get(index))
+        .route("/events", get(index))
         .route(
             "/settings",
             get(|| async { Redirect::permanent("/settings/games") }),

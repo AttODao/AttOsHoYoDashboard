@@ -5,6 +5,7 @@ use super::app_nav::AppNav;
 use super::common::{Icon, focus_element, reveal_horizontally, use_modal};
 use super::dashboard::DashboardPage;
 use super::deletion::DeletePage;
+use super::events::EventsPage;
 use super::hoyolab::LinkPage;
 use super::notifications::NotificationsPage;
 use super::rewards::RewardsPage;
@@ -22,6 +23,7 @@ use dioxus::prelude::*;
 /// Entries of the account menu above the sign-out group, in display order.
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum MenuItem {
+    Events,
     HoYoLab,
     Settings,
     OpenInBrowser,
@@ -30,14 +32,22 @@ enum MenuItem {
     About,
 }
 
-/// The web menu puts About directly below the API docs. The app leaves admin and API
-/// docs to the web version and starts with "Open in browser"; it has no Settings entry
-/// because the bottom navigation (<=600px) and the header settings button (wider) lead there.
+/// Both menus start with the events page, the one page beside the dashboard (the logo leads
+/// back to the dashboard, so the menu has no dashboard entry). The web menu puts About
+/// directly below the API docs. The app leaves admin and API docs to the web version and
+/// follows with "Open in browser"; it has no Settings entry because the bottom navigation
+/// (<=600px) and the header settings button (wider) lead there. Its events entry is for
+/// wider screens: at <=600px the bottom navigation has it and `mobile.css` hides the entry.
 fn menu_items(app: bool, admin: bool) -> Vec<MenuItem> {
     if app {
-        return vec![MenuItem::OpenInBrowser, MenuItem::HoYoLab, MenuItem::About];
+        return vec![
+            MenuItem::Events,
+            MenuItem::OpenInBrowser,
+            MenuItem::HoYoLab,
+            MenuItem::About,
+        ];
     }
-    let mut items = vec![MenuItem::HoYoLab, MenuItem::Settings];
+    let mut items = vec![MenuItem::Events, MenuItem::HoYoLab, MenuItem::Settings];
     if admin {
         items.push(MenuItem::Administration);
     }
@@ -169,6 +179,8 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
                     AdminPage { state }
                 } else if page == Page::About {
                     AboutPage {}
+                } else if page == Page::Events {
+                    EventsPage { state }
                 } else {
                     DashboardPage { state }
                 }
@@ -255,6 +267,7 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
                 nav { "aria-label": ui.text("shell.account_menu"),
                     for item in menu_items(crate::platform::APP, me.as_ref().is_some_and(|me| me.is_admin)) {
                         match item {
+                            MenuItem::Events => rsx! { button { class: "menu-events", r#type: "button", "aria-current": (state.read().page == Page::Events).then_some("page"), onclick: move |_| { open.set(false); set_page(state, Page::Events); }, Icon { name: "calendar" } {ui.text("calendar.page_title")} } },
                             MenuItem::HoYoLab => rsx! { a { href: "https://www.hoyolab.com/home", target: "_blank", rel: "noopener noreferrer", Icon { name: "link" } "HoYoLAB" } },
                             MenuItem::Settings => rsx! { button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Uids); }, Icon { name: "settings" } {ui.text("shell.settings")} } },
                             MenuItem::OpenInBrowser => rsx! { button { r#type: "button", onclick: move |_| { open.set(false); let page = state.read().page; open_web_version(state, page); }, Icon { name: "external" } {ui.text("shell.open_in_browser")} } },
@@ -322,18 +335,22 @@ pub(super) fn Status(state: Signal<AppState>) -> Element {
 mod tests {
     use super::*;
     #[test]
-    fn app_menu_starts_with_open_in_browser_and_has_no_settings_while_the_web_menu_is_unchanged() {
+    fn both_menus_start_with_events_and_the_app_menu_has_no_settings() {
         use MenuItem::*;
         assert_eq!(
             menu_items(false, true),
-            vec![HoYoLab, Settings, Administration, Docs, About]
+            vec![Events, HoYoLab, Settings, Administration, Docs, About]
         );
         assert_eq!(
             menu_items(false, false),
-            vec![HoYoLab, Settings, Docs, About]
+            vec![Events, HoYoLab, Settings, Docs, About]
         );
-        assert_eq!(menu_items(true, true), vec![OpenInBrowser, HoYoLab, About]);
-        assert_eq!(menu_items(true, false), vec![OpenInBrowser, HoYoLab, About]);
+        for admin in [true, false] {
+            assert_eq!(
+                menu_items(true, admin),
+                vec![Events, OpenInBrowser, HoYoLab, About]
+            );
+        }
     }
     #[test]
     fn settings_tabs_wrap_and_do_not_handle_unrelated_keys() {

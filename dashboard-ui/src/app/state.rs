@@ -41,6 +41,8 @@ pub(super) struct GameSelection {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Page {
     Dashboard,
+    /// Running and announced events and banners (not tied to a UID), as a timeline.
+    Events,
     Link,
     Uids,
     Rewards,
@@ -127,8 +129,8 @@ pub(super) struct AppState {
     pub(super) accounts: Option<Vec<GameAccount>>,
     pub(super) accounts_error: Option<String>,
     pub(super) selected_accounts: BTreeMap<&'static str, GameSelection>,
-    /// The dashboard's game tab (one panel at a time on narrow screens); a home-screen
-    /// widget tap selects its game.
+    /// The game tab of the dashboard and the events page (one panel at a time on narrow
+    /// screens); a home-screen widget tap selects its game.
     pub(super) dashboard_game: &'static str,
     pub(super) account_statuses: Vec<AccountStatusEntry>,
     pub(super) account_challenges: Vec<AccountChallengesEntry>,
@@ -562,6 +564,7 @@ mod tests {
         }
         for page in [
             Page::Dashboard,
+            Page::Events,
             Page::Uids,
             Page::Rewards,
             Page::Link,

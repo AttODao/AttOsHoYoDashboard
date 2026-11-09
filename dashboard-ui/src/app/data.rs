@@ -24,11 +24,16 @@ pub(super) async fn load_page_data(state: Signal<AppState>, page: Page) {
     if state.read().phase != Phase::SignedIn {
         return;
     }
-    if matches!(page, Page::Dashboard | Page::Uids | Page::Rewards) && !state.read().ready() {
+    if matches!(
+        page,
+        Page::Dashboard | Page::Events | Page::Uids | Page::Rewards
+    ) && !state.read().ready()
+    {
         return;
     }
     match page {
         Page::Dashboard => load_dashboard_data(state, true).await,
+        Page::Events => load_events_data(state).await,
         Page::Link => load_hoyolab(state).await,
         Page::Uids => load_accounts(state).await,
         Page::Rewards => load_rewards(state).await,
@@ -68,12 +73,40 @@ pub(super) async fn load_dashboard_data(state: Signal<AppState>, include_account
         return;
     }
     // The login bonus (a stored read behind the claim control) comes before the
-    // per-game history, endgame and calendar reads, which may wait on HoYoLAB.
+    // per-game history and endgame reads, which may wait on HoYoLAB.
     load_rewards(state).await;
     if !current_ready_page_generation(state, generation, Page::Dashboard) {
         return;
     }
     load_selected_details(state).await;
+}
+
+/// The events page: the UID list (which UID each game reads its calendar through), then each
+/// game's event calendar. Never under `busy`: calendars may wait on HoYoLAB.
+pub(super) async fn load_events_data(state: Signal<AppState>) {
+    let Some(generation) = ready_generation(state) else {
+        return;
+    };
+    if !current_ready_page_generation(state, generation, Page::Events) {
+        return;
+    }
+    load_accounts(state).await;
+    for game in DASHBOARD_GAMES {
+        if !current_ready_page_generation(state, generation, Page::Events) {
+            return;
+        }
+        load_game_calendar(state, game).await;
+    }
+}
+
+/// Pull-to-refresh in the app: reloads the page the user pulled.
+#[cfg_attr(not(feature = "mobile"), allow(dead_code))]
+pub(super) async fn reload_page(state: Signal<AppState>, page: Page) {
+    match page {
+        Page::Dashboard => load_dashboard_data(state, true).await,
+        Page::Events => load_events_data(state).await,
+        _ => load_page_data(state, page).await,
+    }
 }
 
 /// Resources refreshed by overlapping loads (page entry, polling and the
@@ -221,8 +254,8 @@ async fn load_selected_status(state: Signal<AppState>) {
 }
 
 /// The time-at-cap histories first (stored data only, including the snapshot the
-/// status fetch just added), then the endgame summaries and the event calendars
-/// (slower, rarely changing).
+/// status fetch just added), then the endgame summaries (slower, rarely changing).
+/// Event calendars belong to the events page (`load_events_data`).
 async fn load_selected_details(state: Signal<AppState>) {
     let Some(generation) = ready_generation(state) else {
         return;
@@ -239,21 +272,14 @@ async fn load_selected_details(state: Signal<AppState>) {
         }
         load_game_challenges(state, game).await;
     }
-    for game in DASHBOARD_GAMES {
-        if !current_ready_page_generation(state, generation, Page::Dashboard) {
-            return;
-        }
-        load_game_calendar(state, game).await;
-    }
 }
 
-/// One game's status, its time-at-cap history, its endgame summary and its event
-/// calendar (UID choice and the refresh button).
+/// One game's status, its time-at-cap history and its endgame summary (UID choice and
+/// the refresh button).
 pub(super) async fn load_game(state: Signal<AppState>, game: &'static str) {
     load_game_status(state, game).await;
     load_game_history(state, game).await;
     load_game_challenges(state, game).await;
-    load_game_calendar(state, game).await;
 }
 
 fn current_status_request(
@@ -433,19 +459,21 @@ fn current_calendar_request(
     read.generation == generation
         && read.phase == Phase::SignedIn
         && read.ready()
-        && read.page == Page::Dashboard
+        && read.page == Page::Events
         && read.selected_game_account(game) == Some(id)
         && read.selected_accounts.get(game).is_some_and(|selection| {
             selection.id == Some(id) && selection.calendar_request == request
         })
 }
 
+/// One game's event calendar on the events page, read through the game's selected (or first
+/// visible) UID; the dashboard and the events page share that selection.
 pub(super) async fn load_game_calendar(mut state: Signal<AppState>, game: &'static str) {
     let (generation, id, request) = {
         let mut write = state.write();
         if write.phase != Phase::SignedIn
             || !write.ready()
-            || write.page != Page::Dashboard
+            || write.page != Page::Events
             || !DASHBOARD_GAMES.contains(&game)
         {
             return;
@@ -1196,6 +1224,7 @@ mod tests {
     #[test]
     fn calendar_responses_have_their_own_request_guard() {
         let mut state = ready_state();
+        state.page = Page::Events;
         let id = Uuid::from_u128(1);
         state
             .selected_accounts
@@ -1204,6 +1233,10 @@ mod tests {
             .calendar_request = 2;
         assert!(current_calendar_request(&state, 7, "genshin", id, 2));
         assert!(!current_calendar_request(&state, 7, "genshin", id, 1));
+        // Only the events page applies calendars; the dashboard no longer shows them.
+        state.page = Page::Dashboard;
+        assert!(!current_calendar_request(&state, 7, "genshin", id, 2));
+        state.page = Page::Events;
         // Newer status and endgame requests do not invalidate the calendar request.
         let selection = state.selected_accounts.get_mut("genshin").unwrap();
         selection.request += 1;

@@ -86,6 +86,8 @@ pub(super) fn Icon(name: &'static str) -> Element {
         }
         "info" => "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M12 11v5M12 8h.01",
         "refresh" => "M21 12a9 9 0 1 1-2.64-6.36L21 8M21 3v5h-5",
+        // A calendar page with two period bars: the events timeline.
+        "calendar" => "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4M7 14h6M11 17h6",
         _ => "M4 6h16M4 12h16M4 18h16",
     };
     rsx! { svg { view_box: "0 0 24 24", "aria-hidden": "true", "focusable": "false", path { d: path } } }
