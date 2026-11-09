@@ -14,6 +14,7 @@ use crate::dashboard::{
     test_support::TestDatabase,
 };
 use attoshoyodashboard::{
+    challenge::Challenge,
     game::GameKind,
     hoyolab::{Error as UpstreamError, RecordAccount, Result as UpstreamResult},
     models::account::Account,
@@ -30,26 +31,44 @@ use std::{
 };
 use uuid::Uuid;
 
+/// Upstream replies in call order; shared with the challenge tests of this module.
 #[derive(Clone)]
-struct MockGateway {
+pub(super) struct MockGateway {
     notes: Arc<Mutex<VecDeque<UpstreamResult<Value>>>>,
     calls: Arc<AtomicUsize>,
+    challenges: Arc<Mutex<VecDeque<UpstreamResult<Value>>>>,
+    challenge_calls: Arc<Mutex<Vec<Challenge>>>,
 }
 
 impl MockGateway {
-    fn new(notes: impl IntoIterator<Item = UpstreamResult<Value>>) -> Self {
+    pub(super) fn new(notes: impl IntoIterator<Item = UpstreamResult<Value>>) -> Self {
         Self {
             notes: Arc::new(Mutex::new(notes.into_iter().collect())),
             calls: Arc::new(AtomicUsize::new(0)),
+            challenges: Arc::new(Mutex::new(VecDeque::new())),
+            challenge_calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
-    fn empty() -> Self {
+    pub(super) fn empty() -> Self {
         Self::new(Vec::<UpstreamResult<Value>>::new())
+    }
+
+    pub(super) fn with_challenges(
+        replies: impl IntoIterator<Item = UpstreamResult<Value>>,
+    ) -> Self {
+        let gateway = Self::empty();
+        gateway.challenges.lock().unwrap().extend(replies);
+        gateway
     }
 
     fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
+    }
+
+    /// The modes requested so far, in order.
+    pub(super) fn challenge_calls(&self) -> Vec<Challenge> {
+        self.challenge_calls.lock().unwrap().clone()
     }
 }
 
@@ -71,6 +90,20 @@ impl Gateway for MockGateway {
             .expect("unexpected note call")
     }
 
+    async fn challenge(
+        &self,
+        _: &Credentials,
+        challenge: Challenge,
+        _: &RecordAccount,
+    ) -> UpstreamResult<Value> {
+        self.challenge_calls.lock().unwrap().push(challenge);
+        self.challenges
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("unexpected challenge call")
+    }
+
     async fn daily(&self, _: &Credentials, _: GameKind) -> UpstreamResult<DailyState> {
         panic!("daily must not be called by games service tests")
     }
@@ -84,7 +117,7 @@ impl Gateway for MockGateway {
     }
 }
 
-fn key() -> Arc<CookieKey> {
+pub(super) fn key() -> Arc<CookieKey> {
     Arc::new(CookieKey::from_hex(&"11".repeat(32)).unwrap())
 }
 
@@ -92,7 +125,7 @@ fn raw_cookie(uid: &str) -> String {
     format!("ltoken_v2=synthetictoken{uid}; ltuid_v2={uid}")
 }
 
-async fn ready_identity(db: &sea_orm::DatabaseConnection, name: &str) -> Identity {
+pub(super) async fn ready_identity(db: &sea_orm::DatabaseConnection, name: &str) -> Identity {
     let user = user::ActiveModel {
         id: Set(Uuid::new_v4()),
         username: Set(name.to_owned()),
@@ -115,7 +148,7 @@ async fn ready_identity(db: &sea_orm::DatabaseConnection, name: &str) -> Identit
         .unwrap()
 }
 
-async fn verified_link(
+pub(super) async fn verified_link(
     db: &sea_orm::DatabaseConnection,
     key: &CookieKey,
     owner: Uuid,
@@ -139,7 +172,7 @@ async fn verified_link(
     .unwrap()
 }
 
-async fn game(
+pub(super) async fn game(
     db: &sea_orm::DatabaseConnection,
     link: Uuid,
     kind: &str,
@@ -183,7 +216,7 @@ async fn cache(
     .unwrap()
 }
 
-fn service(
+pub(super) fn service(
     db: sea_orm::DatabaseConnection,
     key: Arc<CookieKey>,
     gateway: MockGateway,

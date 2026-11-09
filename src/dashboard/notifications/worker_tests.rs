@@ -50,6 +50,14 @@ impl Gateway for NoUpstream {
     async fn note(&self, _: &Credentials, _: GameKind, _: &RecordAccount) -> UpstreamResult<Value> {
         panic!("note must not be called with a fresh status cache")
     }
+    async fn challenge(
+        &self,
+        _: &Credentials,
+        _: attoshoyodashboard::challenge::Challenge,
+        _: &RecordAccount,
+    ) -> UpstreamResult<Value> {
+        panic!("challenge must not be called by notifier tests")
+    }
     async fn daily(&self, _: &Credentials, _: GameKind) -> UpstreamResult<DailyState> {
         panic!("daily must not be called by notifier tests")
     }

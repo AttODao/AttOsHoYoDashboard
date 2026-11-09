@@ -217,6 +217,7 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
     use_modal(
         "ahd-menu".to_owned(),
         open() && ready,
+        true,
         EventHandler::new(move |_| open.set(false)),
     );
     rsx! {

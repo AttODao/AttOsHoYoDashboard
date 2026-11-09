@@ -1,7 +1,7 @@
 use super::actions::spawn_root;
 use super::data::load_page_data;
 use crate::models::{
-    ApiTokenView, AuditEntry, CookieStatus, GameAccount, GameStatus, MeView,
+    ApiTokenView, AuditEntry, CookieStatus, GameAccount, GameChallenges, GameStatus, MeView,
     NotificationChannelView, PasskeyView, PersonalNotificationView, RewardRun, RewardSetting,
     ServerSettings, SessionView, UserView,
 };
@@ -19,6 +19,13 @@ pub(super) struct GameSelection {
     pub(super) loading: bool,
     /// Message key of the last refresh problem for this selection.
     pub(super) error: Option<&'static str>,
+    /// The endgame summary has its own request guard, loading flag and problem key.
+    pub(super) challenge_request: u64,
+    pub(super) challenges_loading: bool,
+    pub(super) challenges_error: Option<&'static str>,
+    /// The server has no summary for this UID (404, e.g. a server older than the
+    /// endpoint, which an app release may talk to): the section stays hidden.
+    pub(super) challenges_unavailable: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -75,6 +82,12 @@ pub(super) struct AccountStatusEntry {
 }
 
 #[derive(Clone, PartialEq)]
+pub(super) struct AccountChallengesEntry {
+    pub(super) id: Uuid,
+    pub(super) challenges: GameChallenges,
+}
+
+#[derive(Clone, PartialEq)]
 pub(super) struct AppState {
     pub(super) phase: Phase,
     /// Session epoch: changes on bootstrap, sign-out and owner change only.
@@ -96,6 +109,7 @@ pub(super) struct AppState {
     /// widget tap selects its game.
     pub(super) dashboard_game: &'static str,
     pub(super) account_statuses: Vec<AccountStatusEntry>,
+    pub(super) account_challenges: Vec<AccountChallengesEntry>,
     pub(super) rewards: Vec<RewardSetting>,
     pub(super) rewards_error: Option<String>,
     pub(super) reward_runs: Option<Vec<RewardRun>>,
@@ -140,6 +154,7 @@ impl AppState {
             selected_accounts: BTreeMap::new(),
             dashboard_game: DASHBOARD_GAMES[0],
             account_statuses: Vec::new(),
+            account_challenges: Vec::new(),
             rewards: Vec::new(),
             rewards_error: None,
             reward_runs: None,
@@ -205,6 +220,10 @@ impl AppState {
             selection.request = selection.request.saturating_add(1);
             selection.loading = false;
             selection.error = None;
+            selection.challenge_request = selection.challenge_request.saturating_add(1);
+            selection.challenges_loading = false;
+            selection.challenges_error = None;
+            selection.challenges_unavailable = false;
         }
     }
 
@@ -220,6 +239,8 @@ impl AppState {
             .collect();
         self.account_statuses
             .retain(|entry| selected.contains(&entry.id));
+        self.account_challenges
+            .retain(|entry| selected.contains(&entry.id));
     }
 
     pub(super) fn clear_owner_data(&mut self) {
@@ -229,6 +250,7 @@ impl AppState {
         self.accounts_error = None;
         self.selected_accounts.clear();
         self.account_statuses.clear();
+        self.account_challenges.clear();
         self.rewards.clear();
         self.rewards_error = None;
         self.reward_runs = None;
@@ -364,6 +386,21 @@ pub(super) fn upsert_status(mut state: Signal<AppState>, id: Uuid, status: GameS
         write
             .account_statuses
             .push(AccountStatusEntry { id, status });
+    }
+}
+
+pub(super) fn upsert_challenges(mut state: Signal<AppState>, id: Uuid, challenges: GameChallenges) {
+    let mut write = state.write();
+    if let Some(existing) = write
+        .account_challenges
+        .iter_mut()
+        .find(|entry| entry.id == id)
+    {
+        existing.challenges = challenges;
+    } else {
+        write
+            .account_challenges
+            .push(AccountChallengesEntry { id, challenges });
     }
 }
 

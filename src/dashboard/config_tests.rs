@@ -200,6 +200,7 @@ fn tuning_defaults_and_bounds() {
     let tuning = load(&[
         ("REWARD_HISTORY_DAYS", "30"),
         ("STATUS_CACHE_TTL_MINUTES", "15"),
+        ("CHALLENGE_CACHE_TTL_MINUTES", "180"),
         ("REWARD_MAX_ATTEMPTS", "2"),
         ("REWARD_RETRY_DELAY_SECONDS", "60"),
     ])
@@ -207,12 +208,16 @@ fn tuning_defaults_and_bounds() {
     .tuning;
     assert_eq!(tuning.history_days, 30);
     assert_eq!(tuning.status_ttl, Duration::minutes(15));
+    assert_eq!(tuning.challenge_ttl, Duration::minutes(180));
+    assert_eq!(Tuning::default().challenge_ttl, Duration::minutes(60));
     assert_eq!(tuning.max_attempts, 2);
     assert_eq!(tuning.retry_delay, Duration::seconds(60));
     for pair in [
         ("REWARD_HISTORY_DAYS", "0"),
         ("REWARD_HISTORY_DAYS", "91"),
         ("STATUS_CACHE_TTL_MINUTES", "0"),
+        ("CHALLENGE_CACHE_TTL_MINUTES", "4"),
+        ("CHALLENGE_CACHE_TTL_MINUTES", "1441"),
         ("REWARD_MAX_ATTEMPTS", "5"),
         ("REWARD_RETRY_DELAY_SECONDS", "x"),
     ] {

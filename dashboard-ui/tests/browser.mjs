@@ -26,7 +26,7 @@ const appLoginChallenge='E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
 const user={id:uid(1),username:'synthetic-admin',is_admin:true,active:true,must_change_password:true};
 const other={...user,id:uid(9),username:'synthetic-other',is_admin:false,active:false,must_change_password:false};
 let runPlan=['queued','running','success'];
-let verified=false,cookieSaved=false,notificationSaves=[],statusMode=null,runProgress=[],passkeyDeletes=0,passkeys=[],credentialId,failLogout=false,allowLogin,allowSettings,expirePasswordSession=false,sessionExpired=false;
+let verified=false,cookieSaved=false,notificationSaves=[],statusMode=null,challengeMode=null,runProgress=[],passkeyDeletes=0,passkeys=[],credentialId,failLogout=false,allowLogin,allowSettings,expirePasswordSession=false,sessionExpired=false;
 const createdUsers=[];
 const secondAdmin={...user,id:uid(14),username:'synthetic-second-admin',must_change_password:false};
 let failCreate=false,adminDeletes=0,loginFailureStatus=0,failPatch=false,passkeyHold=null,releasePasskeys=()=>{},adminPatchHold=null,releaseAdminPatch=()=>{};
@@ -150,6 +150,21 @@ const server=http.createServer(async(req,res)=>{
    if(p==='/api/v1/game-accounts')return json(res,accounts);
    const visibility=accounts.find(a=>p===`/api/v1/game-accounts/${a.id}`);
    if(visibility){assert.equal(req.method,'PATCH');assert.deepEqual(Object.keys(body),['visible']);if(failPatch)return json(res,{error:'unavailable'},503);visibility.visible=body.visible;res.writeHead(204);return res.end();}
+   const challengeAccount=accounts.find(a=>p===`/api/v1/game-accounts/${a.id}/challenges`);
+   if(challengeAccount){
+    assert.equal(req.method,'GET');assert.ok(challengeAccount.visible&&challengeAccount.detected);
+    const {game_kind,game_uid,region,visible,detected}=challengeAccount;
+    // A server without the endpoint (or without this UID) answers 404: the section disappears.
+    if(challengeMode==='missing'){res.writeHead(404);return res.end();}
+    if(challengeMode==='failed')return json(res,{game_kind,game_uid,region,visible,detected,modes:null,fetched_at:null,error_code:'upstream:10102',error_at:new Date().toISOString(),stale:true});
+    // 5d 2h 30m ahead: the reset countdown reads 5d 3h for the whole test.
+    const ends_at=new Date(Date.now()+(5*86400+2*3600+30*60)*1000).toISOString();
+    const mode=(id,extra)=>({mode:id,unlocked:null,has_data:true,name:null,starts_at:null,ends_at,stars:null,max_floor:null,max_round:null,difficulty:null,best_seconds:null,battles:null,error_code:null,...extra});
+    const modes=game_kind==='genshin'
+     ?[mode('spiral_abyss',{unlocked:true,stars:33,max_floor:'12-3',battles:14}),mode('imaginarium_theater',{max_round:8,difficulty:4,stars:6}),mode('stygian_onslaught',{has_data:false,ends_at:null})]
+     :[mode('memory_of_chaos',{stars:30,max_floor:'Synthetic floor 12',name:'Synthetic period'}),mode('pure_fiction',{has_data:null,ends_at:null,error_code:'network'}),mode('apocalyptic_shadow',{has_data:false}),mode('anomaly_arbitration',{unlocked:false,has_data:null,ends_at:new Date(Date.now()-60e3).toISOString()})];
+    return json(res,{game_kind,game_uid,region,visible,detected,modes,fetched_at:new Date(Date.now()-20*60e3).toISOString(),error_code:null,error_at:null,stale:false});
+   }
    const account=accounts.find(a=>p===`/api/v1/game-accounts/${a.id}/status`);
    if(account&&statusMode==='failed')return json(res,{...account,data:null,fetched_at:null,error_code:'network',error_at:new Date().toISOString(),stale:true});
    // 7h 12m minus a few seconds: the countdown rounds up to the displayed minute.
@@ -405,7 +420,7 @@ try{
  assert.doesNotMatch(await genshin.locator('.recovery-in').first().evaluate(e=>getComputedStyle(e).fontFamily),/Orbitron/);
  assert.equal(await genshin.locator('.recovery-in').nth(1).innerText(),'At cap','a passed currency estimate states the cap, not recovery');
  // Freshness is always visible beside Refresh; weekly allowances and the transformer show beside dailies.
- assert.equal(await genshin.locator('.freshness').innerText(),'Updated just now');
+ assert.equal(await genshin.locator(':scope > .refresh-row .freshness').innerText(),'Updated just now');
  assert.equal(await genshin.locator('.metric').filter({hasText:'Weekly boss discounts'}).locator('dd').innerText(),'2/3 left');
  assert.equal(await genshin.locator('.metric').filter({hasText:'Parametric Transformer'}).locator('dd').innerText(),'Ready');
  assert.equal(await starrail.locator('.metric').filter({hasText:'Echo of War'}).locator('dd').innerText(),'1/3 left');
@@ -459,6 +474,31 @@ try{
  assert.ok(await genshin.locator('.status-metadata').isVisible(),'all stored metadata stays available');
  await genshin.getByText('Fetch details',{exact:true}).click();
  for(const n of [3,4])assert.equal(counts.get('/api/v1/game-accounts/'+uid(n)+'/status')||0,0);
+ // Endgame summary: one row per mode between the status and the login bonus, read after the status.
+ for(const n of [3,4])assert.equal(counts.get('/api/v1/game-accounts/'+uid(n)+'/challenges')||0,0,'hidden or undetected UIDs never load challenges');
+ const genshinChallenges=genshin.locator('section.challenge-section');
+ await genshinChallenges.getByRole('heading',{name:'Endgame',exact:true,level:3}).waitFor();
+ await genshinChallenges.locator('li.challenge').first().waitFor();
+ await starrail.locator('section.challenge-section li.challenge').first().waitFor();
+ assert.ok(await genshin.evaluate(panel=>{const c=panel.querySelector('.challenge-section'),b=panel.querySelector('.bonus-section');return !!(c.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING);}),'challenges sit above the login bonus');
+ const challengeRows=async section=>section.locator('li.challenge').evaluateAll(rows=>rows.map(row=>[row.dataset.mode,row.querySelector('.challenge-name').textContent,row.querySelector('.challenge-reset')?.textContent??null,row.querySelector('.challenge-progress').textContent,row.querySelector('.challenge-period')?.textContent??null]));
+ assert.deepEqual(await challengeRows(genshinChallenges),[
+  ['spiral_abyss','Spiral Abyss','Resets in 5d 3h','33 stars · Reached 12-3',null],
+  ['imaginarium_theater','Imaginarium Theater','Resets in 5d 3h','Act 8 · Difficulty 4 · 6 medals',null],
+  ['stygian_onslaught','Stygian Onslaught',null,'Not attempted',null]]);
+ const starrailChallenges=starrail.locator('section.challenge-section');
+ assert.deepEqual(await challengeRows(starrailChallenges),[
+  ['memory_of_chaos','Memory of Chaos','Resets in 5d 3h','30 stars · Reached Synthetic floor 12','Synthetic period'],
+  ['pure_fiction','Pure Fiction',null,'Could not be loaded',null],
+  ['apocalyptic_shadow','Apocalyptic Shadow','Resets in 5d 3h','Not attempted',null],
+  ['anomaly_arbitration','Anomaly Arbitration','Period ended','Locked',null]]);
+ const reset=genshinChallenges.locator('time.challenge-reset').first();
+ assert.ok(Date.parse(await reset.getAttribute('datetime'))>Date.now(),'the reset keeps its machine-readable end');
+ assert.match(await reset.getAttribute('title'),/^\d\d\/\d\d \d\d:\d\d JST$/);
+ assert.equal(await starrailChallenges.locator('.challenge-progress.quiet').count(),3,'unavailable, not attempted and locked modes are quieter');
+ assert.match(await genshinChallenges.locator('.freshness').innerText(),/^Updated 2\d min ago$/);
+ assert.equal(await genshinChallenges.locator('.warning').count(),0);
+ assert.ok(!(await starrailChallenges.innerText()).includes('network'),'raw per-mode codes stay out of the card');
  await page.locator('#selected-genshin').selectOption(uid(6));
  await genshin.locator('.resource strong').getByText('31',{exact:true}).waitFor();
  assert.equal(await genshin.locator('time.recovery-at').count(),0,'invalid estimate is not rendered as a date');
@@ -475,6 +515,15 @@ try{
  statusMode='stale';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
  await starrail.getByText('Data from 6 h ago (HoYoLAB is temporarily unavailable)',{exact:true}).waitFor();
  assert.ok(!(await starrail.innerText()).includes('http:503'),'raw codes stay out of the visible card');
+ // A failed first summary says only why; the refresh button reloads it with the status.
+ challengeMode='failed';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
+ await starrail.locator('section.challenge-section').getByText('Could not load the records (The HoYoLAB battle record is private)',{exact:true}).waitFor();
+ assert.equal(await starrail.locator('li.challenge').count(),0,'no summary is invented after a failed fetch');
+ assert.ok(!(await starrail.locator('section.challenge-section').innerText()).includes('not the latest'),'a failed first fetch is not called outdated');
+ challengeMode='missing';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
+ await starrail.locator('section.challenge-section').waitFor({state:'detached'});
+ assert.equal(await starrail.getByText('Could not refresh the records',{exact:false}).count(),0,'a missing endpoint is not reported as a failure');
+ challengeMode=null;
  statusMode='recovering';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
  await starrail.locator('.resource strong').getByText('150',{exact:true}).waitFor();
  // The estimate is 7h 12m 4s away, so the countdown turns from 13m to 12m by the clock, without a refetch.

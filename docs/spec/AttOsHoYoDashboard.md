@@ -89,6 +89,26 @@ flowchart TD
 
 不足fieldから非公開・非対応などを断定しない。推定増加・未確認上限（予備開拓力の上限値など）は対象外。主リソースは上限の90%以上で「まもなく上限」、上限で「上限」を表示する。
 
+### 6.1 高難度コンテンツ
+
+`GET /api/v1/game-accounts/{id}/challenges` は、ゲーム状態と同じ条件（verified link、password changed、所有するvisible/detectedのUIDだけ、sanitized error code、所有者単位の操作ロック、保存前のlink・credential version再確認）で、現在の期間の要約を返す。
+
+| 原神 | 崩壊：スターレイル |
+|---|---|
+| 深境螺旋 `GET /spiralAbyss?schedule_type=1` | 混沌の記憶 `GET /challenge?schedule_type=1&need_all=true` |
+| 幻想シアター `GET /role_combat?need_detail=false` | 虚構叙事 `GET /challenge_story?schedule_type=1&need_all=true` |
+| 幽境の激戦 `GET /hard_challenge?need_detail=false` | 末日の幻影 `GET /challenge_boss?schedule_type=1&need_all=true` |
+| | 異相の仲裁 `GET /challenge_peak?schedule_type=1` |
+
+- 要約はモードごとに `unlocked`、`has_data`、期間名、`starts_at`／`ends_at`、星（幻想シアターは勲章）、到達階層、幕、難易度、最速クリア秒数、戦闘回数だけ。編成・キャラクター順位・ダメージなどのキャラクター別戦績は読まず保存しない（§9）。
+- フィールド名はgenshin.py由来で実応答では未検証。上流JSONは型付けせずに防御的に読み、欠けた値・型の違う値は `null`（不明）にする。欠落から未開放・非公開・非対応を推定しない。
+- Unix秒の時刻はそのまま、年月日時分の時刻はアカウントのサーバー時刻（アメリカUTC-5、ヨーロッパUTC+1、アジア・台港澳UTC+8）として解釈する。未知のサーバーでは推定せず `null`。
+- cacheはゲームUIDごとの `game_challenge_cache`（payload version 1、UID削除・ユーザー削除でcascade）。TTLは `CHALLENGE_CACHE_TTL_MINUTES`（既定60分、5〜1440）。日々変わる状態より取得間隔を長くし、期間の終了が取得後に来た場合はTTL内でも取り直す。
+- モードは順に取得する。Cookie無効の応答で残りを中止しlinkを `cookie_invalid` にする。すべて失敗したときは既存payload/fetched_atを保持してerror_code/error_atを記録する（`upstream:10102` は状態と同じく `STATUS_CACHE_TTL_MINUTES` の間再取得しない）。一部だけ失敗したときは成功分を保存し、失敗したモードに `error_code` を付け、`STATUS_CACHE_TTL_MINUTES` 後に取り直す。
+- 報酬設定が `action_required` のゲームは取得せず、既存の要約を `action_required` 付きで返す。
+- APIトークンは `read`・`run` の両スコープで読める（状態と同じ読み取り専用のダッシュボードデータのため）。
+- 「期間の終了が近く未クリア」の通知は対象外（未実装）。
+
 ## 7. ログインボーナス
 
 - 設定単位は HoYoLABアカウント × game。既定OFF、既定local time `06:00`、server共通固定offset（既定 `+09:00`）。ユーザー別TZ/DSTはない。
@@ -122,7 +142,7 @@ OpenAPI 3.1 の正本は [`../dashboard-api.json`](../dashboard-api.json)。現�
 - me: `/api/v1/me`, password, passkeys, app-login approval, deletion
 - admin: user list/create/active/reset/delete
 - HoYoLAB: status/cookie/verify/sync
-- games: game accounts list/visibility/status
+- games: game accounts list/visibility/status/challenges
 - rewards: settings/update/manual run/history
 - settings transfer: `GET /me/settings/export`、`POST /me/settings/import/preview`・`/me/settings/import`（セッション専用。`ahd-settings` 版1）
 

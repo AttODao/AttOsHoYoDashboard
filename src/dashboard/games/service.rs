@@ -21,7 +21,7 @@ const CACHE_VERSION: i32 = 3;
 const PRIVATE_RECORD_CODE: &str = "upstream:10102";
 
 pub(in crate::dashboard) struct Games<G: Gateway = LiveGateway> {
-    store: Arc<CookieStore<G>>,
+    pub(super) store: Arc<CookieStore<G>>,
 }
 
 pub(in crate::dashboard) struct GameStatus {
@@ -54,13 +54,13 @@ impl std::fmt::Debug for GameStatus {
 
 /// Who a status refresh acts for: a signed-in session, or the owner in background work.
 #[derive(Clone, Copy)]
-enum Requester<'a> {
+pub(super) enum Requester<'a> {
     Session(&'a Identity),
     Owner(Uuid),
 }
 
 impl Requester<'_> {
-    fn owner(self) -> Uuid {
+    pub(super) fn owner(self) -> Uuid {
         match self {
             Self::Session(actor) => actor.user.id,
             Self::Owner(owner) => owner,
@@ -152,12 +152,7 @@ impl<G: Gateway> Games<G> {
         if !account.visible || !account.detected {
             return Ok(status_from_cache(account, cache.as_ref(), None, false));
         }
-        let setting = reward_setting::Entity::find()
-            .filter(reward_setting::Column::HoyolabAccountId.eq(link.id))
-            .filter(reward_setting::Column::GameKind.eq(&account.game_kind))
-            .one(&self.store.db)
-            .await?;
-        if setting.is_some_and(|setting| setting.auth_status == "action_required") {
+        if self.action_required(link.id, &account.game_kind).await? {
             let payload = cache
                 .as_ref()
                 .filter(|cache| cache.payload_version == CACHE_VERSION)
@@ -255,7 +250,20 @@ impl<G: Gateway> Games<G> {
         }
     }
 
-    async fn recheck_before_store(
+    /// A game whose reward setting needs the user's action is not fetched upstream:
+    /// the cached data is shown with the `action_required` code instead.
+    pub(super) async fn action_required(&self, link_id: Uuid, game_kind: &str) -> Result<bool> {
+        let setting = reward_setting::Entity::find()
+            .filter(reward_setting::Column::HoyolabAccountId.eq(link_id))
+            .filter(reward_setting::Column::GameKind.eq(game_kind))
+            .one(&self.store.db)
+            .await?;
+        Ok(setting.is_some_and(|setting| setting.auth_status == "action_required"))
+    }
+
+    /// Before a fetched result is stored: the link, its credential version and the
+    /// account's visibility must still be the ones the fetch was authorized for.
+    pub(super) async fn recheck_before_store(
         &self,
         who: Requester<'_>,
         link_id: Uuid,
@@ -282,7 +290,11 @@ impl<G: Gateway> Games<G> {
     }
 }
 
-async fn find_owned_game<C>(db: &C, link_id: Uuid, id: Uuid) -> Result<Option<game_account::Model>>
+pub(super) async fn find_owned_game<C>(
+    db: &C,
+    link_id: Uuid,
+    id: Uuid,
+) -> Result<Option<game_account::Model>>
 where
     C: sea_orm::ConnectionTrait,
 {

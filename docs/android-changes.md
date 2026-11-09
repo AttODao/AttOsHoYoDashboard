@@ -120,6 +120,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 - アプリをバックグラウンドから戻したとき、前回の取得から60秒以上たっていれば状態を再取得する（web版の60秒ごとの更新に加えた動作）。
 - web版のカード右上にある更新ボタン（丸矢印）は出さない。代わりに、ページが最上部までスクロールされた状態で下に引っ張って離すと（減衰後72px以上）、UID一覧・両ゲームの状態・ボーナス設定を読み直す（`load_dashboard_data`、pull-to-refresh）。引っ張っている間は画面上部に丸矢印のインジケータが指に付いて回り、しきい値を超えるとシアンになり、読み込み中は回転し続ける。スクリーンリーダーには「更新中…」を `role="status"` で伝える。開いているダイアログ、入力欄・選択欄から始めたタッチ、横方向が主のスワイプでは反応しない。ダッシュボードではWebViewのオーバースクロール効果を止める（`overscroll-behavior-y:none`）。リスナーは `mobile/dom.rs` の `PullToRefresh` が持ち、ダッシュボードを離れると外す。
 - ゲームタブ（900px以下）はパネルの上で左右にスワイプしても切り替わる（左で次、右で前、端では止まる）。web版と同じ `SwipeableTabs` を使い、アプリではタッチを `mobile/swipe.rs` が集める。横方向が主のスワイプでは上の pull-to-refresh が外れ、縦方向が主の引っ張りではスワイプにならないので、2つは同時に動かない。
+- 各ゲームカードの「高難度コンテンツ」欄（`pages/challenges.rs`）はweb版と同じ部品・同じCSSで、アプリ専用のレイアウトはない。pull-to-refreshは両ゲームの状態の後にこの要約も読み直す（サーバーのキャッシュTTLは `CHALLENGE_CACHE_TTL_MINUTES`）。ホーム画面ウィジェットと端末通知には入れていない。エンドポイントのない古いサーバーにつないだ場合（404）は、エラーを出さずに欄ごと表示しない。
 
 ### 設定（共通）
 
@@ -318,6 +319,17 @@ Android Credential Manager（`androidx.credentials`）でアプリ内からパ�
 - **保存の失敗と排他**：Cookieが変わったのに保存できなかったときは、Rustが次の要求の後にもう一度保存します。ファイルの読み書きと移行は、アプリの要求とジョブのスレッドの間で1つのロックで排他します。
 - **バックアップ**：`session-cookies.enc` と旧形式の `session-cookies.json`（とそれぞれの一時ファイル）を、クラウドバックアップと端末間の移行から除外します（`android/res/xml/ahd_backup_rules.xml` はAndroid 11以前の `fullBackupContent`、`ahd_data_extraction_rules.xml` はAndroid 12以降の `dataExtractionRules`。`scripts/build-android.sh` がmanifestの `<application>` に追加）。Keystoreの鍵はもともとバックアップされません。
 
+### 5.8 戻るボタンとダイアログ
+
+- ダイアログ（`ModalDialog`・`ConfirmDialog`・メニューのボトムシート・更新ダイアログ）が開いているときに戻るボタンを押すと、いちばん上のダイアログだけを閉じます。閉じ方はEscapeと同じで、各ダイアログの `onclose` を呼びます（メニューは閉じる、更新の案内は「後で」、確認ダイアログはキャンセル）。何も開いていなければ、前の画面へ戻ります。最初の画面では、これまでどおりバックグラウンドへ移します（`moveTaskToBack`）。
+- 開いているダイアログの記録は `mobile/back.rs` の1か所です。アプリのダイアログはすべて `use_modal` → `mobile::dom::Modal` で開くので、`Modal` が開くときに登録し、破棄で外します（開いた順のスタック。いちばん上は最後に開いたもの）。ダイアログごとに戻るボタンの処理を書く必要はありません。
+- 閉じてはいけない状態は、`ModalDialog` の `back_closes: false`（`use_modal` の引数）で明示します。今は更新ダイアログだけで、`Flow::back_closes` が、通知の許可の答え待ち・ダウンロード中・検証中・インストール中を「閉じない」にします。この間、戻るボタンは何もしません（下のダイアログも閉じず、前の画面にも戻りません）。ダイアログのボタン（キャンセル・閉じる）は従来どおり使えます。開いたまま状態が変わるので、`Modal::set_back_closes` で登録を更新します。
+- 流れ：`MainActivity.kt` は `handleBackNavigation = false` でwryの `onKeyDown`（WebViewの履歴を先に戻す）を止め、`OnBackPressedCallback` で `window.__ahdBack()` を呼びます。ページ側（`mobile::back::use_back_key`、ルートで1回）がスタックで判断し（`OpenDialogs::back`、通常の `cargo test` で検査）、閉じる・何もしない・`AhdBack.navigate`（JNI。UIスレッドで `canGoBack` なら `goBack`、そうでなければ `moveTaskToBack`）のどれかを行います。ページが読み込まれる前で `__ahdBack` がないときは、Kotlinが直接 `navigateBack` します。
+- 戻るボタンのイベントはActivityが前面（RESUMED）にあるときにしか届かないので、ダイアログを閉じるシグナルの書き込みは一時停止中には起きません（`onRequestPermissionsResult` のような停止中の更新の問題は起きません）。Activityを作り直すこともありません。
+- web版のブラウザの戻るは変わりません（`back_closes` はweb版では使わず、`__ahdBack` もアプリだけが定義します）。
+- 更新ダイアログの `dismiss`（Escape・背景のタップ・戻るボタン）は、状態を `peek` した値のガードを持ったまま書き込んでいたため、案内（Prompt）で閉じると `AlreadyBorrowed` でpanicし、次のWebViewのリクエストでアプリが異常終了していました。状態を先にコピーしてから書き込むように直しました。
+- 確認方法（API 34のx86_64エミュレータ、実際の `input keyevent KEYCODE_BACK`／`input tap`）：メニュー（ダッシュボード・設定）、Cookie削除の確認ダイアログ（閉じてもCookieは残り、次の戻るで前の画面）、更新の案内（「後で」になる）・ダウンロード中（2回押しても閉じず、前面のまま、ダウンロードは続く）・キャンセル後の案内・失敗表示、何も開いていない最初の画面（バックグラウンドへ移り、同じActivityで戻る）。背景のタップで閉じる動作も変わらないことを確かめました。logcatに `FORTIFY`・`Fatal signal`・`panicked` は出ませんでした。インストール中と通知の許可待ちは、ダウンロード中と同じ `Flow::back_closes` の判断で、エミュレータでは確認していません。
+
 ## 6. web版との共通化と分岐
 
 ### 共通のまま使うもの
@@ -376,13 +388,14 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/mobile/updates.rs` | Forgejoリリースの更新確認：SemVer比較、アセット選択、`releases/latest` の取得（5.5節、テストあり） |
 | `dashboard-ui/src/mobile/update_install.rs` | APKのダウンロード、SHA-256・パッケージ・署名者の検証、一時ファイル管理、PackageInstallerへのJNI（5.6節、テストあり） |
 | `dashboard-ui/src/mobile/log.rs` | logcat（タグ `AHD`）への出力 |
+| `dashboard-ui/src/mobile/back.rs` | 戻るボタン：開いているダイアログのスタック（テストあり）、`window.__ahdBack` の受け取り、`AhdBack.navigate` へのJNI（5.8節） |
 | `dashboard-ui/src/app/device_notifications.rs` | 端末通知の予定の更新、通知タップ時の画面遷移 |
 | `dashboard-ui/src/app/updates.rs` | 起動時の更新確認と結果のcontext、ダイアログの状態・スキップ・ダウンロードタスクとキャンセル |
 | `dashboard-ui/src/pages/app_update.rs` | 更新の確認・進捗・失敗・再試行のダイアログ |
 | `dashboard-ui/src/pages/device_notifications.rs` | 「この端末への通知」カード |
 | `dashboard-ui/src/pages/app_nav.rs` | 下部ナビゲーション `AppNav` と `AppHead`（モジュールは両ビルドでコンパイルするが、web版では描画しない） |
 | `dashboard-ui/assets/mobile.css` | アプリ専用のスタイル |
-| `dashboard-ui/android/MainActivity.kt` | `MainActivity`（ルートでの戻る、設定変更のその場反映、破棄時のプロセス終了、通知タップの受け取り）、`AhdNotifications`、`AhdAlarmReceiver`、`AhdBootReceiver`、`AhdUpdater`（APK情報・PackageInstaller・更新後通知）、`AhdUpdateReceiver` |
+| `dashboard-ui/android/MainActivity.kt` | `MainActivity`（戻るボタンをページへ渡す・ダイアログがなければ前の画面かルートでバックグラウンドへ（`AhdBack`）、設定変更のその場反映、破棄時のプロセス終了、通知タップの受け取り）、`AhdNotifications`、`AhdAlarmReceiver`、`AhdBootReceiver`、`AhdUpdater`（APK情報・PackageInstaller・更新後通知）、`AhdUpdateReceiver` |
 | `dashboard-ui/android/AndroidManifest.application.xml` | 生成manifestに挿入するreceiver |
 | `dashboard-ui/android/AndroidManifest.activity.xml` | 生成manifestのactivityに挿入する `cc.attodao.ahd://login` のintent-filter |
 | `dashboard-ui/android/res/**` | ランチャーアイコン、通知アイコン、アプリ名、色、DayNightテーマ（`values/styles.xml`） |
@@ -410,7 +423,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/pages/app_login.rs` | web版の `/app-login` 許可画面（アプリのログイン要求を承認してコードを発行する） |
 | `dashboard-ui/src/pages/security.rs` | パスワード変更・APIトークン・パスキー登録の除外、「ブラウザで開く」 |
 | `dashboard-ui/src/pages/notifications.rs` | 端末通知カードの配置、種類ごとの「この端末」／「Webhook」の表、`app_events` の送信と予測通知への反映 |
-| `dashboard-ui/src/pages/common.rs` | `external` アイコン、DOM操作・モーダルのアプリ分岐 |
+| `dashboard-ui/src/pages/common.rs` | `external` アイコン、DOM操作・モーダルのアプリ分岐、戻るボタンで閉じるかどうか（`ModalDialog` の `back_closes`、`use_modal` の引数。web版では使わない） |
 | `dashboard-ui/src/pages/dashboard.rs` | `matchMedia`・毎秒の時計のアプリ分岐、pull-to-refresh（更新ボタンの代わり） |
 | `dashboard-ui/src/pages/mod.rs` | 新しいモジュールの宣言 |
 | `dashboard-ui/locales/ja.json`, `en.json` | 24キーを追加（`shell.open_in_browser`、`shell.app_navigation`、`messages.could_not_open_the_browser`、`auth.change_password_in_browser`、`security.manage_in_browser`、`notifications.personal_hint_app`、`notifications.device_*` 18キー）。既存のキーは変えていない |
@@ -441,11 +454,10 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 
 - **Activityは1つだけ**：tao/wryはActivityの破棄・再生成と2つ目のインスタンスに対応しておらず、そのままだとプロセスが `FORTIFY: pthread_mutex_lock called on a destroyed mutex` で異常終了します。そのため次のようにしています（`android/MainActivity.kt`、`scripts/build-android.sh`）。
   - `launchMode="singleTask"` で、ランチャー・通知・`am start` のどこから開いても同じインスタンスを使います。通知のタップは `onNewIntent` で受け取ります。
-  - 最初の画面で戻るボタンを押すと、アプリを閉じずにバックグラウンドへ移します（ホームボタンと同じ）。それ以外の画面では、従来どおり前の画面へ戻ります。
+  - 最初の画面で戻るボタンを押すと、アプリを閉じずにバックグラウンドへ移します（ホームボタンと同じ）。それ以外の画面では、従来どおり前の画面へ戻ります。ダイアログが開いているときは、先にそれを閉じます（5.8節）。
   - ダークモード、文字サイズ、表示サイズ、太字、言語、キーボードなどの変更では、Activityを作り直さずにその場で反映します（`configChanges`）。WebViewは文字サイズを作成時にしか読まないため、変更時に `textZoom` を設定し直します。
   - 最近使ったアプリから消すなどでActivityが破棄されたときは、ネイティブの後始末を行わずにプロセスを終了します。次に開くと新しく起動します。
   - テーマはDayNightなので、アプリのテーマ「システム」は端末のダークモードに追従します（以前は常にライトでした）。
-- **ダイアログと戻るボタン**：確認ダイアログを開いたまま戻るボタンを押すと、ダイアログが閉じるのではなく前の画面に戻ります（ダイアログは片付きます）。
 - **サーバーはビルド時に固定**：接続先は `AHD_SERVER_URL` の1つだけです。変えるにはビルドし直します。
 - **セッションCookieの保存**：Android Keystoreの鍵で暗号化して保存します（5.7節）。鍵はユーザー認証を要求しないため、端末のロック中でも受信箱とウィジェットのジョブが読めます。そのため、アプリとして動くコード（root化した端末で同じUIDとして動くものを含む）からは復号できます。暗号化が防ぐのは、ファイルだけを取り出した場合（バックアップ、ファイルのコピー）です。1.9.0以前のバージョンで作られたバックアップには平文のファイルが含まれている可能性があります。
 - **パスワード表示の自動マスク**：web版は、表示中のパスワードを、ウィンドウや入力欄からフォーカスが外れたときとページが非表示になったときに伏せます。アプリではこの処理を実装していません（表示ボタンでの切り替えはできます）。
@@ -470,7 +482,6 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 
 ### 今後の課題
 
-- ダイアログが開いているときは、戻るボタンでダイアログを閉じる。
 - release署名と配布方法（ストア、または直接配布）を決める。
 - 予測できない通知（デイリー／週間の未完了、ログインボーナスの結果、Cookieの失効）が必要なら、FCMやUnifiedPushによるサーバーからのプッシュを検討する。サーバー側に送信の仕組みが必要になる。
 - 接続先のサーバーをアプリ内で設定できるようにするかを検討する。

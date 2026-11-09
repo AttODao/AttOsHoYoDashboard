@@ -55,6 +55,8 @@ typealias BuildConfig = cc.attodao.ahd.BuildConfig
 // (task swiped away, unhandled change) the process ends without running native teardown.
 class MainActivity : WryActivity() {
     private var webView: WebView? = null
+    // Back goes to the page first (it closes its topmost dialog); see handleOnBackPressed.
+    override val handleBackNavigation: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         if (savedInstanceState == null) {
@@ -63,12 +65,22 @@ class MainActivity : WryActivity() {
         }
         super.onCreate(savedInstanceState)
         AhdUpdater.clearInstalledNotice(this)
-        // WryActivity.onKeyDown still goes back in the WebView history first.
+        // The page (mobile/back.rs) closes its topmost dialog, keeps one that must stay, or
+        // calls AhdBack.navigate. Before it has installed its handler, navigate directly.
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                moveTaskToBack(true)
+                val view = webView ?: return navigateBack()
+                view.evaluateJavascript("window.__ahdBack ? (window.__ahdBack(), true) : false") { handled ->
+                    if (handled != "true") navigateBack()
+                }
             }
         })
+    }
+
+    // Previous screen in the WebView history; on the first one, background like Home.
+    fun navigateBack() {
+        val view = webView
+        if (view != null && view.canGoBack()) view.goBack() else moveTaskToBack(true)
     }
 
     override fun onWebViewCreate(webView: WebView) {
@@ -120,6 +132,15 @@ class MainActivity : WryActivity() {
         super.onConfigurationChanged(newConfig)
         // The WebView takes the system font size only when it is created.
         webView?.settings?.textZoom = (newConfig.fontScale * 100).roundToInt()
+    }
+}
+
+// Back with no dialog open, called by the page (mobile/back.rs) from its thread.
+object AhdBack {
+    @JvmStatic fun navigate(activity: Activity): Boolean {
+        val main = activity as? MainActivity ?: return false
+        main.runOnUiThread { main.navigateBack() }
+        return true
     }
 }
 

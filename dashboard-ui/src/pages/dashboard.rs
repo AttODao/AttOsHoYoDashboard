@@ -1,8 +1,9 @@
+use super::challenges::ChallengeSection;
 use super::common::{Icon, LoadError, Metric, focus_element, game_name};
 use super::rewards::AutomationSwitch;
 use super::swipe_tabs::SwipeableTabs;
 use crate::app::actions::spawn_root;
-use crate::app::data::{RunAll, load_game_status, run_all_targets, run_rewards_now};
+use crate::app::data::{RunAll, load_game, run_all_targets, run_rewards_now};
 use crate::app::display::{
     compact_datetime, count_pair, data_age, datetime_text, days_hours, error_text, fill_level,
     hours_minutes, relative_age, seconds_since,
@@ -182,7 +183,8 @@ fn focus_game_tab(game: &'static str) {
 }
 
 /// Card order puts what players check first at the top: UID, then the primary
-/// resource with its full-recovery estimate, other stats, and the login bonus last.
+/// resource with its full-recovery estimate, other stats, the endgame summary, and
+/// the login bonus last.
 #[component]
 fn GamePanel(state: Signal<AppState>, game: &'static str, active: bool, mobile: bool) -> Element {
     let ui = use_preferences();
@@ -199,6 +201,7 @@ fn GamePanel(state: Signal<AppState>, game: &'static str, active: bool, mobile: 
                 if !crate::platform::APP { RefreshButton { state, game } }
             }
             GameStatusSection { state, game }
+            ChallengeSection { state, game }
             BonusSection { state, game }
         }
     }
@@ -248,7 +251,7 @@ fn GameStatusSection(mut state: Signal<AppState>, game: &'static str) -> Element
                     onchange: move |event| {
                         if let Ok(id) = event.value().parse::<Uuid>() {
                             state.write().select_game_account(game, Some(id));
-                            spawn_root(async move { load_game_status(state, game).await; });
+                            spawn_root(async move { load_game(state, game).await; });
                         }
                     },
                     for account in visible {
@@ -282,10 +285,14 @@ fn RefreshButton(state: Signal<AppState>, game: &'static str) -> Element {
     let ui = use_preferences();
     let snapshot = state.read();
     let shown = snapshot.accounts.is_some() && snapshot.selected_game_account(game).is_some();
+    // Busy until both the status and the endgame summary of this refresh are back.
     let loading = snapshot
         .selected_accounts
         .get(game)
-        .is_some_and(|selection| selection.loading && selection.generation == snapshot.generation);
+        .is_some_and(|selection| {
+            (selection.loading && selection.generation == snapshot.generation)
+                || selection.challenges_loading
+        });
     drop(snapshot);
     let label = ui.text(if loading {
         "dashboard.refreshing"
@@ -299,7 +306,7 @@ fn RefreshButton(state: Signal<AppState>, game: &'static str) -> Element {
             button {
                 r#type: "button", class: "icon-button refresh-button", id: "refresh-{game}",
                 "aria-disabled": loading, "aria-busy": loading, "aria-label": label, title: label,
-                onclick: move |_| { if !loading { spawn_root(async move { load_game_status(state, game).await; }); } },
+                onclick: move |_| { if !loading { spawn_root(async move { load_game(state, game).await; }); } },
                 Icon { name: "refresh" }
             }
         }
@@ -347,7 +354,7 @@ fn PullRefresh(state: Signal<AppState>) -> Element {
 
 /// Always-visible age of the shown data, kept current by the dashboard clock.
 #[component]
-fn Freshness(fetched_at: Option<String>, stale: bool) -> Element {
+pub(super) fn Freshness(fetched_at: Option<String>, stale: bool) -> Element {
     let ui = use_preferences();
     let clock = use_clock();
     let _ = clock();
@@ -770,7 +777,7 @@ fn use_clock_provider() {
     let _ = &mut tick;
 }
 
-fn use_clock() -> Signal<u64> {
+pub(super) fn use_clock() -> Signal<u64> {
     use_context::<Clock>().0
 }
 

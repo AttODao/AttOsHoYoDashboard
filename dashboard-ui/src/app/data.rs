@@ -3,14 +3,14 @@ use super::session::signed_out;
 use super::state::{
     AppState, DASHBOARD_GAMES, Page, Phase, RewardPoll, current_generation,
     current_ready_generation, current_ready_page_generation, password_generation, ready_generation,
-    set_status, signed_in_generation, upsert_status,
+    set_status, signed_in_generation, upsert_challenges, upsert_status,
 };
 use crate::{
     api,
     models::{
-        ApiTokenView, AuditEntry, CookieStatus, GameAccount, GameStatus, NotificationChannelView,
-        PasskeyView, PersonalNotificationView, RewardRun, RewardSetting, ServerSettings,
-        SessionView, UserView,
+        ApiTokenView, AuditEntry, CookieStatus, GameAccount, GameChallenges, GameStatus,
+        NotificationChannelView, PasskeyView, PersonalNotificationView, RewardRun, RewardSetting,
+        ServerSettings, SessionView, UserView,
     },
 };
 use dioxus::prelude::*;
@@ -200,6 +200,7 @@ pub(super) async fn load_accounts(mut state: Signal<AppState>) {
 }
 
 // Keep the polling entry point stable; each game has its own selection and request guard.
+// Every game's status comes first; the endgame summaries (slower, rarely changing) follow.
 pub(super) async fn load_selected_status(state: Signal<AppState>) {
     let Some(generation) = ready_generation(state) else {
         return;
@@ -210,6 +211,18 @@ pub(super) async fn load_selected_status(state: Signal<AppState>) {
         }
         load_game_status(state, game).await;
     }
+    for game in DASHBOARD_GAMES {
+        if !current_ready_page_generation(state, generation, Page::Dashboard) {
+            return;
+        }
+        load_game_challenges(state, game).await;
+    }
+}
+
+/// One game's status and then its endgame summary (UID choice and the refresh button).
+pub(super) async fn load_game(state: Signal<AppState>, game: &'static str) {
+    load_game_status(state, game).await;
+    load_game_challenges(state, game).await;
 }
 
 fn current_status_request(
@@ -293,6 +306,90 @@ pub(super) async fn load_game_status(mut state: Signal<AppState>, game: &'static
                 .error = Some("dashboard.refresh_failed");
         }
     }
+}
+
+fn current_challenge_request(
+    read: &AppState,
+    generation: u64,
+    game: &str,
+    id: Uuid,
+    request: u64,
+) -> bool {
+    read.generation == generation
+        && read.phase == Phase::SignedIn
+        && read.ready()
+        && read.page == Page::Dashboard
+        && read.selected_game_account(game) == Some(id)
+        && read.selected_accounts.get(game).is_some_and(|selection| {
+            selection.id == Some(id) && selection.challenge_request == request
+        })
+}
+
+pub(super) async fn load_game_challenges(mut state: Signal<AppState>, game: &'static str) {
+    let (generation, id, request) = {
+        let mut write = state.write();
+        if write.phase != Phase::SignedIn
+            || !write.ready()
+            || write.page != Page::Dashboard
+            || !DASHBOARD_GAMES.contains(&game)
+        {
+            return;
+        }
+        let Some(id) = write.selected_game_account(game) else {
+            return;
+        };
+        write.select_game_account(game, Some(id));
+        let generation = write.generation;
+        let selection = write.selected_accounts.entry(game).or_default();
+        selection.challenge_request = selection.challenge_request.saturating_add(1);
+        selection.challenges_loading = true;
+        selection.challenges_error = None;
+        (generation, id, selection.challenge_request)
+    };
+    let result = api::get::<GameChallenges>(&format!("/game-accounts/{id}/challenges")).await;
+    if !current_challenge_request(&state.read(), generation, game, id, request) {
+        return;
+    }
+    {
+        let mut write = state.write();
+        let selection = write.selected_accounts.entry(game).or_default();
+        selection.challenges_loading = false;
+        selection.challenges_unavailable = result.as_ref().is_err_and(|error| error.is_not_found());
+    }
+    let problem = match result {
+        Ok(challenges) => {
+            let matches_account = state.read().account_rows().iter().any(|account| {
+                account.id == id
+                    && challenges.game_kind == account.game_kind
+                    && challenges.game_uid == account.game_uid
+                    && challenges.region == account.region
+            });
+            if matches_account {
+                upsert_challenges(state, id, challenges);
+                return;
+            }
+            "dashboard.status_identity_mismatch"
+        }
+        Err(error) if error.is_unauthorized() => {
+            signed_out(state, "messages.please_sign_in_again");
+            return;
+        }
+        Err(error) if error.is_not_found() => {
+            state
+                .write()
+                .account_challenges
+                .retain(|entry| entry.id != id);
+            return;
+        }
+        // Retain the last summary, but show this refresh failure separately.
+        Err(_) => "challenges.refresh_failed",
+    };
+    state
+        .write()
+        .selected_accounts
+        .entry(game)
+        .or_default()
+        .challenges_error = Some(problem);
 }
 
 // Shared with the settings Save action: preserve its PATCH contract and generation boundary.
@@ -897,6 +994,46 @@ mod tests {
     }
 
     #[test]
+    fn challenge_responses_have_their_own_request_guard() {
+        let mut state = ready_state();
+        let id = Uuid::from_u128(1);
+        state
+            .selected_accounts
+            .get_mut("genshin")
+            .unwrap()
+            .challenge_request = 4;
+        assert!(current_challenge_request(&state, 7, "genshin", id, 4));
+        assert!(!current_challenge_request(&state, 6, "genshin", id, 4));
+        assert!(!current_challenge_request(&state, 7, "genshin", id, 3));
+        assert!(!current_challenge_request(&state, 7, "starrail", id, 4));
+        // A newer status request does not invalidate the summary request.
+        state.selected_accounts.get_mut("genshin").unwrap().request += 1;
+        assert!(current_challenge_request(&state, 7, "genshin", id, 4));
+        // Choosing another UID does, and clears the old summary's problem key.
+        state
+            .selected_accounts
+            .get_mut("genshin")
+            .unwrap()
+            .challenges_error = Some("challenges.refresh_failed");
+        state.select_game_account("genshin", Some(Uuid::from_u128(3)));
+        assert!(!current_challenge_request(&state, 7, "genshin", id, 4));
+        assert!(
+            state.selected_accounts["genshin"]
+                .challenges_error
+                .is_none()
+        );
+        state.page = Page::Rewards;
+        let selection = &state.selected_accounts["genshin"];
+        assert!(!current_challenge_request(
+            &state,
+            7,
+            "genshin",
+            Uuid::from_u128(3),
+            selection.challenge_request
+        ));
+    }
+
+    #[test]
     fn status_responses_require_current_session_page_selection_and_request() {
         let mut state = ready_state();
         let id = Uuid::from_u128(1);
@@ -1097,6 +1234,10 @@ mod tests {
             assert!(future.as_mut().poll(&mut context).is_ready());
             assert!(state.read().selected_accounts == before);
             assert!(state.read().account_statuses.is_empty());
+            let mut future = std::pin::pin!(load_game_challenges(state, "genshin"));
+            assert!(future.as_mut().poll(&mut context).is_ready());
+            assert!(state.read().selected_accounts == before);
+            assert!(state.read().account_challenges.is_empty());
             rsx! {}
         }
         VirtualDom::new(check).rebuild_in_place();

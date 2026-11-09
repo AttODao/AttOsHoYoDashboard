@@ -69,6 +69,14 @@ impl Gateway for Mock {
     async fn note(&self, _: &Credentials, _: GameKind, _: &RecordAccount) -> UpstreamResult<Value> {
         panic!("unexpected note request")
     }
+    async fn challenge(
+        &self,
+        _: &Credentials,
+        _: attoshoyodashboard::challenge::Challenge,
+        _: &RecordAccount,
+    ) -> UpstreamResult<Value> {
+        panic!("unexpected challenge request")
+    }
     async fn daily(&self, _: &Credentials, _: GameKind) -> UpstreamResult<DailyState> {
         panic!("unexpected daily request")
     }
