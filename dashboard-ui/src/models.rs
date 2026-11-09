@@ -122,6 +122,43 @@ pub struct ChallengeMode {
     pub error_code: Option<String>,
 }
 
+/// Event calendar of one game account: running and announced banners and events.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct GameCalendar {
+    pub game_kind: String,
+    pub game_uid: String,
+    pub region: String,
+    pub items: Option<Vec<CalendarItem>>,
+    pub fetched_at: Option<String>,
+    pub error_code: Option<String>,
+    pub stale: bool,
+}
+
+/// One banner or event; an absent value means unknown.
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CalendarItem {
+    pub kind: String,
+    pub id: Option<i64>,
+    pub name: Option<String>,
+    pub version: Option<String>,
+    pub starts_at: Option<String>,
+    pub ends_at: Option<String>,
+    pub finished: Option<bool>,
+    pub locked: Option<bool>,
+    pub progress: Option<i64>,
+    pub progress_total: Option<i64>,
+    pub featured: Vec<CalendarFeatured>,
+}
+
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CalendarFeatured {
+    pub name: Option<String>,
+    pub rarity: Option<i64>,
+    pub icon: Option<String>,
+}
+
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct DailySummary {
     pub current_resin: Option<i64>,

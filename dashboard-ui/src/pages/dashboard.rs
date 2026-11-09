@@ -1,3 +1,4 @@
+use super::calendar::CalendarSection;
 use super::challenges::ChallengeSection;
 use super::common::{Icon, LoadError, Metric, focus_element, game_name};
 use super::rewards::AutomationSwitch;
@@ -183,8 +184,8 @@ fn focus_game_tab(game: &'static str) {
 }
 
 /// Card order puts what players check first at the top: UID, then the primary
-/// resource with its full-recovery estimate, other stats, the endgame summary, and
-/// the login bonus last.
+/// resource with its full-recovery estimate, other stats, the endgame summary, the
+/// collapsed event calendar, and the login bonus last.
 #[component]
 fn GamePanel(state: Signal<AppState>, game: &'static str, active: bool, mobile: bool) -> Element {
     let ui = use_preferences();
@@ -202,6 +203,7 @@ fn GamePanel(state: Signal<AppState>, game: &'static str, active: bool, mobile: 
             }
             GameStatusSection { state, game }
             ChallengeSection { state, game }
+            CalendarSection { state, game }
             BonusSection { state, game }
         }
     }
@@ -285,13 +287,14 @@ fn RefreshButton(state: Signal<AppState>, game: &'static str) -> Element {
     let ui = use_preferences();
     let snapshot = state.read();
     let shown = snapshot.accounts.is_some() && snapshot.selected_game_account(game).is_some();
-    // Busy until both the status and the endgame summary of this refresh are back.
+    // Busy until the status, the endgame summary and the calendar of this refresh are back.
     let loading = snapshot
         .selected_accounts
         .get(game)
         .is_some_and(|selection| {
             (selection.loading && selection.generation == snapshot.generation)
                 || selection.challenges_loading
+                || selection.calendar_loading
         });
     drop(snapshot);
     let label = ui.text(if loading {
