@@ -1,4 +1,5 @@
-//! Webhook URLs are bearer secrets: sealed at rest with a purpose-derived key.
+//! Webhook URLs and app push subscriptions are bearer secrets: sealed at rest with a
+//! purpose-derived key.
 use crate::dashboard::{
     error::{Error, Result},
     hoyolab::credentials::CookieKey,
@@ -10,11 +11,28 @@ use uuid::Uuid;
 const VERSION: u8 = 1;
 const NONCE_LEN: usize = 12;
 const TAG_LEN: usize = 16;
-const PURPOSE: &[u8] = b"attoshoyodashboard:notification-webhook:v1";
 
-/// Seals a URL to its channel (a user id, or nil for the administrator channel).
-pub(in crate::dashboard) fn seal(key: &CookieKey, scope: Uuid, url: &str) -> Result<Vec<u8>> {
-    let subkey = key.derive(PURPOSE)?;
+/// What a sealed value is; each purpose has its own derived key.
+#[derive(Clone, Copy)]
+pub(super) enum Purpose {
+    /// A Webhook URL, scoped to its channel (a user id, or nil for the administrator).
+    Webhook,
+    /// An app installation's push subscription, scoped to the device id.
+    AppPush,
+}
+
+impl Purpose {
+    fn label(self) -> &'static [u8] {
+        match self {
+            Self::Webhook => b"attoshoyodashboard:notification-webhook:v1",
+            Self::AppPush => b"attoshoyodashboard:app-push-subscription:v1",
+        }
+    }
+}
+
+/// Seals a secret text to its purpose and scope.
+pub(super) fn seal(key: &CookieKey, purpose: Purpose, scope: Uuid, url: &str) -> Result<Vec<u8>> {
+    let subkey = key.derive(purpose.label())?;
     let mut nonce = [0; NONCE_LEN];
     rand::rngs::OsRng
         .try_fill_bytes(&mut nonce)
@@ -37,11 +55,11 @@ pub(in crate::dashboard) fn seal(key: &CookieKey, scope: Uuid, url: &str) -> Res
     Ok(blob)
 }
 
-pub(in crate::dashboard) fn open(key: &CookieKey, scope: Uuid, blob: &[u8]) -> Result<String> {
+pub(super) fn open(key: &CookieKey, purpose: Purpose, scope: Uuid, blob: &[u8]) -> Result<String> {
     if blob.len() <= 1 + NONCE_LEN + TAG_LEN || blob[0] != VERSION {
         return Err(Error::Internal);
     }
-    let subkey = key.derive(PURPOSE)?;
+    let subkey = key.derive(purpose.label())?;
     let tag_offset = blob.len() - TAG_LEN;
     let plaintext = decrypt_aead(
         Cipher::aes_256_gcm(),
@@ -65,11 +83,16 @@ mod tests {
         let other = CookieKey::from_hex(&"22".repeat(32)).unwrap();
         let scope = Uuid::new_v4();
         let url = "https://discord.com/api/webhooks/1/synthetic-token";
-        let blob = seal(&key, scope, url).unwrap();
+        let blob = seal(&key, Purpose::Webhook, scope, url).unwrap();
         assert!(!blob.windows(9).any(|window| window == b"synthetic"));
-        assert_eq!(open(&key, scope, &blob).unwrap(), url);
-        assert!(open(&other, scope, &blob).is_err());
-        assert!(open(&key, Uuid::new_v4(), &blob).is_err());
-        assert!(open(&key, scope, &blob[..10]).is_err());
+        assert_eq!(open(&key, Purpose::Webhook, scope, &blob).unwrap(), url);
+        assert!(open(&other, Purpose::Webhook, scope, &blob).is_err());
+        assert!(open(&key, Purpose::Webhook, Uuid::new_v4(), &blob).is_err());
+        assert!(open(&key, Purpose::Webhook, scope, &blob[..10]).is_err());
+        // A push subscription cannot be opened as a Webhook URL, or the other way round.
+        assert!(open(&key, Purpose::AppPush, scope, &blob).is_err());
+        let push = seal(&key, Purpose::AppPush, scope, url).unwrap();
+        assert_eq!(open(&key, Purpose::AppPush, scope, &push).unwrap(), url);
+        assert!(open(&key, Purpose::Webhook, scope, &push).is_err());
     }
 }

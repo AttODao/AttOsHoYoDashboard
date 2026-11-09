@@ -9,6 +9,8 @@ pub struct Model {
     pub user_id: Uuid,
     pub created_at: DateTimeUtc,
     pub last_seen_at: DateTimeUtc,
+    /// Sealed UnifiedPush (Web Push) subscription; `None` means the installation only polls.
+    pub push_subscription: Option<Vec<u8>>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

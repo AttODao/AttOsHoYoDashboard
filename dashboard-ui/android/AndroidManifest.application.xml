@@ -23,3 +23,15 @@
         <!-- Refreshes the widgets status from the server every 30 minutes (AhdWidgets). -->
         <service android:name="dev.dioxus.main.AhdWidgetJob" android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- UnifiedPush: the distributor's messages and its foreground binding (dashboard-ui/android/kotlin/AhdPush.kt) -->
+        <receiver android:name="dev.dioxus.main.AhdPushReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.connector.NEW_ENDPOINT" />
+                <action android:name="org.unifiedpush.android.connector.REGISTRATION_FAILED" />
+                <action android:name="org.unifiedpush.android.connector.MESSAGE" />
+                <action android:name="org.unifiedpush.android.connector.UNREGISTERED" />
+            </intent-filter>
+        </receiver>
+        <service android:name="dev.dioxus.main.AhdPushForegroundService" android:exported="true">
+            <intent-filter><action android:name="org.unifiedpush.android.connector.RAISE_TO_FOREGROUND" /></intent-filter>
+        </service>

@@ -170,11 +170,16 @@ async fn user_routes_enforce_auth_admin_and_temporary_password_exceptions() {
     let listing = body(listing).await;
     assert_eq!(listing.as_array().unwrap().len(), 2);
     for view in listing.as_array().unwrap() {
-        assert_eq!(view.as_object().unwrap().len(), 9);
+        assert_eq!(view.as_object().unwrap().len(), 11);
         assert!(view.get("password_hash").is_none());
         assert!(view["created_at"].is_string());
         assert_eq!(view["link_status"], "not_configured");
         assert_eq!(view["automatic_claims"], 0);
+        assert_eq!(view["needs_attention"], false);
+        assert_eq!(
+            view["hoyolab"],
+            json!({"verified_at": null, "status_fetched_at": null, "games": []})
+        );
     }
     error(
         call(
@@ -348,4 +353,116 @@ async fn admin_audit_and_role_routes_validate_their_input() {
         .status()
         .is_client_error()
     );
+}
+
+#[tokio::test]
+async fn admin_listing_reports_link_health_without_identifiers() {
+    use crate::dashboard::db::entities::{
+        hoyolab_account, reward_attempt, reward_run, reward_setting,
+    };
+    use sea_orm::{ActiveModelTrait, Set};
+    let db = TestDatabase::new().await;
+    let (accounts, actor) = db.ready_admin().await;
+    let member = accounts
+        .create_user(&actor, "member".to_owned(), TEMP_PASSWORD.to_owned())
+        .await
+        .unwrap();
+    let now = Utc::now();
+    let link = hoyolab_account::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        owner_user_id: Set(member.id),
+        hoyolab_uid: Set(Some("424242".to_owned())),
+        encrypted_credentials: Set(Some(vec![7; 32])),
+        credential_version: Set(1),
+        auth_status: Set("cookie_invalid".to_owned()),
+        created_at: Set(now),
+        updated_at: Set(now),
+        verified_at: Set(None),
+    }
+    .insert(&db.db)
+    .await
+    .unwrap();
+    let setting = reward_setting::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        hoyolab_account_id: Set(link.id),
+        game_kind: Set("starrail".to_owned()),
+        enabled: Set(false),
+        local_time: Set("06:00".to_owned()),
+        auth_status: Set("action_required".to_owned()),
+        next_run_at: Set(None),
+    }
+    .insert(&db.db)
+    .await
+    .unwrap();
+    let run = reward_run::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        setting_id: Set(setting.id),
+        trigger: Set("manual".to_owned()),
+        state: Set("action_required".to_owned()),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ended_at: Set(Some(now)),
+        attempt_count: Set(1),
+        credential_version: Set(1),
+        send_state: Set("not_sent".to_owned()),
+        next_retry_at: Set(None),
+    }
+    .insert(&db.db)
+    .await
+    .unwrap();
+    reward_attempt::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        run_id: Set(run.id),
+        number: Set(1),
+        started_at: Set(now),
+        finished_at: Set(Some(now)),
+        outcome: Set("action_required".to_owned()),
+        error_code: Set(Some("action_required".to_owned())),
+        send_state: Set("not_sent".to_owned()),
+    }
+    .insert(&db.db)
+    .await
+    .unwrap();
+
+    let app = app(accounts);
+    let admin_cookie = cookie(&app, actor.user.id).await;
+    let listing = body(
+        call(
+            &app,
+            request("GET", "/api/v1/admin/users", Some(&admin_cookie), None),
+        )
+        .await,
+    )
+    .await;
+    let row = listing
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["username"] == "member")
+        .unwrap();
+    assert_eq!(row["link_status"], "cookie_invalid");
+    assert_eq!(row["automatic_claims"], 0);
+    assert_eq!(row["needs_attention"], true);
+    let games = row["hoyolab"]["games"].as_array().unwrap();
+    assert_eq!(games.len(), 1);
+    assert_eq!(
+        games[0].as_object().unwrap().keys().collect::<Vec<_>>(),
+        ["automatic", "game_kind", "last_run", "setting_status"]
+    );
+    assert_eq!(games[0]["game_kind"], "starrail");
+    assert_eq!(games[0]["setting_status"], "action_required");
+    assert_eq!(games[0]["last_run"]["state"], "action_required");
+    assert_eq!(games[0]["last_run"]["error_code"], "action_required");
+    assert!(games[0]["last_run"]["ended_at"].is_string());
+    assert_eq!(games[0]["last_run"].as_object().unwrap().len(), 3);
+    // Neither the HoYoLAB UID nor any setting/run identifier leaves the server.
+    let text = row.to_string();
+    for secret in [
+        "424242",
+        &setting.id.to_string(),
+        &run.id.to_string(),
+        &link.id.to_string(),
+    ] {
+        assert!(!text.contains(secret), "{secret}");
+    }
 }

@@ -230,6 +230,17 @@ async fn metrics_require_the_configured_bearer_token() {
         )));
     }
     assert!(!text.contains("ahd_api_tokens{"));
+    // App installations and push outcomes report every label, starting at zero.
+    for line in [
+        "ahd_app_devices{delivery=\"push\"} 0\n",
+        "ahd_app_devices{delivery=\"poll\"} 0\n",
+        "# TYPE ahd_app_push_requests_total counter\n",
+        "ahd_app_push_requests_total{outcome=\"sent\"} 0\n",
+        "ahd_app_push_requests_total{outcome=\"gone\"} 0\n",
+        "ahd_app_push_requests_total{outcome=\"failed\"} 0\n",
+    ] {
+        assert!(text.contains(line), "{line}");
+    }
 
     // Only runs that ended within the last 24 hours count; tokens are counted by scope.
     let owner = app.accounts.db.clone();
@@ -292,6 +303,18 @@ async fn metrics_require_the_configured_bearer_token() {
     )
     .await
     .unwrap();
+    for push_subscription in [None, Some(vec![7; 40])] {
+        crate::dashboard::db::entities::app_device::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            user_id: Set(admin.id),
+            created_at: Set(Utc::now()),
+            last_seen_at: Set(Utc::now()),
+            push_subscription: Set(push_subscription),
+        }
+        .insert(&owner)
+        .await
+        .unwrap();
+    }
     let response = call(&app, scrape(Some("synthetic-metrics-token"))).await;
     let text = String::from_utf8(
         to_bytes(response.into_body(), 64 * 1024)
@@ -303,6 +326,8 @@ async fn metrics_require_the_configured_bearer_token() {
     assert!(text.contains("ahd_reward_runs_ended_24h{state=\"failed\"} 1\n"));
     assert!(text.contains("ahd_reward_runs{state=\"failed\"} 2\n"));
     assert!(text.contains("ahd_api_tokens{scope=\"run\"} 1\n"));
+    assert!(text.contains("ahd_app_devices{delivery=\"poll\"} 1\n"));
+    assert!(text.contains("ahd_app_devices{delivery=\"push\"} 1\n"));
 
     // Without a configured token the endpoint does not exist.
     let mut app = app;

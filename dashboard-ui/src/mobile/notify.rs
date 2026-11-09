@@ -3,6 +3,7 @@ use super::reminders::Outgoing;
 
 const NOTIFICATIONS: &str = "dev.dioxus.main.AhdNotifications";
 const INBOX: &str = "dev.dioxus.main.AhdInbox";
+const PUSH: &str = "dev.dioxus.main.AhdPush";
 
 #[cfg(target_os = "android")]
 mod android {
@@ -173,4 +174,32 @@ pub(crate) fn inbox_stop() {
 }
 pub(crate) fn inbox_poll_now() {
     let _ = call_on(INBOX, "pollNow", "(Landroid/content/Context;)Z", &[], true);
+}
+/// The UnifiedPush state (`mobile::push::PushState` JSON).
+pub(crate) fn push_state() -> Option<String> {
+    call_on(
+        PUSH,
+        "state",
+        "(Landroid/content/Context;)Ljava/lang/String;",
+        &[],
+        true,
+    )
+}
+/// The "receive instantly" switch; off also removes the server's push subscription.
+pub(crate) fn push_set_wanted(wanted: bool) {
+    let _ = call_on(
+        PUSH,
+        "setWanted",
+        "(Landroid/content/Context;Ljava/lang/String;)Z",
+        &[if wanted { "true" } else { "false" }],
+        true,
+    );
+}
+/// Registers with the distributor again (after the inbox registration and at start).
+pub(crate) fn push_sync() {
+    let _ = call_on(PUSH, "sync", "(Landroid/content/Context;)Z", &[], true);
+}
+/// Ends the distributor registration when the inbox registration ends.
+pub(crate) fn push_stop() {
+    let _ = call_on(PUSH, "stop", "(Landroid/content/Context;)Z", &[], true);
 }

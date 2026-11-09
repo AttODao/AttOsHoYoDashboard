@@ -4,7 +4,7 @@ use sea_orm_migration::prelude::*;
 pub(super) struct GameCalendarCache;
 impl MigrationName for GameCalendarCache {
     fn name(&self) -> &str {
-        "m20261109_000013_game_calendar_cache"
+        "m20261109_000014_game_calendar_cache"
     }
 }
 

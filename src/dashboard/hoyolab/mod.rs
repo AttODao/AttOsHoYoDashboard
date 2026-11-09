@@ -1,6 +1,7 @@
 //! HoYoLAB linkage application policy, separate from upstream HTTP protocol.
 pub(super) mod credentials;
 pub(super) mod gateway;
+pub(super) mod health;
 pub(super) mod operations;
 pub(super) mod rekey;
 pub(super) mod store;

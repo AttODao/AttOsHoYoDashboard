@@ -7,7 +7,7 @@ use crate::dashboard::{
         password::token_hash,
         sessions::{Credential, Identity, IssuedSession, Sessions},
     },
-    db::entities::{audit, passkey, user},
+    db::entities::{app_device, audit, passkey, user},
     error::Error,
     test_support::{PASSWORD, TEMP_PASSWORD, TestDatabase},
 };
@@ -330,7 +330,24 @@ async fn disable_enable_keeps_password_and_passkeys_but_never_revives_old_sessio
         .await
         .unwrap();
     let key = stub_passkey(&test.db, target.id).await;
+    let device = app_device::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        user_id: Set(target.id),
+        created_at: Set(Utc::now()),
+        last_seen_at: Set(Utc::now()),
+        push_subscription: Set(Some(vec![7; 40])),
+    }
+    .insert(&test.db)
+    .await
+    .unwrap();
     accounts.set_active(&admin, target.id, false).await.unwrap();
+    // Disabling stops push wake-ups; the installation itself stays registered.
+    let kept = app_device::Entity::find_by_id(device.id)
+        .one(&test.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(kept.push_subscription, None);
     let disabled = user::Entity::find_by_id(target.id)
         .one(&test.db)
         .await

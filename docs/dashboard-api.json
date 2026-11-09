@@ -1308,7 +1308,8 @@
           {
             "attosSessionCookie": []
           }
-        ]
+        ],
+        "description": "Administrators only, session only (API tokens get 403). Link health comes from stored rows; the listing never calls HoYoLAB and contains no Cookie, HoYoLAB or game UID, game data or raw upstream error."
       },
       "post": {
         "tags": [
@@ -3837,6 +3838,240 @@
         ]
       }
     },
+    "/api/v1/me/notifications/app-devices/{id}/push": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "readAppPush",
+        "summary": "UnifiedPush setup for one of the current user's app installations: the server's VAPID public key to register with the distributor, and whether a push subscription is stored. 503 when the server has no HOYOLAB_COOKIE_KEY (push needs it for VAPID and sealing).",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppPushView"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The app device id returned at registration."
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "setAppPush",
+        "summary": "Store (replace) the installation's UnifiedPush subscription. The endpoint follows the Webhook URL rules (HTTPS on a public host name, at most 1000 bytes) and is sealed at rest with the keys. When a notice reaches this installation's inbox, the server sends an encrypted wake-up (RFC 8291 aes128gcm, RFC 8292 VAPID) that names no notice; the app then reads its inbox. A 404 or 410 from the push server removes the subscription; account disable and deletion remove every subscription of the user.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The app device id returned at registration."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppPushInput"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "removeAppPush",
+        "summary": "Remove the installation's UnifiedPush subscription; the app keeps polling its inbox.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The app device id returned at registration."
+          }
+        ]
+      }
+    },
     "/api/v1/admin/notifications": {
       "get": {
         "tags": [
@@ -5881,7 +6116,9 @@
             "required": [
               "created_at",
               "link_status",
-              "automatic_claims"
+              "automatic_claims",
+              "needs_attention",
+              "hoyolab"
             ],
             "properties": {
               "created_at": {
@@ -5902,6 +6139,13 @@
                 "type": "integer",
                 "minimum": 0,
                 "description": "Games with automatic claiming ON."
+              },
+              "needs_attention": {
+                "type": "boolean",
+                "description": "The link probably needs the owner's action: link_status is cookie_invalid, or the link is verified and a game's setting_status is action_required or its last ended run is failed, action_required or unknown. Missing, pending and removed links never count."
+              },
+              "hoyolab": {
+                "$ref": "#/components/schemas/AdminLinkHealth"
               }
             }
           }
@@ -6207,6 +6451,50 @@
           }
         }
       },
+      "AppPushView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "vapid_public_key",
+          "registered"
+        ],
+        "properties": {
+          "vapid_public_key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{87}$",
+            "description": "Uncompressed P-256 public key, base64url without padding (the UnifiedPush `vapid` extra). Derived from HOYOLAB_COOKIE_KEY, so it changes with `rekey`."
+          },
+          "registered": {
+            "type": "boolean",
+            "description": "Whether the server holds a push subscription for this installation."
+          }
+        }
+      },
+      "AppPushInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "p256dh",
+          "auth"
+        ],
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 1000,
+            "description": "The push resource URL the distributor gave the app (HTTPS on a public host name)."
+          },
+          "p256dh": {
+            "type": "string",
+            "description": "The app's Web Push public key: uncompressed P-256 point, base64url."
+          },
+          "auth": {
+            "type": "string",
+            "description": "The app's 16-byte Web Push authentication secret, base64url."
+          }
+        }
+      },
       "EventList": {
         "type": "string",
         "description": "Known kinds — personal: reward_failed, reward_claimed, cookie_invalid, signed_in, sign_in_failed, resource_near_cap, resource_full, expeditions_done, transformer_ready, daily_unfinished, weekly_unfinished. Admin: user_attention, worker_stalled, deletion_stuck, sign_in_failed, signed_in."
@@ -6366,6 +6654,114 @@
             "type": "string",
             "pattern": "^[0-9a-f]{64}$",
             "description": "Single-use app sign-in code, valid for 120 seconds."
+          }
+        }
+      },
+      "AdminLinkHealth": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "verified_at",
+          "status_fetched_at",
+          "games"
+        ],
+        "properties": {
+          "verified_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Last successful identity verification."
+          },
+          "status_fetched_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Newest successful game status fetch over the user's game accounts; failed fetches do not count."
+          },
+          "games": {
+            "type": "array",
+            "description": "One entry per reward setting, ordered by game kind; empty without a link.",
+            "items": {
+              "$ref": "#/components/schemas/AdminGameHealth"
+            }
+          }
+        }
+      },
+      "AdminGameHealth": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "game_kind",
+          "automatic",
+          "setting_status",
+          "last_run"
+        ],
+        "properties": {
+          "game_kind": {
+            "type": "string",
+            "enum": [
+              "genshin",
+              "starrail"
+            ]
+          },
+          "automatic": {
+            "type": "boolean",
+            "description": "Automatic claiming is ON."
+          },
+          "setting_status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "action_required"
+            ]
+          },
+          "last_run": {
+            "description": "The newest ended reward run still in history (REWARD_HISTORY_DAYS); runs in flight are not reported.",
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AdminLastRun"
+              }
+            ]
+          }
+        }
+      },
+      "AdminLastRun": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "state",
+          "ended_at",
+          "error_code"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "success",
+              "already_claimed",
+              "failed",
+              "action_required",
+              "unknown",
+              "stopped"
+            ]
+          },
+          "ended_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Sanitized error class of the run's last attempt (for example network, http:429, upstream:-5003)."
           }
         }
       }

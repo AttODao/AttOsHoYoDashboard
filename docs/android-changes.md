@@ -8,7 +8,7 @@
 
 - 新しいフロントエンドは作りません。web版と同じDioxus（RSX）コード、同じ画面構成、同じ文言カタログ、同じ `dashboard.css` をそのまま使います。
 - アプリ固有の処理はCargo feature `mobile` の中に閉じ込めます。web版は従来どおり既定の `web` feature でビルドし、アプリのコードはwasmに入りません。
-- アプリは既存の `/api/v1` を、ブラウザと同じセッションCookie認証で呼びます。サーバーへの追加は、web版の通知をアプリへ届けるための端末登録と受信箱（5.3節）だけです。
+- アプリは既存の `/api/v1` を、ブラウザと同じセッションCookie認証で呼びます。サーバーへの追加は、web版の通知をアプリへ届けるための端末登録と受信箱（5.3節）と、その受信箱をUnifiedPushで知らせる購読（5.9節）だけです。
 - ブラウザでしか動かない機能（WebAuthn）と、アプリに不要な機能（管理者機能など。3節）は、アプリで表示も遷移もしません。必要なときは「ブラウザで開く」（5.1節）でweb版に移ります。
 
 ### 使用したDioxusの仕組み
@@ -142,7 +142,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 
 ### 設定：通知
 
-- ページの説明文は出さず、「この端末への通知」カード（全体のON/OFF・許可・登録状態・テスト。5.2節・5.3節）を先頭に置く。
+- ページの説明文は出さず、「この端末への通知」カード（全体のON/OFF・許可・登録状態・「UnifiedPushですぐに受け取る」とその状態・テスト。5.2節・5.3節・5.9節）を先頭に置く。
 - その下の1枚のパネルで、通知の種類ごとに「この端末」と「Webhook」のON/OFFを並べた表（`pages/notifications.rs` の `EventMatrix`）、リマインダー、Webhookの設定（URL・形式・言語）をまとめて扱い、「保存」で全部を保存する。項目は名前だけで、機能の説明文は出さない。
 - 「この端末」の列はサーバーのアプリ用の選択（`app_events`）を送る。樹脂・開拓力の上限、派遣、参量物質変化器はこの選択が5.2節の予測通知にも適用され（保存の成功時に端末の設定へ反映）、洞天宝銭の上限は予測通知だけなので「Webhook」の列が空欄になる。web版は表を出さず、Webhookの選択だけを送る（`app_events` を送らないので、アプリで選んだ内容は変わらない）。
 - Webhook URLと樹脂の警告値の入力欄は、上記のとおり48pxにした（幅によらず）。
@@ -216,7 +216,7 @@ web版がWebhookへ送る個人の通知を、すべてアプリでも受け取�
 
 - 「この端末に通知する」をONにすると、アプリはサーバーに端末を登録します（`POST /api/v1/me/notifications/app-devices`）。サーバーは、Webhookへ送るのと同じ箇所（`Notifier::deliver`）で、同じ通知をそのユーザーの受信箱に入れます。条件、重複排除、文面（通知設定の言語）はWebhookと同じです。通知する種類は、Webhook（`events`）とは別にアプリ用の選択（`app_events`）で決まります（既存の設定はWebhookの選択をコピーして移行）。
 - Kotlinの `AhdInbox`（`android/MainActivity.kt`）が、Keystoreで暗号化して保存したセッションCookie（`AhdSessionStore`、5.7節）で受信箱を読み（`GET …/app-devices/{id}/inbox?after=…`）、Androidの通知を出します。読む時機は、JobSchedulerの定期ジョブ（15分ごと、ネットワーク接続時、アプリを閉じていても・再起動後も）、アプリの表示中の1分ごと、アプリに戻ったとき、登録直後とテスト送信直後です。
-- 外部のプッシュサービス（FCMなど）は使いません。サーバーに外部サービスの資格情報が要らず、Googleのサービスがない端末でも動きます。その代わり、アプリを開いていないときは届くまで最大15分程度（Dozeではさらに遅れることがある）かかります。
+- FCMは使いません。サーバーに外部サービスの資格情報が要らず、Googleのサービスがない端末でも動きます。ポーリングだけでは、アプリを開いていないときに届くまで最大15分程度（Dozeではさらに遅れることがある）かかります。UnifiedPushの配信アプリがあれば、5.9節のプッシュですぐに読みに行けます。
 - 通知チャンネルは5.2節と同じ「ゲームの状態」です。サーバーの重複排除キーをタグにし、同じタグの通知は置き換えます。
 - タップすると、通知を扱う画面を開きます：ログインボーナスの結果 → 設定 › 報酬、Cookieの失効 → 設定 › 連携、ログイン・ログイン失敗 → 設定 › 認証・セキュリティ、テスト → 設定 › 通知、ゲームの状態 → ダッシュボード（`navigation::notification_target`）。
 - 通知の許可は5.2節と同じです（ONにしたときにAndroid 13以降なら `POST_NOTIFICATIONS` を求め、拒否されたら警告と設定へのボタンを出す）。
@@ -319,6 +319,70 @@ Android Credential Manager（`androidx.credentials`）でアプリ内からパ�
 - **保存の失敗と排他**：Cookieが変わったのに保存できなかったときは、Rustが次の要求の後にもう一度保存します。ファイルの読み書きと移行は、アプリの要求とジョブのスレッドの間で1つのロックで排他します。
 - **バックアップ**：`session-cookies.enc` と旧形式の `session-cookies.json`（とそれぞれの一時ファイル）を、クラウドバックアップと端末間の移行から除外します（`android/res/xml/ahd_backup_rules.xml` はAndroid 11以前の `fullBackupContent`、`ahd_data_extraction_rules.xml` はAndroid 12以降の `dataExtractionRules`。`scripts/build-android.sh` がmanifestの `<application>` に追加）。Keystoreの鍵はもともとバックアップされません。
 
+### 5.8 戻るボタンとダイアログ
+
+- ダイアログ（`ModalDialog`・`ConfirmDialog`・メニューのボトムシート・更新ダイアログ）が開いているときに戻るボタンを押すと、いちばん上のダイアログだけを閉じます。閉じ方はEscapeと同じで、各ダイアログの `onclose` を呼びます（メニューは閉じる、更新の案内は「後で」、確認ダイアログはキャンセル）。何も開いていなければ、前の画面へ戻ります。最初の画面では、これまでどおりバックグラウンドへ移します（`moveTaskToBack`）。
+- 開いているダイアログの記録は `mobile/back.rs` の1か所です。アプリのダイアログはすべて `use_modal` → `mobile::dom::Modal` で開くので、`Modal` が開くときに登録し、破棄で外します（開いた順のスタック。いちばん上は最後に開いたもの）。ダイアログごとに戻るボタンの処理を書く必要はありません。
+- 閉じてはいけない状態は、`ModalDialog` の `back_closes: false`（`use_modal` の引数）で明示します。今は更新ダイアログだけで、`Flow::back_closes` が、通知の許可の答え待ち・ダウンロード中・検証中・インストール中を「閉じない」にします。この間、戻るボタンは何もしません（下のダイアログも閉じず、前の画面にも戻りません）。ダイアログのボタン（キャンセル・閉じる）は従来どおり使えます。開いたまま状態が変わるので、`Modal::set_back_closes` で登録を更新します。
+- 流れ：`MainActivity.kt` は `handleBackNavigation = false` でwryの `onKeyDown`（WebViewの履歴を先に戻す）を止め、`OnBackPressedCallback` で `window.__ahdBack()` を呼びます。ページ側（`mobile::back::use_back_key`、ルートで1回）がスタックで判断し（`OpenDialogs::back`、通常の `cargo test` で検査）、閉じる・何もしない・`AhdBack.navigate`（JNI。UIスレッドで `canGoBack` なら `goBack`、そうでなければ `moveTaskToBack`）のどれかを行います。ページが読み込まれる前で `__ahdBack` がないときは、Kotlinが直接 `navigateBack` します。
+- 戻るボタンのイベントはActivityが前面（RESUMED）にあるときにしか届かないので、ダイアログを閉じるシグナルの書き込みは一時停止中には起きません（`onRequestPermissionsResult` のような停止中の更新の問題は起きません）。Activityを作り直すこともありません。
+- web版のブラウザの戻るは変わりません（`back_closes` はweb版では使わず、`__ahdBack` もアプリだけが定義します）。
+- 更新ダイアログの `dismiss`（Escape・背景のタップ・戻るボタン）は、状態を `peek` した値のガードを持ったまま書き込んでいたため、案内（Prompt）で閉じると `AlreadyBorrowed` でpanicし、次のWebViewのリクエストでアプリが異常終了していました。状態を先にコピーしてから書き込むように直しました。
+- 確認方法（API 34のx86_64エミュレータ、実際の `input keyevent KEYCODE_BACK`／`input tap`）：メニュー（ダッシュボード・設定）、Cookie削除の確認ダイアログ（閉じてもCookieは残り、次の戻るで前の画面）、更新の案内（「後で」になる）・ダウンロード中（2回押しても閉じず、前面のまま、ダウンロードは続く）・キャンセル後の案内・失敗表示、何も開いていない最初の画面（バックグラウンドへ移り、同じActivityで戻る）。背景のタップで閉じる動作も変わらないことを確かめました。logcatに `FORTIFY`・`Fatal signal`・`panicked` は出ませんでした。インストール中と通知の許可待ちは、ダウンロード中と同じ `Flow::back_closes` の判断で、エミュレータでは確認していません。
+
+### 5.9 UnifiedPushによるサーバーからのプッシュ
+
+5.3節の受信箱に通知が入ったことを、UnifiedPush（[仕様 AND_3.0.0](https://unifiedpush.org/developers/spec/android/)）で端末に知らせます。デイリー／週間の未完了、ログインボーナスの結果、Cookieの失効など、予測できない通知が15分の確認を待たずに届きます。FCMやGoogleのサービスは使わず、利用者が選んだ配信アプリ（ntfyなど）とそのサーバーを使います。
+
+**仕組み**
+
+- 設定 › 通知の「この端末への通知」カードで、サーバーへの登録が済むと「UnifiedPushですぐに受け取る」（既定はOFF）が出ます。ONにすると、`AhdPush`（`android/kotlin/AhdPush.kt`）が次を行います。
+  1. サーバーのVAPID公開鍵を読みます（`GET …/app-devices/{id}/push`）。
+  2. P-256の鍵ペアと16バイトの `auth` を作り、配信アプリへ `org.unifiedpush.android.distributor.REGISTER`（`token`、`vapid`、`message`。Android 14以降は送信元の共有、それ以前は `pi`。旧仕様の配信アプリ向けに `application` も付ける）を送ります。
+  3. 配信アプリの `NEW_ENDPOINT` を受けたら、エンドポイントと公開鍵・`auth` をサーバーへ送ります（`PUT …/push`）。
+- サーバーは受信箱に通知を入れるたびに、暗号化した起床用のメッセージ（`{"type":"inbox"}` だけ。通知の内容や秘密は含まない）をエンドポイントへ送ります。
+- `AhdPushReceiver` が `MESSAGE` を受けると、確認応答（`MESSAGE_ACK`）を返し、自分の鍵で復号できたときだけ `AhdInbox.poll` を `goAsync` のスレッドで実行して受信箱を読みます。復号は `AhdPushCrypto.kt`（RFC 8291、JCAだけ）です。復号できないメッセージは無視します。
+- 重複：プッシュでもポーリングでも同じ `AhdInbox.poll`（同期化され、読んだ位置を保存する）を通るので、同じ通知が2回表示されることはありません。予測通知との重なりは5.2節のタグの規則のままです。
+- 配信アプリの選び方：前回の配信アプリが入っていればそれ、1つだけならそれ、複数あれば `unifiedpush://link` の既定のアプリ、なければ名前順の最初です（選択画面は出しません）。
+- 再登録：アプリの起動ごとに1回 `REGISTER` を送り直し（仕様の整合性確認）、配信アプリかサーバーのVAPID鍵が変わったら新しいtokenと鍵で登録し直します。`REGISTRATION_FAILED` の後は次回に新しいtokenを使います。
+- 前面化：配信アプリが数秒バインドできるように、`org.unifiedpush.android.connector.RAISE_TO_FOREGROUND` のservice（`AhdPushForegroundService`）を公開します。
+- OFFにすると、配信アプリへ `UNREGISTER` を送り、サーバーの購読を消します（`DELETE …/push`）。ログアウトでは、セッションがあるうちにサーバーの購読を消してからログアウトします。「この端末に通知する」をOFFにしたとき、ログアウト・セッションの失効、別のユーザーでのログインでも配信アプリの登録を解除します（スイッチの選択は残り、次の登録で使います）。配信アプリが `UNREGISTERED` を送ってきたときは、サーバーの購読を消して失敗の表示にします。
+- Android 11以降のパッケージの可視性のため、`REGISTER` を受ける配信アプリと `unifiedpush://link` を `<queries>` に入れます（`android/AndroidManifest.queries.xml` を `build-android` が挿入）。receiverとserviceは `android/AndroidManifest.application.xml` にあります。
+- Kotlinからページへの状態の通知は `AhdPageEvents`（`MainActivity.kt`）を通し、Activityが表示中（RESUMED）のときだけ送ります。表示中でない間のページ更新はWebViewを止めるためで（7節）、アプリに戻ったときにページが状態を読み直します。
+
+**表示**（スイッチの下の1行）
+
+| 状態 | 表示 |
+| --- | --- |
+| 配信アプリが入っていない | 「UnifiedPushのアプリ（ntfyなど）が入っていません。通知は15分おきの確認で受け取ります。」（警告） |
+| 登録中 | 「{配信アプリ名}に登録しています…」 |
+| 受け取り中 | 「{配信アプリ名}からすぐに受け取ります。」 |
+| サーバーがエンドポイントを拒否（HTTPSの公開アドレスでない） | 「UnifiedPushのアプリのサーバーがHTTPSの公開アドレスでないため使えません。…」（警告） |
+| その他の失敗 | 「すぐに受け取る設定ができませんでした。通知は15分おきの確認で受け取ります。」（警告） |
+
+**保存先**
+
+| 場所 | 内容 |
+| --- | --- |
+| SharedPreferences `ahd_push` | スイッチ、配信アプリ、token、登録に使ったVAPID鍵、Web Pushの鍵（秘密鍵はPKCS#8でアプリ専用領域に平文。この鍵で読めるのは秘密を含まない起床用のメッセージだけのため、Keystoreでは暗号化しない）、エンドポイント、状態。この端末の配信アプリに結び付くため、バックアップと端末間の移行から除外する（`ahd_backup_rules.xml`・`ahd_data_extraction_rules.xml`） |
+| サーバーの `app_devices.push_subscription` | エンドポイントと公開鍵・`auth`（封をして保存。5.3節の端末と一緒に消える） |
+
+**エミュレータでの確認**
+
+attodeskのエミュレータ（AVD `ahd`、Android 14、x86_64）で、合成バックエンドと配信アプリntfy（F-Droid版）、公開の `ntfy.sh` を使って確かめました。エンドポイントはHTTPSの公開アドレスである必要があるため、バックエンドの外向き通信は `ntfy.sh:443` だけを通すプロキシ経由にしました（HoYoLABなどは遮断）。
+
+| 確認 | 結果 |
+| --- | --- |
+| 配信アプリなし（ntfyを無効化） | 「UnifiedPushのアプリ（ntfyなど）が入っていません。…」を表示し、受信箱は15分ごとの確認のまま |
+| ONにする | ntfyへ `REGISTER`、`NEW_ENDPOINT` を受けて `PUT …/push`、DBの `push_subscription` が入り、「ntfyからすぐに受け取ります。」 |
+| アプリをバックグラウンドにし、受信箱のジョブを `cmd jobscheduler cancel` で消してから、テスト通知を送る | ポーリングなし（ジョブは登録されていない）で、送信の0.4秒後にAndroidの通知が出た |
+| 同じ条件で、ワーカーがCookieの失効を検出する（`auth_status` を `cookie_invalid` に変更） | 受信箱に入ってから約0.5秒後に通知が出た（検出まではワーカーの周期の約56秒） |
+| OFFにしてから、テスト通知を送る | 15秒たっても出ず、受信箱のジョブを実行すると出た（ポーリングだけで届き、2回は出ない） |
+| ログアウト | ログアウトの前に `DELETE …/push` が届き、DBの `push_subscription` が空になった |
+| Keystoreで暗号化したセッションCookie（5.7節）との組み合わせ | ログイン後は `session-cookies.enc` だけがあり、`AhdInbox.deviceRequest` の `GET`/`PUT …/push` と起床後の受信箱の読み込みがそのCookieで動いた |
+
+ntfyはバッテリーの最適化から除外していないと、数時間後にサーバーとの接続が止まり、プッシュが届かなくなることがありました（ntfyを開くと再接続し、届くようになりました）。これは配信アプリ側の設定で、届かない間も15分ごとの確認で受け取ります。
+
 ## 6. web版との共通化と分岐
 
 ### 共通のまま使うもの
@@ -370,25 +434,29 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/mobile/dom.rs` | `document::eval` によるDOM操作（pull-to-refreshのタッチ処理を含む） |
 | `dashboard-ui/src/mobile/swipe.rs` | タブの横スワイプのタッチ収集（`document::eval`）。判定は共通の `app/swipe.rs` |
 | `dashboard-ui/src/mobile/reminders.rs` | 通知時刻の予測、設定と予定の保存形式、通知文（テストあり） |
-| `dashboard-ui/src/mobile/notify.rs` | Kotlinの通知処理を呼ぶJNIブリッジ |
+| `dashboard-ui/src/mobile/notify.rs` | Kotlinの通知処理（受信箱・UnifiedPushを含む）を呼ぶJNIブリッジ |
+| `dashboard-ui/src/mobile/push.rs` | UnifiedPushの状態から表示する1行の決定（I/Oなし、テストあり） |
 | `dashboard-ui/src/mobile/browser_login.rs` | ブラウザ経由ログインのPKCE・コールバックURL・保存要求の規則（I/Oなし、テストあり） |
 | `dashboard-ui/src/mobile/login_intent.rs` | Kotlinが受け取ったコールバックを一度だけ取り出すJNIブリッジとWebViewイベント |
 | `dashboard-ui/src/app/browser_login.rs` | ブラウザ経由ログインの開始と、コールバック受信後のコード交換 |
 | `dashboard-ui/src/mobile/updates.rs` | Forgejoリリースの更新確認：SemVer比較、アセット選択、`releases/latest` の取得（5.5節、テストあり） |
 | `dashboard-ui/src/mobile/update_install.rs` | APKのダウンロード、SHA-256・パッケージ・署名者の検証、一時ファイル管理、PackageInstallerへのJNI（5.6節、テストあり） |
 | `dashboard-ui/src/mobile/log.rs` | logcat（タグ `AHD`）への出力 |
+| `dashboard-ui/src/mobile/back.rs` | 戻るボタン：開いているダイアログのスタック（テストあり）、`window.__ahdBack` の受け取り、`AhdBack.navigate` へのJNI（5.8節） |
 | `dashboard-ui/src/app/device_notifications.rs` | 端末通知の予定の更新、通知タップ時の画面遷移 |
 | `dashboard-ui/src/app/updates.rs` | 起動時の更新確認と結果のcontext、ダイアログの状態・スキップ・ダウンロードタスクとキャンセル |
 | `dashboard-ui/src/pages/app_update.rs` | 更新の確認・進捗・失敗・再試行のダイアログ |
 | `dashboard-ui/src/pages/device_notifications.rs` | 「この端末への通知」カード |
 | `dashboard-ui/src/pages/app_nav.rs` | 下部ナビゲーション `AppNav` と `AppHead`（モジュールは両ビルドでコンパイルするが、web版では描画しない） |
 | `dashboard-ui/assets/mobile.css` | アプリ専用のスタイル |
-| `dashboard-ui/android/MainActivity.kt` | `MainActivity`（ルートでの戻る、設定変更のその場反映、破棄時のプロセス終了、通知タップの受け取り）、`AhdNotifications`、`AhdAlarmReceiver`、`AhdBootReceiver`、`AhdUpdater`（APK情報・PackageInstaller・更新後通知）、`AhdUpdateReceiver` |
+| `dashboard-ui/android/MainActivity.kt` | `MainActivity`（戻るボタンをページへ渡す・ダイアログがなければ前の画面かルートでバックグラウンドへ（`AhdBack`）、設定変更のその場反映、破棄時のプロセス終了、通知タップの受け取り）、`AhdNotifications`、`AhdAlarmReceiver`、`AhdBootReceiver`、`AhdUpdater`（APK情報・PackageInstaller・更新後通知）、`AhdUpdateReceiver` |
 | `dashboard-ui/android/AndroidManifest.application.xml` | 生成manifestに挿入するreceiver |
 | `dashboard-ui/android/AndroidManifest.activity.xml` | 生成manifestのactivityに挿入する `cc.attodao.ahd://login` のintent-filter |
 | `dashboard-ui/android/res/**` | ランチャーアイコン、通知アイコン、アプリ名、色、DayNightテーマ（`values/styles.xml`） |
 | `dashboard-ui/android/README.md` | リソースの作り方 |
-| `dashboard-ui/android/kotlin/*.kt` | ウィジェット用インジケーター（`AhdIndicators.kt`、`AhdIndicatorModel.kt`）とデバッグ用サンプル画面（`AhdIndicatorSamples.kt`）。`build-android` が生成プロジェクトへコピーする |
+| `dashboard-ui/android/kotlin/*.kt` | ウィジェット用インジケーター（`AhdIndicators.kt`、`AhdIndicatorModel.kt`）、デバッグ用サンプル画面（`AhdIndicatorSamples.kt`）、UnifiedPush（`AhdPush.kt`、`AhdPushCrypto.kt`。5.9節）。`build-android` が生成プロジェクトへコピーする |
+| `dashboard-ui/android/test/AhdPushCryptoTest.kt` | Web Pushの復号をRFC 8291 付録Aで確認するJUnit（`test-android`） |
+| `dashboard-ui/android/AndroidManifest.queries.xml` | UnifiedPushの配信アプリを見つけるための `<queries>`（生成manifestの `<application>` の前に挿入） |
 | `dashboard-ui/android/tests/AhdIndicatorModelTest.kt` | インジケーターの規則とレイアウトのJVM検査（`test-android-kotlin`） |
 | `dashboard-ui/android/AndroidManifest.samples.xml` | デバッグビルドだけ生成manifestに挿入するサンプル画面のactivity |
 | `scripts/build-android.sh` | APKのビルド（2節）。生成manifestへの `launchMode="singleTask"`・`configChanges` の書き換えとreceiverの挿入も行う |
@@ -411,7 +479,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/pages/app_login.rs` | web版の `/app-login` 許可画面（アプリのログイン要求を承認してコードを発行する） |
 | `dashboard-ui/src/pages/security.rs` | パスワード変更・APIトークン・パスキー登録の除外、「ブラウザで開く」 |
 | `dashboard-ui/src/pages/notifications.rs` | 端末通知カードの配置、種類ごとの「この端末」／「Webhook」の表、`app_events` の送信と予測通知への反映 |
-| `dashboard-ui/src/pages/common.rs` | `external` アイコン、DOM操作・モーダルのアプリ分岐 |
+| `dashboard-ui/src/pages/common.rs` | `external` アイコン、DOM操作・モーダルのアプリ分岐、戻るボタンで閉じるかどうか（`ModalDialog` の `back_closes`、`use_modal` の引数。web版では使わない） |
 | `dashboard-ui/src/pages/dashboard.rs` | `matchMedia`・毎秒の時計のアプリ分岐、pull-to-refresh（更新ボタンの代わり） |
 | `dashboard-ui/src/pages/mod.rs` | 新しいモジュールの宣言 |
 | `dashboard-ui/locales/ja.json`, `en.json` | 24キーを追加（`shell.open_in_browser`、`shell.app_navigation`、`messages.could_not_open_the_browser`、`auth.change_password_in_browser`、`security.manage_in_browser`、`notifications.personal_hint_app`、`notifications.device_*` 18キー）。既存のキーは変えていない |
@@ -442,11 +510,10 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 
 - **Activityは1つだけ**：tao/wryはActivityの破棄・再生成と2つ目のインスタンスに対応しておらず、そのままだとプロセスが `FORTIFY: pthread_mutex_lock called on a destroyed mutex` で異常終了します。そのため次のようにしています（`android/MainActivity.kt`、`scripts/build-android.sh`）。
   - `launchMode="singleTask"` で、ランチャー・通知・`am start` のどこから開いても同じインスタンスを使います。通知のタップは `onNewIntent` で受け取ります。
-  - 最初の画面で戻るボタンを押すと、アプリを閉じずにバックグラウンドへ移します（ホームボタンと同じ）。それ以外の画面では、従来どおり前の画面へ戻ります。
+  - 最初の画面で戻るボタンを押すと、アプリを閉じずにバックグラウンドへ移します（ホームボタンと同じ）。それ以外の画面では、従来どおり前の画面へ戻ります。ダイアログが開いているときは、先にそれを閉じます（5.8節）。
   - ダークモード、文字サイズ、表示サイズ、太字、言語、キーボードなどの変更では、Activityを作り直さずにその場で反映します（`configChanges`）。WebViewは文字サイズを作成時にしか読まないため、変更時に `textZoom` を設定し直します。
   - 最近使ったアプリから消すなどでActivityが破棄されたときは、ネイティブの後始末を行わずにプロセスを終了します。次に開くと新しく起動します。
   - テーマはDayNightなので、アプリのテーマ「システム」は端末のダークモードに追従します（以前は常にライトでした）。
-- **ダイアログと戻るボタン**：確認ダイアログを開いたまま戻るボタンを押すと、ダイアログが閉じるのではなく前の画面に戻ります（ダイアログは片付きます）。
 - **サーバーはビルド時に固定**：接続先は `AHD_SERVER_URL` の1つだけです。変えるにはビルドし直します。
 - **セッションCookieの保存**：Android Keystoreの鍵で暗号化して保存します（5.7節）。鍵はユーザー認証を要求しないため、端末のロック中でも受信箱とウィジェットのジョブが読めます。そのため、アプリとして動くコード（root化した端末で同じUIDとして動くものを含む）からは復号できます。暗号化が防ぐのは、ファイルだけを取り出した場合（バックアップ、ファイルのコピー）です。1.9.0以前のバージョンで作られたバックアップには平文のファイルが含まれている可能性があります。
 - **パスワード表示の自動マスク**：web版は、表示中のパスワードを、ウィンドウや入力欄からフォーカスが外れたときとページが非表示になったときに伏せます。アプリではこの処理を実装していません（表示ボタンでの切り替えはできます）。
@@ -458,6 +525,10 @@ web版と同じ処理をアプリ用に置き換えた箇所：
   - 強制停止やアプリの更新でOSがアラームを消します。次にアプリを起動したとき、またはパッケージ更新時のreceiverで戻ります。
   - 通知をタップしてダッシュボードへ移っても、スクロール位置はそのままです。
   - `dx serve` のAPKにはreceiverが入りません。
+  - UnifiedPushで受け取れるのは、配信アプリのサーバーがHTTPSの公開アドレスのときだけです（サーバーがWebhook URLと同じ規則でエンドポイントを検査するため。LAN内のntfyなどは使えず、15分ごとの確認になります）。配信アプリが複数あるときに選ぶ画面はありません（5.9節）。
+  - `ntfy.sh` は購読者のいなくなったトピックへの送信に404/410ではなく507を返すため、配信アプリ側で登録が消えた購読はサーバーで「失敗」のまま残ります。端末の登録が30日使われずに消えるときに一緒に消えます。
+  - プッシュを受けた後の受信箱の読み込みは、receiverの `goAsync` の時間内で行います。通知が多くページをまたぐ場合、残りは次の確認で届きます。
+  - セッションの失効（期限切れ・管理者による失効）では、セッションがないためサーバーの購読を消せません。配信アプリの登録は解除するので、プッシュサーバーが404/410を返せば次の送信で購読は消えます。ntfy.shは登録のなくなったトピックに507を返すため失敗として数えるだけで、購読は端末の登録と一緒に30日後に消えます（ログアウトでは先に消すので残りません）。
 - **ビルド**：release署名にはCIの署名用secretが必要です（未設定ならビルドごとのデバッグ署名）。`dx serve` ではDioxusの既定のアイコンと名前になります。
 
 ### 未確認の項目
@@ -471,9 +542,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 
 ### 今後の課題
 
-- ダイアログが開いているときは、戻るボタンでダイアログを閉じる。
 - release署名と配布方法（ストア、または直接配布）を決める。
-- 予測できない通知（デイリー／週間の未完了、ログインボーナスの結果、Cookieの失効）が必要なら、FCMやUnifiedPushによるサーバーからのプッシュを検討する。サーバー側に送信の仕組みが必要になる。
 - 接続先のサーバーをアプリ内で設定できるようにするかを検討する。
 - 端末のロケールから言語の初期値を決める。
 - 実機で確認する。
