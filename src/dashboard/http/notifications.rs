@@ -1,10 +1,13 @@
 //! Personal and administrator notification channels and the
-//! app installations' inbox.
+//! app installations' inbox and push subscription.
 use super::App;
 use crate::dashboard::{
     auth::sessions::Identity,
     error::Result,
-    notifications::channel::{ChannelInput, PersonalInput},
+    notifications::{
+        channel::{ChannelInput, PersonalInput},
+        push::PushInput,
+    },
 };
 use axum::{
     Json, Router,
@@ -31,6 +34,10 @@ pub(super) fn protected_routes() -> Router<App> {
         .route(
             "/api/v1/me/notifications/app-devices/{id}/inbox",
             get(app_inbox),
+        )
+        .route(
+            "/api/v1/me/notifications/app-devices/{id}/push",
+            get(app_push_view).put(set_app_push).delete(remove_app_push),
         )
         .route(
             "/api/v1/admin/notifications",
@@ -109,6 +116,35 @@ async fn app_inbox(
         serde_json::to_value(service(&app).app_inbox(&actor, id, query.after).await?)
             .unwrap_or(Value::Null),
     ))
+}
+
+async fn app_push_view(
+    State(app): State<App>,
+    Extension(actor): Extension<Arc<Identity>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>> {
+    Ok(Json(
+        serde_json::to_value(service(&app).app_push_view(&actor, id).await?).unwrap_or(Value::Null),
+    ))
+}
+
+async fn set_app_push(
+    State(app): State<App>,
+    Extension(actor): Extension<Arc<Identity>>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<PushInput>,
+) -> Result<StatusCode> {
+    service(&app).set_app_push(&actor, id, input).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn remove_app_push(
+    State(app): State<App>,
+    Extension(actor): Extension<Arc<Identity>>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode> {
+    service(&app).remove_app_push(&actor, id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn admin_view(

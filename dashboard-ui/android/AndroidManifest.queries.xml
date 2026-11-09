@@ -1,0 +1,8 @@
+    <!-- UnifiedPush distributors this app may find and register with (package visibility, Android 11+). -->
+    <queries>
+        <intent><action android:name="org.unifiedpush.android.distributor.REGISTER" /></intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="unifiedpush" android:host="link" />
+        </intent>
+    </queries>

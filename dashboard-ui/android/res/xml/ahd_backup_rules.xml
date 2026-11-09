@@ -8,4 +8,6 @@
     <exclude domain="file" path=".session-cookies.enc.tmp" />
     <exclude domain="file" path="session-cookies.json" />
     <exclude domain="file" path=".session-cookies.json.tmp" />
+    <!-- The UnifiedPush registration (token, Web Push keys) belongs to this device's distributor. -->
+    <exclude domain="sharedpref" path="ahd_push.xml" />
 </full-backup-content>

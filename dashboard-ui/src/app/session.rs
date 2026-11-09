@@ -159,6 +159,15 @@ pub(super) fn signed_out(mut state: Signal<AppState>, message_key: &'static str)
 }
 
 pub(super) async fn logout(mut state: Signal<AppState>, generation: u64) {
+    // While the session still exists: a signed-out installation is not woken by push any
+    // more (afterwards only the distributor registration can be ended). Best effort.
+    #[cfg(feature = "mobile")]
+    if let Some(registered) =
+        crate::mobile::inbox::Registered::from_json(crate::mobile::notify::inbox_state().as_deref())
+    {
+        let path = format!("/me/notifications/app-devices/{}/push", registered.device);
+        let _ = api::send("DELETE", &path, None).await;
+    }
     let result = api::send("POST", "/auth/logout", Some(json!({}))).await;
     if !generation_matches(state, generation) {
         return;

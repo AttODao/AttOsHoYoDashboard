@@ -12,6 +12,7 @@ async fn personal_settings_round_trip_webhook_url_and_require_valid_fields() {
     let notifications = Notifications::new(
         fixture.db.clone(),
         Some(Arc::new(CookieKey::from_hex(&"11".repeat(32)).unwrap())),
+        "https://ahd.example.test",
     );
     let view = notifications.personal_view(&actor).await.unwrap();
     let json = serde_json::to_value(&view).unwrap();
@@ -100,6 +101,7 @@ async fn app_event_choices_are_separate_from_the_webhook_and_kept_when_absent() 
     let notifications = Notifications::new(
         fixture.db.clone(),
         Some(Arc::new(CookieKey::from_hex(&"11".repeat(32)).unwrap())),
+        "https://ahd.example.test",
     );
     let personal = |extra: Value| -> PersonalInput {
         let mut body = json!({
@@ -196,6 +198,7 @@ async fn admin_channel_requires_an_administrator_and_shares_a_single_row() {
     let notifications = Notifications::new(
         fixture.db.clone(),
         Some(Arc::new(CookieKey::from_hex(&"11".repeat(32)).unwrap())),
+        "https://ahd.example.test",
     );
     let input: ChannelInput = serde_json::from_value(json!({
         "webhook_url": "https://discord.com/api/webhooks/9/admin-token",

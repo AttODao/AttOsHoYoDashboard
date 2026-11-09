@@ -1,5 +1,6 @@
 //! Device notification lifecycle: predicted local reminders, the server inbox registration
-//! (the same notices as the web's Webhook and browser push), and notification-open events.
+//! (the same notices as the web's Webhook) with its optional UnifiedPush wake-ups, and
+//! notification-open events.
 use super::{
     navigation,
     preferences::Preferences,
@@ -8,6 +9,7 @@ use super::{
 use crate::mobile::{
     inbox::{self, Config, Plan, Registered},
     notify,
+    push::PushState,
     reminders::{Outgoing, Schedule, Settings, forgets_schedule},
     storage,
 };
@@ -37,10 +39,25 @@ pub(super) struct DeviceNotifications {
     pub(super) granted: Signal<bool>,
     pub(super) upcoming: Signal<usize>,
     pub(super) server: Signal<Server>,
+    /// UnifiedPush as `AhdPush` reports it.
+    pub(super) push: Signal<PushState>,
 }
 impl DeviceNotifications {
     pub(super) fn save(&self) {
         let _ = storage::write(SETTINGS_FILE, &self.settings.peek().to_json());
+    }
+
+    /// Flips "receive instantly"; Kotlin registers (or unregisters) and reports back.
+    pub(super) fn set_push(&self, wanted: bool) {
+        notify::push_set_wanted(wanted);
+        refresh_push(self.push);
+    }
+}
+
+fn refresh_push(mut push: Signal<PushState>) {
+    let value = PushState::from_json(notify::push_state().as_deref());
+    if *push.peek() != value {
+        push.set(value);
     }
 }
 pub(super) fn use_device_context() -> DeviceNotifications {
@@ -70,6 +87,7 @@ pub(super) fn use_device_notifications(state: Signal<AppState>) -> DeviceNotific
     let settings = use_signal(|| Settings::from_json(storage::read(SETTINGS_FILE).as_deref()));
     let mut granted = use_signal(notify::permission_granted);
     let mut upcoming = use_signal(|| 0);
+    let push = use_signal(|| PushState::from_json(notify::push_state().as_deref()));
     let server = use_signal(|| {
         if registered().is_some() {
             Server::Active
@@ -139,11 +157,17 @@ pub(super) fn use_device_notifications(state: Signal<AppState>) -> DeviceNotific
     // Server notices: register this installation while notifications are on and a user
     // who may receive them is signed in; Kotlin polls the inbox from then on.
     let registering = use_hook(|| Rc::new(Cell::new(false)));
+    // The distributor registration is renewed once per app start (UnifiedPush spec).
+    let push_synced = use_hook(|| Rc::new(Cell::new(false)));
     let last_poll = use_hook(|| Rc::new(Cell::new(0_i64)));
     let visible = use_hook(|| Rc::new(Cell::new(true)));
     {
-        let (registering, last_poll, visible) =
-            (registering.clone(), last_poll.clone(), visible.clone());
+        let (registering, last_poll, visible, push_synced) = (
+            registering.clone(),
+            last_poll.clone(),
+            visible.clone(),
+            push_synced.clone(),
+        );
         use_effect(move || {
             let snapshot = state.read();
             let enabled = settings.read().enabled;
@@ -166,11 +190,13 @@ pub(super) fn use_device_notifications(state: Signal<AppState>) -> DeviceNotific
                     }
                     if current.is_some() {
                         notify::inbox_stop();
+                        notify::push_stop();
                     }
                     registering.set(true);
                     set_server(server, Server::Registering);
                     let registering = registering.clone();
                     let last_poll = last_poll.clone();
+                    let push_synced = push_synced.clone();
                     let channel = ui.text("notifications.device_channel");
                     spawn(async move {
                         let result = crate::api::json::<Value>(
@@ -193,6 +219,9 @@ pub(super) fn use_device_notifications(state: Signal<AppState>) -> DeviceNotific
                             .is_some_and(|config| notify::inbox_configure(channel, config));
                         if ok {
                             last_poll.set(crate::platform::now_ms() as i64);
+                            notify::push_sync();
+                            push_synced.set(true);
+                            refresh_push(push);
                         }
                         // A failure is not retried until notifications are switched again,
                         // so a broken bridge cannot pile up server registrations.
@@ -202,12 +231,18 @@ pub(super) fn use_device_notifications(state: Signal<AppState>) -> DeviceNotific
                 }
                 Plan::Keep => {
                     set_server(server, Server::Active);
+                    if !push_synced.replace(true) {
+                        notify::push_sync();
+                        refresh_push(push);
+                    }
                     if visible.get() {
                         poll(&last_poll, false);
                     }
                 }
                 Plan::Unregister(device) => {
                     notify::inbox_stop();
+                    notify::push_stop();
+                    refresh_push(push);
                     set_server(server, Server::Off);
                     spawn(async move {
                         // Best effort: an unreachable server forgets the device after 30 days.
@@ -221,6 +256,8 @@ pub(super) fn use_device_notifications(state: Signal<AppState>) -> DeviceNotific
                 }
                 Plan::Forget => {
                     notify::inbox_stop();
+                    notify::push_stop();
+                    refresh_push(push);
                     set_server(server, Server::Off);
                 }
                 Plan::Idle => {
@@ -247,6 +284,8 @@ pub(super) fn use_device_notifications(state: Signal<AppState>) -> DeviceNotific
                 if *granted.peek() != value {
                     granted.set(value);
                 }
+                // "push" from AhdPush; a return to the app may follow a distributor change.
+                refresh_push(push);
                 if let Some(target) = notify::take_open_target() {
                     // A widget's game tab applies even before sign-in finishes (cold start).
                     if let Some(game) = navigation::target_game(&target) {
@@ -283,6 +322,7 @@ pub(super) fn use_device_notifications(state: Signal<AppState>) -> DeviceNotific
         granted,
         upcoming,
         server,
+        push,
     };
     use_context_provider(|| device);
     device

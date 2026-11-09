@@ -47,6 +47,7 @@ const ENDED_STATES: [&str; 6] = [
     "unknown",
     "stopped",
 ];
+const APP_DEVICES: &str = "SELECT CASE WHEN push_subscription IS NULL THEN 'poll' ELSE 'push' END AS label, count(*) AS n FROM app_devices GROUP BY 1";
 const ENDED_24H: &str = "SELECT state AS label, count(*) AS n FROM reward_runs WHERE ended_at >= now() - interval '24 hours' GROUP BY 1";
 
 pub(super) async fn metrics(
@@ -104,6 +105,35 @@ pub(super) async fn metrics(
         let _ = writeln!(
             out,
             "ahd_reward_runs_ended_24h{{state=\"{state}\"}} {count}"
+        );
+    }
+    let rows = app
+        .accounts
+        .db
+        .query_all_raw(Statement::from_string(DbBackend::Postgres, APP_DEVICES))
+        .await?;
+    let mut devices = std::collections::BTreeMap::new();
+    for row in rows {
+        let delivery: String = row.try_get("", "label")?;
+        let count: i64 = row.try_get("", "n")?;
+        devices.insert(delivery, count);
+    }
+    let _ = writeln!(
+        out,
+        "# HELP ahd_app_devices Registered app installations, by how they learn of new notices.\n# TYPE ahd_app_devices gauge"
+    );
+    for delivery in ["push", "poll"] {
+        let count = devices.get(delivery).copied().unwrap_or(0);
+        let _ = writeln!(out, "ahd_app_devices{{delivery=\"{delivery}\"}} {count}");
+    }
+    let _ = writeln!(
+        out,
+        "# HELP ahd_app_push_requests_total App push requests since start, by outcome (gone: the subscription was removed).\n# TYPE ahd_app_push_requests_total counter"
+    );
+    for (outcome, count) in app.notifications.push_outcomes() {
+        let _ = writeln!(
+            out,
+            "ahd_app_push_requests_total{{outcome=\"{outcome}\"}} {count}"
         );
     }
     Ok((

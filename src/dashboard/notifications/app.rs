@@ -1,7 +1,8 @@
 //! App delivery: registered app installations pull the notices the web channels get.
 //!
-//! The server keeps no push-service credentials: each installation polls its user's inbox
-//! with its session cookie and shows new entries as native notifications.
+//! Each installation polls its user's inbox with its session cookie and shows new entries
+//! as native notifications. Installations with a UnifiedPush subscription are also woken
+//! when an entry arrives (`push.rs`); the poll stays as the fallback.
 use super::{Notice, channel::Notifications, messages::render};
 use crate::dashboard::{
     auth::{
@@ -66,7 +67,7 @@ pub(in crate::dashboard) struct InboxView {
 }
 
 impl Notifications {
-    async fn app_ready(&self, actor: &Identity) -> Result<Identity> {
+    pub(super) async fn app_ready(&self, actor: &Identity) -> Result<Identity> {
         let fresh = Sessions::authenticate(&self.db, &actor.token_hash).await?;
         require_ready(&fresh.user)?;
         Ok(fresh)
@@ -99,6 +100,7 @@ impl Notifications {
             user_id: Set(fresh.user.id),
             created_at: Set(now),
             last_seen_at: Set(now),
+            push_subscription: Set(None),
         }
         .insert(&self.db)
         .await?;
@@ -178,7 +180,8 @@ impl Notifications {
             > 0)
     }
 
-    /// Queues a notice for the user's app installations; false when none is registered.
+    /// Queues a notice for the user's app installations and wakes those with push; false
+    /// when none is registered.
     pub(super) async fn send_to_app(
         &self,
         user: Uuid,
@@ -201,6 +204,7 @@ impl Notifications {
         }
         .insert(&self.db)
         .await?;
+        self.push_to_app(user).await;
         Ok(true)
     }
 

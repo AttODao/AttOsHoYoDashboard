@@ -1,4 +1,5 @@
-//! Webhook delivery: validated HTTPS endpoints, Discord embeds or plain JSON.
+//! Webhook delivery: validated HTTPS endpoints, Discord embeds or plain JSON. The same
+//! endpoint rules apply to app push endpoints (`push.rs`).
 use super::{Notice, messages::render};
 use crate::dashboard::error::{Error, Result};
 use chrono::Utc;
@@ -8,12 +9,24 @@ use std::{sync::OnceLock, time::Duration};
 
 const MAX_URL: usize = 1024;
 
-/// HTTPS to a DNS name only: no credentials, IP literals, or local names, so a
-/// webhook cannot be pointed at the server's own network by address.
 pub(super) fn validate_webhook_url(raw: &str) -> Result<String> {
-    let invalid = || Error::Invalid("webhook URL must be an HTTPS URL on a public host name");
+    validate_public_https_url(
+        raw,
+        MAX_URL,
+        "webhook URL must be an HTTPS URL on a public host name",
+    )
+}
+
+/// HTTPS to a DNS name only: no credentials, IP literals, or local names, so a
+/// user-supplied URL cannot be pointed at the server's own network by address.
+pub(super) fn validate_public_https_url(
+    raw: &str,
+    max: usize,
+    message: &'static str,
+) -> Result<String> {
+    let invalid = || Error::Invalid(message);
     let raw = raw.trim();
-    if raw.is_empty() || raw.len() > MAX_URL {
+    if raw.is_empty() || raw.len() > max {
         return Err(invalid());
     }
     let url = Url::parse(raw).map_err(|_| invalid())?;

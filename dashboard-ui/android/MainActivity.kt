@@ -86,6 +86,11 @@ class MainActivity : WryActivity() {
     override fun onWebViewCreate(webView: WebView) {
         this.webView = webView
         AhdUpdater.listener = { notifyUpdate() }
+        // Background events (UnifiedPush state): page updates made while paused stall the
+        // WebView until the next resume, so only a resumed page hears them; onResume re-reads.
+        AhdPageEvents.listener = { kind ->
+            webView.post { if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) notifyPage(kind) }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -142,6 +147,12 @@ object AhdBack {
         main.runOnUiThread { main.navigateBack() }
         return true
     }
+}
+
+// Events for the page from code outside MainActivity.kt (kotlin/AhdPush.kt), which this file
+// must not reference: the activity sets the listener, the others call it.
+object AhdPageEvents {
+    @Volatile @JvmStatic var listener: ((String) -> Unit)? = null
 }
 
 // Browser sign-in callback (cc.attodao.ahd://login?code=…); Rust takes it once and validates it.
@@ -511,9 +522,9 @@ object AhdSessionFormat {
     }
 }
 
-// Server notices (the same ones the web's Webhook and browser push get): the app registers
-// this installation with the server, then this polls its inbox with the stored session
-// cookie, in the foreground (pollNow) and every 15 minutes through JobScheduler.
+// Server notices (the same ones the web's Webhook gets): the app registers this installation
+// with the server, then this polls its inbox with the stored session cookie, in the foreground
+// (pollNow), every 15 minutes through JobScheduler, and on a UnifiedPush wake-up (AhdPush).
 object AhdInbox {
     private const val JOB_ID = 0x41484431
     private const val PAGES = 5
@@ -567,6 +578,42 @@ object AhdInbox {
             .setPersisted(true)
             .build()
         scheduler.schedule(job)
+    }
+    /**
+     * An authenticated request about the registered installation
+     * (`…/app-devices/{id}<suffix>`, e.g. "/push"): status and body, or null when there is no
+     * registration or session, the session store is unavailable for now, or the server is
+     * unreachable.
+     */
+    @JvmStatic fun deviceRequest(context: Context, method: String, suffix: String, body: String?): Pair<Int, String>? = guarded(null) {
+        val prefs = prefs(context)
+        val device = prefs.getString("device", null)
+        val origin = prefs.getString("origin", null)
+        val cookie = AhdSessionStore.cookieHeader(context)
+        if (device == null || origin == null || cookie == null) null else {
+            val url = URL("$origin/api/v1/me/notifications/app-devices/${URLEncoder.encode(device, "UTF-8")}$suffix")
+            val connection = url.openConnection() as HttpURLConnection
+            try {
+                connection.requestMethod = method
+                connection.instanceFollowRedirects = false
+                connection.connectTimeout = 15000
+                connection.readTimeout = 15000
+                connection.setRequestProperty("Accept", "application/json")
+                connection.setRequestProperty("Origin", origin)
+                connection.setRequestProperty("Cookie", cookie)
+                connection.setRequestProperty("User-Agent", prefs.getString("agent", "AHD-Android"))
+                if (body != null) {
+                    connection.doOutput = true
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                }
+                val status = connection.responseCode
+                val stream = if (status < 400) connection.inputStream else connection.errorStream
+                Pair(status, stream?.bufferedReader()?.use { it.readText() } ?: "")
+            } finally {
+                connection.disconnect()
+            }
+        }
     }
     /** One read pass; returns false when nothing could be fetched. */
     @Synchronized @JvmStatic fun poll(context: Context): Boolean = guarded(false) {
