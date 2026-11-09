@@ -87,6 +87,7 @@ curl --fail http://127.0.0.1:8080/health
 | `METRICS_TOKEN` | 任意。16文字以上。設定時のみ `/metrics` を `Authorization: Bearer` 付きで公開 |
 | `REWARD_HISTORY_DAYS` | 実行履歴の保持日数。1〜90、既定 `5` |
 | `STATUS_CACHE_TTL_MINUTES` | ゲーム・報酬状態のキャッシュ有効分数。1〜60、既定 `5` |
+| `CHALLENGE_CACHE_TTL_MINUTES` | 高難度コンテンツ（深境螺旋・混沌の記憶など）の要約のキャッシュ有効分数。5〜1440、既定 `60`。期間がキャッシュ後に終わった場合は期限前でも取り直し、一部のモードだけ取得に失敗した要約は `STATUS_CACHE_TTL_MINUTES` 後に取り直す |
 | `REWARD_MAX_ATTEMPTS` / `REWARD_RETRY_DELAY_SECONDS` | 一時的な失敗の試行回数（1〜4、既定 `4`）／再試行までの秒数（1〜600、既定 `10`） |
 
 HoYoLAB Cookieは環境変数ではなく画面から登録します。
@@ -196,6 +197,7 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | `dashboard-ui/android/res/` | ランチャーと通知のアイコン、アプリ名、DayNightテーマ、開発用サーバー（localhost）へのHTTPを許可するnetwork security config、セッションCookieをバックアップから除外する規則（`xml/ahd_backup_rules.xml`・`xml/ahd_data_extraction_rules.xml`）（`build-android` が生成プロジェクトへ上書き） |
 | `dashboard-ui/android/kotlin/` | `MainActivity.kt` の隣へ `build-android` がコピーするKotlin：ホーム画面ウィジェット用のバー型・丸型インジケーター（`AhdIndicators.kt`、規則は `AhdIndicatorModel.kt`）と、デバッグビルドだけのサンプル画面（`AhdIndicatorSamples.kt`）。使い方は `dashboard-ui/android/README.md`、JVMの検査は `android/tests/` と `test-android-kotlin` |
 | `dashboard-ui/android/MainActivity.kt` | AndroidのActivity（`Dioxus.toml` の `android_main_activity`）：ルートでの戻るをバックグラウンド化、設定変更時の文字サイズ反映、破棄時のプロセス終了、通知の権限要求・アラーム・receiver、セッションCookieをKeystoreで暗号化して保存する `AhdSessionStore`（形式と判断は `AhdSessionFormat`）、サーバーの受信箱を読む `AhdInbox` とそのジョブ（receiverとジョブの設定は `android/AndroidManifest.application.xml` を生成manifestへ挿入） |
+| `dashboard-ui/src/pages/challenges.rs` | ダッシュボードの「高難度コンテンツ」欄：モードごとの到達状況とリセットまでの残り時間（共通の `Clock` で毎秒更新）、未挑戦・未開放・取得失敗の表示 |
 | `src/dashboard/games/summary.rs` | 上流ゲーム状態から画面用の要約への写像 |
 
 ### バックエンドモジュール
@@ -208,10 +210,10 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | `src/dashboard/http/` | ルート、DTO、Cookie・Bearer APIトークン、Origin・キャッシュの境界、UI配信、ヘルスチェック・メトリクス、報酬・削除のバックグラウンド処理の起動と保守 |
 | `src/dashboard/db/` | `entities/` に保存モデル、`migrations/` にスキーマ変更 |
 | `src/dashboard/hoyolab/` | Cookieの解析・暗号化保存・削除・鍵の再暗号化（`rekey`）、連携の検証・同期、ユーザー単位の操作ロック |
-| `src/dashboard/games/` | ゲームUID一覧・表示設定・状態キャッシュ |
+| `src/dashboard/games/` | ゲームUID一覧・表示設定・状態キャッシュ（`service.rs`）、高難度コンテンツの要約とそのキャッシュ（`challenges.rs`、上流JSONからの防御的な読み取りは `challenge_summary.rs`） |
 | `src/dashboard/notifications/` | ユーザー・管理者のWebhookの設定、条件評価（上限・派遣完了・デイリー・週間など）、送信、重複排除、Androidアプリの端末登録と受信箱（`app.rs`） |
 | `src/dashboard/rewards/` | 報酬設定・スケジュール・実行（定時と遅延実行の区別）、送信不確定時のガード、今月の報酬一覧のキャッシュ、ユーザー削除前の報酬確認 |
-| `src/hoyolab/` | HoYoLAB上流APIの型付きクライアント（ダッシュボードの方針は含めない） |
+| `src/hoyolab/` | HoYoLAB上流APIの型付きクライアント（ダッシュボードの方針は含めない）。高難度コンテンツのGET（`challenge.rs`：モード・パス・クエリ）は未検証の形式のためJSONのまま返す |
 
 ## HoYoLAB連携
 
@@ -252,7 +254,7 @@ webのタグ `web-vX.Y.Z`（ルート `Cargo.toml` の版）のpushで `.forgejo
 
 - 設定の「認証・セキュリティ」で発行・一覧・失効します（1ユーザー10個まで）。平文（`ahd_` ＋16進64文字）は発行時に1回だけ表示し、サーバーにはSHA-256だけを保存します。
 - `Authorization: Bearer ahd_…` を付けて呼びます。Cookieを伴わないBearerの要求には `Origin` は不要です。トークンとセッションCookieを同時に送った要求は401です。
-- スコープ `read` で使えるのは `GET /me`、`/server-settings`、`/me/hoyolab`、`/game-accounts`、`/game-accounts/{id}/status`、`/reward-settings`、`/reward-runs` です。`run` はこれに加えて `POST /reward-settings/{id}/run` を使えます。それ以外（トークン管理を含む）はセッション専用で、トークンでは403になります。
+- スコープ `read` で使えるのは `GET /me`、`/server-settings`、`/me/hoyolab`、`/game-accounts`、`/game-accounts/{id}/status`、`/game-accounts/{id}/challenges`、`/reward-settings`、`/reward-runs` です。`run` はこれに加えて `POST /reward-settings/{id}/run` を使えます。それ以外（トークン管理を含む）はセッション専用で、トークンでは403になります。
 - 管理者によるパスワード再発行・無効化・削除要求で、そのユーザーのトークンはすべて失効します。本人のパスワード変更では失効しません。
 - 初回／復旧後のパスワード変更前は操作が制限されます。ゲーム・報酬機能にはHoYoLAB連携検証の完了も必要です。
 
@@ -266,7 +268,7 @@ webのタグ `web-vX.Y.Z`（ルート `Cargo.toml` の版）のpushで `.forgejo
 | セッション | `GET /me/sessions`、`DELETE /me/sessions/{id}`、`POST /me/sessions/revoke-others` |
 | APIトークン | `GET`・`POST /me/api-tokens`、`DELETE /me/api-tokens/{id}`（セッション専用） |
 | HoYoLAB | `GET /me/hoyolab`、`PUT`・`DELETE /me/hoyolab/cookie`、`POST /me/hoyolab/verify`・`/me/hoyolab/sync` |
-| ゲーム | `GET /game-accounts`、`PATCH /game-accounts/{id}`、`GET /game-accounts/{id}/status` |
+| ゲーム | `GET /game-accounts`、`PATCH /game-accounts/{id}`、`GET /game-accounts/{id}/status`、`GET /game-accounts/{id}/challenges` |
 | 報酬 | `GET /reward-settings`、`PATCH /reward-settings/{id}`、`POST /reward-settings/{id}/run`、`GET /reward-runs` |
 | 通知 | `GET/PUT /me/notifications`、`POST /me/notifications/test`、`POST /me/notifications/app-devices`、`DELETE /me/notifications/app-devices/{id}`、`GET /me/notifications/app-devices/{id}/inbox`、`GET/PUT /admin/notifications`、`POST /admin/notifications/test` |
 | ユーザー管理 | `GET /admin/users`（連携状態・自動受け取り数・最終ログインを含む）、`POST /admin/users`、`PATCH /admin/users/{id}`（`active` または `is_admin`）、`PUT /admin/users/{id}/temporary-password`、`GET /admin/audit` |
@@ -274,6 +276,7 @@ webのタグ `web-vX.Y.Z`（ルート `Cargo.toml` の版）のpushで `.forgejo
 | サーバー設定 | `GET /server-settings` |
 
 - ゲーム種別は `genshin`／`starrail`。状態レスポンスの `stale` と取得日時を確認してください。
+- `GET /game-accounts/{id}/challenges` は高難度コンテンツの現在の期間の要約です（原神：深境螺旋・幻想シアター・幽境の激戦、スターレイル：混沌の記憶・虚構叙事・末日の幻影・異相の仲裁）。モードごとに期間名・開始／終了日時・星・到達階層・幕・難易度・最速クリア秒数・戦闘回数を返し、キャラクターごとの戦績は返しません。上流のフィールド名は実応答で未検証のため、値はすべてnullになり得て、nullは「不明」を意味します（未開放や非公開とはみなしません）。一部のモードだけ失敗した場合はそのモードの `error_code` に理由が入ります。
 - 報酬操作の `{id}` は報酬設定のUUIDで、ゲームUIDではありません。検証・同期・手動受け取りのPOSTには `{}` を送ります。
 - 画面の手動受け取りはダッシュボードの「ログインボーナスを今すぐ受け取る」1つにまとめ、本日分が未受け取りのゲームだけを実行します。APIは報酬設定ごとの非同期 `202` 受付です。結果は履歴で確認します。不確定な送信結果は再POSTせず、追加認証が必要ならHoYoLAB側で対応してください。
 - `POST /auth/passkey/options` は `{"username":"..."}` でユーザー名指定、`{}` でユーザー名なしのdiscoverableログインを開始します。ユーザー名指定では存在しないユーザーやpasskey未登録のユーザーにも同じ形の応答を返し、ログインは `verify` で401になります（アカウントの有無を明かさないため）。ユーザー名なしの開始はアカウント検索・試行枠の消費をせず、verifyでuserHandleから特定したユーザーの枠を署名検証前に消費します。新規登録はresident keyをpreferredで要求します。

@@ -1,6 +1,7 @@
 //! Typed upstream boundary; the same business workflows are tested with a local mock.
 use super::credentials::Credentials;
 use attoshoyodashboard::{
+    challenge::Challenge,
     game::{GameKind, Genshin, Starrail},
     hoyolab::{HoyolabClient, RecordAccount, Result},
     models::account::Account,
@@ -31,6 +32,13 @@ pub(in crate::dashboard) trait Gateway: Send + Sync + 'static {
         &self,
         cookie: &Credentials,
         game: GameKind,
+        account: &RecordAccount,
+    ) -> impl Future<Output = Result<Value>> + Send;
+    /// The current period of one endgame mode, as raw upstream `data` (GET only).
+    fn challenge(
+        &self,
+        cookie: &Credentials,
+        challenge: Challenge,
         account: &RecordAccount,
     ) -> impl Future<Output = Result<Value>> + Send;
     fn daily(
@@ -79,6 +87,16 @@ impl Gateway for LiveGateway {
             }
         }
         .map_err(|_| "typed note serialization failed".into())
+    }
+    async fn challenge(
+        &self,
+        cookie: &Credentials,
+        challenge: Challenge,
+        account: &RecordAccount,
+    ) -> Result<Value> {
+        HoyolabClient::new(cookie.as_str())?
+            .challenge(challenge, account)
+            .await
     }
     async fn daily(&self, cookie: &Credentials, game: GameKind) -> Result<DailyState> {
         let client = HoyolabClient::new(cookie.as_str())?;

@@ -1,5 +1,6 @@
 //! HoYoLAB game configuration, response models, and API client.
 
+pub mod challenge;
 mod client;
 mod error;
 pub mod game;
