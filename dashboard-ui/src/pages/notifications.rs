@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 /// Personal notices in the order the settings page lists them, with their label keys.
-const PERSONAL_EVENTS: [(&str, &str); 11] = [
+pub(super) const PERSONAL_EVENTS: [(&str, &str); 11] = [
     ("reward_failed", "notifications.event_reward_failed"),
     ("reward_claimed", "notifications.event_reward_claimed"),
     ("cookie_invalid", "notifications.event_cookie_invalid"),

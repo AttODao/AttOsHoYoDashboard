@@ -141,6 +141,16 @@ flowchart TD
 - 画面の手動受け取りはダッシュボードの1つの操作にまとめ、本日分が未受け取りで実行可能なゲームだけに報酬設定ごとのPOSTを1回ずつ送る。
 - 手動runとschedulerは同じworkerを使用する。追加認証要求はaction_required、不確定な送信結果はunknownとして停止し、無条件にPOSTを再送しない。
 
+## 7.1. 設定の移行（書き出し・読み込み）
+
+- 利用者は自分の設定をJSONファイル（`"format": "ahd-settings"`, `"version": 1`）として書き出し、別のinstanceや作り直したinstanceで読み込める。web版の設定タブ「設定の移行」だけで扱い、アプリには出さない（WebViewにファイル選択とダウンロードの処理がないため）。
+- 含めるもの: ログインボーナスの自動受け取り（gameごとのON/OFF・時刻）、ゲームUIDごとの表示、通知（Webhookとアプリ受信箱の種類ごとの選択、形式、言語、樹脂の警告時間、デイリー・週間のリマインダー時刻）、Webhookが設定済みかどうかのflag。言語・テーマはブラウザに保存する設定でサーバーにないため含めない。
+- 含めないもの: HoYoLAB Cookie、Webhook URL、パスワード、パスキー、セッション、APIトークン。読み込みはWebhook URLを変更しない。書き出し元にWebhookがあり読み込み先にない場合は、設定し直すよう案内する。
+- 読み込みは厳密に検証する。未知の項目・型違い・範囲外・重複・件数超過（報酬2件、UID 64件）・未対応の形式や版は、項目のパス（例 `rewards[0].local_time`）と種類（`missing`・`type`・`unknown`・`invalid`・`unsupported`・`duplicate`・`too_many`）の一覧（最大50件）で示し、何も反映しない。ファイルの上限はAPIのbody上限と同じ16KiB。
+- 反映の前にプレビュー（`POST /me/settings/import/preview`）で変わる設定・反映しない項目を示す。反映（`POST /me/settings/import`）は同じ計画を1トランザクションで書き、結果の一覧を返す。通知の種類のうちファイルにないものは現在の選択を保つ。
+- 報酬とUIDの表示は検証済みのHoYoLAB連携に属する。連携がない（`not_linked`）、そのgameの報酬がない（`game_not_found`）、そのUIDがない（`uid_not_found`、UIDは作らない）、HoYoLABでの対応が必要な報酬をONにする（`reward_not_ready`）項目は飛ばして理由を示す。時刻・ON/OFFの変更は設定画面と同じく保留中の定時runを止め、次の未来tickを待つ。
+- セッション専用で、APIトークンでは使えない（403）。変更要求には他の操作と同じく `Origin` が必要。
+
 ## 8. Web API契約
 
 OpenAPI 3.1 の正本は [`../dashboard-api.json`](../dashboard-api.json)。現在のAPIはWeb UI用であり、PATや外部クライアント認証ではない。実装済みrouteだけを載せ、HoYoLAB上流の `/record` や `/daily` などの架空proxy routeは作らない。
@@ -154,6 +164,7 @@ OpenAPI 3.1 の正本は [`../dashboard-api.json`](../dashboard-api.json)。現�
 - HoYoLAB: status/cookie/verify/sync
 - games: game accounts list/visibility/status/challenges/calendar
 - rewards: settings/update/manual run/history
+- settings transfer: `GET /me/settings/export`、`POST /me/settings/import/preview`・`/me/settings/import`（セッション専用。`ahd-settings` 版1）
 
 ## 9. 対象外
 

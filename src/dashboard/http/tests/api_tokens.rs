@@ -202,6 +202,17 @@ async fn tokens_cannot_reach_session_only_routes() {
         ("GET", "/api/v1/admin/users".to_owned(), None),
         ("GET", "/api/v1/me/sessions".to_owned(), None),
         ("POST", "/api/v1/auth/logout".to_owned(), None),
+        ("GET", "/api/v1/me/settings/export".to_owned(), None),
+        (
+            "POST",
+            "/api/v1/me/settings/import/preview".to_owned(),
+            Some(json!({})),
+        ),
+        (
+            "POST",
+            "/api/v1/me/settings/import".to_owned(),
+            Some(json!({})),
+        ),
     ] {
         error(
             call(&app, bearer(method, &path, &run, body)).await,

@@ -41,6 +41,7 @@ pub(super) enum Page {
     Rewards,
     Security,
     Notifications,
+    Transfer,
     Admin,
     Delete,
     Docs,
@@ -295,10 +296,14 @@ impl AppState {
 }
 
 impl Page {
-    /// The Android app leaves administration, the API docs and account deletion to the
-    /// web version; it never routes to them.
+    /// The Android app leaves administration, the API docs, the settings file (it needs the
+    /// browser's file picker and download) and account deletion to the web version; it never
+    /// routes to them.
     pub(super) fn web_only(self) -> bool {
-        matches!(self, Page::Admin | Page::Docs | Page::Delete)
+        matches!(
+            self,
+            Page::Admin | Page::Docs | Page::Transfer | Page::Delete
+        )
     }
 }
 
@@ -517,7 +522,7 @@ mod tests {
 
     #[test]
     fn the_app_never_routes_to_web_only_pages() {
-        for page in [Page::Admin, Page::Docs, Page::Delete] {
+        for page in [Page::Admin, Page::Docs, Page::Transfer, Page::Delete] {
             assert!(reachable(page, true) == Page::Dashboard);
             assert!(reachable(page, false) == page);
         }
