@@ -10,6 +10,14 @@ as "AHD" with the dashboard icon.
 `build-android` inserts `AndroidManifest.application.xml` into the generated manifest
 so alarms and boot/package-update restoration work in the final APK.
 
+`MainActivity.kt` also holds `AhdSessionStore`, which seals the Rust client's session
+cookie jar with an Android Keystore AES-GCM key (`files/session-cookies.enc`) and migrates
+the plain `session-cookies.json` of earlier versions; its Android-free format and decisions
+(`AhdSessionFormat`) are tested in `test/AhdSessionFormatTest.kt`. `res/xml/ahd_backup_rules.xml`
+and `res/xml/ahd_data_extraction_rules.xml` keep both files out of backups and device
+transfers; `build-android` adds them to the manifest's `<application>`
+(`docs/android-changes.md` 5.7).
+
 The PNGs are generated from `../assets/dashboard-icon.png` (legacy icons on the app
 canvas color, adaptive-icon foregrounds at 108dp with the star inside the safe zone):
 

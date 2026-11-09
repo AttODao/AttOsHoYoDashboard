@@ -23,6 +23,14 @@ pub(crate) struct Jar {
 }
 
 impl Jar {
+    /// The jar the session store returned: its JSON (`{}` when signed out or when the sealed
+    /// file could not be decrypted), or None when the store failed for now (the Keystore did
+    /// not answer). None must not start a signed-out jar, or the next request would end the
+    /// session; the caller fails the request like a network error and asks again.
+    pub(crate) fn from_store(saved: Option<&str>) -> Option<Self> {
+        saved.map(|text| Self::from_json(Some(text)))
+    }
+
     /// A saved jar; anything unreadable starts empty (signed out).
     pub(crate) fn from_json(text: Option<&str>) -> Self {
         let cookies = text
@@ -106,6 +114,16 @@ mod tests {
         assert!(Jar::from_json(Some(&saved)) == jar);
         assert!(Jar::from_json(Some("{")) == Jar::default());
         assert!(Jar::from_json(None) == Jar::default());
+    }
+
+    #[test]
+    fn store_failures_are_not_a_sign_out() {
+        assert!(Jar::from_store(None).is_none());
+        assert!(Jar::from_store(Some("{}")) == Some(Jar::default()));
+        let mut jar = Jar::default();
+        jar.apply("attos_session=synthetic");
+        let saved = jar.to_json().unwrap();
+        assert!(Jar::from_store(Some(&saved)) == Some(jar));
     }
 
     #[test]
