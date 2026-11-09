@@ -3,14 +3,14 @@ mod identity;
 use rand::distr::{Alphabetic, SampleString};
 use reqwest::{
     Client,
-    header::{COOKIE, HeaderValue, USER_AGENT},
+    header::{CONTENT_TYPE, COOKIE, HeaderValue, USER_AGENT},
 };
 use serde::Deserialize;
 
 use super::{
     challenge::Challenge,
     error::{Error, Result},
-    game::Game as GameSpec,
+    game::{Game as GameSpec, GameKind, Genshin, Starrail},
     models::{ApiResponse, account::Account},
 };
 use serde_json::value::RawValue;
@@ -100,6 +100,43 @@ impl HoyolabClient {
         parse(&data)
     }
 
+    /// The event and banner calendar of the account as untyped JSON (`data` of the
+    /// envelope). Genshin's `act_calendar` is a POST whose body carries only the
+    /// common `role_id`/`server`, like genshin.py's `get_genshin_event_calendar`: a
+    /// read-only query, not an account change. Star Rail's `get_act_calender` (the
+    /// upstream spelling) is a GET.
+    pub async fn event_calendar(
+        &self,
+        game: GameKind,
+        account: &RecordAccount,
+    ) -> Result<serde_json::Value> {
+        let data = match game {
+            GameKind::Genshin(_) => {
+                validate_record_account(account)?;
+                let role_id: u64 = account
+                    .uid
+                    .parse()
+                    .map_err(|_| "ゲームUIDまたはserverが不正です")?;
+                let body = serde_json::json!({"role_id": role_id, "server": account.server});
+                let request = self
+                    .prepare(
+                        &format!("{}/act_calendar", Genshin::RECORD_BASE),
+                        &[],
+                        None,
+                        reqwest::Method::POST,
+                    )?
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(body.to_string());
+                send(request).await?
+            }
+            GameKind::Starrail(_) => {
+                self.record_data(Starrail::RECORD_BASE, account, "get_act_calender", &[])
+                    .await?
+            }
+        };
+        parse(&data)
+    }
+
     pub async fn daily_info<G: GameSpec>(&self, game: G) -> Result<G::DailyInfo> {
         self.daily(game, "info", reqwest::Method::GET).await
     }
@@ -133,12 +170,7 @@ impl HoyolabClient {
         endpoint: &str,
         extra: &[(&str, &str)],
     ) -> Result<Box<RawValue>> {
-        if account.uid.is_empty()
-            || !account.uid.bytes().all(|b| b.is_ascii_digit())
-            || account.server.trim().is_empty()
-        {
-            return Err("ゲームUIDまたはserverが不正です".into());
-        }
+        validate_record_account(account)?;
         let url = format!("{base}/{endpoint}");
         let mut query = vec![
             ("role_id", account.uid.as_str()),
@@ -183,6 +215,16 @@ impl HoyolabClient {
         Ok(prepare_request(&self.http, url, query, sign_game, method)?
             .header(COOKIE, self.cookie.clone()))
     }
+}
+
+fn validate_record_account(account: &RecordAccount) -> Result<()> {
+    if account.uid.is_empty()
+        || !account.uid.bytes().all(|b| b.is_ascii_digit())
+        || account.server.trim().is_empty()
+    {
+        return Err("ゲームUIDまたはserverが不正です".into());
+    }
+    Ok(())
 }
 
 fn build_client(ua: &str) -> Result<Client> {

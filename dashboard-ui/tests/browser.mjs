@@ -26,7 +26,7 @@ const appLoginChallenge='E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
 const user={id:uid(1),username:'synthetic-admin',is_admin:true,active:true,must_change_password:true};
 const other={...user,id:uid(9),username:'synthetic-other',is_admin:false,active:false,must_change_password:false};
 let runPlan=['queued','running','success'];
-let verified=false,cookieSaved=false,notificationSaves=[],statusMode=null,challengeMode=null,runProgress=[],passkeyDeletes=0,passkeys=[],credentialId,failLogout=false,allowLogin,allowSettings,expirePasswordSession=false,sessionExpired=false;
+let verified=false,cookieSaved=false,notificationSaves=[],statusMode=null,challengeMode=null,calendarMode=null,runProgress=[],passkeyDeletes=0,passkeys=[],credentialId,failLogout=false,allowLogin,allowSettings,expirePasswordSession=false,sessionExpired=false;
 const createdUsers=[];
 const secondAdmin={...user,id:uid(14),username:'synthetic-second-admin',must_change_password:false};
 let failCreate=false,adminDeletes=0,loginFailureStatus=0,failPatch=false,passkeyHold=null,releasePasskeys=()=>{},adminPatchHold=null,releaseAdminPatch=()=>{};
@@ -35,6 +35,7 @@ const settingsImports=[];
 const settingsExport={format:'ahd-settings',version:1,exported_at:'2026-11-09T01:02:03Z',rewards:[{game_kind:'genshin',enabled:true,local_time:'06:00'}],game_accounts:[{game_kind:'genshin',game_uid:'600000005',visible:true}],notifications:{webhook_configured:true,webhook_format:'discord',language:'ja',events:{reward_failed:true},app_events:{reward_failed:true},resin_warn_hours:2,daily_reminder_time:'21:00',weekly_reminder_time:'15:00'}};
 const settingsReport={changes:[{section:'rewards',game_kind:'genshin',setting:'local_time',from:'06:00',to:'07:30'},{section:'game_accounts',game_kind:'genshin',game_uid:'600000005',setting:'visible',from:true,to:false},{section:'notifications',setting:'events.reward_claimed',from:false,to:true},{section:'notifications',setting:'resin_warn_hours',from:2,to:6}],skipped:[{section:'game_accounts',game_kind:'starrail',game_uid:'900000001',reason:'uid_not_found'}],webhook:{in_file:true,configured:false}};
 const avatarIcon='https://act-webstatic.hoyoverse.com/game_record/genshin/character_side_icon/synthetic.png';
+const bannerIcon='https://upload-os-bbs.hoyolab.com/game_record/calendar/synthetic-five.png';
 const itemIcon='https://act-upload.hoyolab.com/game_record/hkrpg/item_icon/synthetic.png';
 const awardIcon='https://fastcdn.hoyoverse.com/static-resource-v2/synthetic-award.png';
 const validGenerated=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{24}$/.test(value);
@@ -167,6 +168,23 @@ const server=http.createServer(async(req,res)=>{
      :[mode('memory_of_chaos',{stars:30,max_floor:'Synthetic floor 12',name:'Synthetic period'}),mode('pure_fiction',{has_data:null,ends_at:null,error_code:'network'}),mode('apocalyptic_shadow',{has_data:false}),mode('anomaly_arbitration',{unlocked:false,has_data:null,ends_at:new Date(Date.now()-60e3).toISOString()})];
     return json(res,{game_kind,game_uid,region,visible,detected,modes,fetched_at:new Date(Date.now()-20*60e3).toISOString(),error_code:null,error_at:null,stale:false});
    }
+   const calendarAccount=accounts.find(a=>p===`/api/v1/game-accounts/${a.id}/calendar`);
+   if(calendarAccount){
+    assert.equal(req.method,'GET');assert.ok(calendarAccount.visible&&calendarAccount.detected);
+    const {game_kind,game_uid,region,visible,detected}=calendarAccount;
+    if(calendarMode==='missing'){res.writeHead(404);return res.end();}
+    if(calendarMode==='failed')return json(res,{game_kind,game_uid,region,visible,detected,items:null,fetched_at:null,error_code:'upstream:10102',error_at:new Date().toISOString(),stale:true});
+    // Day-scale offsets half an hour below a whole hour: the countdowns stay put for the whole test.
+    const at=seconds=>new Date(Date.now()+seconds*1000).toISOString();
+    const item=extra=>({kind:'event',id:null,name:null,version:null,starts_at:null,ends_at:null,finished:null,locked:null,progress:null,progress_total:null,featured:[],...extra});
+    const items=game_kind==='genshin'?[
+     item({kind:'event',name:'Synthetic Event',starts_at:at(-86400),ends_at:at(86400+5*3600+30*60),finished:false,progress:2,progress_total:3}),
+     item({kind:'character_banner',id:1,name:'Synthetic Wish',version:'6.2',starts_at:at(-86400),ends_at:at(2*86400+2*3600+30*60),featured:[{name:'Synthetic Five',rarity:5,icon:bannerIcon},{name:'Synthetic Four',rarity:4,icon:null},{name:'Synthetic Four B',rarity:4,icon:null}]}),
+     item({kind:'weapon_banner',starts_at:at(3*86400+30*60),ends_at:at(20*86400)}),
+     item({kind:'event',name:'Synthetic Ended',ends_at:at(-60),finished:true})
+    ]:[];
+    return json(res,{game_kind,game_uid,region,visible,detected,items,fetched_at:new Date(Date.now()-20*60e3).toISOString(),error_code:null,error_at:null,stale:false});
+   }
    const account=accounts.find(a=>p===`/api/v1/game-accounts/${a.id}/status`);
    if(account&&statusMode==='failed')return json(res,{...account,data:null,fetched_at:null,error_code:'network',error_at:new Date().toISOString(),stale:true});
    // 7h 12m minus a few seconds: the countdown rounds up to the displayed minute.
@@ -204,7 +222,8 @@ try{
  await context.addInitScript(()=>{if(!localStorage.getItem('ahd-language'))localStorage.setItem('ahd-language','en');});
  await context.route('**/*',route=>{
   const url=route.request().url();
-  if(url===avatarIcon||url===itemIcon||url===awardIcon)return route.fulfill({status:200,contentType:'image/png',body:fs.readFileSync(path.join(root,'dashboard-ui/assets/favicon.png'))});
+  // An icon request can be cancelled while it waits (its image removed or the page moving on): ignore that.
+  if(url===avatarIcon||url===itemIcon||url===awardIcon||url===bannerIcon)return route.fulfill({status:200,contentType:'image/png',body:fs.readFileSync(path.join(root,'dashboard-ui/assets/favicon.png'))}).catch(error=>{if(!/already handled/.test(error.message))throw error;});
   return new URL(url).origin===origin?route.continue():route.abort();
  });
  page=await context.newPage();
@@ -501,6 +520,37 @@ try{
  assert.match(await genshinChallenges.locator('.freshness').innerText(),/^Updated 2\d min ago$/);
  assert.equal(await genshinChallenges.locator('.warning').count(),0);
  assert.ok(!(await starrailChallenges.innerText()).includes('network'),'raw per-mode codes stay out of the card');
+ // Event calendar: collapsed to one summary line between the endgame summary and the login bonus.
+ for(const n of [3,4])assert.equal(counts.get('/api/v1/game-accounts/'+uid(n)+'/calendar')||0,0,'hidden or undetected UIDs never load the calendar');
+ const genshinCalendar=genshin.locator('section.calendar-section');
+ await genshinCalendar.getByRole('heading',{name:'Events & wishes',exact:true,level:3}).waitFor();
+ assert.ok(await genshin.evaluate(panel=>{const c=panel.querySelector('.challenge-section'),e=panel.querySelector('.calendar-section'),b=panel.querySelector('.bonus-section');return !!(c.compareDocumentPosition(e)&Node.DOCUMENT_POSITION_FOLLOWING)&&!!(e.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING);}),'the calendar sits between the endgame summary and the login bonus');
+ const calendarSummary=genshinCalendar.locator('details.calendar-details > summary');
+ assert.equal(await calendarSummary.innerText(),'2 running · 1 upcoming · next ends in 1d 6h');
+ assert.equal(await genshinCalendar.locator('details.calendar-details').getAttribute('open'),null,'the calendar starts collapsed');
+ assert.equal(await genshinCalendar.locator('li.calendar-item').first().isVisible(),false);
+ await calendarSummary.focus();await page.keyboard.press('Enter');
+ await genshinCalendar.locator('li.calendar-item').first().waitFor();
+ const calendarGroups=await genshinCalendar.locator('.calendar-group').evaluateAll(groups=>groups.map(group=>[group.dataset.group,group.querySelector('h4').textContent,[...group.querySelectorAll('li.calendar-item')].map(row=>[row.dataset.kind,row.querySelector('.calendar-name').textContent,row.querySelector('.calendar-left')?.textContent??null,row.querySelector('.calendar-featured')?.textContent??null,row.querySelector('.calendar-status')?.textContent??null])]));
+ assert.deepEqual(calendarGroups,[
+  ['banners','Wishes',[['character_banner','Synthetic Wish','2d 3h left','Synthetic Five · Synthetic Four · Synthetic Four B',null]]],
+  ['events','Events',[['event','Synthetic Event','1d 6h left',null,'Progress 2/3']]],
+  ['upcoming','Upcoming',[['weapon_banner','Weapon Event Wish','Starts in 3d 1h',null,null]]]]);
+ assert.ok(!(await genshinCalendar.innerText()).includes('Synthetic Ended'),'items that have ended are not shown');
+ const fiveIcon=genshinCalendar.locator('img.featured-icon');
+ assert.equal(await fiveIcon.getAttribute('src'),bannerIcon);
+ assert.equal(await fiveIcon.getAttribute('referrerpolicy'),'no-referrer');
+ await fiveIcon.scrollIntoViewIfNeeded();
+ await page.waitForFunction(()=>[...document.querySelectorAll('.calendar-section img')].every(image=>image.complete&&image.naturalWidth>0),'official-host banner icons load under production CSP');
+ await fiveIcon.dispatchEvent('error');
+ await fiveIcon.waitFor({state:'detached'});
+ assert.equal(await genshinCalendar.locator('.featured').first().innerText(),'Synthetic Five','a failed icon keeps the name');
+ assert.match(await genshinCalendar.locator('time.calendar-left').first().getAttribute('title'),/^\d\d\/\d\d \d\d:\d\d JST$/);
+ assert.match(await genshinCalendar.locator('.freshness').innerText(),/^Updated 2\d min ago$/);
+ await calendarSummary.click();
+ assert.equal(await genshinCalendar.locator('details.calendar-details').getAttribute('open'),null,'the summary closes the details again');
+ await starrail.locator('section.calendar-section').getByText('Nothing is running or announced.',{exact:true}).waitFor();
+ assert.equal(await starrail.locator('section.calendar-section details').count(),0,'an empty calendar has nothing to expand');
  await page.locator('#selected-genshin').selectOption(uid(6));
  await genshin.locator('.resource strong').getByText('31',{exact:true}).waitFor();
  assert.equal(await genshin.locator('time.recovery-at').count(),0,'invalid estimate is not rendered as a date');
@@ -526,6 +576,14 @@ try{
  await starrail.locator('section.challenge-section').waitFor({state:'detached'});
  assert.equal(await starrail.getByText('Could not refresh the records',{exact:false}).count(),0,'a missing endpoint is not reported as a failure');
  challengeMode=null;
+ // A failed first calendar says only why; a missing endpoint hides the section without an error.
+ calendarMode='failed';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
+ await starrail.locator('section.calendar-section').getByText('Could not load the calendar (The HoYoLAB battle record is private)',{exact:true}).waitFor();
+ assert.equal(await starrail.locator('li.calendar-item').count(),0,'no calendar is invented after a failed fetch');
+ calendarMode='missing';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
+ await starrail.locator('section.calendar-section').waitFor({state:'detached'});
+ assert.equal(await starrail.getByText('Could not refresh the calendar',{exact:false}).count(),0,'a missing endpoint is not reported as a failure');
+ calendarMode=null;
  statusMode='recovering';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
  await starrail.locator('.resource strong').getByText('150',{exact:true}).waitFor();
  // The estimate is 7h 12m 4s away, so the countdown turns from 13m to 12m by the clock, without a refetch.

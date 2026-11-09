@@ -126,22 +126,35 @@ async fn bearer_reads_need_no_origin_and_record_last_use() {
 }
 
 #[tokio::test]
-async fn both_scopes_reach_the_challenge_summary_read() {
+async fn both_scopes_reach_the_challenge_summary_and_calendar_reads() {
     let db = TestDatabase::new().await;
     let (accounts, admin) = db.ready_admin().await;
     let app = app(accounts);
     let session = cookie(&app, admin.user.id).await;
-    let path = format!("/api/v1/game-accounts/{}/challenges", Uuid::new_v4());
+    let id = Uuid::new_v4();
     for scope in ["read", "run"] {
         let (_, token) = issue(&app, &session, scope).await;
-        // The token passes the boundary and the scope check and reaches the handler,
-        // which still applies the setup gate (no verified HoYoLAB link here).
-        error(
-            call(&app, bearer("GET", &path, &token, None)).await,
-            StatusCode::FORBIDDEN,
-            "initial_setup_required",
-        )
-        .await;
+        for path in [
+            format!("/api/v1/game-accounts/{id}/challenges"),
+            format!("/api/v1/game-accounts/{id}/calendar"),
+        ] {
+            // The token passes the boundary and the scope check and reaches the
+            // handler, which still applies the setup gate (no verified HoYoLAB link).
+            error(
+                call(&app, bearer("GET", &path, &token, None)).await,
+                StatusCode::FORBIDDEN,
+                "initial_setup_required",
+            )
+            .await;
+            // Reads only: other methods on the same path stay closed to tokens.
+            let status = call(&app, bearer("POST", &path, &token, Some(json!({}))))
+                .await
+                .status();
+            assert!(
+                [StatusCode::FORBIDDEN, StatusCode::METHOD_NOT_ALLOWED].contains(&status),
+                "{status}"
+            );
+        }
     }
 }
 

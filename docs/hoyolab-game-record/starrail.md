@@ -252,3 +252,5 @@ https://bbs-api-os.hoyolab.com/game_record/hkrpg/api
 ```
 
 キャラクター跳躍・光円錐跳躍には対象アイテム、期間、バージョンが入ります。イベント・挑戦には名称、説明、進行度、報酬、期間、状態が入ります。
+
+genshin.pyのモデル（`HSREventCalendar`）では、期間は`time_info`の`start_ts`／`end_ts`（Unix秒）、跳躍は`name`・`version`・`avatar_list[]`（`item_name`・`icon_url`・`rarity`）・`equip_list[]`（`item_name`・`item_url`・`rarity`）、イベントは`act_type`・`act_time_type`（`ActTimeTypeLong`は模擬宇宙などの常設）・`act_status`（`…Unopened`は未開放）・`current_progress`／`total_progress`・`all_finished`を持ちます。名前には`\n`の文字列が入ることがあります。いずれも実応答では未検証です。

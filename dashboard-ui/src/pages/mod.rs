@@ -6,6 +6,7 @@ pub(super) mod app_nav;
 #[cfg(feature = "mobile")]
 pub(super) mod app_update;
 pub(super) mod auth;
+mod calendar;
 mod challenges;
 mod common;
 mod dashboard;

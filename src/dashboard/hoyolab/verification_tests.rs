@@ -77,6 +77,14 @@ impl Gateway for Mock {
     ) -> UpstreamResult<Value> {
         panic!("unexpected challenge request")
     }
+    async fn calendar(
+        &self,
+        _: &Credentials,
+        _: GameKind,
+        _: &RecordAccount,
+    ) -> UpstreamResult<Value> {
+        panic!("unexpected calendar request")
+    }
     async fn daily(&self, _: &Credentials, _: GameKind) -> UpstreamResult<DailyState> {
         panic!("unexpected daily request")
     }

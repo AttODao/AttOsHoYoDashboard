@@ -1,9 +1,9 @@
 use super::actions::spawn_root;
 use super::data::load_page_data;
 use crate::models::{
-    ApiTokenView, AuditEntry, CookieStatus, GameAccount, GameChallenges, GameStatus, MeView,
-    NotificationChannelView, PasskeyView, PersonalNotificationView, RewardRun, RewardSetting,
-    ServerSettings, SessionView, UserView,
+    ApiTokenView, AuditEntry, CookieStatus, GameAccount, GameCalendar, GameChallenges, GameStatus,
+    MeView, NotificationChannelView, PasskeyView, PersonalNotificationView, RewardRun,
+    RewardSetting, ServerSettings, SessionView, UserView,
 };
 use dioxus::prelude::*;
 use std::collections::BTreeMap;
@@ -26,6 +26,11 @@ pub(super) struct GameSelection {
     /// The server has no summary for this UID (404, e.g. a server older than the
     /// endpoint, which an app release may talk to): the section stays hidden.
     pub(super) challenges_unavailable: bool,
+    /// The event calendar likewise (a server older than the endpoint answers 404).
+    pub(super) calendar_request: u64,
+    pub(super) calendar_loading: bool,
+    pub(super) calendar_error: Option<&'static str>,
+    pub(super) calendar_unavailable: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -88,6 +93,12 @@ pub(super) struct AccountChallengesEntry {
 }
 
 #[derive(Clone, PartialEq)]
+pub(super) struct AccountCalendarEntry {
+    pub(super) id: Uuid,
+    pub(super) calendar: GameCalendar,
+}
+
+#[derive(Clone, PartialEq)]
 pub(super) struct AppState {
     pub(super) phase: Phase,
     /// Session epoch: changes on bootstrap, sign-out and owner change only.
@@ -110,6 +121,7 @@ pub(super) struct AppState {
     pub(super) dashboard_game: &'static str,
     pub(super) account_statuses: Vec<AccountStatusEntry>,
     pub(super) account_challenges: Vec<AccountChallengesEntry>,
+    pub(super) account_calendars: Vec<AccountCalendarEntry>,
     pub(super) rewards: Vec<RewardSetting>,
     pub(super) rewards_error: Option<String>,
     pub(super) reward_runs: Option<Vec<RewardRun>>,
@@ -155,6 +167,7 @@ impl AppState {
             dashboard_game: DASHBOARD_GAMES[0],
             account_statuses: Vec::new(),
             account_challenges: Vec::new(),
+            account_calendars: Vec::new(),
             rewards: Vec::new(),
             rewards_error: None,
             reward_runs: None,
@@ -224,6 +237,10 @@ impl AppState {
             selection.challenges_loading = false;
             selection.challenges_error = None;
             selection.challenges_unavailable = false;
+            selection.calendar_request = selection.calendar_request.saturating_add(1);
+            selection.calendar_loading = false;
+            selection.calendar_error = None;
+            selection.calendar_unavailable = false;
         }
     }
 
@@ -241,6 +258,8 @@ impl AppState {
             .retain(|entry| selected.contains(&entry.id));
         self.account_challenges
             .retain(|entry| selected.contains(&entry.id));
+        self.account_calendars
+            .retain(|entry| selected.contains(&entry.id));
     }
 
     pub(super) fn clear_owner_data(&mut self) {
@@ -251,6 +270,7 @@ impl AppState {
         self.selected_accounts.clear();
         self.account_statuses.clear();
         self.account_challenges.clear();
+        self.account_calendars.clear();
         self.rewards.clear();
         self.rewards_error = None;
         self.reward_runs = None;
@@ -401,6 +421,21 @@ pub(super) fn upsert_challenges(mut state: Signal<AppState>, id: Uuid, challenge
         write
             .account_challenges
             .push(AccountChallengesEntry { id, challenges });
+    }
+}
+
+pub(super) fn upsert_calendar(mut state: Signal<AppState>, id: Uuid, calendar: GameCalendar) {
+    let mut write = state.write();
+    if let Some(existing) = write
+        .account_calendars
+        .iter_mut()
+        .find(|entry| entry.id == id)
+    {
+        existing.calendar = calendar;
+    } else {
+        write
+            .account_calendars
+            .push(AccountCalendarEntry { id, calendar });
     }
 }
 

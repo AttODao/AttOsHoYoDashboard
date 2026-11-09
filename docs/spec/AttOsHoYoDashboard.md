@@ -109,6 +109,26 @@ flowchart TD
 - APIトークンは `read`・`run` の両スコープで読める（状態と同じ読み取り専用のダッシュボードデータのため）。
 - 「期間の終了が近く未クリア」の通知は対象外（未実装）。
 
+### 6.2 イベントカレンダー
+
+`GET /api/v1/game-accounts/{id}/calendar` は、ゲーム状態と同じ条件（verified link、password changed、所有するvisible/detectedのUIDだけ、sanitized error code、所有者単位の操作ロック、保存前のlink・credential version再確認）で、開催中・開催予定のイベントと祈願／跳躍を返す。
+
+| 原神 | 崩壊：スターレイル |
+|---|---|
+| `POST /act_calendar`（本文は共通の`role_id`・`server`だけ） | `GET /get_act_calender`（`calender`は上流の綴り） |
+| キャラクター・武器・集録の祈願（`avatar_card_pool_list`・`weapon_card_pool_list`・`mixed_card_pool_list`）、イベント（`act_list`） | キャラクター・光円錐の跳躍（`avatar_card_pool_list`・`equip_card_pool_list`）、イベント（`act_list`） |
+
+- `POST /act_calendar` は状態を変えない照会である。`docs/hoyolab-game-record/genshin.md` の一覧で書き込みとされるのは `/character/top` だけで、genshin.pyでもカレンダーの取得関数（`get_genshin_event_calendar`）が共通の`role_id`・`server`だけをPOSTする。それ以外の本文は送らない。
+- `GET /activities`（原神のイベント記録）は使わない。イベントごとにキーと形が違い、カレンダーのイベントと対応付けられない。参加状況はカレンダーの完了（原神`is_finished`、スターレイル`all_finished`）・未開放（スターレイル`act_status`の`…Unopened`）・進捗（スターレイル`current_progress`／`total_progress`、原神の報酬倍増の使用回数）で示す。
+- 項目はkind・ID・名前・バージョン・開始／終了・完了・未開放・進捗・ピックアップ（名前・レアリティ・画像）だけ。説明文・報酬一覧・攻略リンクは読まず保存しない。フィールド名はgenshin.py由来で実応答では未検証。欠けた値・型の違う値は `null`（不明）にし、未開放や未参加を推定しない。
+- 取得時点で終了済みの項目、高難度コンテンツ（`fixed_act_list`・`challenge_list`、§6.1と重複）、常設のモード（`ActTimeTypeLong`）は返さない。開始が取得時刻より後の項目は開催予定として返す（上流が返すときだけ）。
+- 画像は公式画像CDN（CSPの`img-src`と同じhost）のhttps URLだけを残し、UIはRefererなしで読み込む。欠落・読込失敗時も名前の文字は残す。
+- cacheはゲームUIDごとの `game_calendar_cache`（payload version 1、UID削除・ユーザー削除でcascade）。TTLは `CALENDAR_CACHE_TTL_MINUTES`（既定60分、5〜1440）。取得後に開始・終了した項目があればTTL内でも取り直す。失敗時は既存payload/fetched_atを保持し、`STATUS_CACHE_TTL_MINUTES` の間は再取得しない（毎分の読み直しで上流へ問い合わせ続けないため）。
+- 報酬設定が `action_required` のゲームは取得せず、既存のカレンダーを `action_required` 付きで返す。
+- APIトークンは `read`・`run` の両スコープで読める（状態と同じ読み取り専用のダッシュボードデータで、上流でも状態を変えないため）。
+- UIは各ゲームカードの高難度コンテンツの下に置き、見出しと1行の要約（開催中の件数・開催予定の件数・次の終了までの残り）に畳む。開くと祈願／跳躍・イベント・開催予定ごとに、名前・残り時間（共通の`Clock`で毎秒更新）・ピックアップ・イベントの進捗を出す。読み込み中・取得失敗・空の状態を区別する。
+- 「終了間近の未完了イベント」の通知は対象外（未実装）。
+
 ## 7. ログインボーナス
 
 - 設定単位は HoYoLABアカウント × game。既定OFF、既定local time `06:00`、server共通固定offset（既定 `+09:00`）。ユーザー別TZ/DSTはない。
@@ -142,7 +162,7 @@ OpenAPI 3.1 の正本は [`../dashboard-api.json`](../dashboard-api.json)。現�
 - me: `/api/v1/me`, password, passkeys, app-login approval, deletion
 - admin: user list/create/active/reset/delete
 - HoYoLAB: status/cookie/verify/sync
-- games: game accounts list/visibility/status/challenges
+- games: game accounts list/visibility/status/challenges/calendar
 - rewards: settings/update/manual run/history
 - settings transfer: `GET /me/settings/export`、`POST /me/settings/import/preview`・`/me/settings/import`（セッション専用。`ahd-settings` 版1）
 

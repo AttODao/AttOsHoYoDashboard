@@ -1,9 +1,19 @@
-//! User-owned game account selection, status and endgame challenge cache policy.
+//! User-owned game account selection, status, endgame challenge and event calendar
+//! cache policy.
+mod calendar;
+mod calendar_summary;
 mod challenge_summary;
 mod challenges;
 pub(in crate::dashboard) mod service;
 mod summary;
+mod upstream_json;
 
+#[cfg(test)]
+#[path = "calendar_summary_tests.rs"]
+mod calendar_summary_tests;
+#[cfg(test)]
+#[path = "calendar_tests.rs"]
+mod calendar_tests;
 #[cfg(test)]
 #[path = "challenge_summary_tests.rs"]
 mod challenge_summary_tests;
@@ -19,5 +29,6 @@ mod service_tests;
 #[path = "summary_tests.rs"]
 mod summary_tests;
 
+pub(in crate::dashboard) use calendar::GameCalendar;
 pub(in crate::dashboard) use challenges::GameChallenges;
 pub(in crate::dashboard) use service::{GameStatus, Games};

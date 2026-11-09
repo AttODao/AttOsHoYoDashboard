@@ -94,6 +94,14 @@ impl Gateway for MockGateway {
     ) -> UpstreamResult<Value> {
         panic!("challenge unused")
     }
+    async fn calendar(
+        &self,
+        _: &Credentials,
+        _: GameKind,
+        _: &RecordAccount,
+    ) -> UpstreamResult<Value> {
+        panic!("calendar unused")
+    }
     async fn daily(&self, _: &Credentials, _: GameKind) -> UpstreamResult<DailyState> {
         self.daily_calls.fetch_add(1, Ordering::SeqCst);
         self.daily

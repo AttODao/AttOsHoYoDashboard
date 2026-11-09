@@ -181,6 +181,57 @@ async fn challenge_endpoints_request_the_current_period_with_documented_queries(
     server.assert_finished();
 }
 
+#[tokio::test]
+async fn event_calendars_post_only_the_record_account_for_genshin_and_get_for_star_rail() {
+    let calendar = json!({"act_list": [{"id": 1}], "future_field": true});
+    let server = TlsMockServer::start(vec![
+        // Genshin: a POST without query whose JSON body is just the record account.
+        record_headers(
+            ExpectedRequest::post(
+                "sg-public-api.hoyolab.com",
+                "/event/game_record/genshin/api/act_calendar",
+                ok(calendar.clone()),
+            )
+            .request_body(r#"{"role_id":1,"server":"test_server"}"#),
+        )
+        .header("content-type", "application/json"),
+        // Star Rail keeps the upstream spelling `calender`.
+        record_get(
+            "bbs-api-os.hoyolab.com",
+            "/game_record/hkrpg/api/get_act_calender?role_id=1&server=test_server",
+            ok(calendar.clone()),
+        ),
+        record_get(
+            "bbs-api-os.hoyolab.com",
+            "/game_record/hkrpg/api/get_act_calender?role_id=2&server=test_server",
+            json!({"retcode": 10102, "message": "private", "data": null}).to_string(),
+        ),
+    ]);
+    let client = HoyolabClient::with_http(server.client(UA), COOKIE_VALUE).unwrap();
+    let account = account_for_uid(RECORD_UID);
+    for game in [Genshin::KIND, Starrail::KIND] {
+        // The raw data object is returned whole, unknown fields included.
+        assert_eq!(
+            client.event_calendar(game, &account).await.unwrap(),
+            calendar
+        );
+    }
+    let error = client
+        .event_calendar(Starrail::KIND, &account_for_uid("2"))
+        .await
+        .unwrap_err();
+    assert!(matches!(error, Error::Upstream { code: 10102 }));
+    for game in [Genshin::KIND, Starrail::KIND] {
+        assert!(
+            client
+                .event_calendar(game, &account_for_uid("not-a-uid"))
+                .await
+                .is_err()
+        );
+    }
+    server.assert_finished();
+}
+
 #[test]
 fn challenge_modes_belong_to_their_game_and_have_stable_ids() {
     use crate::challenge::Challenge;
