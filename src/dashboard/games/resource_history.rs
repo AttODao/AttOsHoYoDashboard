@@ -215,8 +215,7 @@ impl<G: Gateway> Games<G> {
     /// so the snapshot just before the 7-day window can still anchor its start), and
     /// every snapshot of a hidden or no longer detected UID.
     pub(in crate::dashboard) async fn cleanup_resource_history(&self) -> Result<()> {
-        let cutoff =
-            Utc::now() - Duration::days(self.store.tuning.resource_history_days) - MAX_GAP;
+        let cutoff = Utc::now() - Duration::days(self.store.tuning.resource_history_days) - MAX_GAP;
         resource_history::Entity::delete_many()
             .filter(resource_history::Column::FetchedAt.lt(cutoff))
             .exec(&self.store.db)
