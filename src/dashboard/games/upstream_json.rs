@@ -55,13 +55,17 @@ pub(super) fn unix(value: Option<&Value>) -> Option<DateTime<Utc>> {
         .and_then(|seconds| Utc.timestamp_opt(seconds, 0).single())
 }
 
-/// `{year, month, day, hour, minute[, second]}` in the server's time zone.
+/// `{year, month, day, hour, minute[, second][, tzinfo]}`: `tzinfo` is the UTC offset in
+/// hours (genshin.py's `convert_datetime`); without it the time is in the server's zone.
 pub(super) fn wall_clock(
     value: Option<&Value>,
     zone: Option<FixedOffset>,
 ) -> Option<DateTime<Utc>> {
-    let zone = zone?;
     let parts = object(value)?;
+    let zone = match parts.get("tzinfo") {
+        None | Some(Value::Null) => zone?,
+        Some(hours) => hours_offset(hours)?,
+    };
     let part = |key: &str| integer(parts.get(key));
     let year = i32::try_from(part("year")?).ok().filter(|year| *year > 0)?;
     let at = |key: &str| part(key).and_then(|value| u32::try_from(value).ok());
@@ -75,14 +79,39 @@ pub(super) fn wall_clock(
         .map(|time| time.with_timezone(&Utc))
 }
 
-/// `YYYY-MM-DD HH:MM:SS` text in the server's time zone.
+/// A UTC offset given in (possibly fractional) hours; anything else is unknown.
+fn hours_offset(hours: &Value) -> Option<FixedOffset> {
+    let hours = match hours {
+        Value::Number(number) => number.as_f64()?,
+        Value::String(text) => text.trim().parse().ok()?,
+        _ => return None,
+    };
+    let seconds = (hours * 3600.0).round();
+    (seconds.is_finite() && seconds.abs() < 86_400.0)
+        .then(|| FixedOffset::east_opt(seconds as i32))
+        .flatten()
+}
+
+/// `YYYY-MM-DD HH:MM[:SS]` text in the server's time zone.
 pub(super) fn wall_clock_text(
     value: Option<&Value>,
     zone: Option<FixedOffset>,
 ) -> Option<DateTime<Utc>> {
     let zone = zone?;
-    let local = NaiveDateTime::parse_from_str(value?.as_str()?.trim(), "%Y-%m-%d %H:%M:%S").ok()?;
+    let text = value?.as_str()?.trim();
+    let local = NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M:%S")
+        .or_else(|_| NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M"))
+        .ok()?;
     zone.from_local_datetime(&local)
         .single()
         .map(|time| time.with_timezone(&Utc))
+}
+
+/// A moment in any form the calendars use: Unix seconds (a number or decimal text; zero
+/// is unknown), a date mapping (`wall_clock`) or `YYYY-MM-DD HH:MM[:SS]` text in the
+/// server's zone.
+pub(super) fn moment(value: Option<&Value>, zone: Option<FixedOffset>) -> Option<DateTime<Utc>> {
+    unix(value)
+        .or_else(|| wall_clock(value, zone))
+        .or_else(|| wall_clock_text(value, zone))
 }

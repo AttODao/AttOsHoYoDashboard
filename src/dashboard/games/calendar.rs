@@ -18,7 +18,10 @@ use chrono::{DateTime, Duration, Utc};
 use sea_orm::{EntityTrait, Set, sea_query::OnConflict};
 use uuid::Uuid;
 
-const CACHE_VERSION: i32 = 1;
+/// Bumped whenever the summary reads upstream differently, so calendars summarized by
+/// an older version are fetched again instead of being served until the TTL runs out
+/// (2: Genshin and Star Rail periods given as date mappings or text).
+const CACHE_VERSION: i32 = 2;
 
 pub(in crate::dashboard) struct GameCalendar {
     pub(in crate::dashboard) game_kind: String,

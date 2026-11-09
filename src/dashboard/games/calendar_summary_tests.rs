@@ -106,6 +106,153 @@ fn genshin_banners_and_events_keep_periods_progress_and_featured_items() {
     assert!(!stored.contains("private description") && !stored.contains("item_id"));
 }
 
+/// Genshin `act_list` entries carry zero timestamps and their period only in the
+/// `start_time`/`end_time` date mappings (genshin.py's `DateTime`), with or without a
+/// `tzinfo` offset in hours, while the banners keep their Unix timestamps.
+#[test]
+fn genshin_events_read_their_period_from_date_mappings() {
+    let now = now();
+    let banner_end = now + Duration::days(2);
+    let mapping = |month: u32, day: u32, hour: u32, minute: u32, second: u32| {
+        json!({"year": 2026, "month": month, "day": day, "hour": hour, "minute": minute,
+               "second": second})
+    };
+    let raw = json!({
+        "avatar_card_pool_list": [{
+            "pool_id": 11, "pool_name": "Synthetic Wish", "version_name": "7.2",
+            "start_timestamp": (now - Duration::days(19)).timestamp().to_string(),
+            "end_timestamp": banner_end.timestamp().to_string(),
+            "start_time": mapping(10, 21, 18, 0, 0), "end_time": mapping(11, 11, 11, 0, 0),
+            "countdown_seconds": 172_800, "pool_status": 2, "avatars": [], "weapon": []
+        }],
+        "weapon_card_pool_list": [],
+        "mixed_card_pool_list": [],
+        "act_list": [
+            // Server time (os_asia, UTC+8) without tzinfo.
+            {"id": 1, "name": "Synthetic Record", "type": "ActTypeOther",
+             "start_timestamp": "0", "end_timestamp": "0",
+             "start_time": mapping(11, 5, 10, 0, 0), "end_time": mapping(12, 7, 3, 59, 59),
+             "status": 1, "countdown_seconds": 0, "is_finished": false, "reward_list": []},
+            // An explicit offset wins over the server's zone.
+            {"id": 2, "name": "Synthetic Leyline", "type": "ActTypeDouble",
+             "start_timestamp": "0", "end_timestamp": "0",
+             "start_time": {"year": 2026, "month": 11, "day": 1, "hour": 0, "minute": 0,
+                            "second": 0, "tzinfo": 9},
+             "end_time": {"year": 2026, "month": 12, "day": 15, "hour": 4, "minute": 0,
+                          "second": 0, "tzinfo": 9},
+             "countdown_seconds": 0, "is_finished": false,
+             "double_detail": {"total": 3, "left": 3}},
+            // Numeric timestamps still come first.
+            {"id": 3, "name": "Synthetic Timestamped",
+             "start_timestamp": (now - Duration::days(1)).timestamp(),
+             "end_timestamp": (now + Duration::days(5)).timestamp(),
+             "start_time": mapping(1, 1, 0, 0, 0), "end_time": mapping(1, 2, 0, 0, 0)},
+            // Nothing known at all: the period stays unknown.
+            {"id": 4, "name": "Synthetic Undated", "start_timestamp": "0", "end_timestamp": "0",
+             "start_time": null, "end_time": null, "countdown_seconds": 0},
+            // An announced event that starts after the fetch.
+            {"id": 5, "name": "Synthetic Announced", "start_timestamp": "0", "end_timestamp": "0",
+             "start_time": mapping(11, 27, 10, 0, 0), "end_time": mapping(12, 7, 3, 59, 59)}
+        ]
+    });
+    let items = summarize(Genshin::KIND, "os_asia", &raw, now);
+    let periods: Vec<_> = items
+        .iter()
+        .map(|item| (item.name.as_deref().unwrap(), item.starts_at, item.ends_at))
+        .collect();
+    let utc = |month, day, hour, minute, second| {
+        Some(
+            Utc.with_ymd_and_hms(2026, month, day, hour, minute, second)
+                .unwrap(),
+        )
+    };
+    assert_eq!(
+        periods,
+        [
+            (
+                "Synthetic Wish",
+                Some(now - Duration::days(19)),
+                Some(banner_end)
+            ),
+            (
+                "Synthetic Timestamped",
+                Some(now - Duration::days(1)),
+                Some(now + Duration::days(5))
+            ),
+            (
+                "Synthetic Record",
+                utc(11, 5, 2, 0, 0),
+                utc(12, 6, 19, 59, 59)
+            ),
+            (
+                "Synthetic Announced",
+                utc(11, 27, 2, 0, 0),
+                utc(12, 6, 19, 59, 59)
+            ),
+            (
+                "Synthetic Leyline",
+                utc(10, 31, 15, 0, 0),
+                utc(12, 14, 19, 0, 0)
+            ),
+            ("Synthetic Undated", None, None),
+        ]
+    );
+    assert_eq!(
+        (items[4].progress, items[4].progress_total),
+        (Some(0), Some(3))
+    );
+    // Without tzinfo the mapping follows the account's server: America is UTC-5.
+    let america = summarize(Genshin::KIND, "os_usa", &raw, now);
+    let record = america.iter().find(|item| item.id == Some(1)).unwrap();
+    assert_eq!(record.starts_at, utc(11, 5, 15, 0, 0));
+    // With tzinfo it needs no known server.
+    let unknown = summarize(Genshin::KIND, "unknown_server", &raw, now);
+    let leyline = unknown.iter().find(|item| item.id == Some(2)).unwrap();
+    assert_eq!(leyline.ends_at, utc(12, 14, 19, 0, 0));
+    assert_eq!(
+        unknown
+            .iter()
+            .find(|item| item.id == Some(1))
+            .unwrap()
+            .starts_at,
+        None
+    );
+}
+
+#[test]
+fn star_rail_periods_fall_back_to_the_wall_clock_fields() {
+    let now = now();
+    let raw = json!({
+        "act_list": [
+            {"id": 1, "name": "Mapped", "act_time_type": "ActTimeTypeDefault",
+             "time_info": {"start_ts": "0", "end_ts": "0", "now": now.timestamp().to_string(),
+                 "start_time": {"year": 2026, "month": 11, "day": 5, "hour": 12, "minute": 0},
+                 "end_time": {"year": 2026, "month": 11, "day": 26, "hour": 3, "minute": 59,
+                              "second": 59}}},
+            {"id": 2, "name": "Text", "act_time_type": "ActTimeTypeDefault",
+             "time_info": {"start_time": "2026-11-05 12:00:00", "end_time": "2026-11-26 03:59"}}
+        ]
+    });
+    let items = summarize(Starrail::KIND, "prod_official_asia", &raw, now);
+    let start = Some(Utc.with_ymd_and_hms(2026, 11, 5, 4, 0, 0).unwrap());
+    assert_eq!(
+        items
+            .iter()
+            .map(|item| (item.id, item.starts_at))
+            .collect::<Vec<_>>(),
+        [(Some(2), start), (Some(1), start)]
+    );
+    // Text without seconds ends at the minute, one second before the mapped end.
+    assert_eq!(
+        items[0].ends_at,
+        Some(Utc.with_ymd_and_hms(2026, 11, 25, 19, 59, 0).unwrap())
+    );
+    assert_eq!(
+        items[1].ends_at,
+        Some(Utc.with_ymd_and_hms(2026, 11, 25, 19, 59, 59).unwrap())
+    );
+}
+
 #[test]
 fn star_rail_skips_long_running_modes_and_reads_status_and_progress() {
     let now = now();
