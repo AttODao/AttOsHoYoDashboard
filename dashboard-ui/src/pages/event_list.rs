@@ -1,7 +1,7 @@
 //! The events timeline read downwards: the phone layout (<=600px and the app), and the text
 //! structure readers get on every width (visually hidden beside the wide timeline). "Now"
 //! heads the running items, which end soonest first; announced items follow under the date
-//! they start on.
+//! they start on, and items without any known period close the list in their own group.
 use super::calendar::{
     FeaturedLine, Groups, Timed, countdown, display_name, kind_label, quiet_status, status_text,
 };
@@ -15,6 +15,7 @@ pub(super) fn EventList(groups: Groups, game: &'static str, local: LocalTime) ->
     let ui = use_preferences();
     let running = groups.running_by_end();
     let upcoming = start_days(local, groups.upcoming_by_start());
+    let undated = groups.undated.clone();
     let now = compact_datetime(Some(&iso(local.now))).unwrap_or_else(|| local.date_time(local.now));
     rsx! {
         div { class: "event-list",
@@ -48,6 +49,16 @@ pub(super) fn EventList(groups: Groups, game: &'static str, local: LocalTime) ->
                                     EventCard { key: "{day}-{index}", timed, game, local }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+            if !undated.is_empty() {
+                section { class: "event-phase", "data-phase": "undated", "aria-labelledby": "events-undated-{game}",
+                    h3 { id: "events-undated-{game}", {ui.text("calendar.undated")} }
+                    ol { class: "event-cards",
+                        for (index, timed) in undated.into_iter().enumerate() {
+                            EventCard { key: "undated-{index}", timed, game, local }
                         }
                     }
                 }
@@ -90,13 +101,16 @@ fn EventCard(timed: Timed, game: &'static str, local: LocalTime) -> Element {
             }
             strong { class: "calendar-name", "{name}" }
             FeaturedLine { item: timed.item.clone() }
-            p { class: "event-period",
-                if let Some(start) = start {
-                    time { datetime: iso(start), {local.date_time(start)} }
-                }
-                " – "
-                if let Some(end) = end {
-                    time { datetime: iso(end), {local.date_time(end)} }
+            // An undated item sits under the "period unknown" heading instead of a bare dash.
+            if start.is_some() || end.is_some() {
+                p { class: "event-period",
+                    if let Some(start) = start {
+                        time { datetime: iso(start), {local.date_time(start)} }
+                    }
+                    " – "
+                    if let Some(end) = end {
+                        time { datetime: iso(end), {local.date_time(end)} }
+                    }
                 }
             }
             if let Some(status) = status {

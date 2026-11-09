@@ -198,6 +198,9 @@ const server=http.createServer(async(req,res)=>{
       event('Synthetic Abyss Season',-20,25),
       event('Synthetic Theater',-9,21,{progress:4,progress_total:8}),
       event('Synthetic Stygian',null,12),
+      // Neither a start nor an end is known (2.1.0 summarized Genshin events like this).
+      item({kind:'event',name:'Synthetic Undated Record',finished:false}),
+      item({kind:'event',name:'Synthetic Undated Leyline',finished:false,progress:0,progress_total:3}),
       banner('character_banner','Synthetic Next Phase Wish',15,36,'Synthetic Next Five'),
       event('Synthetic Next Version Event',17,40),
       event('Synthetic Late Event Announced Early',48,60)
@@ -1055,8 +1058,14 @@ try{
  await genshinRefresh.click();await genshinEvents.locator('.warning').waitFor({state:'detached'});
  // A realistic calendar (4 banners, 10 events, 3 announced, long names) at every width and theme.
  calendarMode='many';await genshinRefresh.click();await page.locator('#events-refresh-starrail').click();
- await genshinTimeline.locator('tr.tl-row').nth(16).waitFor();await starrailEvents.locator('tr.tl-row').nth(3).waitFor();
- assert.equal(await genshinEvents.locator('.events-summary').innerText().then(text=>text.split(' · ').slice(0,2).join(' · ')),'14 running · 3 upcoming');
+ await genshinTimeline.locator('tr.tl-row').nth(18).waitFor();await starrailEvents.locator('tr.tl-row').nth(3).waitFor();
+ assert.equal(await genshinEvents.locator('.events-summary').innerText().then(text=>text.split(' · ').slice(0,3).join(' · ')),'14 running · 3 upcoming · 2 with unknown period');
+ // Items without any known period: their own group of labels without a bar, off the axis and the now line.
+ assert.deepEqual(await genshinTimeline.locator('tr.tl-lane th').allInnerTexts(),['Wishes','Events','Period unknown']);
+ const undatedRows=await genshinTimeline.evaluate(table=>{const days=table.querySelectorAll('col').length;return [...table.querySelectorAll('tr.tl-row[data-undated=true]')].map(row=>({name:row.querySelector('.tl-name').textContent,bars:row.querySelectorAll('.tl-bar').length,period:row.querySelectorAll('.tl-period').length,now:row.querySelectorAll('svg.tl-now').length,cells:row.cells.length,full:row.cells[0].colSpan===days,border:getComputedStyle(row.querySelector('.tl-label')).borderTopWidth,status:row.querySelector('.tl-status')?.textContent}));});
+ assert.deepEqual(undatedRows.map(row=>[row.name,row.status]),[['Synthetic Undated Record','Not completed'],['Synthetic Undated Leyline','Progress 0/3']]);
+ assert.ok(undatedRows.every(row=>row.bars===0&&row.period===0&&row.now===0&&row.cells===1&&row.full&&row.border==='0px'),'an undated item is a label, not a bar across the axis: '+JSON.stringify(undatedRows));
+ assert.equal(await genshinTimeline.locator('tr.tl-row:not([data-undated]) .tl-bar').count(),17,'every dated item keeps its bar');
  assert.deepEqual(await genshinTimeline.locator('.tl-bar[data-clip]').evaluateAll(bars=>bars.map(bar=>bar.dataset.clip)),['start','start','start','end'],'items beyond the axis are clipped at its edges');
  const fits=async label=>assert.ok(await page.locator('main.container').evaluate(e=>e.scrollWidth<=e.clientWidth),label+' fits without sideways scrolling');
  await fits('1280px');
@@ -1082,7 +1091,9 @@ try{
  await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark');
  await page.keyboard.press('Escape');await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});await settled();
  await page.setViewportSize({width:360,height:800});
- assert.deepEqual(await genshinList.locator('h3').allTextContents(),['Running now','Upcoming']);
+ assert.deepEqual(await genshinList.locator('h3').allTextContents(),['Running now','Upcoming','Period unknown']);
+ assert.equal(await genshinList.locator('section[data-phase=undated] li.event-card').count(),2);
+ assert.equal(await genshinList.locator('section[data-phase=undated] .event-period').count(),0,'undated cards show no bare dash');
  assert.equal(await genshinList.locator('section[data-phase=upcoming] li.event-card').count(),3);
  const firstRunning=await genshinList.locator('section[data-phase=running] li.event-card').first().locator('.calendar-left').textContent();
  assert.match(firstRunning,/left$/,'running items count down to their end');
@@ -1102,7 +1113,7 @@ try{
  await page.waitForFunction(()=>document.documentElement.lang==='ja');
  await page.keyboard.press('Escape');await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});await settled();
  await page.getByRole('heading',{name:'イベント',exact:true,level:1}).waitFor();
- assert.deepEqual(await genshinTimeline.locator('tr.tl-lane th').allInnerTexts(),['祈願','イベント']);
+ assert.deepEqual(await genshinTimeline.locator('tr.tl-lane th').allInnerTexts(),['祈願','イベント','期間不明']);
  assert.match(await genshinTimeline.locator('tr.tl-months th').first().innerText(),/^\d{1,2}月$/);
  await page.screenshot({path:path.join(root,'target/ui-events-1280-ja.png'),fullPage:true});
  await openMenu();await page.locator('#ahd-menu').getByRole('combobox',{name:'言語',exact:true}).selectOption('en');

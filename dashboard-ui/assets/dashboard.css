@@ -176,6 +176,8 @@ input[type=file]{width:100%;min-width:0;min-height:48px;background:var(--elevate
 .tl-label .featured-icon{width:20px;height:20px}
 .tl-left,.tl-status{white-space:nowrap}
 .tl-left{color:var(--text)}
+/* No known period: a label with a dashed marker instead of a bar across the axis. */
+.tl-undated{margin:0 1px;border-left:1px dashed var(--decorative)}
 .event-list{display:grid;gap:24px}
 .event-phase h3{margin:0 0 8px;font-size:16px}
 .event-node{position:relative;display:flex;flex-wrap:wrap;align-items:baseline;gap:0 8px;margin:0;padding-left:24px;font-size:14px;font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums}

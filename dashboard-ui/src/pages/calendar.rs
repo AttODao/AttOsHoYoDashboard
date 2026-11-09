@@ -85,14 +85,23 @@ impl Timed {
     pub(super) fn is_event(&self) -> bool {
         self.item.kind == "event"
     }
+
+    /// Neither the start nor the end is known: nothing places the item in time.
+    pub(super) fn is_undated(&self) -> bool {
+        self.since_start.is_none() && self.since_end.is_none()
+    }
 }
 
-/// Running banners and events, and announced items; ended items are dropped.
+/// Running banners and events, announced items, and items without any known period
+/// (kept apart so they are never drawn as if they ran across the whole timeline);
+/// ended items are dropped.
 #[derive(Clone, PartialEq, Default)]
 pub(super) struct Groups {
     pub(super) banners: Vec<Timed>,
     pub(super) events: Vec<Timed>,
     pub(super) upcoming: Vec<Timed>,
+    /// Banners first, then events, each in the server's order.
+    pub(super) undated: Vec<Timed>,
 }
 
 impl Groups {
@@ -110,7 +119,9 @@ impl Groups {
             if timed.since_end.is_some_and(|since| since >= 0) {
                 continue;
             }
-            if timed.since_start.is_some_and(|since| since < 0) {
+            if timed.is_undated() {
+                groups.undated.push(timed);
+            } else if timed.since_start.is_some_and(|since| since < 0) {
                 groups.upcoming.push(timed);
             } else if timed.item.kind == "event" {
                 groups.events.push(timed);
@@ -118,11 +129,16 @@ impl Groups {
                 groups.banners.push(timed);
             }
         }
+        // Stable: banners keep their order ahead of events.
+        groups.undated.sort_by_key(Timed::is_event);
         groups
     }
 
     pub(super) fn is_empty(&self) -> bool {
-        self.banners.is_empty() && self.events.is_empty() && self.upcoming.is_empty()
+        self.banners.is_empty()
+            && self.events.is_empty()
+            && self.upcoming.is_empty()
+            && self.undated.is_empty()
     }
 
     fn running(&self) -> impl Iterator<Item = &Timed> {
@@ -174,8 +190,8 @@ impl Groups {
     }
 }
 
-/// "3 running", "1 upcoming" and "next ends in 2d 3h" as parts that wrap as a whole;
-/// unknown ends are left out of the nearest end.
+/// "3 running", "1 upcoming", "2 with unknown period" and "next ends in 2d 3h" as parts
+/// that wrap as a whole; unknown ends are left out of the nearest end.
 pub(super) fn summary_parts(groups: &Groups, ui: Preferences) -> Vec<String> {
     let running = groups.running().count();
     let mut parts = vec![if running == 0 {
@@ -192,7 +208,13 @@ pub(super) fn summary_parts(groups: &Groups, ui: Preferences) -> Vec<String> {
             &[("count", &groups.upcoming.len().to_string())],
         ));
     }
-    // The two counts fit one line on a phone; the nearest end follows.
+    if !groups.undated.is_empty() {
+        parts.push(ui.format(
+            "calendar.summary_undated",
+            &[("count", &groups.undated.len().to_string())],
+        ));
+    }
+    // The counts fit one line on a phone; the nearest end follows.
     let nearest = groups.running().filter_map(|timed| timed.since_end).max();
     if let Some(since) = nearest {
         parts.push(ui.format(
@@ -332,25 +354,38 @@ mod tests {
             item(serde_json::json!({"kind": "light_cone_banner"})),
         ];
         let groups = groups(&items);
-        assert_eq!(groups.banners.len(), 2);
-        assert_eq!(groups.banners[1].item.kind, "light_cone_banner");
+        assert_eq!(groups.banners.len(), 1);
         assert_eq!(groups.events.len(), 1);
         assert_eq!(groups.upcoming.len(), 1);
+        // Without a start or an end the item is not counted as running.
+        assert_eq!(groups.undated.len(), 1);
+        assert_eq!(groups.undated[0].item.kind, "light_cone_banner");
         assert!(!groups.is_empty());
         assert!(Groups::from_items(&items[3..4], |_| Some(1)).is_empty());
+        assert!(!Groups::from_items(&items[4..], |_| None).is_empty());
 
         let ui = Preferences::default();
         assert_eq!(
             summary_parts(&groups, ui).join(" · "),
-            "開催中3件 · 開催予定1件 · 次の終了まであと2時間00分"
+            "開催中2件 · 開催予定1件 · 期間不明1件 · 次の終了まであと2時間00分"
         );
         assert_eq!(
             summary_parts(&groups, english()).join(" · "),
-            "3 running · 1 upcoming · next ends in 2h 00m"
+            "2 running · 1 upcoming · 1 with unknown period · next ends in 2h 00m"
         );
         // Running items without a known end leave the nearest end out.
+        let open = Groups::from_items(
+            &[item(
+                serde_json::json!({"kind": "event", "starts_at": "60"}),
+            )],
+            |at| at.and_then(|at| at.parse().ok()),
+        );
+        assert_eq!(summary_parts(&open, ui).join(" · "), "開催中1件");
         let unknown = groups_of_unknown();
-        assert_eq!(summary_parts(&unknown, ui).join(" · "), "開催中1件");
+        assert_eq!(
+            summary_parts(&unknown, ui).join(" · "),
+            "開催中のイベントはありません · 期間不明1件"
+        );
         let only_upcoming = Groups {
             upcoming: groups.upcoming.clone(),
             ..Groups::default()
@@ -380,7 +415,7 @@ mod tests {
             countdown(&groups.events[0], ui),
             Some(("残り1時間30分".to_owned(), Some("-5400".to_owned())))
         );
-        assert_eq!(countdown(&groups_of_unknown().events[0], ui), None);
+        assert_eq!(countdown(&groups_of_unknown().undated[0], ui), None);
         assert_eq!(
             countdown(&groups.events[0], english()).unwrap().0,
             "1h 30m left"
@@ -493,6 +528,29 @@ mod tests {
         assert!(!quiet_status(&item(
             serde_json::json!({"kind": "event", "finished": true})
         )));
+    }
+
+    #[test]
+    fn undated_items_stay_out_of_the_lanes_and_list_banners_first() {
+        let groups = groups(&[
+            item(serde_json::json!({"kind": "event", "name": "undated event"})),
+            item(serde_json::json!({"kind": "event", "name": "dated", "ends_at": "-60"})),
+            item(serde_json::json!({"kind": "character_banner", "name": "undated wish"})),
+            item(serde_json::json!({"kind": "event", "name": "announced", "starts_at": "-60"})),
+        ]);
+        let names = |items: &[Timed]| {
+            items
+                .iter()
+                .map(|timed| timed.item.name.clone().unwrap())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names(&groups.undated), ["undated wish", "undated event"]);
+        let [banners, events] = groups.lanes();
+        assert!(banners.is_empty());
+        assert_eq!(names(&events), ["dated", "announced"]);
+        assert_eq!(names(&groups.running_by_end()), ["dated"]);
+        assert!(groups.undated.iter().all(Timed::is_undated));
+        assert!(!groups.events[0].is_undated() && !groups.upcoming[0].is_undated());
     }
 
     #[test]

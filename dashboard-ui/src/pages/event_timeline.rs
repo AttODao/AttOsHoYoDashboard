@@ -1,6 +1,8 @@
 //! The events timeline for wide screens: a date axis across the top (months, then days with
 //! today marked) and one row per banner or event, with a bar from its start to its end and
-//! its name, period and countdown on the bar (or beside a short bar).
+//! its name, period and countdown on the bar (or beside a short bar). Items without any
+//! known period follow in their own group as labels without a bar, so they never look
+//! like something running across the whole axis.
 //!
 //! The grid is a fixed-layout table with one equal column per day and bars placed with
 //! `colspan`, so positions need no inline styles under the CSP (`style-src 'self'`). Bars are
@@ -261,6 +263,7 @@ fn month_name(month: u32, ui: Preferences) -> &'static str {
 pub(super) fn WideTimeline(groups: Groups, game: &'static str, local: LocalTime) -> Element {
     let ui = use_preferences();
     let lanes = groups.lanes();
+    let undated = groups.undated.clone();
     let periods: Vec<_> = lanes
         .iter()
         .flatten()
@@ -308,6 +311,15 @@ pub(super) fn WideTimeline(groups: Groups, game: &'static str, local: LocalTime)
                             for (index, timed) in items.into_iter().enumerate() {
                                 TimelineRow { key: "{lane}-{index}", timed, axis, local, now }
                             }
+                        }
+                    }
+                    // Not on the time axis, so the now line does not cross this group.
+                    if !undated.is_empty() {
+                        tr { class: "tl-lane", "data-undated": true,
+                            th { colspan: axis.days, {ui.text("calendar.undated")} }
+                        }
+                        for (index, timed) in undated.into_iter().enumerate() {
+                            UndatedRow { key: "undated-{index}", timed, days: axis.days, local }
                         }
                     }
                 }
@@ -358,6 +370,18 @@ fn TimelineRow(timed: Timed, axis: Axis, local: LocalTime, now: f64) -> Element 
     }
 }
 
+/// An item without a known period: its label across the row, with no bar.
+#[component]
+fn UndatedRow(timed: Timed, days: i64, local: LocalTime) -> Element {
+    rsx! {
+        tr { class: "tl-row", "data-kind": "{timed.item.kind}", "data-undated": true,
+            td { colspan: days, class: "tl-cell",
+                div { class: "tl-label tl-undated", BarLabel { timed: timed.clone(), local } }
+            }
+        }
+    }
+}
+
 /// The "now" line through the one cell of a row that holds the current moment: the
 /// cell spans whole columns of equal width, so a percentage of the cell is exact.
 #[component]
@@ -393,7 +417,9 @@ fn BarLabel(timed: Timed, local: LocalTime) -> Element {
         strong { class: "tl-name", "{name}" }
         FeaturedLine { item: timed.item.clone() }
         p { class: "tl-meta",
-            span { class: "tl-period", title: period_title(start, end), {period_text(local, start, end)} }
+            if start.is_some() || end.is_some() {
+                span { class: "tl-period", title: period_title(start, end), {period_text(local, start, end)} }
+            }
             if let Some((left, _)) = left {
                 span { class: "tl-left", "{left}" }
             }
