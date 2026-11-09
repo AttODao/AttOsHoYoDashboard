@@ -8,7 +8,7 @@ body button[data-style][data-size]{max-width:100%}
 .cookie-steps a{padding-block:12px}
 /* Notification choices: notice names wrap, the device/Webhook columns stay narrow and each checkbox cell is a 48px target. */
 .event-matrix th,.event-matrix td{vertical-align:middle}
-.event-matrix thead th:not(:first-child){width:5.5rem;padding:12px 4px;text-align:center}.event-matrix td{padding:0}
+/* Narrow choice columns leave the notice names room to wrap less on phones. */.event-matrix thead th:not(:first-child){width:4.5rem;padding:12px 4px;font-size:14px;text-align:center}.event-matrix td{padding:0}
 .event-matrix tbody th{color:var(--text);font-size:16px;font-weight:500}
 .matrix-check{display:flex;align-items:center;justify-content:center;min-height:48px;cursor:pointer}
 /* Login page: the server in use and its change form, below the sign-in methods like .auth-alternatives. */
