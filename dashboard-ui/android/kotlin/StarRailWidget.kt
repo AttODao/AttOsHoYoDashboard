@@ -42,7 +42,7 @@ class StarRailWidget : AhdGameWidget(WidgetGame.STARRAIL) {
             is WidgetState.Ready -> null
         }
         // Texts from the layout are resolved by the launcher in the system locale; setting them
-        // here keeps the whole widget in the app's locale (per-app language, API 33+).
+        // here keeps the whole widget in the app's language (AhdLocale).
         views.setTextViewText(res.id("ahd_widget_title"), res.text("ahd_widget_starrail_label"))
         views.setViewVisibility(res.id("ahd_widget_content"), if (message == null) View.VISIBLE else View.GONE)
         views.setViewVisibility(res.id("ahd_widget_message_box"), if (message == null) View.GONE else View.VISIBLE)

@@ -1349,6 +1349,18 @@ try{
  assert.equal(counts.get('/openapi.json'),docsReads+2);
  assert.deepEqual([...counts].filter(([p])=>p.startsWith('/api/v1/')),apiBefore,'translated public docs still make no authenticated requests');
  assert.deepEqual(await page.evaluate(()=>Object.keys(localStorage).sort()),['ahd-language','ahd-theme'],'only non-sensitive preferences persist');
+ stage='locale-default';
+ // Without a saved language the first Japanese or English entry of navigator.languages decides (else English), and it is not saved.
+ for(const [languages,expected] of [[['de-DE'],'en'],[['fr-FR','ja-JP'],'ja'],[['en-US','ja-JP'],'en']]){
+  const fresh=await browser.newContext({viewport:{width:390,height:844},locale:languages[0]});
+  await fresh.addInitScript(list=>Object.defineProperty(Navigator.prototype,'languages',{get:()=>list}),languages);
+  await fresh.route('**/*',route=>new URL(route.request().url()).origin===origin?route.continue():route.abort());
+  const tab=await fresh.newPage();await tab.goto(origin+'/login');
+  await tab.getByRole('button',{name:expected==='ja'?'ログイン':'Sign in',exact:true}).waitFor();
+  assert.equal(await tab.locator('html').getAttribute('lang'),expected,languages.join());
+  assert.equal(await tab.evaluate(()=>localStorage.getItem('ahd-language')),null,'an unchosen language is not saved');
+  await fresh.close();
+ }
  assert.deepEqual(errors,[],'release CSP/Wasm errors');assert.deepEqual(failures,[]);
  console.log('Dioxus production browser regressions passed (synthetic implemented API fixtures; no live identity or backend authorization evidence).');
 }catch(error){

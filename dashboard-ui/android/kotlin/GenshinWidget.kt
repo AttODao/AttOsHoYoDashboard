@@ -23,6 +23,9 @@ class GenshinWidget : AhdGameWidget(WidgetGame.GENSHIN) {
             context.resources.configuration.fontScale,
         )
         val ui = Ui(context, RemoteViews(context.packageName, find(context, layout.layout, "layout")))
+        // Layout texts would be resolved by the launcher in the system locale; setting them here
+        // keeps the whole widget in the app's language (AhdLocale).
+        ui.views.setTextViewText(ui.id("ahd_widget_title"), ui.text("ahd_widget_genshin_label"))
         when (state) {
             WidgetState.SignedOut -> ui.message("ahd_widget_sign_in")
             WidgetState.NoAccount -> ui.message("ahd_widget_no_account")
@@ -58,6 +61,7 @@ class GenshinWidget : AhdGameWidget(WidgetGame.GENSHIN) {
             shown("ahd_widget_content", false)
             shown("ahd_widget_message_box", true)
             shown("ahd_widget_hint", true)
+            views.setTextViewText(id("ahd_widget_hint"), text("ahd_widget_open_hint"))
             views.setTextViewText(id("ahd_widget_status"), text(key))
             warnText("ahd_widget_updated", null, false)
         }
@@ -81,8 +85,10 @@ class GenshinWidget : AhdGameWidget(WidgetGame.GENSHIN) {
                 size = AhdArcSize.LARGE,
                 contentDescription = listOfNotNull(text("ahd_widget_genshin_resin"), resinValue(model), resinTime(model)).joinToString(" "),
             )))
+            views.setTextViewText(id("ahd_widget_resin_label"), text("ahd_widget_genshin_resin"))
             warnText("ahd_widget_resin_value", resinValue(model) ?: AhdIndicatorModel.NO_VALUE, model.resinFull)
             shown("ahd_widget_resin_until", !model.resinFull && model.resinSeconds != null)
+            views.setTextViewText(id("ahd_widget_resin_until"), text("ahd_widget_until_full"))
             warnText("ahd_widget_resin_time", resinTime(model), model.resinFull)
 
             val coin = model.coin

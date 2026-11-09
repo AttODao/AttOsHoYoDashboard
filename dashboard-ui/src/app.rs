@@ -54,6 +54,8 @@ static APP_ICON: Asset = asset!(
 pub fn App() -> Element {
     let preferences = use_context_provider(|| Signal::new(preferences::Preferences::load()));
     use_effect(move || preferences.read().apply());
+    #[cfg(feature = "mobile")]
+    preferences::use_device_language(preferences);
     #[cfg(target_arch = "wasm32")]
     let _system_theme = use_hook(move || browser::on_system_theme_change(preferences));
     let state = use_signal(|| AppState::new(initial_page()));

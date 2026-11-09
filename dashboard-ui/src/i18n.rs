@@ -18,6 +18,29 @@ pub(crate) enum Language {
 }
 
 impl Language {
+    /// The language for a locale list in preference order (BCP 47 tags such as `ja-JP` or
+    /// `en_US`): the first Japanese or English entry decides, a list with neither means
+    /// English. An empty list (the locale could not be read) keeps the Japanese default.
+    /// Kotlin's `AhdLocale.languageFor` applies the same rule to the home-screen widgets.
+    #[cfg(any(target_arch = "wasm32", feature = "mobile", test))]
+    pub(crate) fn for_locales<'a>(tags: impl IntoIterator<Item = &'a str>) -> Self {
+        let mut any = false;
+        for tag in tags {
+            let primary = tag.trim().split(['-', '_']).next().unwrap_or_default();
+            if primary.is_empty() {
+                continue;
+            }
+            any = true;
+            if primary.eq_ignore_ascii_case("ja") {
+                return Self::Japanese;
+            }
+            if primary.eq_ignore_ascii_case("en") {
+                return Self::English;
+            }
+        }
+        if any { Self::English } else { Self::Japanese }
+    }
+
     pub(crate) fn text(self, key: &str) -> &'static str {
         let catalog = match self {
             Self::Japanese => &*JAPANESE,
@@ -81,6 +104,32 @@ mod tests {
             assert!(!english.trim().is_empty(), "{key}");
             assert!(!japanese.trim().is_empty(), "{key}");
             assert_eq!(placeholders(japanese), placeholders(english), "{key}");
+        }
+    }
+
+    #[test]
+    fn locale_lists_choose_the_first_supported_language_and_default_to_english() {
+        use Language::{English, Japanese};
+        for (tags, expected) in [
+            (&["ja-JP"][..], Japanese),
+            (&["ja"], Japanese),
+            (&["JA_jp"], Japanese),
+            (&["en-US"], English),
+            (&["en-US", "ja-JP"], English),
+            (&["fr-FR"], English),
+            (&["zh-Hant-TW", "ko-KR"], English),
+            (&["fr-FR", "ja-JP"], Japanese),
+            (&["fr-FR", "en-GB", "ja-JP"], English),
+            // "jav" (Javanese) is not Japanese.
+            (&["jav-ID"], English),
+            (&[" ", ""], Japanese),
+            (&[], Japanese),
+        ] {
+            assert_eq!(
+                Language::for_locales(tags.iter().copied()),
+                expected,
+                "{tags:?}"
+            );
         }
     }
 
