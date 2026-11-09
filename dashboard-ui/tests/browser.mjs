@@ -612,14 +612,6 @@ try{
  await starrail.locator('section.calendar-section').waitFor({state:'detached'});
  assert.equal(await starrail.getByText('Could not refresh the calendar',{exact:false}).count(),0,'a missing endpoint is not reported as a failure');
  calendarMode=null;
- // A failed refresh keeps the shown history and says so; a missing endpoint hides it.
- historyMode='failed';await genshin.getByRole('button',{name:'Refresh',exact:true}).click();
- await genshin.locator('.cap-history').getByText('Could not refresh the cap history. The shown history may be out of date.',{exact:true}).waitFor();
- assert.equal(await genshin.locator('.cap-history-value').innerText(),'3h 12m');
- historyMode='missing';await genshin.getByRole('button',{name:'Refresh',exact:true}).click();
- await genshin.locator('.cap-history').waitFor({state:'detached'});
- historyMode=null;await genshin.getByRole('button',{name:'Refresh',exact:true}).click();
- await genshin.locator('.cap-history-value').waitFor();
  statusMode='recovering';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
  await starrail.locator('.resource strong').getByText('150',{exact:true}).waitFor();
  // The estimate is 7h 12m 4s away, so the countdown turns from 13m to 12m by the clock, without a refetch.
@@ -632,6 +624,14 @@ try{
  await starrail.locator('.resource strong').getByText('24',{exact:true}).waitFor();
  assert.ok(await page.locator('#refresh-starrail').evaluate(e=>e===document.activeElement),'refresh keeps keyboard focus while and after loading');
  assert.equal(await starrail.locator('.warning').count(),0);
+ // With normal statuses again: a failed refresh keeps the shown history and says so; a missing endpoint hides it.
+ historyMode='failed';await genshin.getByRole('button',{name:'Refresh',exact:true}).click();
+ await genshin.locator('.cap-history').getByText('Could not refresh the cap history. The shown history may be out of date.',{exact:true}).waitFor();
+ assert.equal(await genshin.locator('.cap-history-value').innerText(),'3h 12m');
+ historyMode='missing';await genshin.getByRole('button',{name:'Refresh',exact:true}).click();
+ await genshin.locator('.cap-history').waitFor({state:'detached'});
+ historyMode=null;await genshin.getByRole('button',{name:'Refresh',exact:true}).click();
+ await genshin.locator('.cap-history-value').waitFor();
  await genshin.getByRole('switch').check();await idle();
  assert.deepEqual(rewardPatches.at(-1),{id:uid(20),enabled:true,local_time:'06:00'});
  assert.equal(rewardSettings[1].enabled,false,'automation PATCH cannot change other game');
