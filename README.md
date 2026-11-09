@@ -197,6 +197,7 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | `dashboard-ui/android/res/` | ランチャーと通知のアイコン、アプリ名、DayNightテーマ、開発用サーバー（localhost）へのHTTPを許可するnetwork security config（`build-android` が生成プロジェクトへ上書き） |
 | `dashboard-ui/android/kotlin/` | `MainActivity.kt` の隣へ `build-android` がコピーするKotlin：ホーム画面ウィジェット用のバー型・丸型インジケーター（`AhdIndicators.kt`、規則は `AhdIndicatorModel.kt`）と、デバッグビルドだけのサンプル画面（`AhdIndicatorSamples.kt`）。使い方は `dashboard-ui/android/README.md`、JVMの検査は `android/tests/` と `test-android-kotlin` |
 | `dashboard-ui/android/MainActivity.kt` | AndroidのActivity（`Dioxus.toml` の `android_main_activity`）：ルートでの戻るをバックグラウンド化、設定変更時の文字サイズ反映、破棄時のプロセス終了、通知の権限要求・アラーム・receiver、サーバーの受信箱を読む `AhdInbox` とそのジョブ（receiverとジョブの設定は `android/AndroidManifest.application.xml` を生成manifestへ挿入） |
+| `dashboard-ui/src/pages/challenges.rs` | ダッシュボードの「高難度コンテンツ」欄：モードごとの到達状況とリセットまでの残り時間（共通の `Clock` で毎秒更新）、未挑戦・未開放・取得失敗の表示 |
 | `src/dashboard/games/summary.rs` | 上流ゲーム状態から画面用の要約への写像 |
 
 ### バックエンドモジュール

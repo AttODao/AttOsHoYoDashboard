@@ -24,6 +24,11 @@ impl ApiError {
         self.status == Some(401) || self.code == "unauthorized"
     }
 
+    /// The route or resource does not exist (also a server older than the endpoint).
+    pub fn is_not_found(&self) -> bool {
+        self.status == Some(404)
+    }
+
     pub fn message_key(&self) -> &'static str {
         self.message_key
     }
