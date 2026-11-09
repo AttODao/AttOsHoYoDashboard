@@ -50,6 +50,11 @@ The default `DASHBOARD_UI_DIR` is `target/dx/attos-dashboard-ui/release/web/publ
 - Users issue, list, and revoke their own API tokens (scope `read` or `run`, at most 10) from the security settings; the plaintext `ahd_…` value is shown once and only its SHA-256 is stored. Issuing and revoking need a session; a token can never manage tokens.
 - An administrator's password reissue, disable, or deletion request revokes the user's API tokens with the sessions. The user's own password change keeps them. Revocation deletes the row; `account_audit` records `api_token_created` / `api_token_revoked`.
 
+## Settings transfer
+
+- Users download their own settings (`ahd-settings` version 1 JSON: reward schedules, game UID visibility, notification choices) from Settings → Settings transfer in the web UI and import them on another instance. The file never contains HoYoLAB Cookies, the Webhook URL, passwords, passkeys, sessions or API tokens; after a move the user links HoYoLAB again and re-enters the Webhook URL. It is not a server backup: back up PostgreSQL and the cookie key for that.
+- Import is session-only, previews every change, applies in one transaction, and skips UIDs or rewards the importing account does not have (they are never created). Rewards and UID visibility need a verified HoYoLAB link first, so import after linking.
+
 ## Logging, health, and metrics
 
 - `RUST_LOG` selects log levels (default `info`, e.g. `info,attoshoyodashboard=debug`); `LOG_FORMAT=json` writes one JSON object per line. Logs never include Cookie values, credentials, request payloads, or raw upstream errors.

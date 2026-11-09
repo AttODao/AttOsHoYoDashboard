@@ -70,6 +70,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 | --- | --- | --- |
 | 管理者機能（ユーザー管理、監査、管理者向け通知設定） | メニューに「管理者設定」を出さない。`/admin` へは遷移しない | `Page::web_only` に `Admin` を含め、`reachable()` が `set_page`・`restore_page`（戻る／進む）・`initial_page` でダッシュボードへ置き換える（`app/state.rs`）。メニュー項目と `AdminPage` の描画を `!APP` で囲む（`pages/shell.rs`）。管理者データの読み込みも行わない（`app/data.rs`） |
 | APIドキュメント（`/docs`） | メニューに出さない。遷移しない | `Page::web_only` に `Docs` を含める（`app/state.rs`）。メニュー項目（`pages/shell.rs`）と `DocsPage`（`app.rs`）を `!APP` で囲む |
+| 設定の移行（書き出し・読み込み） | 設定タブに「移行」を出さない。`/settings/transfer` へは遷移しない。ブラウザで開けば使える | `Page::web_only` に `Transfer` を含め、`settings_tabs(app)` が移行タブを除く。`TransferPage` は `!APP` のときだけ描画する（`pages/shell.rs`）。WebViewにはファイル選択（`onShowFileChooser`）とダウンロードの処理がなく、ネイティブの追加実装が要るため、web版だけにした |
 | ユーザー削除 | 設定タブに「削除」を出さない。`/settings/delete` へは遷移しない | `Page::web_only` に `Delete` を含める（`app/state.rs`）。`settings_tabs(app)` が削除タブを除き、矢印キー／Home／Endでのタブ移動も残りのタブの中で循環する。`DeletePage` は `!APP` のときだけ描画する（`pages/shell.rs`） |
 | セキュリティのAPIトークン | カードを出さず、一覧も取得しない | `ApiTokenCard` を `!APP` で囲む（`pages/security.rs`）。`load_api_tokens` を呼ばない（`app/data.rs`） |
 | パスワード変更 | 「認証・セキュリティ」では、パスワード変更カードの代わりに案内文と「ブラウザで開く」を出す。初回設定や復旧後にパスワード変更が必須のときも、案内文と「ブラウザで開く」を出す。変更後に「設定状況を更新」を押すと次へ進む | `PasswordCard` を `!APP` で囲む（`pages/security.rs`、`pages/auth.rs` の `OnboardingPage`）。文言 `security.manage_in_browser`、`auth.change_password_in_browser` |
@@ -81,7 +82,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 | パスキーでのログイン | パスワードフォームの下の「パスキーでログイン」「ブラウザでログイン」からブラウザで認証し、許可後にアプリへ戻る（5.3節） | `pages/auth.rs` の代替ボタンから `app/browser_login.rs` でハンドオフする |
 | パスキーの登録 | 登録フォームを出さない。登録済みパスキーの一覧・名前変更・削除はできる | `pages/security.rs` の `PasskeyCard` 内の登録フォームを `!APP` で囲む |
 
-`Page::web_only` と `reachable` は純関数として単体テストしています（`the_app_never_routes_to_web_only_pages`、`app_settings_tabs_leave_out_account_deletion`）。テスト中は `APP` が `false` になるため、`app` を引数で渡して両方の場合を確認します。
+`Page::web_only` と `reachable` は純関数として単体テストしています（`the_app_never_routes_to_web_only_pages`、`app_settings_tabs_leave_out_the_settings_file_and_account_deletion`）。テスト中は `APP` が `false` になるため、`app` を引数で渡して両方の場合を確認します。
 
 ## 4. レイアウトの変更点（画面ごと）
 

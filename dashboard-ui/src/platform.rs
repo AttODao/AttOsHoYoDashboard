@@ -1,8 +1,8 @@
 //! Web/app differences: what the Android app leaves out, opening the web version, and timers that work on both.
 
 /// The Android app (`mobile` feature). The browser build and native tests are `false`.
-/// The app leaves administration, API docs, account deletion, API tokens and password
-/// change to the web version: pages are filtered in `app::state`, controls in `pages`.
+/// The app leaves administration, API docs, account deletion, the settings transfer, API
+/// tokens and password change to the web version: pages are filtered in `app::state`, controls in `pages`.
 pub const APP: bool = cfg!(feature = "mobile");
 
 /// Waits on the browser timer, or the native runtime timer in the app.

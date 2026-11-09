@@ -10,6 +10,7 @@ mod home_widgets;
 mod navigation;
 mod preferences;
 mod session;
+mod settings_file;
 mod state;
 pub(crate) mod swipe;
 #[cfg(feature = "mobile")]
@@ -174,6 +175,7 @@ fn page_title(page: Page, phase: Phase, ready: bool, ui: preferences::Preference
             Page::Link => "settings.link",
             Page::Security => "settings.security",
             Page::Notifications => "settings.notifications",
+            Page::Transfer => "settings.transfer",
             Page::Delete => "settings.delete",
             Page::Admin => "admin.admin_settings",
             Page::About => "about.title",
