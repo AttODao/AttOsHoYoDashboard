@@ -446,6 +446,7 @@
   "admin.deleted_user": "削除済みユーザー",
   "audit.bootstrap_admin": "初期管理者を作成",
   "audit.signed_in": "ログイン",
+  "audit.sign_in_failed": "ログイン失敗",
   "audit.password_changed": "パスワードを変更",
   "audit.password_reset": "パスワードを再発行",
   "audit.user_created": "ユーザーを作成",

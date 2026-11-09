@@ -28,7 +28,7 @@ pub(super) fn Metric(label: &'static str, value: String) -> Element {
 pub(super) fn Card(title: &'static str, children: Element) -> Element {
     rsx! {
         section { class: "panel page-stack",
-            h3 { "{title}" }
+            h2 { "{title}" }
             {children}
         }
     }

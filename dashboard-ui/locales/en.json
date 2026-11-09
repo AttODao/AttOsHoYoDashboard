@@ -446,6 +446,7 @@
   "admin.deleted_user": "Deleted user",
   "audit.bootstrap_admin": "Initial administrator created",
   "audit.signed_in": "Signed in",
+  "audit.sign_in_failed": "Sign-in failed",
   "audit.password_changed": "Password changed",
   "audit.password_reset": "Password reissued",
   "audit.user_created": "User created",

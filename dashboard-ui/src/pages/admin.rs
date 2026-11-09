@@ -247,6 +247,7 @@ fn audit_action(action: &str, prefs: crate::app::preferences::Preferences) -> &'
     prefs.text(match action {
         "bootstrap_admin" => "audit.bootstrap_admin",
         "signed_in" => "audit.signed_in",
+        "sign_in_failed" => "audit.sign_in_failed",
         "password_changed" => "audit.password_changed",
         "password_reset" => "audit.password_reset",
         "api_token_created" => "audit.api_token_created",
@@ -614,6 +615,38 @@ mod tests {
             link_status: None,
             automatic_claims: None,
         }
+    }
+
+    #[test]
+    fn recorded_audit_actions_have_their_own_labels() {
+        let ui = crate::app::preferences::Preferences::default();
+        let other = ui.text("audit.other");
+        // Every action the server writes to account_audit (src/dashboard/auth, admin, rewards).
+        for action in [
+            "bootstrap_admin",
+            "signed_in",
+            "sign_in_failed",
+            "password_changed",
+            "password_reset",
+            "api_token_created",
+            "api_token_revoked",
+            "user_created",
+            "user_enabled",
+            "user_disabled",
+            "admin_granted",
+            "admin_revoked",
+            "user_deletion_requested",
+            "hoyolab_cookie_submitted",
+            "hoyolab_cookie_verified",
+            "hoyolab_cookie_removed",
+            "passkey_registered",
+            "passkey_deleted",
+            "reward_delete_checked",
+        ] {
+            assert_ne!(audit_action(action, ui), other, "{action}");
+        }
+        assert_eq!(audit_action("sign_in_failed", ui), "ログイン失敗");
+        assert_eq!(audit_action("future_action", ui), other);
     }
 
     #[test]

@@ -1,8 +1,8 @@
-use super::shell::{Header, Status};
+use super::shell::{CONTENT_ID, Header, SkipLink, Status};
 use crate::app::data::load_docs;
 use crate::app::preferences::use_preferences;
 use crate::app::state::AppState;
-use crate::components::{Card, CardContent, CardDescription, CardHeader, CardTitle};
+use crate::components::{Card, CardContent, CardDescription, CardHeader};
 use dioxus::prelude::*;
 use serde_json::Value;
 
@@ -14,17 +14,21 @@ pub(in crate::app) fn DocsPage(mut state: Signal<AppState>) -> Element {
     });
     let doc = state.read().openapi.clone();
     rsx! {
-        main { class: "page-wrap docs-page",
-            Header { state }
+        SkipLink {}
+        Header { state }
+        main { class: "container docs-page", id: CONTENT_ID, tabindex: "-1",
             Status { state }
-            Card {
-                CardHeader { CardTitle { {ui.text("docs.title")} } CardDescription { {ui.text("docs.description")} } }
-                CardContent {
-                    if let Some(error) = &state.read().openapi_error { p { class: "warning", {ui.text(error)} } }
-                    if let Some(doc) = doc {
-                        OpenApiSummary { doc }
-                    } else {
-                        p { {ui.text("docs.loading")} }
+            div { class: "page-stack",
+                h1 { {ui.text("docs.title")} }
+                Card {
+                    CardHeader { CardDescription { {ui.text("docs.description")} } }
+                    CardContent {
+                        if let Some(error) = &state.read().openapi_error { p { class: "warning", {ui.text(error)} } }
+                        if let Some(doc) = doc {
+                            OpenApiSummary { doc }
+                        } else {
+                            p { {ui.text("docs.loading")} }
+                        }
                     }
                 }
             }

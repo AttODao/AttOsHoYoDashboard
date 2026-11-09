@@ -130,7 +130,7 @@ const server=http.createServer(async(req,res)=>{
     if(req.method==='POST'){assert.ok(actor===user);assert.ok(body.username==='synthetic-created');assert.ok(validGenerated(body.temporary_password),'24-character WebCrypto candidate');if(failCreate)return json(res,{error:'unavailable'},503);const created={...other,id:uid(12),username:body.username,must_change_password:true};createdUsers.push(created);return json(res,created,201);}
     return json(res,[user,other,secondAdmin,...createdUsers].map(row=>({...row,created_at:hoursAgo(100),link_status:row===other?'verified':'not_configured',automatic_claims:row===other?2:0,last_login_at:row===user?hoursAgo(1):null})));
    }
-   if(p==='/api/v1/admin/audit'){assert.equal(req.method,'GET');return json(res,[{id:uid(60),action:'user_created',created_at:hoursAgo(1),actor:user.username,target:other.username},{id:uid(61),action:'signed_in',created_at:hoursAgo(2),actor:null,target:null}]);}
+   if(p==='/api/v1/admin/audit'){assert.equal(req.method,'GET');return json(res,[{id:uid(60),action:'user_created',created_at:hoursAgo(1),actor:user.username,target:other.username},{id:uid(61),action:'signed_in',created_at:hoursAgo(2),actor:null,target:null},{id:uid(62),action:'sign_in_failed',created_at:hoursAgo(3),actor:null,target:user.username}]);}
    if(p===`/api/v1/admin/users/${uid(12)}/temporary-password`){assert.equal(req.method,'PUT');assert.ok(validGenerated(body.temporary_password));res.writeHead(204);return res.end();}
    if(p===`/api/v1/admin/users/${other.id}`){
     assert.ok(actor===user);
@@ -475,6 +475,7 @@ try{
  assert.match(await starrail.locator('time.recovery-at').innerText(),/^\d\d\/\d\d \d\d:\d\d JST$/);
  statusMode=null;await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
  await starrail.locator('.resource strong').getByText('24',{exact:true}).waitFor();
+ assert.ok(await page.locator('#refresh-starrail').evaluate(e=>e===document.activeElement),'refresh keeps keyboard focus while and after loading');
  assert.equal(await starrail.locator('.warning').count(),0);
  await genshin.getByRole('switch').check();await idle();
  assert.deepEqual(rewardPatches.at(-1),{id:uid(20),enabled:true,local_time:'06:00'});
@@ -661,6 +662,8 @@ try{
  await page.waitForURL(origin+'/settings/notifications');
  await page.reload();await page.locator('#settings-tab-notifications[aria-selected=true]').waitFor();await idle();
  await page.locator('#webhook-url').waitFor();
+ assert.equal(await page.title(),'Notifications – AHD','the notifications tab names the page');
+ for(const id of ['#webhook-url','#resin-warn'])assert.ok((await page.locator(id).boundingBox()).height>=48,id+' uses the 48px text field');
  // The web lists only the Webhook's choices and leaves the app's (app_events) untouched.
  assert.equal(await page.locator('#app-event-signed_in, .event-matrix').count(),0);
  await page.locator('#event-reward_failed').check();
@@ -668,6 +671,7 @@ try{
  await page.locator('#webhook-url').locator('xpath=ancestor::section[1]').locator('.button-row button').first().click();
  await page.locator('.status.success').waitFor();
  assert.equal(notificationSaves.length,saves+1);
+ await page.waitForFunction(()=>document.activeElement?.matches('.button-row button:first-child'),null,{timeout:3000});
  const saved=notificationSaves.at(-1);
  assert.equal(saved.events.reward_failed,true);
  assert.ok(!('app_events' in saved),'the web keeps the app choices');
@@ -685,6 +689,8 @@ try{
  const meBeforeDocs=counts.get('/api/v1/me');
  await page.goto(origin+'/docs');await page.getByRole('heading',{name:apiTitle,exact:true}).waitFor();
  assert.equal(counts.get('/api/v1/me'),meBeforeDocs,'docs entry makes no session request');
+ await page.getByRole('heading',{name:'API documentation',exact:true,level:1}).waitFor();
+ assert.equal(await page.locator('main#content.container header, main#content .topbar').count(),0,'the header sits outside main');
  await page.locator('a.wordmark').click();await dashboard();
  assert.equal(await page.locator('#login-username').count(),0,'a valid session survives leaving docs');
  assert.equal(counts.get('/api/v1/me'),meBeforeDocs+1);
@@ -753,7 +759,11 @@ try{
  await page.locator('a.wordmark').click();await dashboard();
  const claim=button('Claim login bonuses now');
  assert.equal(await page.title(),'Dashboard – AHD');
- assert.equal(await page.locator('a.skip-link').getAttribute('href'),'#main');
+ // The skip link targets main, not the Dioxus root (#main), and moves focus there.
+ assert.equal(await page.locator('a.skip-link').getAttribute('href'),'#content');
+ assert.equal(await page.locator('[id=main]').count(),1,'only the Dioxus root uses #main');
+ await page.locator('a.skip-link').focus();await page.keyboard.press('Enter');
+ assert.ok(await page.locator('main#content').evaluate(e=>e===document.activeElement),'skip link focuses the page content');
  assert.equal(await genshin.locator('.award').innerText(),'Next reward: Primogem ×20');
  assert.match(await genshin.locator('.bonus-today').innerText(),/^Today: Not received · Day 12 this month$/);
  await page.waitForLoadState('networkidle');
@@ -968,6 +978,11 @@ try{
  assert.ok((await otherRowEarly.innerText()).includes('Never'));
  const audit=page.getByRole('table').filter({hasText:'User created'});
  assert.ok((await audit.innerText()).includes('System')&&(await audit.innerText()).includes('Deleted user'));
+ assert.ok((await audit.innerText()).includes('Sign-in failed')&&!(await audit.innerText()).includes('Other action'),'failed sign-ins have their own label');
+ // Card titles are section headings below the page heading.
+ for(const name of ['Create user','Manage users','Audit log'])assert.equal(await page.getByRole('heading',{name,exact:true,level:2}).count(),1,name);
+ assert.equal(await page.locator('#admin-search').evaluate(e=>getComputedStyle(e).backgroundColor),await page.locator('#admin-create-username').evaluate(e=>getComputedStyle(e).backgroundColor),'search input uses the text field look');
+ assert.ok((await page.locator('#admin-search').boundingBox()).height>=48);
  await page.locator('#admin-search').fill(other.username);
  assert.equal(await page.locator('.admin-users tbody tr').count(),1);
  await page.locator('#admin-search').fill('');
@@ -1023,6 +1038,7 @@ try{
  await page.evaluate(()=>{Crypto.prototype.getRandomValues=function(array){window.entropyCalls++;return window.originalRandom.call(this,array);};});
  failCreate=true;await button('Create user').click();await idle();
  await page.getByText('Could not create user.',{exact:true}).waitFor();
+ await page.waitForFunction(()=>document.activeElement?.id==='status-message',null,{timeout:3000});
  assert.equal(await page.locator('#admin-generated-password').count(),0);
  failCreate=false;await button('Create user').click();await idle();
  await page.locator('#admin-credential-result[open]').waitFor();

@@ -182,7 +182,7 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | `dashboard-ui/android/test/` | ウィジェットモデルのKotlin JVMテスト |
 | `dashboard-ui/src/app/state.rs` | 画面状態、認証・初期設定ゲートと画面データ取得の起動 |
 | `dashboard-ui/src/app/session.rs` | `/me`による起動・再確認、初期設定ゲートのその場での再読み込み、ログアウト |
-| `dashboard-ui/src/app/actions.rs` | 操作の予約（busy）と完了・APIエラー処理。セッション世代とは独立 |
+| `dashboard-ui/src/app/actions.rs` | 操作の予約（busy）と完了・APIエラー処理。セッション世代とは独立。完了後、busyで失われたフォーカスを操作したボタンへ戻し、失敗時はエラー表示へ移す（web） |
 | `dashboard-ui/src/app/data.rs` | セッション世代に結び付いた画面データの取得（未取得と空を区別、リソースごとに最新の要求の応答だけを反映）、全ゲームの手動受け取りとその後の報酬状態のGET追従 |
 | `dashboard-ui/src/app/display.rs` | 数値・ブラウザのローカル時刻による簡潔な月日／24時間表示、データの経過時間、上限への近さ、サーバー時刻とブラウザ時刻の換算、エラーコードの表示文への対応付け |
 | `dashboard-ui/src/pages/` | 画面、メニュー、設定、ユーザー管理、このアプリについて、アプリ更新ダイアログ（`pages/app_update.rs`） |
