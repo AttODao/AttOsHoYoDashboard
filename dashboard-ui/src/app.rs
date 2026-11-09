@@ -59,6 +59,8 @@ pub fn App() -> Element {
     let app_login = use_signal(navigation::app_login_request);
     navigation::use_browser_history(state);
     #[cfg(feature = "mobile")]
+    crate::mobile::back::use_back_key();
+    #[cfg(feature = "mobile")]
     device_notifications::use_device_notifications(state);
     #[cfg(feature = "mobile")]
     home_widgets::use_home_widgets(state);

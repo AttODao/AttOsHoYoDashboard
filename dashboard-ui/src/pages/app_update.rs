@@ -44,7 +44,7 @@ pub(crate) fn UpdateDialog(updates: Updates) -> Element {
         }
     };
     rsx! {
-        ModalDialog { id: "app-update-dialog", title: ui.text("update.title"), onclose: dismiss,
+        ModalDialog { id: "app-update-dialog", title: ui.text("update.title"), onclose: dismiss, back_closes: flow.back_closes(),
             dl { class: "metric-list",
                 div { class: "metric", dt { {ui.text("update.current_version")} } dd { "{current}" } }
                 div { class: "metric", dt { {ui.text("update.new_version")} } dd { "{check.latest}" } }

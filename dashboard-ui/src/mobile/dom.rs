@@ -60,15 +60,17 @@ pub(crate) fn set_checked(id: &str, checked: bool) {
     ));
 }
 
-/// An open native `<dialog>`: Escape, backdrop clicks and `close` report through
-/// `onclose`; dropping it closes the dialog and restores scroll and focus.
+/// An open native `<dialog>`: Escape, backdrop clicks, `close` and (while `back_closes`)
+/// Android's Back key report through `onclose`; dropping it closes the dialog and restores
+/// scroll and focus.
 pub(crate) struct Modal {
     id: String,
     task: Task,
+    back: u64,
 }
 
 impl Modal {
-    pub(crate) fn open(id: &str, onclose: EventHandler<()>) -> Self {
+    pub(crate) fn open(id: &str, back_closes: bool, onclose: EventHandler<()>) -> Self {
         let script = format!(
             r#"
             const id = {id};
@@ -112,12 +114,18 @@ impl Modal {
         Self {
             id: id.to_owned(),
             task,
+            back: super::back::register(back_closes, onclose),
         }
+    }
+
+    pub(crate) fn set_back_closes(&self, back_closes: bool) {
+        super::back::set_closes(self.back, back_closes);
     }
 }
 
 impl Drop for Modal {
     fn drop(&mut self) {
+        super::back::unregister(self.back);
         self.task.cancel();
         let _ = document::eval(&format!(
             "const id = {}; const close = window.__ahdModals && window.__ahdModals[id]; \
