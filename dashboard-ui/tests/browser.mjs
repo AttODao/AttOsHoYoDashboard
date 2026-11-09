@@ -453,8 +453,20 @@ try{
  assert.equal(await genshin.locator('.recovery-in').first().innerText(),'Fully recovered','a passed estimate is not a negative countdown');
  assert.doesNotMatch(await genshin.locator('.recovery-in').first().evaluate(e=>getComputedStyle(e).fontFamily),/Orbitron/);
  assert.equal(await genshin.locator('.recovery-in').nth(1).innerText(),'At cap','a passed currency estimate states the cap, not recovery');
- // Freshness is always visible beside Refresh; weekly allowances and the transformer show beside dailies.
- assert.equal(await genshin.locator(':scope > .refresh-row .freshness').innerText(),'Updated just now');
+ // Freshness sits under the game title, beside Refresh; weekly allowances and the transformer show beside dailies.
+ assert.equal(await genshin.locator('.game-heading .freshness').innerText(),'Updated just now');
+ assert.equal(await genshin.locator(':scope > .refresh-row').count(),0,'the status age is not repeated below the card');
+ // Today's claim per game sits beside the one claim control, above the game cards.
+ const claimSummary=page.locator('.page-intro #claim-summary');
+ await claimSummary.waitFor();
+ assert.equal((await claimSummary.textContent()).replace(/\s+/g,' ').trim(),'Today · Genshin Impact Not received · Honkai: Star Rail Received');
+ assert.equal(await claimSummary.locator('[data-game=genshin].pending strong').innerText(),'Not received');
+ assert.equal(await claimSummary.locator('[data-game=starrail].success strong').innerText(),'Received');
+ // The login bonus behind the claim control is read before the per-game history, endgame and calendar reads.
+ await starrail.locator('section.calendar-section .calendar-empty').waitFor();
+ const firstRead=suffix=>[...counts.keys()].findIndex(key=>key.endsWith(suffix));
+ assert.ok(firstRead('/api/v1/reward-settings')>=0,'reward settings were read');
+ for(const later of ['/resource-history','/challenges','/calendar'])assert.ok(firstRead('/api/v1/reward-settings')<firstRead(later),'reward settings before '+later);
  assert.equal(await genshin.locator('.metric').filter({hasText:'Weekly boss discounts'}).locator('dd').innerText(),'2/3 left');
  assert.equal(await genshin.locator('.metric').filter({hasText:'Parametric Transformer'}).locator('dd').innerText(),'Ready');
  assert.equal(await starrail.locator('.metric').filter({hasText:'Echo of War'}).locator('dd').innerText(),'1/3 left');
@@ -579,8 +591,23 @@ try{
  assert.ok(await genshinHistory.evaluate(node=>{const box=node.getBoundingClientRect(),bar=node.querySelector('svg').getBoundingClientRect();return bar.width>=box.width-1&&bar.height>=10;}),'the timeline spans the card');
  await starrail.locator('.cap-history').getByText('No history recorded yet.',{exact:true}).waitFor();
  assert.equal(await starrail.locator('.cap-history svg').count(),0,'nothing recorded draws no timeline');
+ // While the new UID's endgame read is held, it and the calendar queued behind it say they are loading.
+ let releaseQueued,heldQueued=0;const queuedGate=new Promise(resolve=>{releaseQueued=resolve;});
+ const queuedPaths=[`/api/v1/game-accounts/${uid(6)}/challenges`,`/api/v1/game-accounts/${uid(6)}/calendar`];
+ const holdQueued=async route=>{heldQueued++;try{await queuedGate;await route.fallback();}finally{heldQueued--;}};
+ const queuedRoute=url=>queuedPaths.includes(url.pathname);
+ await page.route(queuedRoute,holdQueued);
  await page.locator('#selected-genshin').selectOption(uid(6));
  await genshin.locator('.resource strong').getByText('31',{exact:true}).waitFor();
+ for(const section of ['section.challenge-section','section.calendar-section']){
+  await genshin.locator(section).getByText('Loading…',{exact:true}).waitFor();
+  assert.ok(!(await genshin.locator(section).innerText()).includes('not been fetched'),section+' queued is not called unfetched');
+ }
+ assert.ok(heldQueued>=1,'the endgame read is really held');
+ releaseQueued();
+ await genshin.locator('section.calendar-section details').waitFor();
+ while(heldQueued>0)await page.waitForTimeout(50);
+ await page.unroute(queuedRoute,holdQueued);
  assert.equal(await genshin.locator('time.recovery-at').count(),0,'invalid estimate is not rendered as a date');
  assert.equal(await page.locator('#selected-starrail').inputValue(),uid(7));
  await page.locator('#selected-starrail').selectOption(uid(8));
@@ -630,6 +657,10 @@ try{
  assert.equal(await genshin.locator('.cap-history-value').innerText(),'3h 12m');
  historyMode='missing';await genshin.getByRole('button',{name:'Refresh',exact:true}).click();
  await genshin.locator('.cap-history').waitFor({state:'detached'});
+ // With no history shown, a failure only says that loading failed.
+ historyMode='failed';await genshin.getByRole('button',{name:'Refresh',exact:true}).click();
+ await genshin.locator('.cap-history').getByText('Could not load the cap history.',{exact:true}).waitFor();
+ assert.ok(!(await genshin.locator('.cap-history').innerText()).includes('out of date'),'nothing shown is not called outdated');
  historyMode=null;await genshin.getByRole('button',{name:'Refresh',exact:true}).click();
  await genshin.locator('.cap-history-value').waitFor();
  await genshin.getByRole('switch').check();await idle();
@@ -1197,6 +1228,11 @@ try{
  assert.equal(await otherLink.locator('.run-state.error strong').innerText(),'Failed');
  assert.equal(await otherLink.locator('.run-state.success strong').innerText(),'Success');
  assert.equal(await ownRow.locator('td.admin-link .run-state').count(),0,'users without a link show no health lines');
+ // Health lines break between parts, never inside "Auto" or a date; the two-by-two actions leave the link column room.
+ assert.equal(await otherLink.locator('.health-line > *').evaluateAll(parts=>parts.filter(part=>getComputedStyle(part).display!=='inline-block').length),0);
+ assert.ok(await otherLink.locator('.health-line').evaluateAll(lines=>lines.every(line=>[...line.children].every(part=>part.getBoundingClientRect().height<2*parseFloat(getComputedStyle(part).fontSize)))),'no part of a health line is split across lines');
+ assert.ok((await otherLink.boundingBox()).width>=280,'the link column stays readable at 1280px');
+ assert.equal(await otherRowEarly.locator('.admin-user-actions button').evaluateAll(buttons=>new Set(buttons.map(button=>Math.round(button.getBoundingClientRect().y))).size),2,'actions form two rows');
  assert.equal(await ownRow.getByText('Needs attention',{exact:true}).count(),0);
  const attentionOnly=page.getByLabel('Only users who need attention (1)',{exact:true});
  await attentionOnly.focus();await page.keyboard.press('Space');

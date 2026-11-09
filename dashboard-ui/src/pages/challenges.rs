@@ -1,3 +1,4 @@
+use super::common::{pending, refresh_problem};
 use super::dashboard::{Freshness, use_clock};
 use crate::app::display::{compact_datetime, days_hours, error_text, seconds_since};
 use crate::app::preferences::{Preferences, use_preferences};
@@ -30,7 +31,11 @@ pub(super) fn ChallengeSection(state: Signal<AppState>, game: &'static str) -> E
         .iter()
         .find(|entry| entry.id == id)
         .map(|entry| entry.challenges.clone());
-    let loading = selection.challenges_loading;
+    let loading = pending(
+        selection.challenges_loading,
+        challenges.is_some(),
+        selection.challenges_error.is_some(),
+    );
     drop(snapshot);
     if selection.challenges_unavailable && challenges.is_none() {
         return rsx! {};
@@ -39,15 +44,13 @@ pub(super) fn ChallengeSection(state: Signal<AppState>, game: &'static str) -> E
         section { class: "challenge-section", id: "challenges-{game}", "aria-labelledby": "challenge-title-{game}",
             h3 { id: "challenge-title-{game}", {ui.text("challenges.title")} }
             if let Some(key) = selection.challenges_error {
-                p { class: "warning", role: "status", {ui.text(key)} }
+                p { class: "warning", role: "status", {ui.text(refresh_problem(key, challenges.is_some(), "challenges.fetch_failed"))} }
             }
             div { "aria-busy": loading,
                 if let Some(challenges) = challenges.clone() {
                     ChallengeList { challenges }
                 } else if loading {
                     p { role: "status", {ui.text("dashboard.loading")} }
-                } else if selection.challenges_error.is_none() {
-                    p { {ui.text("challenges.not_fetched")} }
                 }
             }
             if let Some(challenges) = challenges {

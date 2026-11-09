@@ -13,6 +13,22 @@ pub(super) fn game_name(game: &str, ui: Preferences) -> &'static str {
     }
 }
 
+/// A failed refresh warns that the shown data may be out of date; with nothing shown
+/// the same failure only says that the fetch failed (`fetch`). Other problems stay.
+pub(super) fn refresh_problem(key: &'static str, shown: bool, fetch: &'static str) -> &'static str {
+    if key.ends_with(".refresh_failed") && !shown {
+        fetch
+    } else {
+        key
+    }
+}
+
+/// A dashboard section reads as loading while its request runs and also while it is
+/// still queued behind the other dashboard reads: no data and no problem yet.
+pub(super) fn pending(loading: bool, shown: bool, failed: bool) -> bool {
+    loading || (!shown && !failed)
+}
+
 #[component]
 pub(super) fn Field(id: String, label: String, children: Element) -> Element {
     rsx! { div { class: "field", label { r#for: "{id}", "{label}" } {children} } }
@@ -504,7 +520,39 @@ fn outside_bounds(x: f64, y: f64, left: f64, top: f64, right: f64, bottom: f64) 
 
 #[cfg(test)]
 mod tests {
-    use super::{Preferences, game_name, outside_bounds};
+    use super::{Preferences, game_name, outside_bounds, pending, refresh_problem};
+
+    #[test]
+    fn sections_without_data_or_a_problem_read_as_loading() {
+        assert!(pending(true, true, false), "a refresh in flight");
+        assert!(
+            pending(false, false, false),
+            "queued behind the other reads"
+        );
+        assert!(!pending(false, true, false), "data shown");
+        assert!(!pending(false, false, true), "the problem is shown instead");
+    }
+
+    #[test]
+    fn a_failed_refresh_without_shown_data_only_says_the_fetch_failed() {
+        for (refresh, fetch) in [
+            ("dashboard.refresh_failed", "dashboard.status_fetch_failed"),
+            ("history.refresh_failed", "history.fetch_failed"),
+            ("challenges.refresh_failed", "challenges.fetch_failed"),
+            ("calendar.refresh_failed", "calendar.fetch_failed"),
+        ] {
+            assert_eq!(refresh_problem(refresh, false, fetch), fetch);
+            assert_eq!(refresh_problem(refresh, true, fetch), refresh);
+        }
+        assert_eq!(
+            refresh_problem(
+                "dashboard.status_identity_mismatch",
+                false,
+                "dashboard.status_fetch_failed"
+            ),
+            "dashboard.status_identity_mismatch"
+        );
+    }
 
     #[test]
     fn game_names_are_localized_and_unknown_kinds_get_a_generic_name() {
