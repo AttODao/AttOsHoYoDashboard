@@ -56,7 +56,7 @@ The default `DASHBOARD_UI_DIR` is `target/dx/attos-dashboard-ui/release/web/publ
 - `GET /health` returns `{"status":"ok","worker":"ok"}`. `worker` is `disabled` without `HOYOLAB_COOKIE_KEY`; if the reward worker has not ticked for 120 s the response is 503 with `{"status":"degraded","worker":"stalled"}`.
 - `GET /metrics` exists only when `METRICS_TOKEN` (16+ visible ASCII characters) is set, and requires `Authorization: Bearer <METRICS_TOKEN>`. It reports user, link, reward-run (`ahd_reward_runs{state}`, all retained runs) and reward-setting counts, `ahd_reward_runs_ended_24h{state}` (runs that ended in the last 24 hours, every final state reported, 0 when none), `ahd_api_tokens{scope}`, and the worker heartbeat age in Prometheus text format.
 - Schedules use `TIMEZONE` (IANA name, DST aware; a time skipped by DST runs at the first minute after the gap, a repeated time at its first occurrence) when set, otherwise the fixed `TIMEZONE_OFFSET`.
-- Tuning: `REWARD_HISTORY_DAYS` (1–90, default 5), `STATUS_CACHE_TTL_MINUTES` (1–60, default 5), `REWARD_MAX_ATTEMPTS` (1–4, default 4), `REWARD_RETRY_DELAY_SECONDS` (1–600, default 10).
+- Tuning: `REWARD_HISTORY_DAYS` (1–90, default 5), `STATUS_CACHE_TTL_MINUTES` (1–60, default 5), `CHALLENGE_CACHE_TTL_MINUTES` (5–1440, default 60; endgame challenge summaries, refetched early once a period has ended since the fetch, and after `STATUS_CACHE_TTL_MINUTES` when one mode failed), `REWARD_MAX_ATTEMPTS` (1–4, default 4), `REWARD_RETRY_DELAY_SECONDS` (1–600, default 10).
 
 ## Availability and shutdown
 
@@ -68,6 +68,7 @@ The default `DASHBOARD_UI_DIR` is `target/dx/attos-dashboard-ui/release/web/publ
 
 - Normal integration and manual/scheduled rewards retain fresh account/community identity, Cookie-claim and roles consistency checks, same-UID update checks, verified-link requirements, authentication, authorization, and account lifecycle checks. Cookie UID alone is not ownership proof.
 - Owner serialization, transaction/row locks, durable may-have-sent recording **before** POST, and daily GET `is_sign` confirmation remain required. An uncertain POST is never resent; use GET-only confirmation and otherwise retain unknown status. Do not clear guards to force another POST.
+- Endgame challenge summaries (`GET /api/v1/game-accounts/{id}/challenges`) issue one GET per mode (3 for Genshin, 4 for Star Rail) when the cache is not fresh. Their field names come from genshin.py and have not been checked against live responses; the live GET suite does not cover these endpoints. If a summary shows only unknown values for a mode, compare the upstream shape before changing the parser, and never log the payloads.
 - User-approved availability is not scientific proof of live token-to-UID binding, roles principal consistency, or the full reward contract. Only one real account is available; synthetic multiple identities cannot establish live binding.
 - The user reported the current read-only GET suite passed (1 passed, 0 failed, 0 ignored; 3.72s). It checks accounts and both games' daily_info/daily_home/index/daily_note access, not account_identity/community_identity or reward POSTs. No live POST result has been reported. Additional evidence collection must stay within its approved scope; do not log Cookie values, credentials, payloads, or raw upstream errors.
 

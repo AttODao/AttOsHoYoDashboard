@@ -3,7 +3,7 @@ use super::App;
 use crate::dashboard::{
     auth::sessions::Identity,
     error::{Error, Result},
-    games::{GameStatus, Games},
+    games::{GameChallenges, GameStatus, Games},
 };
 use axum::{
     Json, Router,
@@ -20,6 +20,7 @@ pub(super) fn protected_routes() -> Router<App> {
         .route("/api/v1/game-accounts", get(list))
         .route("/api/v1/game-accounts/{id}", patch(set_visible))
         .route("/api/v1/game-accounts/{id}/status", get(status))
+        .route("/api/v1/game-accounts/{id}/challenges", get(challenges))
 }
 fn service(app: &App) -> Result<Games> {
     Ok(Games::new(app.cookies.clone().ok_or(
@@ -58,4 +59,23 @@ async fn status(
     Ok(Json(
         json!({"game_kind":row.game_kind,"game_uid":row.game_uid,"region":row.region,"visible":row.visible,"detected":row.detected,"data":row.payload,"fetched_at":row.fetched_at,"error_code":row.error_code,"error_at":row.error_at,"stale":row.stale}),
     ))
+}
+async fn challenges(
+    State(app): State<App>,
+    Extension(actor): Extension<Arc<Identity>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>> {
+    let row: GameChallenges = service(&app)?.challenges(&actor, id).await?;
+    Ok(Json(json!({
+        "game_kind": row.game_kind,
+        "game_uid": row.game_uid,
+        "region": row.region,
+        "visible": row.visible,
+        "detected": row.detected,
+        "modes": row.modes,
+        "fetched_at": row.fetched_at,
+        "error_code": row.error_code,
+        "error_at": row.error_at,
+        "stale": row.stale,
+    })))
 }

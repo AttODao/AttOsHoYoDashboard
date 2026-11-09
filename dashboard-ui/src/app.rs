@@ -33,7 +33,7 @@ use state::{AppState, Page, Phase, current_ready_page, initial_page};
 // External CSS uses these fingerprinted filenames; retain them without a second DX suffix.
 #[used]
 static FONT_JP: Asset = asset!(
-    "/assets/fonts/noto-sans-jp-4b8abf06c8f1.woff2",
+    "/assets/fonts/noto-sans-jp-1239230b1dea.woff2",
     AssetOptions::builder().with_hash_suffix(false)
 );
 #[used]
@@ -60,6 +60,8 @@ pub fn App() -> Element {
     let state = use_signal(|| AppState::new(initial_page()));
     let app_login = use_signal(navigation::app_login_request);
     navigation::use_browser_history(state);
+    #[cfg(feature = "mobile")]
+    crate::mobile::back::use_back_key();
     #[cfg(feature = "mobile")]
     device_notifications::use_device_notifications(state);
     #[cfg(feature = "mobile")]

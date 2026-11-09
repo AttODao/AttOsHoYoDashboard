@@ -119,6 +119,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 - アプリをバックグラウンドから戻したとき、前回の取得から60秒以上たっていれば状態を再取得する（web版の60秒ごとの更新に加えた動作）。
 - web版のカード右上にある更新ボタン（丸矢印）は出さない。代わりに、ページが最上部までスクロールされた状態で下に引っ張って離すと（減衰後72px以上）、UID一覧・両ゲームの状態・ボーナス設定を読み直す（`load_dashboard_data`、pull-to-refresh）。引っ張っている間は画面上部に丸矢印のインジケータが指に付いて回り、しきい値を超えるとシアンになり、読み込み中は回転し続ける。スクリーンリーダーには「更新中…」を `role="status"` で伝える。開いているダイアログ、入力欄・選択欄から始めたタッチ、横方向が主のスワイプでは反応しない。ダッシュボードではWebViewのオーバースクロール効果を止める（`overscroll-behavior-y:none`）。リスナーは `mobile/dom.rs` の `PullToRefresh` が持ち、ダッシュボードを離れると外す。
 - ゲームタブ（900px以下）はパネルの上で左右にスワイプしても切り替わる（左で次、右で前、端では止まる）。web版と同じ `SwipeableTabs` を使い、アプリではタッチを `mobile/swipe.rs` が集める。横方向が主のスワイプでは上の pull-to-refresh が外れ、縦方向が主の引っ張りではスワイプにならないので、2つは同時に動かない。
+- 各ゲームカードの「高難度コンテンツ」欄（`pages/challenges.rs`）はweb版と同じ部品・同じCSSで、アプリ専用のレイアウトはない。pull-to-refreshは両ゲームの状態の後にこの要約も読み直す（サーバーのキャッシュTTLは `CHALLENGE_CACHE_TTL_MINUTES`）。ホーム画面ウィジェットと端末通知には入れていない。エンドポイントのない古いサーバーにつないだ場合（404）は、エラーを出さずに欄ごと表示しない。
 
 ### 設定（共通）
 
@@ -274,7 +275,7 @@ Android Credential Manager（`androidx.credentials`）でアプリ内からパ�
 - バー型：ラベルと数値（`120/200`）を1行に、その下にバー、任意で残り時間などの補足。丸型：中央に数値またはアイコン、円弧の開いた下部に残り時間（`3時間12分`）。丸型は88dpと56dpの2サイズ（API 31未満のRemoteViewsはビューの大きさを変えられないため）。
 - 値なし（`null`）は空のトラックと「—」、上限の90%以上は「まもなく上限」の色、上限は上限の色で、数値も上限の色にします（ダッシュボードの `fill_level` と同じ規則）。色は原神がミント、スターレイルがラベンダー、まもなく上限・上限はダッシュボードのwarning色です（`res/values(-night)/ahd_indicator_colors.xml`）。
 - 描画：RemoteViewsは独自のViewを描けず、ProgressBarの色をコードから変えられるのはAPI 31からです（アプリはAPI 24以上）。そのため、バーは `<clip>`、円弧は回転したring `<shape android:useLevel="true">` のdrawableを `ImageView.setImageLevel` で伸ばします。色はレイアウトの `android:tint` で `values`／`values-night` から取るので、ランチャーが再inflateすればダークモードの切り替えにも追従します。Canvasで描いたBitmapは、描いた時点の色と密度に固定され、更新のたびにランチャーへ画像を送るため使っていません。
-- 文言は `values/ahd_indicator_strings.xml`（日本語、アプリと同じく既定）と `values-en`。ウィジェットは、アプリの言語（5.8節）の `createConfigurationContext` で選びます。ウィジェットの文言（`ahd_widget_*`）も同じく `values` が日本語、`values-en` が英語です。
+- 文言は `values/ahd_indicator_strings.xml`（日本語、アプリと同じく既定）と `values-en`。ウィジェットは、アプリの言語（5.9節）の `createConfigurationContext` で選びます。ウィジェットの文言（`ahd_widget_*`）も同じく `values` が日本語、`values-en` が英語です。
 - 確認：デバッグビルドには、全状態（値なし・0%・50%・90%・100%）を両ゲーム・ライト／ダークで並べるサンプル画面 `AhdIndicatorSamplesActivity` が入ります（`adb shell am start -n cc.attodao.ahd/dev.dioxus.main.AhdIndicatorSamplesActivity`、release用のmanifestには入れません）。規則（状態の判定、drawableのlevel、数値と残り時間の表記）と、レイアウトのidや色の定義は `devenv --profile android shell -- test-android-kotlin` がJVMで検査します（`dashboard-ui/android/tests/AhdIndicatorModelTest.kt`）。
 - 確認した表示：エミュレータ（API 34、1080×2400）のサンプル画面で、密度420（日本語・英語）と密度160・文字200%、それぞれライト／ダーク。文字の欠けや円弧のつぶれはない。tintの既定モード（src_atop）では半透明のトラック色が白い図形の上で白く残るため、tintした全ビューを `tintMode="src_in"` にしている（JVM検査でも確認）。
 
@@ -317,7 +318,18 @@ Android Credential Manager（`androidx.credentials`）でアプリ内からパ�
 - **保存の失敗と排他**：Cookieが変わったのに保存できなかったときは、Rustが次の要求の後にもう一度保存します。ファイルの読み書きと移行は、アプリの要求とジョブのスレッドの間で1つのロックで排他します。
 - **バックアップ**：`session-cookies.enc` と旧形式の `session-cookies.json`（とそれぞれの一時ファイル）を、クラウドバックアップと端末間の移行から除外します（`android/res/xml/ahd_backup_rules.xml` はAndroid 11以前の `fullBackupContent`、`ahd_data_extraction_rules.xml` はAndroid 12以降の `dataExtractionRules`。`scripts/build-android.sh` がmanifestの `<application>` に追加）。Keystoreの鍵はもともとバックアップされません。
 
-### 5.8 言語の初期値（端末のロケール）
+### 5.8 戻るボタンとダイアログ
+
+- ダイアログ（`ModalDialog`・`ConfirmDialog`・メニューのボトムシート・更新ダイアログ）が開いているときに戻るボタンを押すと、いちばん上のダイアログだけを閉じます。閉じ方はEscapeと同じで、各ダイアログの `onclose` を呼びます（メニューは閉じる、更新の案内は「後で」、確認ダイアログはキャンセル）。何も開いていなければ、前の画面へ戻ります。最初の画面では、これまでどおりバックグラウンドへ移します（`moveTaskToBack`）。
+- 開いているダイアログの記録は `mobile/back.rs` の1か所です。アプリのダイアログはすべて `use_modal` → `mobile::dom::Modal` で開くので、`Modal` が開くときに登録し、破棄で外します（開いた順のスタック。いちばん上は最後に開いたもの）。ダイアログごとに戻るボタンの処理を書く必要はありません。
+- 閉じてはいけない状態は、`ModalDialog` の `back_closes: false`（`use_modal` の引数）で明示します。今は更新ダイアログだけで、`Flow::back_closes` が、通知の許可の答え待ち・ダウンロード中・検証中・インストール中を「閉じない」にします。この間、戻るボタンは何もしません（下のダイアログも閉じず、前の画面にも戻りません）。ダイアログのボタン（キャンセル・閉じる）は従来どおり使えます。開いたまま状態が変わるので、`Modal::set_back_closes` で登録を更新します。
+- 流れ：`MainActivity.kt` は `handleBackNavigation = false` でwryの `onKeyDown`（WebViewの履歴を先に戻す）を止め、`OnBackPressedCallback` で `window.__ahdBack()` を呼びます。ページ側（`mobile::back::use_back_key`、ルートで1回）がスタックで判断し（`OpenDialogs::back`、通常の `cargo test` で検査）、閉じる・何もしない・`AhdBack.navigate`（JNI。UIスレッドで `canGoBack` なら `goBack`、そうでなければ `moveTaskToBack`）のどれかを行います。ページが読み込まれる前で `__ahdBack` がないときは、Kotlinが直接 `navigateBack` します。
+- 戻るボタンのイベントはActivityが前面（RESUMED）にあるときにしか届かないので、ダイアログを閉じるシグナルの書き込みは一時停止中には起きません（`onRequestPermissionsResult` のような停止中の更新の問題は起きません）。Activityを作り直すこともありません。
+- web版のブラウザの戻るは変わりません（`back_closes` はweb版では使わず、`__ahdBack` もアプリだけが定義します）。
+- 更新ダイアログの `dismiss`（Escape・背景のタップ・戻るボタン）は、状態を `peek` した値のガードを持ったまま書き込んでいたため、案内（Prompt）で閉じると `AlreadyBorrowed` でpanicし、次のWebViewのリクエストでアプリが異常終了していました。状態を先にコピーしてから書き込むように直しました。
+- 確認方法（API 34のx86_64エミュレータ、実際の `input keyevent KEYCODE_BACK`／`input tap`）：メニュー（ダッシュボード・設定）、Cookie削除の確認ダイアログ（閉じてもCookieは残り、次の戻るで前の画面）、更新の案内（「後で」になる）・ダウンロード中（2回押しても閉じず、前面のまま、ダウンロードは続く）・キャンセル後の案内・失敗表示、何も開いていない最初の画面（バックグラウンドへ移り、同じActivityで戻る）。背景のタップで閉じる動作も変わらないことを確かめました。logcatに `FORTIFY`・`Fatal signal`・`panicked` は出ませんでした。インストール中と通知の許可待ちは、ダウンロード中と同じ `Flow::back_closes` の判断で、エミュレータでは確認していません。
+
+### 5.9 言語の初期値（端末のロケール）
 
 - 言語は、メニューで選んで保存したものが常に優先します。保存がない場合だけ、ロケールの一覧（優先順）から決めます。一覧を先頭から見て、最初に日本語（`ja`、`ja-JP` など）か英語（`en-*`）があればその言語、どちらもなければ英語です。一覧を読めなかったとき（空）は、従来どおり日本語です。規則は `i18n.rs` の `Language::for_locales`（純粋関数、テストあり）です。
 - アプリの一覧は、Android 13以降でアプリ別言語（設定の「アプリの言語」、または `cmd locale set-app-locales`）があればそれ、なければシステムの言語です（Kotlin `AhdLocale.deviceLocales` を `mobile/locale.rs` のJNIで呼ぶ）。設定の「アプリの言語」に出るよう、`build-android` がmanifestに `android:localeConfig="@xml/ahd_locales"`（日本語・英語）を入れます。
@@ -334,7 +346,7 @@ Android Credential Manager（`androidx.credentials`）でアプリ内からパ�
 - 画面のコンポーネント（`pages/`）、状態管理（`app/state.rs`、`app/session.rs`、`app/actions.rs`、`app/data.rs`）、文言カタログ（`locales/*.json`）、`dashboard.css`、同梱フォント。
 - `api.rs` のパス検査、応答サイズの上限、エラー処理（送信部分の `fetch` だけを分岐）。
 - 画面とURLの対応（`navigation::page_path`／`page_from_path`）。アプリもWebView内のHistory APIを使うので、Androidの戻るボタンで前の画面へ戻れる。
-- 言語とテーマの判定（`Preferences::from_saved`、言語の規則は `Language::for_locales`）。保存先と保存がない場合の言語の取得元だけが違い、web版は `localStorage` と `navigator.languages`、アプリは `files/preferences.json` と端末のロケール（5.8節）。テーマは保存がなければ端末（ブラウザ）のダークモードに従う。
+- 言語とテーマの判定（`Preferences::from_saved`、言語の規則は `Language::for_locales`）。保存先と保存がない場合の言語の取得元だけが違い、web版は `localStorage` と `navigator.languages`、アプリは `files/preferences.json` と端末のロケール（5.9節）。テーマは保存がなければ端末（ブラウザ）のダークモードに従う。
 
 ### 分岐のしかた
 
@@ -376,7 +388,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/mobile/session.rs` | Cookie jarとサーバーURLの規則、保存先の一時的な失敗をログアウトと区別する規則（I/Oなし、テストあり） |
 | `dashboard-ui/src/mobile/storage.rs` | アプリ専用領域のファイル（JNIで `getFilesDir()`・`getCacheDir()` を取得） |
 | `dashboard-ui/src/mobile/time.rs` | 端末時刻での表示 |
-| `dashboard-ui/src/mobile/locale.rs` | 端末のロケール一覧の取得とウィジェットへの言語変更の通知（JNI、5.8節） |
+| `dashboard-ui/src/mobile/locale.rs` | 端末のロケール一覧の取得とウィジェットへの言語変更の通知（JNI、5.9節） |
 | `dashboard-ui/src/mobile/dom.rs` | `document::eval` によるDOM操作（pull-to-refreshのタッチ処理を含む） |
 | `dashboard-ui/src/mobile/swipe.rs` | タブの横スワイプのタッチ収集（`document::eval`）。判定は共通の `app/swipe.rs` |
 | `dashboard-ui/src/mobile/reminders.rs` | 通知時刻の予測、設定と予定の保存形式、通知文（テストあり） |
@@ -387,19 +399,20 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/mobile/updates.rs` | Forgejoリリースの更新確認：SemVer比較、アセット選択、`releases/latest` の取得（5.5節、テストあり） |
 | `dashboard-ui/src/mobile/update_install.rs` | APKのダウンロード、SHA-256・パッケージ・署名者の検証、一時ファイル管理、PackageInstallerへのJNI（5.6節、テストあり） |
 | `dashboard-ui/src/mobile/log.rs` | logcat（タグ `AHD`）への出力 |
+| `dashboard-ui/src/mobile/back.rs` | 戻るボタン：開いているダイアログのスタック（テストあり）、`window.__ahdBack` の受け取り、`AhdBack.navigate` へのJNI（5.8節） |
 | `dashboard-ui/src/app/device_notifications.rs` | 端末通知の予定の更新、通知タップ時の画面遷移 |
 | `dashboard-ui/src/app/updates.rs` | 起動時の更新確認と結果のcontext、ダイアログの状態・スキップ・ダウンロードタスクとキャンセル |
 | `dashboard-ui/src/pages/app_update.rs` | 更新の確認・進捗・失敗・再試行のダイアログ |
 | `dashboard-ui/src/pages/device_notifications.rs` | 「この端末への通知」カード |
 | `dashboard-ui/src/pages/app_nav.rs` | 下部ナビゲーション `AppNav` と `AppHead`（モジュールは両ビルドでコンパイルするが、web版では描画しない） |
 | `dashboard-ui/assets/mobile.css` | アプリ専用のスタイル |
-| `dashboard-ui/android/MainActivity.kt` | `MainActivity`（ルートでの戻る、設定変更のその場反映、破棄時のプロセス終了、通知タップの受け取り）、`AhdNotifications`、`AhdAlarmReceiver`、`AhdBootReceiver`、`AhdUpdater`（APK情報・PackageInstaller・更新後通知）、`AhdUpdateReceiver` |
+| `dashboard-ui/android/MainActivity.kt` | `MainActivity`（戻るボタンをページへ渡す・ダイアログがなければ前の画面かルートでバックグラウンドへ（`AhdBack`）、設定変更のその場反映、破棄時のプロセス終了、通知タップの受け取り）、`AhdNotifications`、`AhdAlarmReceiver`、`AhdBootReceiver`、`AhdUpdater`（APK情報・PackageInstaller・更新後通知）、`AhdUpdateReceiver` |
 | `dashboard-ui/android/AndroidManifest.application.xml` | 生成manifestに挿入するreceiver |
 | `dashboard-ui/android/AndroidManifest.activity.xml` | 生成manifestのactivityに挿入する `cc.attodao.ahd://login` のintent-filter |
 | `dashboard-ui/android/res/**` | ランチャーアイコン、通知アイコン、アプリ名、色、DayNightテーマ（`values/styles.xml`） |
 | `dashboard-ui/android/README.md` | リソースの作り方 |
 | `dashboard-ui/android/kotlin/*.kt` | ウィジェット用インジケーター（`AhdIndicators.kt`、`AhdIndicatorModel.kt`）とデバッグ用サンプル画面（`AhdIndicatorSamples.kt`）。`build-android` が生成プロジェクトへコピーする |
-| `dashboard-ui/android/kotlin/AhdLocale.kt`, `android/test/AhdLocaleTest.kt`, `android/res/xml/ahd_locales.xml` | アプリ別言語・システムの言語の取得、ウィジェットの言語、設定の「アプリの言語」の一覧（5.8節） |
+| `dashboard-ui/android/kotlin/AhdLocale.kt`, `android/test/AhdLocaleTest.kt`, `android/res/xml/ahd_locales.xml` | アプリ別言語・システムの言語の取得、ウィジェットの言語、設定の「アプリの言語」の一覧（5.9節） |
 | `dashboard-ui/android/tests/AhdIndicatorModelTest.kt` | インジケーターの規則とレイアウトのJVM検査（`test-android-kotlin`） |
 | `dashboard-ui/android/AndroidManifest.samples.xml` | デバッグビルドだけ生成manifestに挿入するサンプル画面のactivity |
 | `scripts/build-android.sh` | APKのビルド（2節）。生成manifestへの `launchMode="singleTask"`・`configChanges`・`localeConfig` の書き換えとreceiverの挿入も行う |
@@ -416,13 +429,13 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/app/navigation.rs` | アプリ内History、`open_web_version`、`web_page_url` |
 | `dashboard-ui/src/app/data.rs` | APIトークン・管理者データを読み込まない分岐、`platform::sleep_ms` |
 | `dashboard-ui/src/app/display.rs` | 時刻表示のアプリ分岐 |
-| `dashboard-ui/src/app/preferences.rs` | 言語とテーマの保存のアプリ分岐、保存がない場合の端末のロケール、復帰時の読み直し（5.8節） |
+| `dashboard-ui/src/app/preferences.rs` | 言語とテーマの保存のアプリ分岐、保存がない場合の端末のロケール、復帰時の読み直し（5.9節） |
 | `dashboard-ui/src/pages/shell.rs` | `settings_tabs`、メニュー項目の分岐、ヘッダーの設定ボタン、`AppNav` |
 | `dashboard-ui/src/pages/auth.rs` | パスワードフォーム、「パスキーでログイン」「ブラウザでログイン」、パスワード変更とweb版の許可画面への案内文 |
 | `dashboard-ui/src/pages/app_login.rs` | web版の `/app-login` 許可画面（アプリのログイン要求を承認してコードを発行する） |
 | `dashboard-ui/src/pages/security.rs` | パスワード変更・APIトークン・パスキー登録の除外、「ブラウザで開く」 |
 | `dashboard-ui/src/pages/notifications.rs` | 端末通知カードの配置、種類ごとの「この端末」／「Webhook」の表、`app_events` の送信と予測通知への反映 |
-| `dashboard-ui/src/pages/common.rs` | `external` アイコン、DOM操作・モーダルのアプリ分岐 |
+| `dashboard-ui/src/pages/common.rs` | `external` アイコン、DOM操作・モーダルのアプリ分岐、戻るボタンで閉じるかどうか（`ModalDialog` の `back_closes`、`use_modal` の引数。web版では使わない） |
 | `dashboard-ui/src/pages/dashboard.rs` | `matchMedia`・毎秒の時計のアプリ分岐、pull-to-refresh（更新ボタンの代わり） |
 | `dashboard-ui/src/pages/mod.rs` | 新しいモジュールの宣言 |
 | `dashboard-ui/locales/ja.json`, `en.json` | 24キーを追加（`shell.open_in_browser`、`shell.app_navigation`、`messages.could_not_open_the_browser`、`auth.change_password_in_browser`、`security.manage_in_browser`、`notifications.personal_hint_app`、`notifications.device_*` 18キー）。既存のキーは変えていない |
@@ -453,15 +466,14 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 
 - **Activityは1つだけ**：tao/wryはActivityの破棄・再生成と2つ目のインスタンスに対応しておらず、そのままだとプロセスが `FORTIFY: pthread_mutex_lock called on a destroyed mutex` で異常終了します。そのため次のようにしています（`android/MainActivity.kt`、`scripts/build-android.sh`）。
   - `launchMode="singleTask"` で、ランチャー・通知・`am start` のどこから開いても同じインスタンスを使います。通知のタップは `onNewIntent` で受け取ります。
-  - 最初の画面で戻るボタンを押すと、アプリを閉じずにバックグラウンドへ移します（ホームボタンと同じ）。それ以外の画面では、従来どおり前の画面へ戻ります。
+  - 最初の画面で戻るボタンを押すと、アプリを閉じずにバックグラウンドへ移します（ホームボタンと同じ）。それ以外の画面では、従来どおり前の画面へ戻ります。ダイアログが開いているときは、先にそれを閉じます（5.8節）。
   - ダークモード、文字サイズ、表示サイズ、太字、言語、キーボードなどの変更では、Activityを作り直さずにその場で反映します（`configChanges`）。WebViewは文字サイズを作成時にしか読まないため、変更時に `textZoom` を設定し直します。
   - 最近使ったアプリから消すなどでActivityが破棄されたときは、ネイティブの後始末を行わずにプロセスを終了します。次に開くと新しく起動します。
   - テーマはDayNightなので、アプリのテーマ「システム」は端末のダークモードに追従します（以前は常にライトでした）。
-- **ダイアログと戻るボタン**：確認ダイアログを開いたまま戻るボタンを押すと、ダイアログが閉じるのではなく前の画面に戻ります（ダイアログは片付きます）。
 - **サーバーはビルド時に固定**：接続先は `AHD_SERVER_URL` の1つだけです。変えるにはビルドし直します。
 - **セッションCookieの保存**：Android Keystoreの鍵で暗号化して保存します（5.7節）。鍵はユーザー認証を要求しないため、端末のロック中でも受信箱とウィジェットのジョブが読めます。そのため、アプリとして動くコード（root化した端末で同じUIDとして動くものを含む）からは復号できます。暗号化が防ぐのは、ファイルだけを取り出した場合（バックアップ、ファイルのコピー）です。1.9.0以前のバージョンで作られたバックアップには平文のファイルが含まれている可能性があります。
 - **パスワード表示の自動マスク**：web版は、表示中のパスワードを、ウィンドウや入力欄からフォーカスが外れたときとページが非表示になったときに伏せます。アプリではこの処理を実装していません（表示ボタンでの切り替えはできます）。
-- **言語**：保存がない場合の言語は端末のロケールで決まります（5.8節）。サーバーからの通知（5.3節）の文面は、端末ではなく通知設定の言語に従います。ウィジェットピッカーに出る説明文は、ランチャーがシステム言語で解決します。
+- **言語**：保存がない場合の言語は端末のロケールで決まります（5.9節）。サーバーからの通知（5.3節）の文面は、端末ではなく通知設定の言語に従います。ウィジェットピッカーに出る説明文は、ランチャーがシステム言語で解決します。
 - **通知**
   - アラームは不正確で、Dozeなどにより数分遅れることがあります。
   - 予測はアプリが状態を読み込んだ時点の値に基づきます。ゲーム内で樹脂を使った場合などは、次にアプリを開くまで早すぎる通知が出ることがあります。バックグラウンドでの再取得は行いません。
@@ -482,7 +494,6 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 
 ### 今後の課題
 
-- ダイアログが開いているときは、戻るボタンでダイアログを閉じる。
 - release署名と配布方法（ストア、または直接配布）を決める。
 - 予測できない通知（デイリー／週間の未完了、ログインボーナスの結果、Cookieの失効）が必要なら、FCMやUnifiedPushによるサーバーからのプッシュを検討する。サーバー側に送信の仕組みが必要になる。
 - 接続先のサーバーをアプリ内で設定できるようにするかを検討する。
@@ -498,7 +509,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 
 原神ウィジェット（`GenshinWidget.kt`）は、上段に天然樹脂の丸型、下段に洞天宝銭・探索派遣・デイリー任務の小さな丸型を3列に並べ、残り時間（全回復・満タン・派遣の最短／最長）と追加報酬の受取状況、取得時刻を表示します。幅210dp・高さ250dp未満（文字サイズが1より大きいときはその倍率をかけた大きさ未満）では4本のバーに切り替えます。文字サイズの変更は通知されないため、切り替わるのは次の描画（アプリを開く、30分ごとの更新）からで、それまでの間は文字200%だと樹脂の残り時間が下で切れたままです。面の色はダッシュボードの原神カード、樹脂・宝銭の90%以上と上限、全員帰還した派遣、追加報酬が未受取の4/4のデイリーはwarning色です。未ログイン・アカウントなし・未取得では案内とタップの案内を、更新に失敗したときは見出しの時刻を「更新失敗」で表示します。詳細は `dashboard-ui/android/README.md` の「Genshin widget」です。
 
-JobSchedulerはネットワーク接続時に30分周期でGETし、providerの `updatePeriodMillis` も30分です。ウィジェット全体のタップでアプリの `/dashboard?game=<genshin|starrail>` を開き、ダッシュボードはそのゲームのタブを選びます（`app/navigation.rs` の `target_game`。タブの選択は `AppState.dashboard_game` に置き、設定画面から戻っても保持します）。ログイン前に開いた場合もタブだけは先に選び、`/me` 後の状態の作り直しでも引き継ぎます。ジョブの時刻は不正確でDozeにより遅れ、取得間の樹脂・開拓力・宝銭は推定値です。選択はダッシュボードに追従し、サーバーの状態キャッシュTTLも適用されるため、常に最新の実値を保証しません。端末の言語を変えたときは、receiverの `LOCALE_CHANGED` で描き直します（文言はアプリの言語、5.8節）。タッチではタップしたタブに `:hover` が残り、共通のボタンのhover枠が選択されていないタブの下線に見えるため、`mobile.css` で選択中でないタブのhover表示を消しています（ウィジェットから別のゲームのタブを開いたときに目立つ）。
+JobSchedulerはネットワーク接続時に30分周期でGETし、providerの `updatePeriodMillis` も30分です。ウィジェット全体のタップでアプリの `/dashboard?game=<genshin|starrail>` を開き、ダッシュボードはそのゲームのタブを選びます（`app/navigation.rs` の `target_game`。タブの選択は `AppState.dashboard_game` に置き、設定画面から戻っても保持します）。ログイン前に開いた場合もタブだけは先に選び、`/me` 後の状態の作り直しでも引き継ぎます。ジョブの時刻は不正確でDozeにより遅れ、取得間の樹脂・開拓力・宝銭は推定値です。選択はダッシュボードに追従し、サーバーの状態キャッシュTTLも適用されるため、常に最新の実値を保証しません。端末の言語を変えたときは、receiverの `LOCALE_CHANGED` で描き直します（文言はアプリの言語、5.9節）。タッチではタップしたタブに `:hover` が残り、共通のボタンのhover枠が選択されていないタブの下線に見えるため、`mobile.css` で選択中でないタブのhover表示を消しています（ウィジェットから別のゲームのタブを開いたときに目立つ）。
 
 ### スターレイルのウィジェット
 
@@ -513,6 +524,6 @@ JobSchedulerはネットワーク接続時に30分周期でGETし、providerの 
 - 未ログイン・アカウントなし・状態なし（取得失敗）では、原神と同じくアイコン・案内文・「タップしてAHDを開く」を表示します（ピッカーのプレビューは説明文）。描画で例外が起きた場合は、共通の案内表示に戻します。
 - 宝銭の枠：スターレイルには洞天宝銭がありません。HoYoLABのリアルタイムノートで取得でき、上限まで蓄積して週ごとにリセットされる「模擬宇宙の週間ポイント」（`current_rogue_score`/`max_rogue_score`）をこの枠に採用しました。予備開拓力は開拓力と同じ資源なので開拓力の欄に併記し、「歴戦余韻」は残り回数で蓄積ではないため採用していません。
 - 確認した表示（エミュレータ API 34、Pixel Launcher、1080×2400、日本語）：密度420の文字100%・200%、密度560の文字100%・130%で、両ウィジェットとも樹脂／開拓力の値と残り時間が欠けずに出ます。密度560と文字200%の組み合わせ（最大の表示サイズと最大の文字）は、どちらも下のバーが切れ、残り時間も省略されます（対象外）。文字が大きいとき、バーの名前（「デイリー…」「模擬…」）は値を優先して省略されます。
-- ゲーム名と各ラベルはコードから設定します。レイアウトの文字列はランチャー側のシステム言語で解決されるため、アプリの言語（5.8節）で表示をそろえるためです。
+- ゲーム名と各ラベルはコードから設定します。レイアウトの文字列はランチャー側のシステム言語で解決されるため、アプリの言語（5.9節）で表示をそろえるためです。
 - 依頼の上限はスターレイルの `total_expedition_num` です。アプリから渡す状態にも含めるため、`models.rs` の `DailySummary` に `total_expedition_num` / `accepted_expedition_num` を追加しました。
 

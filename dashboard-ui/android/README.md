@@ -16,7 +16,7 @@ the plain `session-cookies.json` of earlier versions; its Android-free format an
 (`AhdSessionFormat`) are tested in `test/AhdSessionFormatTest.kt`. `res/xml/ahd_backup_rules.xml`
 and `res/xml/ahd_data_extraction_rules.xml` keep both files out of backups and device
 transfers; `build-android` adds them to the manifest's `<application>`
-(`docs/android-changes.md` 5.8).
+(`docs/android-changes.md` 5.7).
 
 The PNGs are generated from `../assets/dashboard-icon.png` (legacy icons on the app
 canvas color, adaptive-icon foregrounds at 108dp with the star inside the safe zone):
@@ -63,7 +63,7 @@ Rustの `app/home_widgets.rs` はダッシュボードの変更ごとに選択�
 1. 各ゲームのクラスで `render(context, state, nowMs)` をoverrideします。`when (state)` で `SignedOut`、`NoAccount`、`Unavailable`、`Ready` を扱い、未準備の状態では `placeholder(context, state)` を利用できます。
 2. `Ready` の `state.snapshot.at(nowMs)` で樹脂・開拓力・宝銭を推定します。残り時間は `remainingSecondsAt(nowMs)`、派遣の完了数は `Expeditions.finishedAt(nowMs)` を使います。
 3. RemoteViews対応のビューだけを使い、ルートのidを `ahd_widget_root` にします。タップは `/dashboard?game=<key>` を開き、アプリはそのゲームのタブを選びます（`widgetOpenTarget`、Rustの `app/navigation.rs` `target_game`）。大きさで描き分ける場合は `render(context, state, nowMs, options)` をoverrideします（`options` は `AppWidgetManager.OPTION_APPWIDGET_*` のdp値。リサイズ時にも再描画されます）。文字はspで端末の文字サイズに合わせて大きくなるため、レイアウトの選択には `context.resources.configuration.fontScale` も使います（`GenshinWidgetLayout` / `StarRailWidgetLayout.forSize`）。表示サイズ（密度）の変更はウィジェットのdpが変わるので即座に再描画されますが、文字サイズの変更を知らせるbroadcastはなく（manifestのreceiverでは `CONFIGURATION_CHANGED` を受け取れず、裏のプロセスは凍結される）、ランチャーは前回のRemoteViewsを読み直すだけです。新しい文字サイズでのレイアウト選択は次の描画（アプリを開く、30分ごとの更新ジョブ、`updatePeriodMillis`）からです。
-   文言は `values/`（日本語、既定）と `values-en/` で、アプリの言語（`AhdLocale.localized`、`docs/android-changes.md` 5.8）で選びます。レイアウトに書いた文字列はランチャーがシステム言語で解決するため、表示する文言はすべてコードから入れます。面の色は `values/`・`values-night/` の `ahd_widget_*` です。
+   文言は `values/`（日本語、既定）と `values-en/` で、アプリの言語（`AhdLocale.localized`、`docs/android-changes.md` 5.9）で選びます。レイアウトに書いた文字列はランチャーがシステム言語で解決するため、表示する文言はすべてコードから入れます。面の色は `values/`・`values-night/` の `ahd_widget_*` です。
 4. Kotlinに `R.` 参照を追加せず、`context.resources.getIdentifier(name, type, context.packageName)` を使います。リソースはdxの最初のGradle実行の後にコピーされます。**MainActivity.ktから新しいKotlinファイルを参照してはいけません**（同じビルド順の制約）。
 5. 純粋モデルのテストは `android/test/` に追加します。先に `build-android` を実行し、`devenv --profile android shell -- test-android` でJUnitを実行します。Kotlinとテストの変更だけなら再ビルドせずに再コピーしてテストできます。
 

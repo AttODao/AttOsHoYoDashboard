@@ -1,9 +1,10 @@
 //! Android app bridges: native API client with a stored session cookie, app-private
 //! storage, the device locale, notifications, home-screen widgets, update checks and installs,
-//! and DOM calls the browser build makes through web-sys. `browser_login`, `locale` (tag
-//! parsing), `session`, `time`, `reminders`, `widgets`, `inbox`, `update_install` (pure
-//! checks/sink) and `updates` (except its request) are platform-free and tested in native
-//! test runs.
+//! the Back key, and DOM calls the browser build makes through web-sys. `back` (its dialog
+//! stack), `browser_login`, `locale` (tag parsing), `session`, `time`, `reminders`, `widgets`,
+//! `inbox`, `update_install` (pure checks/sink) and `updates` (except its request) are
+//! platform-free and tested in native test runs.
+pub(crate) mod back;
 pub(crate) mod browser_login;
 #[cfg(feature = "mobile")]
 pub(crate) mod dom;

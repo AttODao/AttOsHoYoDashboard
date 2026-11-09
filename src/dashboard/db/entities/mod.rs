@@ -6,6 +6,7 @@ pub(in crate::dashboard) mod app_notification;
 pub(in crate::dashboard) mod audit;
 pub(in crate::dashboard) mod deletion_request;
 pub(in crate::dashboard) mod game_account;
+pub(in crate::dashboard) mod game_challenge_cache;
 pub(in crate::dashboard) mod game_status_cache;
 pub(in crate::dashboard) mod hoyolab_account;
 pub(in crate::dashboard) mod notification_cursor;

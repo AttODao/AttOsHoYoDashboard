@@ -1,3 +1,3 @@
 pub mod hoyolab;
 
-pub use hoyolab::{game, models};
+pub use hoyolab::{challenge, game, models};

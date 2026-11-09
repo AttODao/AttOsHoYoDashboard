@@ -12,6 +12,9 @@ pub(super) struct Tuning {
     pub history_days: i64,
     /// Game and reward status younger than this is served without an upstream GET.
     pub status_ttl: Duration,
+    /// Endgame challenge summaries younger than this (and still in their period) are
+    /// served without upstream GETs; they change only when the player challenges a mode.
+    pub challenge_ttl: Duration,
     /// Initial try plus retries for one reward run (the schema allows at most 4).
     pub max_attempts: i32,
     /// Wait before retrying a transient reward GET failure.
@@ -23,6 +26,7 @@ impl Default for Tuning {
         Self {
             history_days: 5,
             status_ttl: Duration::minutes(5),
+            challenge_ttl: Duration::minutes(60),
             max_attempts: 4,
             retry_delay: Duration::seconds(10),
         }
@@ -62,6 +66,13 @@ impl Tuning {
                 defaults.status_ttl.num_minutes(),
                 1..=60,
                 "STATUS_CACHE_TTL_MINUTES must be 1 to 60",
+            )?),
+            challenge_ttl: Duration::minutes(bounded(
+                read,
+                "CHALLENGE_CACHE_TTL_MINUTES",
+                defaults.challenge_ttl.num_minutes(),
+                5..=1440,
+                "CHALLENGE_CACHE_TTL_MINUTES must be 5 to 1440",
             )?),
             max_attempts: bounded(
                 read,
