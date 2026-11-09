@@ -243,6 +243,12 @@ mod browser {
         }
     }
 
+    /// Adds a browser listener whose handler runs like a Dioxus event handler. A raw web-sys
+    /// closure runs outside every component scope, where `spawn` (and every other API that
+    /// needs the current scope) panics and aborts the whole Wasm UI: the page stays drawn but
+    /// no control responds any more. Wrapping the handler in a `Callback` created by the
+    /// owning hook puts that component's scope back on the stack for each event, so call
+    /// this (and `on_visible`/`on_system_theme_change`) from a hook initializer.
     #[cfg(target_arch = "wasm32")]
     fn listen(
         target: web_sys::EventTarget,
@@ -250,7 +256,10 @@ mod browser {
         handler: impl FnMut(web_sys::Event) + 'static,
     ) -> Option<std::rc::Rc<Listener>> {
         use wasm_bindgen::JsCast;
-        let callback = wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::Event)>::new(handler);
+        let handler = dioxus::prelude::Callback::new(handler);
+        let callback = wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::Event)>::new(
+            move |event: web_sys::Event| handler.call(event),
+        );
         target
             .add_event_listener_with_callback(event, callback.as_ref().unchecked_ref())
             .ok()?;

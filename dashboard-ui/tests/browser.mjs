@@ -773,6 +773,41 @@ try{
  await openMenu();await page.keyboard.press('Escape');await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});
  releaseStatus();while(passedStatus<heldStatus)await page.waitForTimeout(50);
  await page.unroute(slowStatus);await page.locator('.resource strong').first().waitFor();await dashboard();
+ // The menu opens on every press. Returning to a hidden tab used to start the dashboard refresh
+ // with `spawn` from a raw browser listener, outside every Dioxus scope: that panic aborted the
+ // Wasm UI, so the menu button (and everything else) silently stopped responding.
+ const trigger=page.locator('#ahd-menu-trigger');
+ const settled=()=>page.locator('#ahd-menu').evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});
+ const pressMenu=async label=>{stage='menu press: '+label;await openMenu();assert.equal(await trigger.getAttribute('aria-expanded'),'true',label);};
+ const menuClosed=async label=>{await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});await settled();assert.equal(await trigger.getAttribute('aria-expanded'),'false',label+' resets the open state');};
+ const returnToTab=()=>page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));});
+ let releaseReturn,heldReturn=0,passedReturn=0;const returnHeld=new Promise(resolve=>releaseReturn=resolve);
+ await page.route(slowStatus,async route=>{heldReturn++;await returnHeld;await route.fallback();passedReturn++;});
+ await returnToTab();
+ for(let i=0;i<200&&heldReturn===0;i++)await page.waitForTimeout(50);
+ assert.deepEqual(errors,[],'returning to the tab does not abort the UI');
+ assert.ok(heldReturn>0,'returning to the tab refreshes the game status when no refresh ran in the last minute (none since the reload)');
+ for(const round of [1,2]){await pressMenu('during the held refresh #'+round);await page.keyboard.press('Escape');await menuClosed('Escape during the held refresh');}
+ releaseReturn();while(passedReturn<heldReturn)await page.waitForTimeout(50);
+ await page.unroute(slowStatus);await idle();
+ const closeWith=[['the close button',()=>page.locator('#ahd-menu .drawer-heading button').click()],['Escape',()=>page.keyboard.press('Escape')],['the backdrop',()=>page.mouse.click(10,100)]];
+ for(const round of [1,2])for(const [how,close] of closeWith){await pressMenu(`after ${how} #${round}`);await close();await menuClosed(how);}
+ await menu('About');await page.waitForURL(origin+'/about');
+ await pressMenu('after navigating from the menu');await page.keyboard.press('Escape');await menuClosed('Escape on About');
+ await page.locator('.wordmark').click();await dashboard();
+ await menu('Settings');await page.waitForURL(origin+'/settings/games');
+ await returnToTab();await page.waitForTimeout(200);
+ assert.deepEqual(errors,[],'returning to the tab on another page does not abort the UI');
+ await pressMenu('after returning to the tab on Settings');await page.keyboard.press('Escape');await menuClosed('Escape on Settings');
+ await page.goBack();await dashboard();
+ await pressMenu('after browser Back');await page.keyboard.press('Escape');await menuClosed('Escape after Back');
+ // A dialog that cannot be shown hands its state back instead of leaving the button dead.
+ await page.evaluate(()=>{const original=HTMLDialogElement.prototype.showModal;HTMLDialogElement.prototype.showModal=function(){HTMLDialogElement.prototype.showModal=original;throw new DOMException('synthetic failure','InvalidStateError');};});
+ await trigger.click();await page.waitForTimeout(300);
+ assert.equal(await page.locator('#ahd-menu[open]').count(),0,'the failed dialog stays closed');
+ assert.equal(await trigger.getAttribute('aria-expanded'),'false','a dialog that could not open does not stay marked open');
+ await pressMenu('after a dialog failed to open');await page.keyboard.press('Escape');await menuClosed('Escape after the retry');
+ stage='dashboard';
  // Mobile ARIA tabs: hidden panel, roving focus and keyboard edges.
  await page.setViewportSize({width:390,height:844});
  await page.waitForFunction(()=>document.getElementById('game-panel-genshin')?.getAttribute('role')==='tabpanel');
