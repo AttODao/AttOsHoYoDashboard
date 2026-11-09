@@ -11,8 +11,8 @@ use crate::dashboard::{
 };
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
-    QueryOrder, QuerySelect, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait,
+    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
 };
 use serde_json::Value;
 use std::sync::Arc;
@@ -136,38 +136,7 @@ impl<G: Gateway> Rewards<G> {
             .one(&tx)
             .await?
             .ok_or(Error::NotFound)?;
-        if enabled && setting.auth_status != "ready" {
-            return Err(Error::Unavailable(
-                "reward requires HoYoLAB action before it can be enabled",
-            ));
-        }
-        let mut row = setting.into_active_model();
-        row.enabled = Set(enabled);
-        row.local_time = Set(time);
-        row.next_run_at = Set(enabled.then_some(next));
-        row.update(&tx).await?;
-        {
-            // An ON/time update also waits for the newly selected future tick.
-            reward_run::Entity::update_many()
-                .col_expr(
-                    reward_run::Column::State,
-                    sea_orm::sea_query::Expr::value("stopped"),
-                )
-                .col_expr(
-                    reward_run::Column::UpdatedAt,
-                    sea_orm::sea_query::Expr::value(Utc::now()),
-                )
-                .col_expr(
-                    reward_run::Column::EndedAt,
-                    sea_orm::sea_query::Expr::value(Utc::now()),
-                )
-                .filter(reward_run::Column::SettingId.eq(id))
-                .filter(reward_run::Column::Trigger.is_in(["scheduled", "catchup"]))
-                .filter(reward_run::Column::State.is_in(["pending", "running", "retry_wait"]))
-                .filter(reward_run::Column::SendState.eq("not_sent"))
-                .exec(&tx)
-                .await?;
-        }
+        reschedule_in(&tx, setting, enabled, time, next).await?;
         tx.commit().await?;
         Ok(())
     }
@@ -267,6 +236,50 @@ impl<G: Gateway> Rewards<G> {
         tx.commit().await?;
         Ok(())
     }
+}
+
+/// Applies a locked setting's new schedule inside the caller's transaction: enabling needs a
+/// ready reward, and pending scheduled runs stop so the next tick is `next`. Callers hold the
+/// owner's operation lock so an in-flight attempt cannot overwrite the stop.
+pub(in crate::dashboard) async fn reschedule_in(
+    tx: &DatabaseTransaction,
+    setting: reward_setting::Model,
+    enabled: bool,
+    time: String,
+    next: DateTime<Utc>,
+) -> Result<()> {
+    if enabled && setting.auth_status != "ready" {
+        return Err(Error::Unavailable(
+            "reward requires HoYoLAB action before it can be enabled",
+        ));
+    }
+    let id = setting.id;
+    let mut row = setting.into_active_model();
+    row.enabled = Set(enabled);
+    row.local_time = Set(time);
+    row.next_run_at = Set(enabled.then_some(next));
+    row.update(tx).await?;
+    // An ON/time update also waits for the newly selected future tick.
+    reward_run::Entity::update_many()
+        .col_expr(
+            reward_run::Column::State,
+            sea_orm::sea_query::Expr::value("stopped"),
+        )
+        .col_expr(
+            reward_run::Column::UpdatedAt,
+            sea_orm::sea_query::Expr::value(Utc::now()),
+        )
+        .col_expr(
+            reward_run::Column::EndedAt,
+            sea_orm::sea_query::Expr::value(Utc::now()),
+        )
+        .filter(reward_run::Column::SettingId.eq(id))
+        .filter(reward_run::Column::Trigger.is_in(["scheduled", "catchup"]))
+        .filter(reward_run::Column::State.is_in(["pending", "running", "retry_wait"]))
+        .filter(reward_run::Column::SendState.eq("not_sent"))
+        .exec(tx)
+        .await?;
+    Ok(())
 }
 
 async fn enqueue_in(

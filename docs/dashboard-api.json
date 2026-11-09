@@ -4068,6 +4068,266 @@
           }
         ]
       }
+    },
+    "/api/v1/me/settings/export": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "operationId": "exportSettings",
+        "summary": "Download the current user's settings as an `ahd-settings` file.",
+        "responses": {
+          "200": {
+            "description": "The settings file.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsFile"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [],
+        "description": "Session cookie only (API tokens are rejected). Sets `Content-Disposition: attachment; filename=\"ahd-settings-YYYY-MM-DD.json\"`."
+      }
+    },
+    "/api/v1/me/settings/import/preview": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "operationId": "previewSettingsImport",
+        "summary": "List what importing a settings file would change, without writing.",
+        "responses": {
+          "200": {
+            "description": "The planned changes, or the file's problems.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsPreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsFile"
+              }
+            }
+          }
+        },
+        "description": "Session cookie only. A file with problems is answered with 200 and `valid: false` plus every problem (up to 50). Bodies are limited to 16 KiB."
+      }
+    },
+    "/api/v1/me/settings/import": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "operationId": "importSettings",
+        "summary": "Apply a settings file in one transaction.",
+        "responses": {
+          "200": {
+            "description": "What was changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsImportReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The file has problems; nothing was applied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/CommonError"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "errors"
+                      ],
+                      "properties": {
+                        "errors": {
+                          "type": "array",
+                          "maxItems": 50,
+                          "items": {
+                            "$ref": "#/components/schemas/SettingsFieldError"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsFile"
+              }
+            }
+          }
+        },
+        "description": "Session cookie only. Rewards and UID visibility need a verified HoYoLAB account; entries that do not match it are skipped and reported. A file with problems is rejected with 400 (`invalid_input`) and an `errors` list; nothing is written. Bodies are limited to 16 KiB."
+      }
     }
   },
   "components": {
@@ -5823,6 +6083,287 @@
             "description": "Single-use app sign-in code, valid for 120 seconds."
           }
         }
+      },
+      "SettingsFile": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "format",
+          "version",
+          "rewards",
+          "game_accounts",
+          "notifications"
+        ],
+        "description": "A user's own settings (`ahd-settings` version 1). Never contains HoYoLAB Cookies, the Webhook URL, passwords, passkeys, sessions or API tokens. Unknown keys are rejected.",
+        "properties": {
+          "format": {
+            "const": "ahd-settings"
+          },
+          "version": {
+            "const": 1
+          },
+          "exported_at": {
+            "$ref": "#/components/schemas/DateTime",
+            "description": "Informational; ignored on import."
+          },
+          "rewards": {
+            "type": "array",
+            "maxItems": 2,
+            "description": "One auto-claim schedule per game.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "game_kind",
+                "enabled",
+                "local_time"
+              ],
+              "properties": {
+                "game_kind": {
+                  "$ref": "#/components/schemas/GameKind"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "local_time": {
+                  "type": "string",
+                  "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                }
+              }
+            }
+          },
+          "game_accounts": {
+            "type": "array",
+            "maxItems": 64,
+            "description": "Dashboard visibility per game UID. UIDs missing on the importing account are reported and skipped, never created.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "game_kind",
+                "game_uid",
+                "visible"
+              ],
+              "properties": {
+                "game_kind": {
+                  "$ref": "#/components/schemas/GameKind"
+                },
+                "game_uid": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,19}$"
+                },
+                "visible": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "notifications": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "webhook_configured",
+              "webhook_format",
+              "language",
+              "events",
+              "app_events",
+              "resin_warn_hours",
+              "daily_reminder_time",
+              "weekly_reminder_time"
+            ],
+            "properties": {
+              "webhook_configured": {
+                "type": "boolean",
+                "description": "Whether the exporting account had a Webhook. The URL itself is never exported and an import never changes it."
+              },
+              "webhook_format": {
+                "type": "string",
+                "enum": [
+                  "discord",
+                  "json"
+                ]
+              },
+              "language": {
+                "type": "string",
+                "enum": [
+                  "ja",
+                  "en"
+                ]
+              },
+              "events": {
+                "$ref": "#/components/schemas/NotificationEvents",
+                "description": "Webhook choices. Kinds left out keep their current choice."
+              },
+              "app_events": {
+                "$ref": "#/components/schemas/NotificationEvents",
+                "description": "App inbox choices. Kinds left out keep their current choice."
+              },
+              "resin_warn_hours": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 24
+              },
+              "daily_reminder_time": {
+                "type": "string",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+              },
+              "weekly_reminder_time": {
+                "type": "string",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+              }
+            }
+          }
+        }
+      },
+      "SettingsFieldError": {
+        "type": "object",
+        "required": [
+          "field",
+          "code"
+        ],
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "Path of the problem, e.g. `rewards[0].local_time`; `$` is the whole document."
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "missing",
+              "type",
+              "unknown",
+              "invalid",
+              "unsupported",
+              "duplicate",
+              "too_many"
+            ]
+          }
+        }
+      },
+      "SettingsImportReport": {
+        "type": "object",
+        "required": [
+          "valid",
+          "changes",
+          "skipped",
+          "webhook"
+        ],
+        "properties": {
+          "valid": {
+            "const": true
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "section",
+                "setting",
+                "from",
+                "to"
+              ],
+              "properties": {
+                "section": {
+                  "type": "string",
+                  "enum": [
+                    "rewards",
+                    "game_accounts",
+                    "notifications"
+                  ]
+                },
+                "game_kind": {
+                  "$ref": "#/components/schemas/GameKind"
+                },
+                "game_uid": {
+                  "type": "string"
+                },
+                "setting": {
+                  "type": "string",
+                  "description": "`enabled`, `local_time`, `visible`, `webhook_format`, `language`, `events.<kind>`, `app_events.<kind>`, `resin_warn_hours`, `daily_reminder_time` or `weekly_reminder_time`."
+                },
+                "from": {},
+                "to": {}
+              }
+            }
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "section",
+                "game_kind",
+                "reason"
+              ],
+              "properties": {
+                "section": {
+                  "type": "string",
+                  "enum": [
+                    "rewards",
+                    "game_accounts"
+                  ]
+                },
+                "game_kind": {
+                  "$ref": "#/components/schemas/GameKind"
+                },
+                "game_uid": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "not_linked",
+                    "game_not_found",
+                    "uid_not_found",
+                    "reward_not_ready"
+                  ]
+                }
+              }
+            }
+          },
+          "webhook": {
+            "type": "object",
+            "required": [
+              "in_file",
+              "configured"
+            ],
+            "properties": {
+              "in_file": {
+                "type": "boolean"
+              },
+              "configured": {
+                "type": "boolean"
+              }
+            },
+            "description": "The Webhook URL must be entered again when `in_file` is true and `configured` is false."
+          }
+        }
+      },
+      "SettingsPreview": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/SettingsImportReport"
+          },
+          {
+            "type": "object",
+            "required": [
+              "valid",
+              "errors"
+            ],
+            "properties": {
+              "valid": {
+                "const": false
+              },
+              "errors": {
+                "type": "array",
+                "maxItems": 50,
+                "items": {
+                  "$ref": "#/components/schemas/SettingsFieldError"
+                }
+              }
+            }
+          }
+        ]
       }
     }
   }

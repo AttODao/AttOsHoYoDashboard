@@ -301,6 +301,9 @@ fn scope_policy_allows_only_dashboard_reads_and_the_manual_run() {
             (Method::POST, "/api/v1/me/app-login"),
             (Method::POST, "/api/v1/me/hoyolab/sync"),
             (Method::DELETE, "/api/v1/me"),
+            (Method::GET, "/api/v1/me/settings/export"),
+            (Method::POST, "/api/v1/me/settings/import/preview"),
+            (Method::POST, "/api/v1/me/settings/import"),
         ] {
             assert!(!permits(scope, &method, route), "{method} {route}");
         }

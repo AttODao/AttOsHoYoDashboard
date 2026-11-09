@@ -1,5 +1,8 @@
 //! Notification channels: per-user and administrator settings, sealed URLs and test sends.
-use super::{ADMIN_EVENTS, Notice, PERSONAL_EVENTS, delivery, secret};
+use super::{
+    ADMIN_EVENTS, LANGUAGES, Notice, PERSONAL_EVENTS, RESIN_WARN_HOURS, WEBHOOK_FORMATS, delivery,
+    secret,
+};
 use crate::dashboard::{
     auth::{
         accounts::{require_admin, require_ready},
@@ -10,7 +13,10 @@ use crate::dashboard::{
     hoyolab::credentials::CookieKey,
 };
 use chrono::{DateTime, NaiveTime, Utc};
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set, TransactionTrait};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
+    TransactionTrait,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::BTreeMap, sync::Arc};
@@ -63,6 +69,88 @@ pub(in crate::dashboard) struct PersonalView {
     resin_warn_hours: i32,
     daily_reminder_time: String,
     weekly_reminder_time: String,
+}
+
+/// A user's notification choices without the Webhook URL or its delivery state: what a
+/// settings export carries and an import may change.
+#[derive(Clone, Debug, PartialEq)]
+pub(in crate::dashboard) struct PersonalPreferences {
+    pub(in crate::dashboard) webhook_format: String,
+    pub(in crate::dashboard) language: String,
+    /// Webhook choices for every personal kind.
+    pub(in crate::dashboard) events: BTreeMap<String, bool>,
+    /// App inbox choices for every personal kind.
+    pub(in crate::dashboard) app_events: BTreeMap<String, bool>,
+    pub(in crate::dashboard) resin_warn_hours: i32,
+    pub(in crate::dashboard) daily_reminder_time: String,
+    pub(in crate::dashboard) weekly_reminder_time: String,
+}
+
+impl PersonalPreferences {
+    /// The stored choices, or the defaults when the user never saved any.
+    pub(in crate::dashboard) fn from_row(row: Option<&notification_setting::Model>) -> Self {
+        Self {
+            webhook_format: row
+                .map_or_else(|| "discord".to_owned(), |row| row.webhook_format.clone()),
+            language: row.map_or_else(|| "ja".to_owned(), |row| row.language.clone()),
+            events: merged(
+                row.map_or(&Value::Null, |row| &row.events),
+                &PERSONAL_EVENTS,
+            ),
+            app_events: merged(
+                row.map_or(&Value::Null, |row| &row.app_events),
+                &PERSONAL_EVENTS,
+            ),
+            resin_warn_hours: row.map_or(2, |row| row.resin_warn_hours),
+            daily_reminder_time: row
+                .map_or_else(|| "21:00".to_owned(), |row| row.daily_reminder_time.clone()),
+            weekly_reminder_time: row.map_or_else(
+                || "15:00".to_owned(),
+                |row| row.weekly_reminder_time.clone(),
+            ),
+        }
+    }
+
+    /// Stores validated choices in `db` (inside the caller's transaction), keeping the
+    /// Webhook URL and its last delivery outcome.
+    pub(in crate::dashboard) async fn store(
+        &self,
+        db: &impl ConnectionTrait,
+        user: Uuid,
+    ) -> Result<()> {
+        let row = notification_setting::ActiveModel {
+            user_id: Set(user),
+            webhook_format: Set(self.webhook_format.clone()),
+            language: Set(self.language.clone()),
+            events: Set(events_json(&self.events, &PERSONAL_EVENTS)),
+            app_events: Set(events_json(&self.app_events, &PERSONAL_EVENTS)),
+            resin_warn_hours: Set(self.resin_warn_hours),
+            daily_reminder_time: Set(self.daily_reminder_time.clone()),
+            weekly_reminder_time: Set(self.weekly_reminder_time.clone()),
+            webhook_url: Set(None),
+            last_delivery_at: Set(None),
+            last_delivery_ok: Set(None),
+            updated_at: Set(Utc::now()),
+        };
+        notification_setting::Entity::insert(row)
+            .on_conflict(
+                sea_orm::sea_query::OnConflict::column(notification_setting::Column::UserId)
+                    .update_columns([
+                        notification_setting::Column::WebhookFormat,
+                        notification_setting::Column::Language,
+                        notification_setting::Column::Events,
+                        notification_setting::Column::AppEvents,
+                        notification_setting::Column::ResinWarnHours,
+                        notification_setting::Column::DailyReminderTime,
+                        notification_setting::Column::WeeklyReminderTime,
+                        notification_setting::Column::UpdatedAt,
+                    ])
+                    .to_owned(),
+            )
+            .exec_without_returning(db)
+            .await?;
+        Ok(())
+    }
 }
 
 /// `webhook_url`: absent keeps the stored URL, null removes it, a string replaces it.
@@ -152,6 +240,11 @@ fn events_json(events: &BTreeMap<String, bool>, known: &[(&str, bool)]) -> Value
     )
 }
 
+/// Whether a reminder time is a strict `HH:MM` clock.
+pub(in crate::dashboard) fn valid_clock(value: &str) -> bool {
+    parse_clock(value).is_ok()
+}
+
 pub(super) fn parse_clock(value: &str) -> Result<NaiveTime> {
     if value.len() != 5 {
         return Err(Error::Invalid("reminder times must be HH:MM"));
@@ -164,10 +257,10 @@ impl ChannelInput {
     fn validate(&self, known: &[(&str, bool)]) -> Result<()> {
         validate_choice(
             &self.webhook_format,
-            &["discord", "json"],
+            &WEBHOOK_FORMATS,
             "webhook_format must be discord or json",
         )?;
-        validate_choice(&self.language, &["ja", "en"], "language must be ja or en")?;
+        validate_choice(&self.language, &LANGUAGES, "language must be ja or en")?;
         validate_events(&self.events, known)
     }
 
@@ -290,6 +383,7 @@ impl Notifications {
     ) -> Result<PersonalView> {
         let fresh = self.ready(actor).await?;
         let (channel, row) = self.personal_channel(fresh.user.id).await?;
+        let preferences = PersonalPreferences::from_row(row.as_ref());
         Ok(PersonalView {
             channel: Self::view(
                 &channel,
@@ -297,14 +391,9 @@ impl Notifications {
                 row.as_ref().and_then(|row| row.last_delivery_ok),
             ),
             app_events: channel.app_events.clone(),
-            resin_warn_hours: row.as_ref().map_or(2, |row| row.resin_warn_hours),
-            daily_reminder_time: row
-                .as_ref()
-                .map_or_else(|| "21:00".to_owned(), |row| row.daily_reminder_time.clone()),
-            weekly_reminder_time: row.as_ref().map_or_else(
-                || "15:00".to_owned(),
-                |row| row.weekly_reminder_time.clone(),
-            ),
+            resin_warn_hours: preferences.resin_warn_hours,
+            daily_reminder_time: preferences.daily_reminder_time,
+            weekly_reminder_time: preferences.weekly_reminder_time,
         })
     }
 
@@ -318,7 +407,7 @@ impl Notifications {
         if let Some(app_events) = &input.app_events {
             validate_events(app_events, &PERSONAL_EVENTS)?;
         }
-        if !(1..=24).contains(&input.resin_warn_hours) {
+        if !RESIN_WARN_HOURS.contains(&input.resin_warn_hours) {
             return Err(Error::Invalid("resin_warn_hours must be 1 to 24"));
         }
         parse_clock(&input.daily_reminder_time)?;

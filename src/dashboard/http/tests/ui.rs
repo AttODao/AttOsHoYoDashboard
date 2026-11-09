@@ -48,6 +48,7 @@ async fn compiled_assets_are_public_local_and_hardened() {
         ("/settings/link", "text/html"),
         ("/settings/security", "text/html"),
         ("/settings/notifications", "text/html"),
+        ("/settings/transfer", "text/html"),
         ("/settings/delete", "text/html"),
         ("/admin", "text/html"),
         ("/about", "text/html"),
@@ -159,6 +160,7 @@ async fn missing_bundle_returns_hardened_unavailable_without_breaking_api_routes
         "/app-login",
         "/dashboard",
         "/settings/security",
+        "/settings/transfer",
         "/admin",
         "/about",
     ] {

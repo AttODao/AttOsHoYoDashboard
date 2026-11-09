@@ -9,12 +9,19 @@ mod delivery;
 mod messages;
 mod secret;
 pub(super) mod worker;
+
+/// Webhook payload formats a channel may use.
+pub(in crate::dashboard) const WEBHOOK_FORMATS: [&str; 2] = ["discord", "json"];
+/// Languages a channel's messages may use.
+pub(in crate::dashboard) const LANGUAGES: [&str; 2] = ["ja", "en"];
+/// Hours before the resin cap that the near-cap warning may use.
+pub(in crate::dashboard) const RESIN_WARN_HOURS: std::ops::RangeInclusive<i32> = 1..=24;
 #[cfg(test)]
 #[path = "worker_tests.rs"]
 mod worker_tests;
 
 /// Notification kinds a user can enable, with their defaults.
-pub(super) const PERSONAL_EVENTS: [(&str, bool); 11] = [
+pub(in crate::dashboard) const PERSONAL_EVENTS: [(&str, bool); 11] = [
     ("reward_failed", true),
     ("reward_claimed", false),
     ("cookie_invalid", true),
