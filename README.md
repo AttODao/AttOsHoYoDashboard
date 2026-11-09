@@ -88,6 +88,7 @@ curl --fail http://127.0.0.1:8080/health
 | `REWARD_HISTORY_DAYS` | 実行履歴の保持日数。1〜90、既定 `5` |
 | `STATUS_CACHE_TTL_MINUTES` | ゲーム・報酬状態のキャッシュ有効分数。1〜60、既定 `5` |
 | `CALENDAR_CACHE_TTL_MINUTES` | イベントカレンダー（開催中・開催予定のイベントと祈願／跳躍）のキャッシュ有効分数。5〜1440、既定 `60`。キャッシュ後に開始・終了した項目があれば期限前でも取り直し、取得に失敗した後は `STATUS_CACHE_TTL_MINUTES` の間取り直さない。イベントの進捗はこの分だけ遅れて反映される |
+| `RESOURCE_HISTORY_DAYS` | 樹脂・開拓力の履歴（ゲーム状態を取得するたびの1件）の保持日数。7〜90、既定 `7`。ダッシュボードは直近7日間を集計するため7日未満にはできない。1時間ごとの保守で、この日数に90分（窓の直前の起点）を足したより古い行を消す |
 | `CHALLENGE_CACHE_TTL_MINUTES` | 高難度コンテンツ（深境螺旋・混沌の記憶など）の要約のキャッシュ有効分数。5〜1440、既定 `60`。期間がキャッシュ後に終わった場合は期限前でも取り直し、一部のモードだけ取得に失敗した要約は `STATUS_CACHE_TTL_MINUTES` 後に取り直す |
 | `REWARD_MAX_ATTEMPTS` / `REWARD_RETRY_DELAY_SECONDS` | 一時的な失敗の試行回数（1〜4、既定 `4`）／再試行までの秒数（1〜600、既定 `10`） |
 
@@ -204,6 +205,7 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | `dashboard-ui/android/kotlin/` | `MainActivity.kt` の隣へ `build-android` がコピーするKotlin：ホーム画面ウィジェット用のバー型・丸型インジケーター（`AhdIndicators.kt`、規則は `AhdIndicatorModel.kt`）と、デバッグビルドだけのサンプル画面（`AhdIndicatorSamples.kt`）、UnifiedPushの接続（`AhdPush.kt`：配信アプリへの登録・receiver・前面化用service）と受信側のWeb Push復号（`AhdPushCrypto.kt`、RFC 8291。JVMテストは `android/test/`）。使い方は `dashboard-ui/android/README.md`、JVMの検査は `android/tests/` と `test-android-kotlin` |
 | `dashboard-ui/android/MainActivity.kt` | AndroidのActivity（`Dioxus.toml` の `android_main_activity`）：ルートでの戻るをバックグラウンド化、設定変更時の文字サイズ反映、破棄時のプロセス終了、通知の権限要求・アラーム・receiver、セッションCookieをKeystoreで暗号化して保存する `AhdSessionStore`（形式と判断は `AhdSessionFormat`）、サーバーの受信箱を読む `AhdInbox` とそのジョブ（receiverとジョブの設定は `android/AndroidManifest.application.xml`、UnifiedPushの配信アプリを見つけるための `<queries>` は `android/AndroidManifest.queries.xml` を生成manifestへ挿入） |
 | `dashboard-ui/src/pages/calendar.rs` | ダッシュボードの「イベント・祈願」（スターレイルは「イベント・跳躍」）欄：開催中・開催予定の件数と次の終了までの時間を1行に畳み、開くと祈願／跳躍・イベント・開催予定ごとに残り時間（共通の `Clock` で毎秒更新）、ピックアップ（公式画像CDNの画像と名前）、イベントの進捗を表示 |
+| `dashboard-ui/src/pages/cap_history.rs` | ダッシュボードの主リソース（樹脂・開拓力）の下の「上限に達していた時間（直近7日間）」：合計時間、7日間のタイムライン（上限・回復中・不明、CSPに合わせてSVGの図形で描く）と凡例、スクリーンリーダー向けの内訳の文 |
 | `dashboard-ui/src/pages/challenges.rs` | ダッシュボードの「高難度コンテンツ」欄：モードごとの到達状況とリセットまでの残り時間（共通の `Clock` で毎秒更新）、未挑戦・未開放・取得失敗の表示 |
 | `src/dashboard/games/summary.rs` | 上流ゲーム状態から画面用の要約への写像 |
 
@@ -217,7 +219,7 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | `src/dashboard/http/` | ルート、DTO、Cookie・Bearer APIトークン、Origin・キャッシュの境界、UI配信、ヘルスチェック・メトリクス、報酬・削除のバックグラウンド処理の起動と保守 |
 | `src/dashboard/db/` | `entities/` に保存モデル、`migrations/` にスキーマ変更 |
 | `src/dashboard/hoyolab/` | Cookieの解析・暗号化保存・削除・鍵の再暗号化（`rekey`）、連携の検証・同期、ユーザー単位の操作ロック、管理者向けの連携の健全性と「要対応」の判定（`health.rs`、保存済みの行だけを読む） |
-| `src/dashboard/games/` | ゲームUID一覧・表示設定・状態キャッシュ（`service.rs`）、高難度コンテンツの要約とそのキャッシュ（`challenges.rs`、上流JSONからの防御的な読み取りは `challenge_summary.rs`）、イベントカレンダーとそのキャッシュ（`calendar.rs`、読み取りは `calendar_summary.rs`）。両方の読み取りが使う型に依存しない補助関数は `upstream_json.rs` |
+| `src/dashboard/games/` | ゲームUID一覧・表示設定・状態キャッシュ（`service.rs`）、高難度コンテンツの要約とそのキャッシュ（`challenges.rs`、上流JSONからの防御的な読み取りは `challenge_summary.rs`）、イベントカレンダーとそのキャッシュ（`calendar.rs`、読み取りは `calendar_summary.rs`）。両方の読み取りが使う型に依存しない補助関数は `upstream_json.rs`。樹脂・開拓力の履歴（`resource_history.rs`：状態取得の成功ごとのスナップショット、非表示・未検出UIDの行の削除、保持期間）と、上限に達していた時間を求める純粋関数（`cap_time.rs`） |
 | `src/dashboard/notifications/` | ユーザー・管理者のWebhookの設定、条件評価（上限・派遣完了・デイリー・週間など）、送信、重複排除、Androidアプリの端末登録と受信箱（`app.rs`）、UnifiedPushの購読の保存と起床用プッシュの送信（`push.rs`、RFC 8291/8292） |
 | `src/dashboard/rewards/` | 報酬設定・スケジュール・実行（定時と遅延実行の区別）、送信不確定時のガード、今月の報酬一覧のキャッシュ、ユーザー削除前の報酬確認 |
 | `src/dashboard/settings_transfer/` | 本人の設定の書き出しと読み込み：`ahd-settings` 形式（版1）と項目ごとの検証（`document.rs`）、現在の設定との比較・プレビュー・1トランザクションでの反映（`service.rs`）。報酬の時刻変更は `rewards::service::reschedule_in`、通知の保存は `notifications::channel::PersonalPreferences` を共用 |
@@ -262,7 +264,7 @@ webのタグ `web-vX.Y.Z`（ルート `Cargo.toml` の版）のpushで `.forgejo
 
 - 設定の「認証・セキュリティ」で発行・一覧・失効します（1ユーザー10個まで）。平文（`ahd_` ＋16進64文字）は発行時に1回だけ表示し、サーバーにはSHA-256だけを保存します。
 - `Authorization: Bearer ahd_…` を付けて呼びます。Cookieを伴わないBearerの要求には `Origin` は不要です。トークンとセッションCookieを同時に送った要求は401です。
-- スコープ `read` で使えるのは `GET /me`、`/server-settings`、`/me/hoyolab`、`/game-accounts`、`/game-accounts/{id}/status`、`/game-accounts/{id}/challenges`、`/game-accounts/{id}/calendar`、`/reward-settings`、`/reward-runs` です。`run` はこれに加えて `POST /reward-settings/{id}/run` を使えます。それ以外（トークン管理を含む）はセッション専用で、トークンでは403になります。
+- スコープ `read` で使えるのは `GET /me`、`/server-settings`、`/me/hoyolab`、`/game-accounts`、`/game-accounts/{id}/status`、`/game-accounts/{id}/challenges`、`/game-accounts/{id}/calendar`、`/game-accounts/{id}/resource-history`、`/reward-settings`、`/reward-runs` です。`run` はこれに加えて `POST /reward-settings/{id}/run` を使えます。それ以外（トークン管理を含む）はセッション専用で、トークンでは403になります。
 - 管理者によるパスワード再発行・無効化・削除要求で、そのユーザーのトークンはすべて失効します。本人のパスワード変更では失効しません。
 - 初回／復旧後のパスワード変更前は操作が制限されます。ゲーム・報酬機能にはHoYoLAB連携検証の完了も必要です。
 
@@ -276,7 +278,7 @@ webのタグ `web-vX.Y.Z`（ルート `Cargo.toml` の版）のpushで `.forgejo
 | セッション | `GET /me/sessions`、`DELETE /me/sessions/{id}`、`POST /me/sessions/revoke-others` |
 | APIトークン | `GET`・`POST /me/api-tokens`、`DELETE /me/api-tokens/{id}`（セッション専用） |
 | HoYoLAB | `GET /me/hoyolab`、`PUT`・`DELETE /me/hoyolab/cookie`、`POST /me/hoyolab/verify`・`/me/hoyolab/sync` |
-| ゲーム | `GET /game-accounts`、`PATCH /game-accounts/{id}`、`GET /game-accounts/{id}/status`、`GET /game-accounts/{id}/challenges`、`GET /game-accounts/{id}/calendar` |
+| ゲーム | `GET /game-accounts`、`PATCH /game-accounts/{id}`、`GET /game-accounts/{id}/status`、`GET /game-accounts/{id}/challenges`、`GET /game-accounts/{id}/calendar`、`GET /game-accounts/{id}/resource-history` |
 | 報酬 | `GET /reward-settings`、`PATCH /reward-settings/{id}`、`POST /reward-settings/{id}/run`、`GET /reward-runs` |
 | 設定の移行 | `GET /me/settings/export`、`POST /me/settings/import/preview`・`/me/settings/import`（セッション専用） |
 | 通知 | `GET/PUT /me/notifications`、`POST /me/notifications/test`、`POST /me/notifications/app-devices`、`DELETE /me/notifications/app-devices/{id}`、`GET /me/notifications/app-devices/{id}/inbox`、`GET/PUT/DELETE /me/notifications/app-devices/{id}/push`、`GET/PUT /admin/notifications`、`POST /admin/notifications/test` |
@@ -288,6 +290,7 @@ webのタグ `web-vX.Y.Z`（ルート `Cargo.toml` の版）のpushで `.forgejo
 - ゲーム種別は `genshin`／`starrail`。状態レスポンスの `stale` と取得日時を確認してください。
 - `GET /game-accounts/{id}/challenges` は高難度コンテンツの現在の期間の要約です（原神：深境螺旋・幻想シアター・幽境の激戦、スターレイル：混沌の記憶・虚構叙事・末日の幻影・異相の仲裁）。モードごとに期間名・開始／終了日時・星・到達階層・幕・難易度・最速クリア秒数・戦闘回数を返し、キャラクターごとの戦績は返しません。上流のフィールド名は実応答で未検証のため、値はすべてnullになり得て、nullは「不明」を意味します（未開放や非公開とはみなしません）。一部のモードだけ失敗した場合はそのモードの `error_code` に理由が入ります。
 - `GET /game-accounts/{id}/calendar` はイベントカレンダーです。原神はキャラクター・武器・集録の祈願とイベント、スターレイルはキャラクター・光円錐の跳躍とイベントを、終了の早い順に返します（取得時点で終了済みの項目と、高難度コンテンツ・模擬宇宙のような常設のモードは除きます）。項目ごとに名前・バージョン・開始／終了日時・ピックアップ（名前・レアリティ・公式画像CDNの画像URL）と、イベントの完了・未開放・進捗を返し、説明文や報酬一覧は返しません。`starts_at` が取得時刻より後の項目は開催予定です。上流のフィールド名は実応答で未検証のため、値はnullになり得て、nullは「不明」を意味します。原神の上流 `POST /act_calendar` は本文に `role_id`／`server` だけを送る読み取り専用の照会です。
+- `GET /game-accounts/{id}/resource-history` は主リソース（原神は天然樹脂、スターレイルは開拓力）が直近7日間に上限に達していた時間です。HoYoLABは呼ばず、`/status` の取得（ダッシュボードと通知ワーカー）が成功するたびに保存した件数・上限・全回復時刻だけから計算します。スナップショットの間は回復速度（樹脂8分・開拓力6分で1）で何もしなかったと仮定して進め、次のスナップショットが90分以内でその見込みと1以内で一致したときだけ「上限」と数えます。見込みの上限到達より前は「回復中」（消費しても上限は遅れるだけ）、それより後で間隔が長いか消費が見えたときは「不明」、見込みより増えていた（アイテムでの回復や上限の変更）ときはその区間全体を「不明」にします。最後のスナップショットの後は90分までだけ見込みで進めてその先の上限は「不明」とし、窓の始まりから最初のスナップショットまでも「不明」です。`at_cap_seconds`・`unknown_seconds` と、窓全体を隙間なく覆う `segments`（`at_cap`／`below_cap`／`unknown`）を返します。非表示・未検出のUIDはスナップショットを持たないため窓全体が不明です。トークンは `read`／`run` のどちらでも読めます。
 - 報酬操作の `{id}` は報酬設定のUUIDで、ゲームUIDではありません。検証・同期・手動受け取りのPOSTには `{}` を送ります。
 - 画面の手動受け取りはダッシュボードの「ログインボーナスを今すぐ受け取る」1つにまとめ、本日分が未受け取りのゲームだけを実行します。APIは報酬設定ごとの非同期 `202` 受付です。結果は履歴で確認します。不確定な送信結果は再POSTせず、追加認証が必要ならHoYoLAB側で対応してください。
 - `POST /auth/passkey/options` は `{"username":"..."}` でユーザー名指定、`{}` でユーザー名なしのdiscoverableログインを開始します。ユーザー名指定では存在しないユーザーやpasskey未登録のユーザーにも同じ形の応答を返し、ログインは `verify` で401になります（アカウントの有無を明かさないため）。ユーザー名なしの開始はアカウント検索・試行枠の消費をせず、verifyでuserHandleから特定したユーザーの枠を署名検証前に消費します。新規登録はresident keyをpreferredで要求します。

@@ -14,6 +14,7 @@ pub(in crate::dashboard) mod notification_cursor;
 pub(in crate::dashboard) mod notification_log;
 pub(in crate::dashboard) mod notification_setting;
 pub(in crate::dashboard) mod passkey;
+pub(in crate::dashboard) mod resource_history;
 pub(in crate::dashboard) mod reward_attempt;
 pub(in crate::dashboard) mod reward_guard;
 pub(in crate::dashboard) mod reward_run;

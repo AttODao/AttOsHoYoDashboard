@@ -130,6 +130,23 @@ flowchart TD
 - UIは各ゲームカードの高難度コンテンツの下に置き、見出しと1行の要約（開催中の件数・開催予定の件数・次の終了までの残り）に畳む。開くと祈願／跳躍・イベント・開催予定ごとに、名前・残り時間（共通の`Clock`で毎秒更新）・ピックアップ・イベントの進捗を出す。読み込み中・取得失敗・空の状態を区別する。
 - 「終了間近の未完了イベント」の通知は対象外（未実装）。
 
+### 6.3 樹脂・開拓力の履歴と上限に達していた時間
+
+`GET /api/v1/game-accounts/{id}/resource-history` は、主リソース（原神は天然樹脂、スターレイルは開拓力）が直近7日間に上限に達していた時間を返す。認可は一覧と同じ（verified link、password changed、所有するUIDだけ、所有者単位の操作ロック）で、HoYoLABへは問い合わせない。
+
+- 記録：`/status` の取得（ダッシュボードの読み直しと通知ワーカーの15分ごとの確認）が成功し、要約に件数と上限があるたびに、`resource_history` へ1行（UID・取得時刻・件数・上限・全回復時刻）を追加する。キャッシュから返した応答と失敗した取得は記録しない。履歴のための上流要求はない。
+- 保持：`RESOURCE_HISTORY_DAYS`（既定7、7〜90。集計する7日間より短くはできない）に90分（窓の直前の起点の行を残すため）を足したより古い行を、1時間ごとの保守で削除する。UIDを非表示にした時点でそのUIDの行を削除し、保守でも非表示・未検出のUIDの行を消す（取得と非表示の競合を含む）。UID・HoYoLAB連携・ユーザーの削除ではforeign keyのcascadeで消える。
+- 計算（純粋関数 `games/cap_time.rs`）：スナップショットの間は回復速度（樹脂8分・開拓力6分で1）で何もしなかったと仮定して件数を進める。全回復時刻は件数からの見込みと1回復分以内で一致するときだけ使う。
+  - 次のスナップショットが90分以内で、見込みと1以内で一致したときだけ、見込みの上限到達から次までを「上限」と数える。
+  - 見込みの上限到達より前は「回復中」（消費しても上限到達は遅れるだけのため、間隔が長くても確定）。
+  - 上限到達より後で、間隔が90分を超えるか見込みより少なかった（消費した）ときは「不明」。推測しない。
+  - 見込みより多かった（アイテムでの回復）か上限が変わったときは、その区間全体を「不明」にする。
+  - 最後のスナップショットの後は90分までだけ見込みで進め（その間の上限到達以降は「上限」）、90分より後と、90分より後に見込みの上限に達する場合のそれ以降は「不明」。窓の始まりから最初のスナップショットまでも「不明」（窓の直前90分以内の行があればそれを起点にする）。
+- 応答：`resource`（`resin`／`trailblaze_power`）、`unit_seconds`、`max_gap_seconds`、`window_start`・`window_end`、窓内の `sample_count`、`at_cap_seconds`・`unknown_seconds`、窓全体を隙間なく覆う `segments`（`at_cap`／`below_cap`／`unknown`、開始・終了・秒数）。非表示・未検出のUIDは行を持たないため窓全体が「不明」。
+- APIトークンは `read`・`run` の両スコープで読める（保存済みの行だけを読むダッシュボードデータのため）。
+- `/metrics` には出さない（ユーザー・UIDごとの値になり、運用の判断に使わないため）。
+- UIは各ゲームカードの主リソース（数値・バー・全回復の目安）の直下に、「上限に達していた時間（直近7日間）」の合計、7日間のタイムライン（上限＝warning色、回復中＝ゲームの色、不明＝斜線）、両端の「7日前」「現在」、凡例（不明の時間付き）を置く。タイムラインは装飾として読み上げから外し、同じ内訳を視覚的に隠した文で読み上げる。記録がなければ「まだ記録がありません。」、更新の失敗は直前の履歴を残して注記する。
+
 ## 7. ログインボーナス
 
 - 設定単位は HoYoLABアカウント × game。既定OFF、既定local time `06:00`、server共通固定offset（既定 `+09:00`）。ユーザー別TZ/DSTはない。
@@ -163,7 +180,7 @@ OpenAPI 3.1 の正本は [`../dashboard-api.json`](../dashboard-api.json)。現�
 - me: `/api/v1/me`, password, passkeys, app-login approval, deletion
 - admin: user list/create/active/reset/delete
 - HoYoLAB: status/cookie/verify/sync
-- games: game accounts list/visibility/status/challenges/calendar
+- games: game accounts list/visibility/status/challenges/calendar/resource-history
 - rewards: settings/update/manual run/history
 - settings transfer: `GET /me/settings/export`、`POST /me/settings/import/preview`・`/me/settings/import`（セッション専用。`ahd-settings` 版1）
 

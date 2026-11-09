@@ -73,7 +73,7 @@ impl MockGateway {
         gateway
     }
 
-    fn calls(&self) -> usize {
+    pub(super) fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
     }
 

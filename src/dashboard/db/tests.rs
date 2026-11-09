@@ -59,7 +59,8 @@ async fn migrations_are_ordered_idempotent_and_reversible() {
             "m20261028_000011_app_notification_events",
             "m20261109_000012_game_challenge_cache",
             "m20261109_000013_app_device_push",
-            "m20261109_000014_game_calendar_cache"
+            "m20261109_000014_game_calendar_cache",
+            "m20261109_000015_resource_history"
         ]
     );
     migrations::Migrator::down(&fixture.db, None).await.unwrap();
@@ -198,7 +199,7 @@ async fn audit_requires_existing_subject_and_diagnostics_redact_credentials() {
 async fn app_event_choices_start_as_the_webhook_choices_and_revert_cleanly() {
     let fixture = TestDatabase::new().await;
     let db = &fixture.db;
-    migrations::Migrator::down(db, Some(4)).await.unwrap();
+    migrations::Migrator::down(db, Some(5)).await.unwrap();
     let owner = insert_user(db, "owner").await;
     db.execute_unprepared(&format!(
         "INSERT INTO notification_settings (user_id, webhook_format, language, events) \
@@ -251,7 +252,7 @@ async fn app_event_choices_start_as_the_webhook_choices_and_revert_cleanly() {
         .await
         .is_err()
     );
-    migrations::Migrator::down(db, Some(4)).await.unwrap();
+    migrations::Migrator::down(db, Some(5)).await.unwrap();
     let column = db
         .query_one_raw(Statement::from_string(
             DbBackend::Postgres,

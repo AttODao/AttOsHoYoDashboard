@@ -1,4 +1,4 @@
-use super::summary::summarize;
+use super::{resource_history, summary::summarize};
 use crate::dashboard::{
     auth::sessions::Identity,
     db::entities::{game_account, game_status_cache, reward_setting},
@@ -96,6 +96,7 @@ impl<G: Gateway> Games<G> {
     ) -> Result<()> {
         let _operation = self.store.operations.acquire(actor.user.id).await;
         let (link, _) = self.store.ready_link(actor).await?;
+        let tx = self.store.db.begin().await?;
         let updated = game_account::Entity::update_many()
             .col_expr(
                 game_account::Column::Visible,
@@ -103,13 +104,17 @@ impl<G: Gateway> Games<G> {
             )
             .filter(game_account::Column::Id.eq(id))
             .filter(game_account::Column::HoyolabAccountId.eq(link.id))
-            .exec(&self.store.db)
+            .exec(&tx)
             .await?;
-        if updated.rows_affected == 1 {
-            Ok(())
-        } else {
-            Err(Error::NotFound)
+        if updated.rows_affected != 1 {
+            return Err(Error::NotFound);
         }
+        // A hidden UID keeps no resource history.
+        if !visible {
+            resource_history::forget(&tx, id).await?;
+        }
+        tx.commit().await?;
+        Ok(())
     }
 
     pub(in crate::dashboard) async fn status(
@@ -200,6 +205,19 @@ impl<G: Gateway> Games<G> {
                     error_at: None,
                 };
                 upsert_cache(&self.store.db, account.id, row).await?;
+                // The history reuses this fetch; it never asks upstream itself. The owner's
+                // operation lock (also taken by `set_visible`) keeps a hide from racing
+                // this write; the hourly cleanup is the backstop.
+                if let Some(sample) = payload.as_ref().and_then(|summary| {
+                    resource_history::sample_from_summary(&account.game_kind, fetched_at, summary)
+                }) {
+                    // The history is secondary: a failed snapshot must not fail the status.
+                    if let Err(error) =
+                        resource_history::record(&self.store.db, account.id, sample).await
+                    {
+                        tracing::warn!(error = %error, "resource history snapshot not recorded");
+                    }
+                }
                 Ok(GameStatus {
                     game_kind: account.game_kind,
                     game_uid: account.game_uid,

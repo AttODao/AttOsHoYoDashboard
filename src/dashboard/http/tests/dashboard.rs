@@ -44,6 +44,11 @@ async fn current_game_reward_verify_routes_require_authentication_and_verified_s
         ),
         ("GET", format!("/api/v1/game-accounts/{id}/calendar"), None),
         (
+            "GET",
+            format!("/api/v1/game-accounts/{id}/resource-history"),
+            None,
+        ),
+        (
             "PATCH",
             format!("/api/v1/game-accounts/{id}"),
             Some(json!({"visible":true})),

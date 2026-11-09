@@ -2413,6 +2413,83 @@
         "description": "Genshin: character, weapon and chronicled wishes and events from the read-only POST act_calendar (body: only role_id and server). Star Rail: character and light cone warps and events from GET get_act_calender (long-running modes such as Simulated Universe are left out). Endgame modes are left to /challenges. Items that had ended at the fetch are omitted; items are ordered by their end, unknown ends last. Featured items carry an icon only when it is an https URL on the official image hosts allowed by the UI CSP. Cached for CALENDAR_CACHE_TTL_MINUTES (default 60) and refetched once an item has started or ended since the fetch; after a failed refresh the last calendar is returned as stale for STATUS_CACHE_TTL_MINUTES before upstream is asked again. Upstream field names are unverified, so every field except kind and featured is nullable and null means unknown."
       }
     },
+    "/api/v1/game-accounts/{id}/resource-history": {
+      "get": {
+        "tags": [
+          "games"
+        ],
+        "operationId": "getGameAccountResourceHistory",
+        "summary": "Return the time the primary resource (Genshin resin, Star Rail Trailblaze Power) of one owned UID spent at its cap in the last 7 days.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          },
+          {
+            "ahdApiToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Computed from stored snapshots only, never from an upstream request: each successful daily-note fetch of /status (by the dashboard or the notification worker) stores one snapshot of the count, the cap and the full-recovery time, kept for RESOURCE_HISTORY_DAYS (default 7, 7 to 90) plus max_gap_seconds. Between snapshots the count is projected at 8 minutes per resin or 6 minutes per Trailblaze Power assuming no activity. The projection counts as at_cap only when the next snapshot follows within max_gap_seconds and matches it to within one unit; the time before the projected cap is below_cap (spending only delays the cap); after it, a longer gap or a detected spend is unknown, and a detected refill or cap change makes the whole interval unknown. After the latest snapshot the projection is trusted for max_gap_seconds; the cap is unknown beyond that. Time in the window before the first snapshot is unknown. A hidden or undetected UID keeps no snapshots, so its whole window is unknown."
+      }
+    },
     "/api/v1/reward-settings": {
       "get": {
         "tags": [
@@ -5688,6 +5765,117 @@
           },
           "stale": {
             "type": "boolean"
+          }
+        }
+      },
+      "ResourceHistory": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "game_kind",
+          "game_uid",
+          "region",
+          "visible",
+          "detected",
+          "resource",
+          "unit_seconds",
+          "max_gap_seconds",
+          "window_start",
+          "window_end",
+          "sample_count",
+          "at_cap_seconds",
+          "unknown_seconds",
+          "segments"
+        ],
+        "properties": {
+          "game_kind": {
+            "$ref": "#/components/schemas/GameKind"
+          },
+          "game_uid": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "visible": {
+            "type": "boolean"
+          },
+          "detected": {
+            "type": "boolean"
+          },
+          "resource": {
+            "type": "string",
+            "enum": [
+              "resin",
+              "trailblaze_power"
+            ]
+          },
+          "unit_seconds": {
+            "type": "integer",
+            "description": "Regeneration time of one unit: 480 for resin, 360 for Trailblaze Power."
+          },
+          "max_gap_seconds": {
+            "type": "integer",
+            "description": "The longest interval between snapshots that is still trusted (5400)."
+          },
+          "window_start": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "window_end": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "sample_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Snapshots inside the window."
+          },
+          "at_cap_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Time at or over the cap inside the window."
+          },
+          "unknown_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Time inside the window that the snapshots cannot account for."
+          },
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceHistorySegment"
+            },
+            "description": "Chronological, adjacent segments covering the whole window; neighbours never share a state."
+          }
+        }
+      },
+      "ResourceHistorySegment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "state",
+          "start",
+          "end",
+          "seconds"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "at_cap",
+              "below_cap",
+              "unknown"
+            ]
+          },
+          "start": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "end": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Length of the segment (end minus start), for drawing."
           }
         }
       },

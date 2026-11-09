@@ -1,4 +1,5 @@
 use super::calendar::CalendarSection;
+use super::cap_history::CapHistory;
 use super::challenges::ChallengeSection;
 use super::common::{Icon, LoadError, Metric, focus_element, game_name};
 use super::rewards::AutomationSwitch;
@@ -11,7 +12,9 @@ use crate::app::display::{
 };
 use crate::app::preferences::{Preferences, use_preferences};
 use crate::app::state::{AppState, DASHBOARD_GAMES, Page, set_page};
-use crate::models::{DailyAward, DailySummary, Expedition, GameStatus, RewardSetting};
+use crate::models::{
+    DailyAward, DailySummary, Expedition, GameStatus, ResourceHistory, RewardSetting,
+};
 use dioxus::prelude::*;
 use uuid::Uuid;
 
@@ -184,7 +187,7 @@ fn focus_game_tab(game: &'static str) {
 }
 
 /// Card order puts what players check first at the top: UID, then the primary
-/// resource with its full-recovery estimate, other stats, the endgame summary, the
+/// resource with its full-recovery estimate and its time at cap over 7 days, other stats, the endgame summary, the
 /// collapsed event calendar, and the login bonus last.
 #[component]
 fn GamePanel(state: Signal<AppState>, game: &'static str, active: bool, mobile: bool) -> Element {
@@ -232,6 +235,13 @@ fn GameStatusSection(mut state: Signal<AppState>, game: &'static str) -> Element
             .find(|entry| entry.id == id)
             .map(|entry| entry.status.clone())
     });
+    let history: Option<ResourceHistory> = selected.and_then(|id| {
+        snapshot
+            .account_histories
+            .iter()
+            .find(|entry| entry.id == id)
+            .map(|entry| entry.history.clone())
+    });
     let accounts_loaded = snapshot.accounts.is_some();
     let accounts_failed = snapshot.accounts_error.is_some();
     let loading = selection.loading && selection.generation == snapshot.generation;
@@ -267,7 +277,7 @@ fn GameStatusSection(mut state: Signal<AppState>, game: &'static str) -> Element
             }
             div { "aria-busy": loading,
                 if let Some(status) = status.clone() {
-                    GameStatusCard { status }
+                    GameStatusCard { status, history, history_error: selection.history_error }
                 } else if loading {
                     p { role: "status", {ui.text("dashboard.loading")} }
                 } else if selection.error.is_none() {
@@ -287,7 +297,8 @@ fn RefreshButton(state: Signal<AppState>, game: &'static str) -> Element {
     let ui = use_preferences();
     let snapshot = state.read();
     let shown = snapshot.accounts.is_some() && snapshot.selected_game_account(game).is_some();
-    // Busy until the status, the endgame summary and the calendar of this refresh are back.
+    // Busy until the status, the cap history, the endgame summary and the calendar of
+    // this refresh are back.
     let loading = snapshot
         .selected_accounts
         .get(game)
@@ -295,6 +306,7 @@ fn RefreshButton(state: Signal<AppState>, game: &'static str) -> Element {
             (selection.loading && selection.generation == snapshot.generation)
                 || selection.challenges_loading
                 || selection.calendar_loading
+                || selection.history_loading
         });
     drop(snapshot);
     let label = ui.text(if loading {
@@ -498,7 +510,11 @@ fn AwardLine(award: DailyAward, claimed: bool) -> Element {
 }
 
 #[component]
-fn GameStatusCard(status: GameStatus) -> Element {
+fn GameStatusCard(
+    status: GameStatus,
+    history: Option<ResourceHistory>,
+    history_error: Option<&'static str>,
+) -> Element {
     let ui = use_preferences();
     // The transformer countdown reads the clock.
     let clock = use_clock();
@@ -509,6 +525,7 @@ fn GameStatusCard(status: GameStatus) -> Element {
             if let Some(data) = status.data.as_ref() {
                 if status.game_kind == "genshin" {
                     Resource { label: ui.text("dashboard.resin"), current: data.current_resin, maximum: data.max_resin, full_at: data.resin_full_at.clone() }
+                    CapHistory { game: "genshin", resource: ui.text("dashboard.resin"), history: history.clone(), error: history_error }
                     Resource {
                         label: ui.text("dashboard.realm_currency"), current: data.current_home_coin, maximum: data.max_home_coin,
                         full_at: data.home_coin_full_at.clone(), estimate: "dashboard.currency_full_at", reached: "dashboard.at_cap", secondary: true,
@@ -521,6 +538,7 @@ fn GameStatusCard(status: GameStatus) -> Element {
                     }
                 } else if status.game_kind == "starrail" {
                     Resource { label: ui.text("dashboard.trailblaze_power"), current: data.current_stamina, maximum: data.max_stamina, full_at: data.stamina_full_at.clone() }
+                    CapHistory { game: "starrail", resource: ui.text("dashboard.trailblaze_power"), history: history.clone(), error: history_error }
                     dl { class: "metrics",
                         Metric { label: ui.text("dashboard.reserved_trailblaze_power"), value: reserve_text(data, ui) }
                         Metric { label: ui.text("dashboard.daily_training"), value: pair(data.current_train_score, data.max_train_score, ui) }

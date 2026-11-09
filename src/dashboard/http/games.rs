@@ -3,7 +3,7 @@ use super::App;
 use crate::dashboard::{
     auth::sessions::Identity,
     error::{Error, Result},
-    games::{GameCalendar, GameChallenges, GameStatus, Games},
+    games::{GameCalendar, GameChallenges, GameStatus, Games, ResourceHistory},
 };
 use axum::{
     Json, Router,
@@ -22,6 +22,10 @@ pub(super) fn protected_routes() -> Router<App> {
         .route("/api/v1/game-accounts/{id}/status", get(status))
         .route("/api/v1/game-accounts/{id}/challenges", get(challenges))
         .route("/api/v1/game-accounts/{id}/calendar", get(calendar))
+        .route(
+            "/api/v1/game-accounts/{id}/resource-history",
+            get(resource_history),
+        )
 }
 fn service(app: &App) -> Result<Games> {
     Ok(Games::new(app.cookies.clone().ok_or(
@@ -97,5 +101,41 @@ async fn calendar(
         "error_code": row.error_code,
         "error_at": row.error_at,
         "stale": row.stale,
+    })))
+}
+async fn resource_history(
+    State(app): State<App>,
+    Extension(actor): Extension<Arc<Identity>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>> {
+    let row: ResourceHistory = service(&app)?.resource_history(&actor, id).await?;
+    let segments: Vec<Value> = row
+        .cap_time
+        .segments
+        .iter()
+        .map(|segment| {
+            json!({
+                "state": segment.state.as_str(),
+                "start": segment.start,
+                "end": segment.end,
+                "seconds": (segment.end - segment.start).num_seconds(),
+            })
+        })
+        .collect();
+    Ok(Json(json!({
+        "game_kind": row.game_kind,
+        "game_uid": row.game_uid,
+        "region": row.region,
+        "visible": row.visible,
+        "detected": row.detected,
+        "resource": row.resource,
+        "unit_seconds": row.unit.num_seconds(),
+        "max_gap_seconds": crate::dashboard::games::MAX_GAP.num_seconds(),
+        "window_start": row.window_start,
+        "window_end": row.window_end,
+        "sample_count": row.sample_count,
+        "at_cap_seconds": row.cap_time.at_cap.num_seconds(),
+        "unknown_seconds": row.cap_time.unknown.num_seconds(),
+        "segments": segments,
     })))
 }
