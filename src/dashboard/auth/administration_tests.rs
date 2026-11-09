@@ -1,11 +1,11 @@
 use crate::dashboard::{
     auth::sessions::Sessions,
-    db::entities::{hoyolab_account, reward_setting},
+    db::entities::{hoyolab_account, reward_setting, user},
     error::Error,
     test_support::{TEMP_PASSWORD, TestDatabase},
 };
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set, sea_query::Expr};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -50,11 +50,44 @@ async fn overview_reports_link_state_and_automatic_claims_for_admins_only() {
         .iter()
         .find(|row| row.user.id == admin.user.id)
         .unwrap();
-    assert_eq!(admin_row.link_status, "not_configured");
-    assert_eq!(admin_row.automatic_claims, 0);
+    assert_eq!(admin_row.hoyolab.status, "not_configured");
+    assert_eq!(admin_row.hoyolab.automatic_claims(), 0);
     let member_row = rows.iter().find(|row| row.user.id == member.id).unwrap();
-    assert_eq!(member_row.link_status, "removed");
-    assert_eq!(member_row.automatic_claims, 1);
+    assert_eq!(member_row.hoyolab.status, "removed");
+    assert_eq!(member_row.hoyolab.automatic_claims(), 1);
+    assert_eq!(member_row.hoyolab.games.len(), 2);
+    assert!(!member_row.hoyolab.needs_attention());
+
+    // Members cannot read the overview, and the role is read fresh per request.
+    user::Entity::update_many()
+        .col_expr(user::Column::MustChangePassword, Expr::value(false))
+        .filter(user::Column::Id.eq(member.id))
+        .exec(&test.db)
+        .await
+        .unwrap();
+    let issued =
+        Sessions::issue_until(&test.db, member.id, Utc::now() + chrono::Duration::hours(1))
+            .await
+            .unwrap();
+    let member_identity = Sessions::authenticate(
+        &test.db,
+        &crate::dashboard::auth::password::token_hash(&issued.token).unwrap(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        accounts.user_overview(&member_identity).await,
+        Err(Error::Forbidden)
+    ));
+    accounts.set_admin(&admin, member.id, true).await.unwrap();
+    assert_eq!(
+        accounts
+            .user_overview(&member_identity)
+            .await
+            .unwrap()
+            .len(),
+        2
+    );
 }
 
 #[tokio::test]

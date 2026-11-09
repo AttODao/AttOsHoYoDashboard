@@ -284,6 +284,8 @@ mod tests {
             created_at: None,
             link_status: None,
             automatic_claims: None,
+            needs_attention: None,
+            hoyolab: None,
         }]);
 
         let mut next = me(false, true);

@@ -1308,7 +1308,8 @@
           {
             "attosSessionCookie": []
           }
-        ]
+        ],
+        "description": "Administrators only, session only (API tokens get 403). Link health comes from stored rows; the listing never calls HoYoLAB and contains no Cookie, HoYoLAB or game UID, game data or raw upstream error."
       },
       "post": {
         "tags": [
@@ -5601,7 +5602,9 @@
             "required": [
               "created_at",
               "link_status",
-              "automatic_claims"
+              "automatic_claims",
+              "needs_attention",
+              "hoyolab"
             ],
             "properties": {
               "created_at": {
@@ -5622,6 +5625,13 @@
                 "type": "integer",
                 "minimum": 0,
                 "description": "Games with automatic claiming ON."
+              },
+              "needs_attention": {
+                "type": "boolean",
+                "description": "The link probably needs the owner's action: link_status is cookie_invalid, or the link is verified and a game's setting_status is action_required or its last ended run is failed, action_required or unknown. Missing, pending and removed links never count."
+              },
+              "hoyolab": {
+                "$ref": "#/components/schemas/AdminLinkHealth"
               }
             }
           }
@@ -6086,6 +6096,114 @@
             "type": "string",
             "pattern": "^[0-9a-f]{64}$",
             "description": "Single-use app sign-in code, valid for 120 seconds."
+          }
+        }
+      },
+      "AdminLinkHealth": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "verified_at",
+          "status_fetched_at",
+          "games"
+        ],
+        "properties": {
+          "verified_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Last successful identity verification."
+          },
+          "status_fetched_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Newest successful game status fetch over the user's game accounts; failed fetches do not count."
+          },
+          "games": {
+            "type": "array",
+            "description": "One entry per reward setting, ordered by game kind; empty without a link.",
+            "items": {
+              "$ref": "#/components/schemas/AdminGameHealth"
+            }
+          }
+        }
+      },
+      "AdminGameHealth": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "game_kind",
+          "automatic",
+          "setting_status",
+          "last_run"
+        ],
+        "properties": {
+          "game_kind": {
+            "type": "string",
+            "enum": [
+              "genshin",
+              "starrail"
+            ]
+          },
+          "automatic": {
+            "type": "boolean",
+            "description": "Automatic claiming is ON."
+          },
+          "setting_status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "action_required"
+            ]
+          },
+          "last_run": {
+            "description": "The newest ended reward run still in history (REWARD_HISTORY_DAYS); runs in flight are not reported.",
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AdminLastRun"
+              }
+            ]
+          }
+        }
+      },
+      "AdminLastRun": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "state",
+          "ended_at",
+          "error_code"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "success",
+              "already_claimed",
+              "failed",
+              "action_required",
+              "unknown",
+              "stopped"
+            ]
+          },
+          "ended_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Sanitized error class of the run's last attempt (for example network, http:429, upstream:-5003)."
           }
         }
       }
