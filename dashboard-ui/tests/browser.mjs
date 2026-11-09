@@ -576,6 +576,10 @@ try{
  assert.equal(await genshinCalendar.locator('details.calendar-details').getAttribute('open'),null,'the summary closes the details again');
  await starrail.locator('section.calendar-section').getByText('Nothing is running or announced.',{exact:true}).waitFor();
  assert.equal(await starrail.locator('section.calendar-section details').count(),0,'an empty calendar has nothing to expand');
+ // Fetch details close each card: its last element, after the endgame, calendar and login bonus.
+ const detailsLast=()=>Promise.all([genshin,starrail].map(panel=>panel.evaluate(card=>{const last=card.lastElementChild;return Boolean(last?.matches('details.status-details'))&&card.querySelectorAll('details.status-details').length===1&&['.challenge-section','.calendar-section','.bonus-section'].every(selector=>{const section=card.querySelector(selector);return !section||Boolean(section.compareDocumentPosition(last)&Node.DOCUMENT_POSITION_FOLLOWING);});})));
+ assert.equal(await genshin.locator('.challenge-section, .calendar-section, .bonus-section').count(),3,'every section the details must follow is shown');
+ assert.deepEqual(await detailsLast(),[true,true],'fetch details are the last element of each game card');
  // Time at cap over 7 days: under the resin (or Trailblaze Power) block, stored data only.
  for(const n of [3,4])assert.equal(counts.get('/api/v1/game-accounts/'+uid(n)+'/resource-history')||0,0,'hidden or undetected UIDs never load the history');
  const genshinHistory=genshin.locator('.cap-history');
@@ -622,6 +626,8 @@ try{
  statusMode='stale';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
  await starrail.getByText('Data from 6 h ago (HoYoLAB is temporarily unavailable)',{exact:true}).waitFor();
  assert.ok(!(await starrail.innerText()).includes('http:503'),'raw codes stay out of the visible card');
+ assert.equal(await starrail.locator('details.status-details > summary').innerText(),'Fetch details · HoYoLAB is temporarily unavailable','the collapsed details still name the fetch error');
+ assert.deepEqual(await detailsLast(),[true,true],'a failed fetch keeps its details at the card bottom');
  // A failed first summary says only why; the refresh button reloads it with the status.
  challengeMode='failed';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
  await starrail.locator('section.challenge-section').getByText('Could not load the records (The HoYoLAB battle record is private)',{exact:true}).waitFor();
@@ -808,6 +814,18 @@ try{
  assert.equal(await trigger.getAttribute('aria-expanded'),'false','a dialog that could not open does not stay marked open');
  await pressMenu('after a dialog failed to open');await page.keyboard.press('Escape');await menuClosed('Escape after the retry');
  stage='dashboard';
+ // At 360px the selected game's details still close its card, below the login bonus.
+ await page.setViewportSize({width:360,height:800});
+ await page.waitForFunction(()=>document.getElementById('game-panel-genshin')?.getAttribute('role')==='tabpanel');
+ assert.deepEqual(await detailsLast(),[true,true],'fetch details stay last on a narrow screen');
+ const narrowDetails=genshin.locator('details.status-details');
+ await narrowDetails.scrollIntoViewIfNeeded();
+ const [narrowBonus,narrowSummary,narrowCard]=[await genshin.locator('.bonus-section').boundingBox(),await narrowDetails.locator('summary').boundingBox(),await genshin.boundingBox()];
+ assert.ok(narrowSummary.y>=narrowBonus.y+narrowBonus.height&&narrowSummary.height>=48&&narrowSummary.x+narrowSummary.width<=narrowCard.x+narrowCard.width,'the details summary sits below the bonus inside the card with a 48px target');
+ await narrowDetails.locator('summary').focus();await page.keyboard.press('Enter');
+ await genshin.locator('.status-metadata').waitFor();
+ await page.screenshot({path:path.join(root,'target/ui-dashboard-details-360.png'),fullPage:true});
+ await page.keyboard.press('Enter');await genshin.locator('.status-metadata').waitFor({state:'hidden'});
  // Mobile ARIA tabs: hidden panel, roving focus and keyboard edges.
  await page.setViewportSize({width:390,height:844});
  await page.waitForFunction(()=>document.getElementById('game-panel-genshin')?.getAttribute('role')==='tabpanel');
