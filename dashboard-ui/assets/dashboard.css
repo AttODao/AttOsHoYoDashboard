@@ -114,17 +114,23 @@ input[type=file]{width:100%;min-width:0;min-height:48px;background:var(--elevate
 .admin-filters{display:flex;flex-wrap:wrap;align-items:end;gap:12px 32px}.admin-filters .admin-search{flex:1 1 16rem}.admin-filters .checkbox-row input{flex-shrink:0}.admin-users tr>:nth-child(3){min-width:10rem}.admin-link .run-state,.admin-link .run-reason{margin:6px 0 0;font-size:14px;color:var(--muted)}.admin-link time{font-variant-numeric:tabular-nums;white-space:nowrap}
 /* Event calendar: the heading and one collapsed summary line; the disclosure lists banners, events and announced items with their countdowns. */
 
-.calendar-summary-part{display:inline-block}.calendar-empty{margin:0;color:var(--muted)}.calendar-head{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:4px 16px}.calendar-name{font-weight:600;overflow-wrap:anywhere}.calendar-left{font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}.calendar-featured{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin:4px 0 0;overflow-wrap:anywhere}.featured{display:inline-flex;align-items:center;gap:6px;min-width:0}.featured-icon{width:24px;height:24px;object-fit:contain;flex-shrink:0}.calendar-status{margin:4px 0 0;font-size:14px;font-variant-numeric:tabular-nums}.calendar-status.quiet{color:var(--muted)}
+.calendar-empty{margin:0;color:var(--muted)}.calendar-head{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:4px 10px}.calendar-name{font-weight:600;overflow-wrap:anywhere}.calendar-left{font-variant-numeric:tabular-nums;white-space:nowrap}.calendar-left .status-mark{font-size:15px;font-weight:600}.calendar-featured{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:8px 0 0;overflow-wrap:anywhere}.calendar-featured>span,.featured{display:inline-flex;align-items:center;min-width:0}.featured{gap:8px}.featured-icon{width:40px;height:40px;border-radius:8px;object-fit:contain;flex-shrink:0;background:var(--track)}.calendar-status{display:inline-flex;font-variant-numeric:tabular-nums}
 /* Admin user list: the four actions in two rows leave the link column room, and each health-line part is an inline block, so the column breaks between parts, not inside them. */
 .table-wrap .admin-user-actions{grid-template-columns:repeat(2,192px);gap:8px 12px}.admin-users table{min-width:900px}.admin-users td.admin-link{min-width:18rem}.admin-link .health-line>*,.admin-link time{display:inline-block}
-/* The status age under the game title on the events page (its line reserved before the calendar arrives), and countdowns that move to the next line as a whole (an inline block, so a large text size still wraps inside instead of overflowing). */
-.game-heading-text{display:grid;gap:2px;min-width:0}.game-heading-text>:last-child{font-size:14px;min-height:1.6em}
+/* Countdowns that move to the next line as a whole (an inline block, so a large text size still wraps inside instead of overflowing). */
 .inline-unit{display:inline-block}
-/* Events page: one panel per game (tabs at <=900px). Wide browser windows draw the timeline as a fixed-layout table (one column per day, bars placed with colspan, no inline styles); <=600px and the app read it downwards. */
+/* Events page: one panel per game (tabs at <=900px) with the dashboard's card heading (mark, name, clock + age, refresh) and the summary chips (status symbol + count or time left). Wide browser windows draw the timeline as a fixed-layout table (one column per day, bars placed with colspan, no inline styles); <=600px and the app read it downwards. Rows lead with their type icon; countdowns and event status are status marks. */
 .events-grid{display:grid;gap:24px}
-.events-panel .game-heading{margin-bottom:8px}
-.events-summary{margin:0 0 20px;max-width:none;font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}
-.events-source{margin:20px 0 0;font-size:13px;color:var(--muted)}
+.events-panel .card-heading{margin-bottom:12px}
+.event-chips{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:0 0 20px;padding:0}
+.event-chip{display:inline-flex;align-items:center;min-height:36px;padding:4px 12px;border:1px solid var(--decorative);border-radius:999px}
+.events .event-chip .status-mark{gap:6px;font-size:15px;color:var(--text);font-variant-numeric:tabular-nums}
+.event-chip .status-mark svg{color:var(--muted)}
+.event-chip[data-chip=running] .status-mark svg{color:var(--game)}
+.event-chip:not([data-chip=next-end]) .status-short{font-family:'Orbitron',sans-serif;font-weight:600}
+.events-source{display:flex;align-items:center;gap:6px;margin:20px 0 0;font-size:13px;color:var(--muted)}
+.events .status-mark.tl-left,.events .calendar-left .status-mark{color:var(--text)}.status-mark.tl-left svg,.calendar-left .status-mark svg{color:var(--muted)}
+:is(.calendar-status,.tl-status)[data-quiet=true] .status-mark{color:var(--muted)}:is(.calendar-status,.tl-status)[data-quiet=false] .status-mark[data-status=open]{color:var(--text)}
 .events-panel .empty{padding:24px 0}
 .events-panel .empty h3{margin-bottom:8px}
 .event-timeline{width:100%;table-layout:fixed;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
@@ -139,6 +145,7 @@ input[type=file]{width:100%;min-width:0;min-height:48px;background:var(--elevate
 .tl-lane th{padding:16px 0 6px;text-align:start;font-size:13px;font-weight:600}
 .tl-row td{position:relative;padding:3px 0;vertical-align:middle}
 .tl-lane th{position:relative}
+.tl-lane-title{position:relative;display:inline-flex;align-items:center;gap:6px}
 .tl-now{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
 .tl-now line{stroke:var(--cyan);stroke-width:2;stroke-opacity:.7}
 .tl-bar,.tl-outside{position:relative}
@@ -151,18 +158,19 @@ input[type=file]{width:100%;min-width:0;min-height:48px;background:var(--elevate
 .tl-bar:is([data-clip=end],[data-clip=both]){margin-right:0;border-right-width:0;border-start-end-radius:0;border-end-end-radius:0}
 .tl-label{min-width:0;padding:6px 10px;line-height:1.4;overflow-wrap:anywhere}
 .tl-outside[data-side=before]{text-align:end}
-.tl-name{display:block;font-size:14px;font-weight:600;color:var(--text)}
+.tl-title{display:flex;align-items:flex-start;gap:6px}.tl-title svg{flex:none;margin-top:3px;color:var(--muted)}.tl-row:not([data-kind=event]) .tl-title svg{color:var(--game)}
+.tl-outside[data-side=before] .tl-title{justify-content:flex-end}
+.tl-name{display:block;min-width:0;font-size:14px;font-weight:600;color:var(--text)}
 .tl-bar[data-tone=done] .tl-name{color:var(--muted)}
-.tl-meta{display:flex;flex-wrap:wrap;gap:0 10px;margin:2px 0 0;max-width:none;color:var(--muted)}
-.tl-label .calendar-featured{gap:2px 10px;margin-top:2px;font-size:13px}
+.tl-meta{display:flex;flex-wrap:wrap;align-items:center;gap:0 10px;margin:2px 0 0;max-width:none;color:var(--muted)}.tl-meta .status-mark{font-size:13px}
+.tl-label .calendar-featured{gap:4px 10px;margin-top:4px;font-size:13px}
 .tl-outside[data-side=before] :is(.tl-meta,.calendar-featured){justify-content:flex-end}
-.tl-label .featured-icon{width:20px;height:20px}
+.tl-label .featured-icon{width:32px;height:32px;border-radius:6px}
 .tl-left,.tl-status{white-space:nowrap}
-.tl-left{color:var(--text)}
 /* No known period: a label with a dashed marker instead of a bar across the axis. */
 .tl-undated{margin:0 1px;border-left:1px dashed var(--decorative)}
 .event-list{display:grid;gap:24px}
-.event-phase h3{margin:0 0 8px;font-size:16px}
+.event-phase h3{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:16px}.event-phase h3 svg{flex:none;width:18px;height:18px;color:var(--muted)}.event-phase[data-phase=running] h3 svg{color:var(--game)}
 .event-node{position:relative;display:flex;flex-wrap:wrap;align-items:baseline;gap:0 8px;margin:0;padding-left:24px;font-size:14px;font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums}
 .event-node::before{content:"";position:absolute;left:2px;top:6px;width:12px;height:12px;box-sizing:border-box;border:2px solid var(--line);border-radius:50%}
 .event-now{color:var(--text)}
@@ -171,8 +179,7 @@ input[type=file]{width:100%;min-width:0;min-height:48px;background:var(--elevate
 .event-cards{position:relative;display:grid;gap:8px;list-style:none;margin:6px 0 0 7px;padding:0 0 0 18px}
 .event-cards::before{content:"";position:absolute;top:0;bottom:0;left:0;width:2px;border-radius:1px;background:var(--decorative)}
 .event-card{min-width:0;padding:12px 14px;border:1px solid var(--decorative);border-radius:10px;background:#FFFFFF0A}
-.event-kind{font-size:12px;font-weight:600;color:var(--muted)}
-.event-card .calendar-name{display:block;margin-top:2px}
+.event-card>:not(.calendar-head){margin-left:30px}.event-meta{display:flex;flex-wrap:wrap;align-items:center;gap:2px 14px;margin-top:4px;margin-bottom:0}.event-kind{margin-top:2px;color:var(--muted)}.event-card[data-banner=true] .event-kind{color:var(--game)}
 .event-period{margin:4px 0 0;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
 .event-none{margin:6px 0 0 24px;font-size:14px;color:var(--muted)}
 [data-theme=light] .tl-bar{background:#FFFFFF99}
@@ -188,7 +195,7 @@ input[type=file]{width:100%;min-width:0;min-height:48px;background:var(--elevate
 .icon-sm{width:16px;height:16px;stroke-width:2.2}.icon-lg{width:32px;height:32px;stroke-width:1.5}.icon-xl{width:44px;height:44px;stroke-width:1.25}
 .named-icon{display:inline-flex}.game-mark{flex:none}.spin{animation:ahd-spin 900ms linear infinite}.missing{color:var(--muted)}
 .status-mark{display:inline-flex;align-items:center;gap:4px;font-size:14px;white-space:nowrap}.status-mark svg{width:16px;height:16px;stroke-width:2.2}
-.status-mark[data-status=done]{color:var(--mint)}.status-mark:is([data-status=open],[data-status=warn]){color:var(--warning)}.status-mark[data-status=failed]{color:var(--danger)}.status-mark:is([data-status=locked],[data-status=unknown],[data-status=waiting],[data-status=loading]){color:var(--muted)}
+.status-mark[data-status=done]{color:var(--mint)}.status-mark:is([data-status=open],[data-status=warn]){color:var(--warning)}.status-mark[data-status=failed]{color:var(--danger)}.status-mark:is([data-status=locked],[data-status=unknown],[data-status=waiting],[data-status=loading],[data-status=upcoming]){color:var(--muted)}.status-mark[data-status=running]{color:var(--game,var(--text))}
 .cap-badge{padding:4px 8px;line-height:1.3;border-radius:6px;background:var(--warn-bg);font-size:13px}
 /* Game colours inside a card: the accent, hairlines between sections and the bar track. */
 .game-panel.genshin{--game:var(--mint);--hair:#35564C;--track:#0A1B18}.game-panel.starrail{--game:var(--lavender);--hair:#544A70;--track:#17132A}

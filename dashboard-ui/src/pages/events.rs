@@ -3,13 +3,13 @@
 //! (`event_timeline.rs`); phones and the app read it downwards (`event_list.rs`). The data is
 //! the cached calendar of each game's selected (or first visible) UID, loaded when the page
 //! opens (`app::data::load_events_data`), never under the busy shell.
-use super::calendar::{Groups, calendar_notice, summary_parts};
-use super::common::{LoadError, game_name, pending, refresh_problem};
+use super::calendar::{Groups, SummaryChips, calendar_notice};
+use super::common::{LoadError, LoadingLine, WarningLine, game_name, pending, refresh_problem};
 use super::dashboard::{Freshness, pull_refresh, use_clock, use_clock_provider};
 use super::event_list::EventList;
 use super::event_timeline::{LocalTime, WideTimeline};
 use super::game_tabs::{GameTabs, game_index, select_game_index, use_narrow_games};
-use super::icons::{Glyph, Icon};
+use super::icons::{Glyph, Icon, Status};
 use super::swipe_tabs::SwipeableTabs;
 use crate::app::actions::spawn_root;
 use crate::app::data::load_game_calendar;
@@ -49,8 +49,9 @@ pub(super) fn EventsPage(state: Signal<AppState>) -> Element {
     }
 }
 
-/// One game: its title, the age of the calendar and (web) its refresh control, then the
-/// timeline. Without a visible UID there is nothing to read the calendar through.
+/// One game: its mark and title, the age of the calendar (clock and "12 min ago") and
+/// (web) its refresh control, then the timeline. Without a visible UID there is nothing to
+/// read the calendar through.
 #[component]
 fn EventsPanel(state: Signal<AppState>, game: &'static str, active: bool, narrow: bool) -> Element {
     let ui = use_preferences();
@@ -102,17 +103,18 @@ fn EventsPanel(state: Signal<AppState>, game: &'static str, active: bool, narrow
             "aria-labelledby": if narrow { format!("events-tab-{game}") } else { format!("events-title-{game}") },
             "data-selected": active, hidden: narrow && !active,
             tabindex: if narrow { "0" } else { "-1" },
-            div { class: "game-heading",
-                div { class: "game-heading-text",
-                    h2 { class: "game-title", id: "events-title-{game}", {game_name(game, ui)} }
-                    Freshness { fetched_at, stale }
+            div { class: "game-heading card-heading",
+                h2 { class: "game-title", id: "events-title-{game}",
+                    if let Some(mark) = Icon::game_mark(game) { Glyph { icon: mark, class: "game-mark" } }
+                    span { {game_name(game, ui)} }
                 }
+                Freshness { fetched_at, stale, short: true }
                 // The app refreshes by pulling the page down instead.
                 if !crate::platform::APP && id.is_some() { CalendarRefresh { state, game } }
             }
             if !accounts_loaded {
                 // A failed first load shows the page-level warning instead.
-                if !accounts_failed { p { role: "status", {ui.text("dashboard.loading")} } }
+                if !accounts_failed { LoadingLine {} }
             } else if id.is_none() {
                 div { class: "empty",
                     h3 { {ui.text("dashboard.no_visible_uids")} }
@@ -121,29 +123,48 @@ fn EventsPanel(state: Signal<AppState>, game: &'static str, active: bool, narrow
                 }
             } else {
                 if unavailable {
-                    p { class: "warning", role: "status", {ui.text("calendar.fetch_failed")} }
+                    WarningLine { status: Status::Failed, text: ui.text("calendar.fetch_failed") }
                 }
                 if let Some(key) = selection.calendar_error {
-                    // Without a calendar there is nothing that could be outdated.
-                    p { class: "warning", role: "status", {ui.text(refresh_problem(key, calendar.is_some(), "calendar.fetch_failed"))} }
+                    // Without a calendar there is nothing that could be outdated: the fetch
+                    // failed. With one, the shown content stays and is only not renewed.
+                    WarningLine {
+                        status: if calendar.is_some() { Status::Warn } else { Status::Failed },
+                        text: ui.text(refresh_problem(key, calendar.is_some(), "calendar.fetch_failed")),
+                    }
                 }
                 div { class: "events-content", "aria-busy": loading,
                     if let Some(calendar) = calendar {
                         EventsBody { calendar, game }
                     } else if loading {
-                        p { role: "status", {ui.text("dashboard.loading")} }
+                        LoadingLine {}
                     }
                 }
                 // Event progress is the selected UID's; the banners and periods are everyone's.
                 if let Some(account) = account.filter(|_| progress_shown) {
-                    p { class: "events-source", {ui.format("calendar.progress_of", &[("uid", &account.game_uid)])} }
+                    ProgressSource { uid: account.game_uid }
                 }
             }
         }
     }
 }
 
-/// The summary line, then the timeline: across on wide browser windows (the list stays as
+/// Whose progress the event rows show: the person icon and the UID; the sentence is the
+/// readers' text and the tooltip.
+#[component]
+fn ProgressSource(uid: String) -> Element {
+    let ui = use_preferences();
+    let sentence = ui.format("calendar.progress_of", &[("uid", &uid)]);
+    rsx! {
+        p { class: "events-source", title: sentence.clone(),
+            Glyph { icon: Icon::User, class: "icon-sm" }
+            span { class: "visually-hidden", "{sentence}" }
+            span { "aria-hidden": "true", {ui.format("dashboard.uid_only", &[("uid", &uid)])} }
+        }
+    }
+}
+
+/// The summary chips, then the timeline: across on wide browser windows (the list stays as
 /// the readers' text), downwards on phones and in the app.
 #[component]
 fn EventsBody(calendar: GameCalendar, game: &'static str) -> Element {
@@ -159,18 +180,14 @@ fn EventsBody(calendar: GameCalendar, game: &'static str) -> Element {
         .map(|items| Groups::from_items(items, seconds_since));
     rsx! {
         if let Some(notice) = notice {
-            p { class: "warning", role: "status", {notice} }
+            // No items at all: the fetch failed. Otherwise the shown calendar is outdated.
+            WarningLine { status: if calendar.items.is_none() { Status::Failed } else { Status::Warn }, text: notice }
         }
         if let Some(groups) = groups {
             if groups.is_empty() {
                 p { class: "calendar-empty", {ui.text("calendar.empty")} }
             } else {
-                p { class: "events-summary",
-                    for (index, part) in summary_parts(&groups, ui).into_iter().enumerate() {
-                        if index > 0 { " · " }
-                        span { class: "calendar-summary-part", "{part}" }
-                    }
-                }
+                SummaryChips { groups: groups.clone() }
                 div { class: "events-body", "data-wide": !crate::platform::APP,
                     if !crate::platform::APP {
                         WideTimeline { groups: groups.clone(), game, local }

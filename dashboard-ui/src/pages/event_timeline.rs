@@ -1,6 +1,7 @@
 //! The events timeline for wide screens: a date axis across the top (months, then days with
 //! today marked) and one row per banner or event, with a bar from its start to its end and
-//! its name, period and countdown on the bar (or beside a short bar). Items without any
+//! type icon, name, rate-up images, period, countdown and status on the bar (or beside a
+//! short bar). Items without any
 //! known period follow in their own group as labels without a bar, so they never look
 //! like something running across the whole axis.
 //!
@@ -8,8 +9,9 @@
 //! `colspan`, so positions need no inline styles under the CSP (`style-src 'self'`). Bars are
 //! whole local days; the label keeps the exact moments. The table is `aria-hidden`: readers
 //! get the same items as the list of `event_list.rs`, which is visually hidden here.
-use super::calendar::{FeaturedLine, Groups, Timed, countdown, display_name, status_text};
-use super::calendar::{banners_title, quiet_status};
+use super::calendar::{FeaturedLine, Groups, ItemStatusMark, Timed, countdown, display_name};
+use super::calendar::{banners_title, kind_icon};
+use super::icons::{Glyph, Icon, Status, StatusMark};
 use crate::app::display::compact_datetime;
 use crate::app::preferences::{Preferences, use_preferences};
 use dioxus::prelude::*;
@@ -271,7 +273,10 @@ pub(super) fn WideTimeline(groups: Groups, game: &'static str, local: LocalTime)
         .collect();
     let axis = Axis::of(local, &periods);
     let now = axis.now(local);
-    let titles = [banners_title(game, ui), ui.text("calendar.events")];
+    let titles = [
+        (Icon::Ticket, banners_title(game, ui)),
+        (Icon::Calendar, ui.text("calendar.events")),
+    ];
     rsx! {
         div { class: "event-timeline-wrap",
             table { class: "event-timeline", "aria-hidden": "true", "data-days": axis.days,
@@ -305,7 +310,10 @@ pub(super) fn WideTimeline(groups: Groups, game: &'static str, local: LocalTime)
                             tr { key: "lane-{lane}", class: "tl-lane",
                                 th { colspan: axis.days,
                                     NowLine { now, start: 0, span: axis.days }
-                                    {titles[lane]}
+                                    span { class: "tl-lane-title",
+                                        Glyph { icon: titles[lane].0, class: "icon-sm" }
+                                        {titles[lane].1}
+                                    }
                                 }
                             }
                             for (index, timed) in items.into_iter().enumerate() {
@@ -316,7 +324,12 @@ pub(super) fn WideTimeline(groups: Groups, game: &'static str, local: LocalTime)
                     // Not on the time axis, so the now line does not cross this group.
                     if !undated.is_empty() {
                         tr { class: "tl-lane", "data-undated": true,
-                            th { colspan: axis.days, {ui.text("calendar.undated")} }
+                            th { colspan: axis.days,
+                                span { class: "tl-lane-title",
+                                    Glyph { icon: Status::Unknown.icon(), class: "icon-sm" }
+                                    {ui.text("calendar.undated")}
+                                }
+                            }
                         }
                         for (index, timed) in undated.into_iter().enumerate() {
                             UndatedRow { key: "undated-{index}", timed, days: axis.days, local }
@@ -403,7 +416,8 @@ fn now_offset(now: f64, start: i64, span: i64) -> Option<f64> {
     (span > 0.0 && now >= start && now < start + span).then(|| (now - start) / span * 100.0)
 }
 
-/// Name, rate-up items, period, countdown and status of one bar.
+/// Type icon and name, rate-up items, then period, countdown and status of one bar. The
+/// table is hidden from readers, so the icon is decorative here (the lane names it).
 #[component]
 fn BarLabel(timed: Timed, local: LocalTime) -> Element {
     let ui = use_preferences();
@@ -411,21 +425,20 @@ fn BarLabel(timed: Timed, local: LocalTime) -> Element {
     let start = timed.start(local.now);
     let end = timed.end(local.now);
     let left = countdown(&timed, ui);
-    let status = status_text(&timed.item, ui);
-    let quiet = quiet_status(&timed.item);
     rsx! {
-        strong { class: "tl-name", "{name}" }
+        div { class: "tl-title",
+            Glyph { icon: kind_icon(&timed.item), class: "icon-sm" }
+            strong { class: "tl-name", "{name}" }
+        }
         FeaturedLine { item: timed.item.clone() }
         p { class: "tl-meta",
             if start.is_some() || end.is_some() {
                 span { class: "tl-period", title: period_title(start, end), {period_text(local, start, end)} }
             }
-            if let Some((left, _)) = left {
-                span { class: "tl-left", "{left}" }
+            if let Some(left) = left {
+                StatusMark { status: left.status, text: left.duration, label: left.sentence, class: "tl-left" }
             }
-            if let Some(status) = status {
-                span { class: if quiet { "tl-status quiet" } else { "tl-status" }, "{status}" }
-            }
+            ItemStatusMark { item: timed.item.clone(), class: "tl-status" }
         }
     }
 }
