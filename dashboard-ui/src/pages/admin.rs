@@ -1,6 +1,10 @@
-use super::common::{ConfirmDialog, Field, LoadError, ModalDialog, PasswordInput, game_name};
+use super::common::{
+    ConfirmDialog, Field, LoadError, ModalDialog, PasswordInput, Skeleton, game_name,
+};
+use super::hoyolab::link_status;
+use super::icons::{Glyph, Icon, Status, StatusMark};
 use super::notifications::AdminChannelCard;
-use super::rewards::{reward_label, run_tone};
+use super::rewards::{reward_label, run_status, run_tone};
 use crate::app::actions::spawn_action;
 use crate::app::credentials::{self, CopyState, CredentialResult};
 use crate::app::data::{load_admin_audit, load_admin_users};
@@ -150,7 +154,7 @@ fn AdminCard(state: Signal<AppState>) -> Element {
                 CardHeader { CardTitle { {prefs.text("admin.manage_users")} } }
                 CardContent { class: "form-stack",
                     if state.read().admin_error.is_some() { LoadError { state, message: prefs.text("admin.could_not_load_users") } }
-                    else if state.read().admin_users.is_none() { p { role: "status", {prefs.text("admin.loading_users")} } }
+                    else if state.read().admin_users.is_none() { Skeleton { label: prefs.text("admin.loading_users") } }
                     else if users.is_empty() { p { {prefs.text("admin.no_users")} } }
                     else {
                         div { class: "admin-filters",
@@ -226,7 +230,7 @@ fn AuditCard(state: Signal<AppState>) -> Element {
                         }
                     }
                 } else if state.read().admin_audit_error.is_none() {
-                    p { role: "status", {prefs.text("admin.loading_audit")} }
+                    Skeleton { label: prefs.text("admin.loading_audit") }
                 }
             }
         }
@@ -311,7 +315,6 @@ fn AdminUserRow(
         state.read().admin_users.as_deref().unwrap_or_default(),
     );
     let own_account = is_own_user(state, user.id);
-    let status_class = if user.active { "status" } else { "status off" };
     let link = link_label(user.link_status.as_deref(), prefs);
     let claims = user.automatic_claims.unwrap_or_default();
     let username = user.username.clone();
@@ -402,18 +405,23 @@ fn AdminUserRow(
         tr {
             th { scope: "row",
                 "{user.username}"
-                if user.is_admin { " " span { class: "role-chip", {prefs.text("admin.admin")} } }
-                if user.must_change_password { span { class: "role-chip", {prefs.text("admin.awaiting_password_change")} } }
+                if user.is_admin { " " span { class: "role-chip", Glyph { icon: Icon::Shield, class: "icon-sm" } {prefs.text("admin.admin")} } }
+                if user.must_change_password { span { class: "role-chip", Glyph { icon: Icon::Key, class: "icon-sm" } {prefs.text("admin.awaiting_password_change")} } }
             }
             td {
-                span { class: status_class, {if user.active { prefs.text("admin.active") } else { prefs.text("admin.inactive") }} }
+                StatusMark {
+                    class: "badge",
+                    status: if user.active { Status::Done } else { Status::Off },
+                    text: prefs.text(if user.active { "admin.active" } else { "admin.inactive" }).to_owned(),
+                }
             }
             td { class: "admin-link",
-                "{link}"
-                if needs_attention(&user) { " " span { class: "status warn", {prefs.text("admin.needs_attention")} } }
-                if claims > 0 { span { class: "role-chip", {prefs.format("admin.automatic_claims", &[("count", &claims.to_string())])} } }
+                StatusMark { status: link_status(user.link_status.as_deref()), text: link.to_owned() }
+                if needs_attention(&user) { " " StatusMark { class: "badge", status: Status::Warn, text: prefs.text("admin.needs_attention").to_owned() } }
+                if claims > 0 { span { class: "role-chip", Glyph { icon: Icon::Gift, class: "icon-sm" } {prefs.format("admin.automatic_claims", &[("count", &claims.to_string())])} } }
                 if let Some(health) = user.hoyolab.as_ref().filter(|_| linked(&user)) {
                     p { class: "run-reason",
+                        Glyph { icon: Icon::Clock, class: "icon-sm" } " "
                         if let Some(at) = health.status_fetched_at.as_deref() {
                             {prefs.text("admin.status_fetched")} " "
                             time { datetime: "{at}", {datetime_text(Some(at), prefs)} }
@@ -427,21 +435,33 @@ fn AdminUserRow(
             td { {user.last_login_at.as_deref().map_or_else(|| prefs.text("admin.never_signed_in").to_owned(), |at| datetime_text(Some(at), prefs))} }
             td {
                 div { class: "actions admin-user-actions",
-                Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: result.read().is_some(), onclick: move |_| {
-                    if !is_admin(state) || state.read().busy { return; }
-                    // Self-reissue revokes the session before its generated secret can be delivered.
-                    if is_own_user(state, user.id) { set_page(state, Page::Security); return; }
-                    confirming.set(Some(RowAction::Reissue));
-                }, {if own_account { prefs.text("admin.change_password") } else { prefs.text("admin.reissue_password") }} }
-                Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: own_account && !last_admin, onclick: move |_| {
-                    if guard_user_change(state, user.id) { confirming.set(Some(RowAction::Activation)); }
-                }, {if user.active { prefs.text("admin.disable") } else { prefs.text("admin.re_enable") }} }
-                Button { variant: ButtonVariant::Secondary, r#type: "button", disabled: own_account, onclick: move |_| {
-                    if guard_user_change(state, user.id) { confirming.set(Some(RowAction::Role)); }
-                }, {if user.is_admin { prefs.text("admin.revoke_admin") } else { prefs.text("admin.grant_admin") }} }
-                Button { variant: ButtonVariant::Destructive, r#type: "button", disabled: own_account && !last_admin, onclick: move |_| {
-                    if guard_user_change(state, user.id) { deleting.set(true); }
-                }, {prefs.text("deletion.delete_user")} }
+                RowActionButton { icon: Icon::Key, variant: ButtonVariant::Secondary, disabled: result.read().is_some(),
+                    name: if own_account { prefs.text("admin.change_password") } else { prefs.text("admin.reissue_password") },
+                    onclick: move |_| {
+                        if !is_admin(state) || state.read().busy { return; }
+                        // Self-reissue revokes the session before its generated secret can be delivered.
+                        if is_own_user(state, user.id) { set_page(state, Page::Security); return; }
+                        confirming.set(Some(RowAction::Reissue));
+                    }
+                }
+                RowActionButton { icon: if user.active { Icon::Ban } else { Icon::Check }, variant: ButtonVariant::Secondary, disabled: own_account && !last_admin,
+                    name: if user.active { prefs.text("admin.disable") } else { prefs.text("admin.re_enable") },
+                    onclick: move |_| {
+                        if guard_user_change(state, user.id) { confirming.set(Some(RowAction::Activation)); }
+                    }
+                }
+                RowActionButton { icon: if user.is_admin { Icon::ShieldOff } else { Icon::Shield }, variant: ButtonVariant::Secondary, disabled: own_account,
+                    name: if user.is_admin { prefs.text("admin.revoke_admin") } else { prefs.text("admin.grant_admin") },
+                    onclick: move |_| {
+                        if guard_user_change(state, user.id) { confirming.set(Some(RowAction::Role)); }
+                    }
+                }
+                RowActionButton { icon: Icon::Trash, variant: ButtonVariant::Destructive, disabled: own_account && !last_admin,
+                    name: prefs.text("deletion.delete_user"),
+                    onclick: move |_| {
+                        if guard_user_change(state, user.id) { deleting.set(true); }
+                    }
+                }
                 }
                 if deleting() { DeleteUserDialog { state, user: user.clone(), deleting } }
                 if let Some(action) = confirm {
@@ -491,11 +511,32 @@ fn AdminUserRow(
     }
 }
 
+/// One per-user action as an icon button. `name` is its accessible name and the tooltip,
+/// which shows on hover and on keyboard focus (a disabled action cannot take focus, so
+/// it shows on hover only and keeps its accessible name). The confirmation dialog repeats the name before anything runs.
+#[component]
+fn RowActionButton(
+    icon: Icon,
+    name: &'static str,
+    variant: ButtonVariant,
+    disabled: bool,
+    onclick: EventHandler<MouseEvent>,
+) -> Element {
+    rsx! {
+        span { class: "icon-action",
+            Button { variant, r#type: "button", disabled, "aria-label": name, onclick: move |event| onclick.call(event),
+                Glyph { icon }
+            }
+            span { class: "tip", "aria-hidden": "true", "{name}" }
+        }
+    }
+}
+
 /// One game's last reward outcome; the reason uses the sanitized code's message only.
 #[component]
 fn GameHealthLine(game: AdminGameHealth) -> Element {
     let prefs = use_preferences();
-    let (tone, label) = game_outcome(&game, prefs);
+    let (tone, status, label) = game_outcome(&game, prefs);
     let reason = game
         .last_run
         .as_ref()
@@ -503,8 +544,11 @@ fn GameHealthLine(game: AdminGameHealth) -> Element {
     rsx! {
         // Each part is an inline block, so a narrow column breaks between parts, not inside them.
         p { class: "run-state health-line {tone}",
-            strong { "{label}" }
-            " · " span { {game_name(&game.game_kind, prefs)} }
+            StatusMark { status, text: label }
+            " · " span {
+                if let Some(mark) = Icon::game_mark(&game.game_kind) { Glyph { icon: mark, class: "icon-sm" } " " }
+                {game_name(&game.game_kind, prefs)}
+            }
             if let Some(run) = &game.last_run {
                 " · " span { time { datetime: "{run.ended_at}", {datetime_text(Some(&run.ended_at), prefs)} } }
             }
@@ -514,20 +558,32 @@ fn GameHealthLine(game: AdminGameHealth) -> Element {
     }
 }
 
-/// Style and label of a game's health line: a pending HoYoLAB check wins over the
-/// last run, which wins over having no run at all.
+/// Style, status symbol and label of a game's health line: a pending HoYoLAB check wins
+/// over the last run, which wins over having no run at all.
 fn game_outcome(
     game: &AdminGameHealth,
     prefs: crate::app::preferences::Preferences,
-) -> (&'static str, String) {
+) -> (&'static str, Status, String) {
     if game.setting_status == "action_required" {
-        return ("error", prefs.text("rewards.action_required").to_owned());
+        return (
+            "error",
+            Status::Warn,
+            prefs.text("rewards.action_required").to_owned(),
+        );
     }
     match &game.last_run {
         // A stopped run was cancelled on purpose (claiming turned off or the Cookie removed).
-        Some(run) if run.state == "stopped" => ("", reward_label(&run.state, prefs)),
-        Some(run) => (run_tone(&run.state), reward_label(&run.state, prefs)),
-        None => ("", prefs.text("admin.no_reward_runs").to_owned()),
+        Some(run) if run.state == "stopped" => ("", Status::Off, reward_label(&run.state, prefs)),
+        Some(run) => (
+            run_tone(&run.state),
+            run_status(&run.state),
+            reward_label(&run.state, prefs),
+        ),
+        None => (
+            "",
+            Status::Open,
+            prefs.text("admin.no_reward_runs").to_owned(),
+        ),
     }
 }
 
@@ -757,7 +813,7 @@ mod tests {
         };
         assert_eq!(
             game_outcome(&game, ui),
-            ("", ui.text("admin.no_reward_runs").to_owned())
+            ("", Status::Open, ui.text("admin.no_reward_runs").to_owned())
         );
         game.last_run = Some(crate::models::AdminLastRun {
             state: "already_claimed".into(),
@@ -766,22 +822,34 @@ mod tests {
         });
         assert_eq!(
             game_outcome(&game, ui),
-            ("success", ui.text("rewards.already_claimed").to_owned())
+            (
+                "success",
+                Status::Done,
+                ui.text("rewards.already_claimed").to_owned()
+            )
         );
         game.last_run.as_mut().unwrap().state = "stopped".into();
         assert_eq!(
             game_outcome(&game, ui),
-            ("", ui.text("dashboard.stopped").to_owned())
+            ("", Status::Off, ui.text("dashboard.stopped").to_owned())
         );
         game.last_run.as_mut().unwrap().state = "unknown".into();
         assert_eq!(
             game_outcome(&game, ui),
-            ("error", ui.text("dashboard.unknown_outcome").to_owned())
+            (
+                "error",
+                Status::Warn,
+                ui.text("dashboard.unknown_outcome").to_owned()
+            )
         );
         game.setting_status = "action_required".into();
         assert_eq!(
             game_outcome(&game, ui),
-            ("error", ui.text("rewards.action_required").to_owned())
+            (
+                "error",
+                Status::Warn,
+                ui.text("rewards.action_required").to_owned()
+            )
         );
     }
 

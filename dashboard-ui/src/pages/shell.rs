@@ -57,39 +57,62 @@ fn menu_items(app: bool, admin: bool) -> Vec<MenuItem> {
     items
 }
 
-const SETTINGS: [(Page, &str, &str, &str); 7] = [
-    (Page::Uids, "uids", "settings.uids", "dashboard.games"),
+/// Settings tabs: page, element key, label, short label (narrow screens) and icon.
+const SETTINGS: [(Page, &str, &str, &str, Icon); 7] = [
+    (
+        Page::Uids,
+        "uids",
+        "settings.uids",
+        "dashboard.games",
+        Icon::Eye,
+    ),
     (
         Page::Rewards,
         "bonus",
         "settings.bonus",
         "settings.bonus_short",
+        Icon::Gift,
     ),
-    (Page::Link, "link", "settings.link", "settings.link_short"),
+    (
+        Page::Link,
+        "link",
+        "settings.link",
+        "settings.link_short",
+        Icon::Link,
+    ),
     (
         Page::Security,
         "security",
         "settings.security",
         "settings.security",
+        Icon::Shield,
     ),
     (
         Page::Notifications,
         "notifications",
         "settings.notifications",
         "settings.notifications_short",
+        Icon::Bell,
     ),
     (
         Page::Transfer,
         "transfer",
         "settings.transfer",
         "settings.transfer_short",
+        Icon::Transfer,
     ),
-    (Page::Delete, "delete", "settings.delete", "security.delete"),
+    (
+        Page::Delete,
+        "delete",
+        "settings.delete",
+        "security.delete",
+        Icon::Trash,
+    ),
 ];
 
 /// Settings tabs in this build; the app leaves the settings file and account deletion to
 /// the web version.
-fn settings_tabs(app: bool) -> Vec<(Page, &'static str, &'static str, &'static str)> {
+fn settings_tabs(app: bool) -> Vec<(Page, &'static str, &'static str, &'static str, Icon)> {
     SETTINGS
         .into_iter()
         .filter(|(page, ..)| !(app && page.web_only()))
@@ -135,7 +158,7 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
                     button { r#type: "button", onclick: move |_| set_page(state, Page::Dashboard), {ui.text("shell.dashboard")} }
                 }
                 div { class: "tabs settings-tabs", role: "tablist", "aria-label": ui.text("shell.settings_sections"),
-                    for (target, key, label, short) in tabs.clone() {
+                    for (target, key, label, short, icon) in tabs.clone() {
                         button { id: "settings-tab-{key}", r#type: "button", role: "tab", "aria-controls": "settings-panel",
                             "aria-selected": (page == target).to_string(), tabindex: if page == target { "0" } else { "-1" },
                             "aria-label": ui.text(label), onclick: move |_| set_page(state, target),
@@ -147,6 +170,7 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
                                     }
                                 }
                             },
+                            Glyph { icon }
                             span { class: "tab-full", {ui.text(label)} }
                             span { class: "tab-short", "aria-hidden": "true", {ui.text(short)} }
                         }
@@ -380,6 +404,13 @@ mod tests {
         assert!(next_settings(Page::Uids, &Key::ArrowLeft, true) == Some(Page::Notifications));
         assert!(next_settings(Page::Notifications, &Key::ArrowRight, true) == Some(Page::Uids));
         assert!(next_settings(Page::Delete, &Key::ArrowRight, true).is_none());
+    }
+
+    #[test]
+    fn every_settings_tab_has_its_own_icon() {
+        let icons: std::collections::BTreeSet<_> =
+            SETTINGS.iter().map(|(.., icon)| icon.path()).collect();
+        assert_eq!(icons.len(), SETTINGS.len());
     }
 
     /// Swipes walk the same tab order as the tab bar but stop at either end

@@ -29,7 +29,7 @@ let runPlan=['queued','running','success'];
 let verified=false,cookieSaved=false,notificationSaves=[],statusMode=null,challengeMode=null,calendarMode=null,historyMode=null,runProgress=[],passkeyDeletes=0,passkeys=[],credentialId,failLogout=false,allowLogin,allowSettings,expirePasswordSession=false,sessionExpired=false;
 const createdUsers=[];
 const secondAdmin={...user,id:uid(14),username:'synthetic-second-admin',must_change_password:false};
-let failCreate=false,adminDeletes=0,loginFailureStatus=0,failPatch=false,passkeyHold=null,releasePasskeys=()=>{},adminPatchHold=null,releaseAdminPatch=()=>{};
+let failCreate=false,adminDeletes=0,loginFailureStatus=0,failPatch=false,passkeyHold=null,passkeyFail=false,releasePasskeys=()=>{},adminPatchHold=null,releaseAdminPatch=()=>{};
 const rewardPatches=[];
 const settingsImports=[];
 const settingsExport={format:'ahd-settings',version:1,exported_at:'2026-11-09T01:02:03Z',rewards:[{game_kind:'genshin',enabled:true,local_time:'06:00'}],game_accounts:[{game_kind:'genshin',game_uid:'600000005',visible:true}],notifications:{webhook_configured:true,webhook_format:'discord',language:'ja',events:{reward_failed:true},app_events:{reward_failed:true},resin_warn_hours:2,daily_reminder_time:'21:00',weekly_reminder_time:'15:00'}};
@@ -135,7 +135,7 @@ const server=http.createServer(async(req,res)=>{
    if(p==='/api/v1/admin/notifications'&&req.method==='PUT'){res.writeHead(204);return res.end();}
       if(p===`/api/v1/me/sessions/${uid(51)}`){assert.equal(req.method,'DELETE');sessions=sessions.filter(row=>row.id!==uid(51));res.writeHead(204);return res.end();}
    if(p==='/api/v1/me/sessions/revoke-others'){assert.equal(req.method,'POST');assert.deepEqual(body,{});const revoked=sessions.filter(row=>!row.current).length;sessions=sessions.filter(row=>row.current);return json(res,{revoked});}
-   if(p==='/api/v1/me/passkeys'){if(passkeyHold)await passkeyHold;return json(res,passkeys);}
+   if(p==='/api/v1/me/passkeys'){if(passkeyHold)await passkeyHold;if(passkeyFail)return json(res,{error:'unavailable'},503);return json(res,passkeys);}
    if(p==='/api/v1/server-settings'){await settingsGate;return json(res,{timezone_offset:'+09:00',session_ttl_days:7});}
    if(p==='/api/v1/admin/users'){
     if(req.method==='POST'){assert.ok(actor===user);assert.ok(body.username==='synthetic-created');assert.ok(validGenerated(body.temporary_password),'24-character WebCrypto candidate');if(failCreate)return json(res,{error:'unavailable'},503);const created={...other,id:uid(12),username:body.username,must_change_password:true};createdUsers.push(created);return json(res,created,201);}
@@ -445,6 +445,9 @@ try{
  for(const key of ['ltoken_v2','ltuid_v2','ltmid_v2','hoyolab.com','Cookie header'])assert.ok(cookieHelp.includes(key),'cookie help names '+key);
  assert.equal(await page.locator('#hoyolab-cookie').getAttribute('aria-describedby'),'hoyolab-cookie-help');
  assert.equal(await page.locator('#hoyolab-step').innerText(),'Paste your HoYoLAB cookie and save it.');
+ // The step notice leads with a symbol, and the Cookie steps are unfolded until a Cookie is stored.
+ assert.equal(await page.locator('#hoyolab-step > svg[aria-hidden=true]').count(),1);
+ assert.ok(await page.locator('details.hint-fold').evaluate(e=>e.open&&e.querySelector('summary').textContent==='How to get the cookie'&&e.querySelector('summary').getBoundingClientRect().height>=48));
  assert.equal(await button('Save').getAttribute('data-style'),'primary');
  assert.equal(await button('Verify').getAttribute('data-style'),'secondary');
  assert.ok(await button('Verify').isDisabled(),'nothing to verify before saving');
@@ -963,6 +966,7 @@ try{
  for(const id of ['#webhook-url','#resin-warn'])assert.ok((await page.locator(id).boundingBox()).height>=48,id+' uses the 48px text field');
  // The web lists only the Webhook's choices and leaves the app's (app_events) untouched.
  assert.equal(await page.locator('#app-event-signed_in, .event-matrix').count(),0);
+ assert.ok(await page.locator('.event-list label.check').evaluateAll(rows=>rows.length===11&&rows.every(row=>row.querySelectorAll('svg[aria-hidden=true]').length===1&&row.querySelector('span').textContent.length>0)),'every notice kind has an icon beside its name');
  await page.locator('#event-reward_failed').check();
  const saves=notificationSaves.length;
  await page.locator('#webhook-url').locator('xpath=ancestor::section[1]').locator('.button-row button').first().click();
@@ -1229,6 +1233,10 @@ try{
  // Settings replaces the removed nav/schedule checkbox/input[type=time].
  await settings('bonus');
  assert.equal(await page.locator('.settings-tabs [role=tab]').count(),7);
+ // Each tab has its own decorative icon and keeps its visible label and accessible name.
+ const tabLooks=await page.locator('.settings-tabs [role=tab]').evaluateAll(tabs=>tabs.map(tab=>[tab.querySelectorAll('svg[aria-hidden=true]').length,tab.querySelector('svg path').getAttribute('d'),tab.innerText.trim().length>0,Boolean(tab.getAttribute('aria-label'))]));
+ assert.ok(tabLooks.every(([icons,,label,name])=>icons===1&&label&&name),'every settings tab shows one icon beside its label');
+ assert.equal(new Set(tabLooks.map(([,d])=>d)).size,7,'settings tab icons differ');
  assert.equal(await page.locator('#settings-panel').getAttribute('aria-labelledby'),'settings-tab-bonus');
  assert.equal(await page.locator('#settings-panel input[type=time]').count(),0);
  assert.equal(await page.locator('#settings-panel input[role=switch]').count(),2,'each game has its automatic claiming switch here too');
@@ -1252,6 +1260,10 @@ try{
  await button('Discard change').click();
  assert.equal(await page.locator('#reward-hour-'+uid(21)).inputValue(),'06');
  assert.equal(rewardPatches.length,patchesBeforeDiscard);
+ // The day-change note is folded behind its title.
+ const dayFold=page.locator('details.hint-fold').filter({has:page.locator('#reward-day-note')});
+ assert.equal(await dayFold.evaluate(e=>e.open),false);
+ await dayFold.locator('summary').getByText('When the bonus day changes',{exact:true}).click();
  assert.equal(await page.locator('#reward-day-note').innerText(),'The login bonus day changes at 01:00 server time. A time between 0:00 and 01:00 claims the previous day\'s bonus.');
  // Settings show compact local times and localized errors, never raw ISO strings or codes.
  const iso=/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
@@ -1262,7 +1274,11 @@ try{
  await page.locator('#history-game').selectOption('starrail');
  await page.getByText('No runs returned for the last 5 days.',{exact:true}).waitFor();
  await page.locator('#history-game').selectOption('');
- assert.equal(await page.locator('#reward-run-state-'+uid(20)).innerText(),'Last run: Never');
+ assert.equal((await page.locator('#reward-run-state-'+uid(20)).innerText()).replace(/\s+/g,' '),'Last run: Never');
+ assert.equal(await page.locator('#reward-run-state-'+uid(20)+' .status-mark').getAttribute('data-status'),'open');
+ // Every history row leads with its status symbol and word, then the game mark and name.
+ await page.locator('.history li .run-state').first().waitFor();
+ assert.ok(await page.locator('.history li .run-state').evaluateAll(rows=>rows.length>0&&rows.every(row=>{const mark=row.querySelector(':scope > .status-mark');return mark&&mark.dataset.status&&mark.textContent.trim().length>0&&mark.querySelector('svg[aria-hidden=true]')&&row.querySelector('.icon-text svg[aria-hidden=true]');})),'history rows show a status symbol with its word');
  // One dashboard control claims every game still open today, then follows by GET only.
  await page.locator('a.wordmark').click();await dashboard();
  const claim=button('Claim now (login bonuses)');
@@ -1413,13 +1429,24 @@ try{
  passkeyHold=new Promise(resolve=>{releasePasskeys=resolve;});
  const passkeyRead=page.waitForRequest(origin+'/api/v1/me/passkeys');
  await page.locator('#settings-tab-security').click();await passkeyRead;
- await page.getByText('Loading passkeys…',{exact:true}).waitFor();
+ // While the list loads, rows in its shape stand in for it; the loading sentence stays for readers.
+ const passkeySkeleton=page.locator('.skeleton[role=status]').filter({hasText:'Loading passkeys…'});
+ await passkeySkeleton.waitFor({state:'attached'});
+ assert.deepEqual(await passkeySkeleton.evaluate(e=>[e.querySelector('.visually-hidden').textContent,e.querySelectorAll('.skeleton-row[aria-hidden=true]').length,[...e.querySelectorAll('.skeleton-row')].every(row=>row.getBoundingClientRect().height>=40)]),['Loading passkeys…',2,true]);
  assert.equal(await page.getByText('No passkeys registered.',{exact:true}).count(),0,'an unloaded list is not reported as empty');
  await change('wrong-synthetic-password');
  await page.getByText('The current password was not accepted. Please try again.',{exact:true}).waitFor();
  releasePasskeys();passkeyHold=null;
  await page.getByText('Synthetic browser key',{exact:true}).waitFor();
  assert.doesNotMatch(await page.locator('#settings-panel').innerText(),/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/,'passkey dates are formatted');
+ // A never-used passkey says so with the open circle, not with a check.
+ assert.deepEqual(await page.locator('.item-list li').filter({hasText:'Synthetic browser key'}).locator('.item-meta .status-mark').evaluateAll(marks=>marks.map(mark=>[mark.dataset.status,mark.textContent])),[['open','Last used Never']]);
+ // A failed list load is one line led by the failure symbol, with the means to try again.
+ passkeyFail=true;await page.locator('#settings-tab-uids').click();await page.locator('#settings-tab-security').click();
+ const loadError=page.locator('.load-error[role=alert]');await loadError.waitFor();await idle();
+ assert.deepEqual(await loadError.evaluate(e=>[e.dataset.status,e.querySelectorAll(':scope > svg[aria-hidden=true]').length,e.querySelector(':scope > span').textContent.length>0]),['failed',1,true]);
+ passkeyFail=false;await loadError.getByRole('button',{name:'Try again',exact:true}).click();await idle();
+ await page.getByText('Synthetic browser key',{exact:true}).waitFor();assert.equal(await page.locator('.load-error').count(),0);
  assert.ok((await page.locator('#settings-panel').innerText()).includes('Last used Never'));
  // Renaming goes through a dialog and keeps the key.
  await page.getByRole('button',{name:'Rename passkey “Synthetic browser key”',exact:true}).click();
@@ -1500,11 +1527,18 @@ try{
  assert.ok((await otherRowEarly.innerText()).includes('Never'));
  // Per-user link health: the failed run shows its localized reason, never the raw code.
  const otherLink=otherRowEarly.locator('td.admin-link');
- const linkText=await otherLink.innerText();
+ const linkText=(await otherLink.innerText()).replace(/\s+/g," ");
  for(const part of ['Needs attention','Status fetched ','Failed · Genshin Impact','Success · Honkai: Star Rail','Could not reach HoYoLAB','Auto'])assert.ok(linkText.includes(part),part+' in '+linkText);
  assert.ok(!/\bnetwork\b/.test(linkText),'raw error code stays out of the table');
- assert.equal(await otherLink.locator('.run-state.error strong').innerText(),'Failed');
- assert.equal(await otherLink.locator('.run-state.success strong').innerText(),'Success');
+ assert.equal(await otherLink.locator('.run-state.error .status-mark[data-status=failed]').innerText(),'Failed');
+ assert.equal(await otherLink.locator('.run-state.success .status-mark[data-status=done]').innerText(),'Success');
+ // State, link state and attention are a symbol with its word; each game's line carries the game mark.
+ assert.deepEqual(await otherRowEarly.locator('td:nth-child(2) .status-mark.badge').evaluateAll(marks=>marks.map(mark=>[mark.dataset.status,mark.textContent,mark.querySelectorAll('svg[aria-hidden=true]').length])),[['off','Inactive',1]]);
+ assert.deepEqual(await ownRow.locator('td:nth-child(2) .status-mark.badge').evaluateAll(marks=>marks.map(mark=>[mark.dataset.status,mark.textContent])),[['done','Active']]);
+ assert.deepEqual(await otherLink.locator(':scope > .status-mark').evaluateAll(marks=>marks.map(mark=>[mark.dataset.status,mark.textContent])),[['done','Verified'],['warn','Needs attention']]);
+ assert.equal(await ownRow.locator('td.admin-link > .status-mark').getAttribute('data-status'),'open','an unlinked user is not shown as verified');
+ assert.equal(await otherLink.locator('.health-line svg[aria-hidden=true]').count(),4,'a status symbol and a game mark per game');
+ assert.ok(await ownRow.locator('th .role-chip').evaluateAll(chips=>chips.length>0&&chips.every(chip=>chip.querySelectorAll('svg[aria-hidden=true]').length===1&&chip.textContent.trim().length>0)),'the chips under a name carry an icon beside their words');
  assert.equal(await ownRow.locator('td.admin-link .run-state').count(),0,'users without a link show no health lines');
  // Health lines break between parts, never inside "Auto" or a date; the two-by-two actions leave the link column room.
  assert.equal(await otherLink.locator('.health-line > *').evaluateAll(parts=>parts.filter(part=>getComputedStyle(part).display!=='inline-block').length),0);
@@ -1539,6 +1573,15 @@ try{
  assert.deepEqual(actionColumns[0],actionColumns[1],'all lifecycle action columns align despite different password labels');
  const buttonHeights=await page.locator('.admin-user-actions button').evaluateAll(buttons=>buttons.map(button=>Math.round(button.getBoundingClientRect().height)));
  assert.equal(new Set(buttonHeights).size,1,'action labels do not wrap and change row button heights');
+ // The four actions are 48px icon buttons: named for assistive technology, with the name as a tooltip on hover and keyboard focus.
+ const actionLooks=await ownRow.locator('.admin-user-actions .icon-action').evaluateAll(actions=>actions.map(action=>{const b=action.querySelector('button'),tip=action.querySelector('.tip'),r=b.getBoundingClientRect();return [b.getAttribute('aria-label'),tip.textContent,tip.getAttribute('aria-hidden'),b.textContent,b.querySelectorAll('svg[aria-hidden=true]').length,Math.round(r.width),Math.round(r.height),getComputedStyle(tip).visibility];}));
+ assert.deepEqual(actionLooks,[['Change password','Change password','true','',1,48,48,'hidden'],['Disable','Disable','true','',1,48,48,'hidden'],['Remove admin','Remove admin','true','',1,48,48,'hidden'],['Delete user','Delete user','true','',1,48,48,'hidden']]);
+ const tipShown=async name=>{const tip=await ownRow.locator('.icon-action').filter({has:page.getByRole('button',{name,exact:true})}).locator('.tip').elementHandle();await page.waitForFunction(tip=>{const s=getComputedStyle(tip),t=tip.getBoundingClientRect(),w=tip.closest('.table-wrap').getBoundingClientRect();return s.visibility==='visible'&&s.opacity==='1'&&t.top>=w.top&&t.left>=w.left&&t.right<=w.right+1;},tip);return true;};
+ await ownRow.getByRole('button',{name:'Change password',exact:true}).focus();
+ assert.ok(await tipShown('Change password'),'keyboard focus shows the tooltip inside the table region');
+ await ownRow.locator('.icon-action').filter({has:page.getByRole('button',{name:'Delete user',exact:true})}).hover();
+ assert.ok(await tipShown('Delete user'),'hovering a disabled action still names it');
+ await page.mouse.move(0,0);await page.evaluate(()=>document.activeElement.blur());
  assert.equal(await page.getByText('The last active administrator cannot be disabled or deleted.',{exact:true}).count(),0,'protection warning is not permanent UI');
  assert.ok(await ownRow.getByRole('button',{name:'Disable',exact:true}).isDisabled());
  assert.ok(await ownRow.getByRole('button',{name:'Delete user',exact:true}).isDisabled());

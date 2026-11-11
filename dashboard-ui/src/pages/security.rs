@@ -1,4 +1,7 @@
-use super::common::{Field, LoadError, Metric, ModalDialog, PasswordInput, focus_element};
+use super::common::{
+    Field, LoadError, Metric, ModalDialog, PasswordInput, Skeleton, focus_element,
+};
+use super::icons::{Glyph, Icon, Status, StatusMark};
 use crate::app::actions::{handle_api_error_for, handle_password_error_for, spawn_action};
 use crate::app::credentials::{self, CopyState, CredentialResult};
 use crate::app::data::{load_api_tokens, load_passkeys, load_sessions};
@@ -50,6 +53,29 @@ fn api_token_name_ok(name: &str) -> bool {
     (1..=100).contains(&name.chars().count()) && !name.chars().any(char::is_control)
 }
 
+/// Reading is the eye, running the login bonus is the gift.
+fn api_token_scope_icon(scope: &str) -> Icon {
+    if scope == "run" {
+        Icon::Gift
+    } else {
+        Icon::Eye
+    }
+}
+
+/// Whether a passkey or an API token was ever used: a check with the time of the last
+/// use, or the open circle with "never used".
+#[component]
+fn LastUsed(at: Option<String>) -> Element {
+    let ui = use_preferences();
+    rsx! {
+        if let Some(at) = at {
+            StatusMark { status: Status::Done, text: format!("{} {}", ui.text("security.last_used"), datetime_text(Some(&at), ui)) }
+        } else {
+            StatusMark { status: Status::Open, text: format!("{} {}", ui.text("security.last_used"), ui.text("security.never_used")) }
+        }
+    }
+}
+
 fn api_token_scope_key(scope: &str) -> &'static str {
     if scope == "run" {
         "security.api_token_scope_run"
@@ -89,11 +115,10 @@ fn ApiTokenCard(mut state: Signal<AppState>) -> Element {
                             li { key: "{token.id}",
                                 div {
                                     strong { "{token.name}" }
-                                    " " span { class: "status", {ui.text(api_token_scope_key(&token.scope))} }
-                                    p { class: "field-hint",
-                                        {ui.text("security.created")} " " time { datetime: "{token.created_at}", {datetime_text(Some(&token.created_at), ui)} }
-                                        " · " {ui.text("security.last_used")} " "
-                                        if token.last_used_at.is_some() { {datetime_text(token.last_used_at.as_deref(), ui)} } else { {ui.text("security.never_used")} }
+                                    " " span { class: "status", Glyph { icon: api_token_scope_icon(&token.scope) } {ui.text(api_token_scope_key(&token.scope))} }
+                                    p { class: "field-hint item-meta",
+                                        span { {ui.text("security.created")} " " time { datetime: "{token.created_at}", {datetime_text(Some(&token.created_at), ui)} } }
+                                        LastUsed { at: token.last_used_at.clone() }
                                     }
                                 }
                                 Button { variant: ButtonVariant::Destructive, r#type: "button", id: "api-token-revoke-{token.id}",
@@ -106,7 +131,7 @@ fn ApiTokenCard(mut state: Signal<AppState>) -> Element {
                     }
                 }
             } else {
-                p { role: "status", {ui.text("security.loading_api_tokens")} }
+                Skeleton { label: ui.text("security.loading_api_tokens"), rows: 2 }
             }
             form { novalidate: true, onsubmit: move |event| {
                 event.prevent_default();
@@ -394,11 +419,10 @@ pub(super) fn PasskeyCard(mut state: Signal<AppState>) -> Element {
                     for (passkey, target) in passkeys.into_iter().map(|passkey| (passkey.clone(), passkey)) {
                         li { key: "{passkey.id}",
                             div {
-                                strong { "{passkey.label}" }
-                                p { class: "field-hint",
-                                    {ui.text("security.created")} " " time { datetime: "{passkey.created_at}", {datetime_text(Some(&passkey.created_at), ui)} }
-                                    " · " {ui.text("security.last_used")} " "
-                                    if passkey.last_used_at.is_some() { {datetime_text(passkey.last_used_at.as_deref(), ui)} } else { {ui.text("security.never_used")} }
+                                strong { class: "icon-text", Glyph { icon: Icon::Key } "{passkey.label}" }
+                                p { class: "field-hint item-meta",
+                                    span { {ui.text("security.created")} " " time { datetime: "{passkey.created_at}", {datetime_text(Some(&passkey.created_at), ui)} } }
+                                    LastUsed { at: passkey.last_used_at.clone() }
                                 }
                             }
                             div { class: "button-row",
@@ -418,7 +442,7 @@ pub(super) fn PasskeyCard(mut state: Signal<AppState>) -> Element {
                 }
                 }
             } else {
-                p { role: "status", {ui.text("security.loading_passkeys")} }
+                Skeleton { label: ui.text("security.loading_passkeys"), rows: 2 }
             }
             // WebAuthn needs a browser origin; the app lists, renames and deletes passkeys only.
             if !crate::platform::APP {
@@ -523,7 +547,7 @@ fn SessionList(state: Signal<AppState>) -> Element {
                 }
             }
         } else {
-            p { role: "status", {ui.text("security.loading_sessions")} }
+            Skeleton { label: ui.text("security.loading_sessions"), rows: 2 }
         }
         if confirming_all() {
             ModalDialog { id: "sessions-revoke-dialog", title: ui.text("security.sign_out_others"), onclose: move |_| confirming_all.set(false),
@@ -562,7 +586,7 @@ fn SessionRow(state: Signal<AppState>, session: SessionView) -> Element {
         li {
             div {
                 strong { "{label}" }
-                if session.current { " " span { class: "status", {ui.text("security.this_browser")} } }
+                if session.current { " " span { class: "status", Glyph { icon: Icon::Check } {ui.text("security.this_browser")} } }
                 p { class: "field-hint",
                     {ui.text("security.signed_in_at")} " " {datetime_text(Some(&session.created_at), ui)}
                     if let Some(seen) = &session.last_seen_at { " · " {ui.text("security.last_active")} " " {datetime_text(Some(seen), ui)} }

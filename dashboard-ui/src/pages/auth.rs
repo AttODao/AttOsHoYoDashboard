@@ -110,9 +110,10 @@ pub(in crate::app) fn LoginPage(mut state: Signal<AppState>, app_login: bool) ->
                                 Err(error) => { handle_api_error_for(state, generation, error); }
                             }
                         });
-                    }, {ui.text("auth.use_passkey")} }
+                    }, Glyph { icon: Icon::Key } {ui.text("auth.use_passkey")} }
                     if crate::platform::APP {
                         Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| crate::app::browser_login::start(state),
+                            Glyph { icon: Icon::External }
                             {ui.text("auth.sign_in_in_browser")}
                         }
                         p { {ui.text("auth.passkey_in_browser_hint")} }

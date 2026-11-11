@@ -1,4 +1,5 @@
-use super::common::{Field, LoadError, Metric, ModalDialog};
+use super::common::{Field, HintFold, LoadError, Metric, ModalDialog, StatusMetric};
+use super::icons::{Glyph, Icon, Status};
 use crate::app::actions::{handle_api_error_for, spawn_action};
 use crate::app::display::datetime_text;
 use crate::app::preferences::use_preferences;
@@ -62,6 +63,8 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
         (ButtonVariant::Primary, ButtonVariant::Secondary)
     };
     let (step_class, step_key) = step.notice();
+    let step_icon = step.icon();
+    let status_symbol = link_status(raw_status.as_deref());
     let mut checked = use_signal(|| false);
     let missing = missing_cookies(&cookie());
     let invalid = checked() && !cookie().trim().is_empty() && !missing.is_empty();
@@ -94,20 +97,28 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
         div { class: "form-stack",
             if !password_ok { p { class: "warning", role: "status", {preferences.text("hoyolab.password_change_required")} } }
             if let Some(error) = state.read().hoyolab_error.clone() { LoadError { state, message: preferences.text(&error) } }
-            if password_ok { p { id: "hoyolab-step", class: "notice {step_class}", {preferences.text(step_key)} } }
+            if password_ok {
+                p { id: "hoyolab-step", class: "notice step-notice {step_class}",
+                    Glyph { icon: step_icon }
+                    span { {preferences.text(step_key)} }
+                }
+            }
             dl { class: "metric-list",
-                Metric { label: preferences.text("hoyolab.cookie_status"), value: status }
+                StatusMetric { label: preferences.text("hoyolab.cookie_status"), status: status_symbol, text: status }
                 Metric { label: preferences.text("hoyolab.hoyolab_uid"), value: hoyolab.as_ref().and_then(|h| h.hoyolab_uid.clone()).unwrap_or_else(|| preferences.text("common.not_fetched").to_owned()) }
                 Metric { label: preferences.text("hoyolab.verified_at"), value: datetime_text(hoyolab.as_ref().and_then(|h| h.verified_at.as_deref()), preferences) }
                 Metric { label: preferences.text("hoyolab.updated"), value: datetime_text(hoyolab.as_ref().and_then(|h| h.updated_at.as_deref()), preferences) }
             }
             form { class: "form-stack", novalidate: true, onsubmit: move |event| { event.prevent_default(); submit(()); },
                 Field { id: "hoyolab-cookie", label: preferences.text("hoyolab.cookie"),
-                    ol { id: "hoyolab-cookie-help", class: "field-hint cookie-steps",
-                        li { {preferences.text("hoyolab.cookie_step_login")} " " a { href: HOYOLAB_HOME, target: "_blank", rel: "noopener noreferrer", "www.hoyolab.com" } }
-                        li { {preferences.text("hoyolab.cookie_step_devtools")} }
-                        li { {preferences.text("hoyolab.cookie_step_copy")} }
-                        li { {preferences.text("hoyolab.cookie_step_verify")} }
+                    // Open until a Cookie is stored; afterwards the steps fold away.
+                    HintFold { title: preferences.text("hoyolab.cookie_help_title"), open: !stored,
+                        ol { id: "hoyolab-cookie-help", class: "field-hint cookie-steps",
+                            li { {preferences.text("hoyolab.cookie_step_login")} " " a { href: HOYOLAB_HOME, target: "_blank", rel: "noopener noreferrer", "www.hoyolab.com" } }
+                            li { {preferences.text("hoyolab.cookie_step_devtools")} }
+                            li { {preferences.text("hoyolab.cookie_step_copy")} }
+                            li { {preferences.text("hoyolab.cookie_step_verify")} }
+                        }
                     }
                     textarea { id: "hoyolab-cookie", autocomplete: "off", spellcheck: "false", disabled,
                         placeholder: "ltoken_v2=…; ltuid_v2=…; ltmid_v2=…",
@@ -199,6 +210,17 @@ enum LinkStep {
 }
 
 impl LinkStep {
+    /// The symbol that leads the notice, so its tone is not carried by colour alone.
+    fn icon(self) -> Icon {
+        match self {
+            Self::Loading => Icon::Loading,
+            Self::Unavailable | Self::Unusable => Icon::Failed,
+            Self::NeedsCookie => Icon::Info,
+            Self::NeedsVerification => Icon::Warning,
+            Self::Complete => Icon::Check,
+        }
+    }
+
     /// Notice style and message key.
     fn notice(self) -> (&'static str, &'static str) {
         match self {
@@ -209,6 +231,19 @@ impl LinkStep {
             Self::Unusable => ("error", "hoyolab.step_unusable"),
             Self::Complete => ("success", "hoyolab.step_complete"),
         }
+    }
+}
+
+/// The status symbol of a stored link state (`HoyolabView.status`, the onboarding
+/// `cookie_status` and the admin `link_status`): verified, waiting for the owner,
+/// unusable, removed on purpose, or not known.
+pub(super) fn link_status(status: Option<&str>) -> Status {
+    match status {
+        Some("verified") => Status::Done,
+        Some("pending_verification" | "not_configured" | "missing") => Status::Open,
+        Some("cookie_invalid" | "invalid" | "unreadable" | "storage_unavailable") => Status::Failed,
+        Some("removed") => Status::Off,
+        _ => Status::Unknown,
     }
 }
 
@@ -270,6 +305,39 @@ mod tests {
         assert!(!cookie_action_allowed(false, Some(true)));
         assert!(!cookie_action_allowed(true, Some(false)));
         assert!(!cookie_action_allowed(true, None));
+    }
+
+    #[test]
+    fn link_states_map_to_their_status_symbol() {
+        assert_eq!(link_status(Some("verified")), Status::Done);
+        for waiting in ["pending_verification", "not_configured", "missing"] {
+            assert_eq!(link_status(Some(waiting)), Status::Open, "{waiting}");
+        }
+        for broken in [
+            "cookie_invalid",
+            "invalid",
+            "unreadable",
+            "storage_unavailable",
+        ] {
+            assert_eq!(link_status(Some(broken)), Status::Failed, "{broken}");
+        }
+        assert_eq!(link_status(Some("removed")), Status::Off);
+        // Unknown values and a state that was not fetched never look verified.
+        assert_eq!(link_status(Some("synthetic")), Status::Unknown);
+        assert_eq!(link_status(None), Status::Unknown);
+    }
+
+    #[test]
+    fn every_link_step_leads_with_a_symbol_matching_its_tone() {
+        use LinkStep::*;
+        assert_eq!(Complete.icon(), Icon::Check);
+        assert_eq!(NeedsVerification.icon(), Icon::Warning);
+        for step in [Unavailable, Unusable] {
+            assert_eq!(step.notice().0, "error");
+            assert_eq!(step.icon(), Icon::Failed);
+        }
+        assert_eq!(NeedsCookie.icon(), Icon::Info);
+        assert_eq!(Loading.icon(), Icon::Loading);
     }
 
     #[test]

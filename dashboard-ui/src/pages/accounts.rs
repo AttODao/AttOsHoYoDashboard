@@ -1,4 +1,5 @@
-use super::common::{LoadError, game_name, reset_checked};
+use super::common::{LoadError, Skeleton, game_name, reset_checked};
+use super::icons::{Glyph, Icon, Status, StatusMark};
 use crate::app::actions::{handle_api_error_for, spawn_action};
 use crate::app::data::load_accounts;
 use crate::app::display::datetime_text;
@@ -26,7 +27,7 @@ fn AccountTable(state: Signal<AppState>) -> Element {
         // A failed first load already shows its warning above.
         return rsx! {
             if state.read().accounts_error.is_none() {
-                p { role: "status", {preferences.text("accounts.loading_game_accounts")} }
+                Skeleton { label: preferences.text("accounts.loading_game_accounts"), rows: 2 }
             }
         };
     };
@@ -38,11 +39,16 @@ fn AccountTable(state: Signal<AppState>) -> Element {
                 for account in accounts {
                     div { class: "setting-row", key: "{account.id}",
                         div {
-                            h3 { {game_name(&account.game_kind, preferences)} }
+                            h3 { class: "icon-title",
+                                if let Some(mark) = Icon::game_mark(&account.game_kind) { Glyph { icon: mark } }
+                                {game_name(&account.game_kind, preferences)}
+                            }
                             p { {preferences.format("accounts.identity", &[("uid", if account.game_uid.is_empty() { preferences.text("accounts.missing") } else { &account.game_uid }), ("region", &account.region)])} }
                             p {
-                                {preferences.text("accounts.detected")} " · "
-                                {if account.detected { preferences.text("accounts.yes") } else { preferences.text("accounts.no") }}
+                                StatusMark {
+                                    status: if account.detected { Status::Done } else { Status::Open },
+                                    text: format!("{} · {}", preferences.text("accounts.detected"), if account.detected { preferences.text("accounts.yes") } else { preferences.text("accounts.no") }),
+                                }
                                 " · " {preferences.text("accounts.last_detected")} " · "
                                 time { datetime: "{account.last_detected_at}", {datetime_text(Some(&account.last_detected_at), preferences)} }
                             }

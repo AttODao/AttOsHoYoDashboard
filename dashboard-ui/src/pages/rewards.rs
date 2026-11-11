@@ -1,4 +1,7 @@
-use super::common::{Field, LoadError, Metric, game_name, reset_checked};
+use super::common::{
+    Field, HintFold, LoadError, Metric, Skeleton, StatusMetric, game_name, reset_checked,
+};
+use super::icons::{Glyph, Icon, Status, StatusMark};
 use crate::app::actions::spawn_action;
 use crate::app::data::{load_rewards, reward_run_in_flight, save_reward_setting};
 use crate::app::display::{
@@ -43,7 +46,9 @@ pub(super) fn RewardsPage(state: Signal<AppState>) -> Element {
             if let Some(error) = state.read().rewards_error.clone() { LoadError { state, message: preferences.text(&error) } }
             p { class: "field-hint", {preferences.text("rewards.claim_now_on_dashboard")} }
             if let Some(reset) = reset {
-                p { class: "field-hint", id: "reward-day-note", {preferences.format("rewards.reward_day_note", &[("reset", &reset)])} }
+                HintFold { title: preferences.text("rewards.reward_day_title"),
+                    p { class: "field-hint", id: "reward-day-note", {preferences.format("rewards.reward_day_note", &[("reset", &reset)])} }
+                }
             }
             div { class: "form-grid",
                 for setting in state.read().rewards.clone() {
@@ -132,6 +137,9 @@ fn RewardSettingCard(
         .and_then(|(server, browser)| shift_clock(&local_time(), server, browser));
     let run = setting.last_run.clone();
     let tone = run.as_ref().map_or("", |run| run_tone(&run.state));
+    let last_status = run
+        .as_ref()
+        .map_or(Status::Open, |run| run_status(&run.state));
     let last_run = run.as_ref().map_or_else(
         || preferences.text("rewards.never").to_owned(),
         |run| label(&run.state),
@@ -145,7 +153,10 @@ fn RewardSettingCard(
     rsx! {
         div { class: "form-stack reward-card",
             div { class: "card-automation",
-                h3 { "{game}" }
+                h3 { class: "icon-title",
+                    if let Some(mark) = Icon::game_mark(&setting.game_kind) { Glyph { icon: mark } }
+                    "{game}"
+                }
                 AutomationSwitch { state, setting: setting.clone(), id: "reward-enabled-{id}", disabled }
             }
             fieldset { class: "time-field", disabled,
@@ -195,8 +206,10 @@ fn RewardSettingCard(
             }
             if changed { p { id: "reward-unsaved-{id}", class: "field-hint unsaved", role: "status", {preferences.text("rewards.unsaved_change")} } }
             dl { class: "metric-list",
-                Metric { label: preferences.text("dashboard.auth_status"), value: label(&setting.auth_status) }
-                Metric { label: preferences.text("rewards.reward_status"), value: match setting.is_sign { Some(true) => preferences.text("dashboard.received"), Some(false) => preferences.text("dashboard.not_received"), None => preferences.text("common.not_fetched") }.to_owned() }
+                StatusMetric { label: preferences.text("dashboard.auth_status"), status: auth_status(&setting.auth_status), text: label(&setting.auth_status) }
+                StatusMetric { label: preferences.text("rewards.reward_status"),
+                    status: match setting.is_sign { Some(true) => Status::Done, Some(false) => Status::Open, None => Status::Unknown },
+                    text: match setting.is_sign { Some(true) => preferences.text("dashboard.received"), Some(false) => preferences.text("dashboard.not_received"), None => preferences.text("common.not_fetched") }.to_owned() }
                 Metric { label: preferences.text("dashboard.checked"), value: datetime_text(setting.last_checked_at.as_deref(), preferences) }
                 Metric { label: preferences.text("dashboard.next_run"), value: if setting.enabled { datetime_text(setting.next_run_at.as_deref(), preferences) } else { preferences.text("dashboard.automation_off").to_owned() } }
                 if setting.error_code.is_some() {
@@ -206,7 +219,7 @@ fn RewardSettingCard(
             }
             p { id: "reward-run-state-{id}", class: "run-state {tone}",
                 {preferences.text("rewards.last_run")} ": "
-                strong { {last_run} }
+                StatusMark { status: last_status, text: last_run }
                 if let Some(ended) = ended { " · " time { datetime: "{ended.0}", "{ended.1}" } }
                 if polling { " · " {preferences.text("rewards.checking_automatically")} }
             }
@@ -242,7 +255,7 @@ fn RewardHistory(state: Signal<AppState>) -> Element {
                 }
             }
             if let Some(error) = state.read().reward_runs_error.clone() { LoadError { state, message: preferences.text(&error) } }
-            else if rows.is_none() { p { role: "status", {preferences.text("rewards.loading_run_history")} } }
+            else if rows.is_none() { Skeleton { label: preferences.text("rewards.loading_run_history") } }
             else if shown.is_empty() { p { {preferences.text("rewards.no_runs_returned_for_the_last_5_days")} } }
             ul { class: "history",
                 for run in shown {
@@ -267,8 +280,12 @@ fn HistoryRow(run: RewardRun) -> Element {
         li {
             div {
                 p { class: "run-state {tone}",
-                    strong { {reward_label(&run.state, preferences)} }
-                    " · " {game_name(&run.game_kind, preferences)}
+                    StatusMark { status: run_status(&run.state), text: reward_label(&run.state, preferences) }
+                    " · "
+                    span { class: "icon-text",
+                        if let Some(mark) = Icon::game_mark(&run.game_kind) { Glyph { icon: mark, class: "icon-sm" } }
+                        {game_name(&run.game_kind, preferences)}
+                    }
                     " · " {reward_label(&run.trigger, preferences)}
                 }
                 if let Some(reason) = reason { p { class: "run-reason", {error_text(Some(&reason), preferences)} } }
@@ -325,6 +342,28 @@ pub(super) fn run_tone(state: &str) -> &'static str {
     }
 }
 
+/// The status symbol of a run state, beside its word: in flight, settled well, stopped on
+/// purpose, unconfirmed, or failed. Unknown states read as failed, like `run_tone`.
+pub(super) fn run_status(state: &str) -> Status {
+    match state {
+        _ if reward_run_in_flight(state) => Status::Waiting,
+        "success" | "already_claimed" => Status::Done,
+        "stopped" => Status::Off,
+        "unknown" => Status::Warn,
+        _ => Status::Failed,
+    }
+}
+
+/// The status symbol of a reward setting's sign-in state (`RewardSetting.auth_status`).
+fn auth_status(value: &str) -> Status {
+    match value {
+        "ready" => Status::Done,
+        "action_required" => Status::Warn,
+        "failed" => Status::Failed,
+        _ => Status::Unknown,
+    }
+}
+
 pub(super) fn reward_label(value: &str, preferences: Preferences) -> String {
     match value {
         "ready" => preferences.text("dashboard.ready"),
@@ -371,6 +410,23 @@ mod tests {
         assert_eq!(run_tone("already_claimed"), "success");
         assert_eq!(run_tone("unknown"), "error");
         assert_eq!(run_tone("failed"), "error");
+    }
+
+    #[test]
+    fn run_states_map_to_a_symbol_and_never_read_as_done_by_default() {
+        for in_flight in ["queued", "running", "retry_wait"] {
+            assert_eq!(run_status(in_flight), Status::Waiting, "{in_flight}");
+        }
+        assert_eq!(run_status("success"), Status::Done);
+        assert_eq!(run_status("already_claimed"), Status::Done);
+        assert_eq!(run_status("stopped"), Status::Off);
+        assert_eq!(run_status("unknown"), Status::Warn);
+        assert_eq!(run_status("failed"), Status::Failed);
+        assert_eq!(run_status("synthetic_state"), Status::Failed);
+        assert_eq!(auth_status("ready"), Status::Done);
+        assert_eq!(auth_status("action_required"), Status::Warn);
+        assert_eq!(auth_status("failed"), Status::Failed);
+        assert_eq!(auth_status("synthetic_state"), Status::Unknown);
     }
 
     #[test]

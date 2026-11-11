@@ -1,6 +1,7 @@
 //! Personal notification settings: per-notice choices for this device (app) and the
 //! Webhook, reminder times and the Webhook itself, saved together.
-use super::common::{Field, LoadError};
+use super::common::{Field, LoadError, Skeleton};
+use super::icons::{Glyph, Icon, Status, StatusMark};
 use crate::app::actions::{handle_api_error_for, spawn_action};
 use crate::app::data::{load_admin_notifications, load_notifications};
 use crate::app::display::datetime_text;
@@ -26,6 +27,29 @@ pub(super) const PERSONAL_EVENTS: [(&str, &str); 11] = [
     ("daily_unfinished", "notifications.event_daily_unfinished"),
     ("weekly_unfinished", "notifications.event_weekly_unfinished"),
 ];
+
+/// The icon beside a notice kind (personal and admin), so a row is found by shape before
+/// its name is read. Kinds without their own icon get the bell.
+pub(super) fn event_icon(kind: &str) -> Icon {
+    match kind {
+        "reward_failed" => Icon::Warning,
+        "reward_claimed" => Icon::Gift,
+        "cookie_invalid" => Icon::Link,
+        "signed_in" => Icon::Key,
+        "sign_in_failed" => Icon::Lock,
+        "resource_near_cap" => Icon::Hourglass,
+        "resource_full" => Icon::Resin,
+        "realm_currency_full" => Icon::Coin,
+        "expeditions_done" => Icon::Flag,
+        "transformer_ready" => Icon::Transformer,
+        "daily_unfinished" => Icon::Daily,
+        "weekly_unfinished" => Icon::Calendar,
+        "user_attention" => Icon::User,
+        "worker_stalled" => Icon::Clock,
+        "deletion_stuck" => Icon::Trash,
+        _ => Icon::Bell,
+    }
+}
 
 /// The personal settings as the form holds them.
 #[derive(Clone)]
@@ -85,7 +109,7 @@ pub(super) fn NotificationsPage(state: Signal<AppState>) -> Element {
             if let Some(view) = state.read().notifications.clone() {
                 PersonalChannelCard { state, view }
             } else if state.read().notifications_error.is_none() {
-                p { role: "status", {ui.text("notifications.loading")} }
+                Skeleton { label: ui.text("notifications.loading"), rows: 4 }
             }
         }
     }
@@ -179,8 +203,9 @@ fn PersonalChannelCard(
                     dt { {ui.text("notifications.last_delivery")} }
                     dd {
                         {datetime_text(last_at.as_deref(), ui)} " · "
-                        span { class: if ok { "status" } else { "status warn" },
-                            {if ok { ui.text("notifications.delivery_ok") } else { ui.text("notifications.delivery_failed") }}
+                        StatusMark {
+                            status: if ok { Status::Done } else { Status::Failed },
+                            text: ui.text(if ok { "notifications.delivery_ok" } else { "notifications.delivery_failed" }).to_owned(),
                         }
                     }
                 }
@@ -290,13 +315,17 @@ fn EventMatrix(
             tbody {
                 for (kind, label) in PERSONAL_EVENTS {
                     tr { key: "{kind}",
-                        th { id: "event-name-{kind}", scope: "row", {ui.text(label)} }
+                        th { id: "event-name-{kind}", scope: "row",
+                            span { class: "event-name", Glyph { icon: event_icon(kind) } {ui.text(label)} }
+                        }
                         td { MatrixCheck { id: format!("app-event-{kind}"), kind, column: "event-column-device", choices: app_events } }
                         td { MatrixCheck { id: format!("event-{kind}"), kind, column: "event-column-webhook", choices: events } }
                     }
                     if kind == "resource_full" {
                         tr { key: "{kind}-realm",
-                            th { id: "event-name-realm_currency_full", scope: "row", {ui.text("notifications.device_kind_realm_currency")} }
+                            th { id: "event-name-realm_currency_full", scope: "row",
+                                span { class: "event-name", Glyph { icon: event_icon("realm_currency_full") } {ui.text("notifications.device_kind_realm_currency")} }
+                            }
                             td {
                                 label { class: "matrix-check",
                                     input { id: "device-kind-realm_currency_full", r#type: "checkbox", checked: realm(),
@@ -351,6 +380,7 @@ fn EventToggle(
                 next.insert(kind.to_owned(), event.checked());
                 events.set(next);
             } }
+            Glyph { icon: event_icon(kind) }
             span { {ui.text(label)} }
         }
     }
@@ -378,7 +408,7 @@ pub(crate) fn AdminChannelCard(state: Signal<AppState>) -> Element {
             } else if let Some(view) = state.read().admin_notifications.clone() {
                 AdminEditor { state, view }
             } else {
-                p { role: "status", {ui.text("notifications.loading")} }
+                Skeleton { label: ui.text("notifications.loading"), rows: 4 }
             }
         }
     }
@@ -504,6 +534,22 @@ mod tests {
             daily: "21:00".into(),
             weekly: "15:00".into(),
         }
+    }
+
+    #[test]
+    fn every_listed_notice_kind_has_its_own_icon_and_unknown_kinds_get_the_bell() {
+        for (kind, _) in PERSONAL_EVENTS {
+            assert_ne!(event_icon(kind), Icon::Bell, "{kind}");
+        }
+        for kind in [
+            "realm_currency_full",
+            "user_attention",
+            "worker_stalled",
+            "deletion_stuck",
+        ] {
+            assert_ne!(event_icon(kind), Icon::Bell, "{kind}");
+        }
+        assert_eq!(event_icon("synthetic_kind"), Icon::Bell);
     }
 
     #[test]
