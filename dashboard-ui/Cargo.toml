@@ -1,6 +1,6 @@
 [package]
 name = "attos-dashboard-ui"
-version = "2.1.1"
+version = "2.2.0"
 authors = ["AttODao"]
 license = "GPL-3.0-or-later"
 repository = "https://git.attodao.cc/AttODao/AttOsHoYoDashboard"
