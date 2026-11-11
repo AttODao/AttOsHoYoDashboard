@@ -24,6 +24,14 @@ pub(super) enum Icon {
     Refresh,
     Calendar,
     Chevron,
+    // Settings and administration: tabs, notice kinds and the per-user actions.
+    Bell,
+    Shield,
+    ShieldOff,
+    Key,
+    Trash,
+    Ban,
+    Transfer,
     // One mark per game. Headings, tabs and chips all name these, so a mark changes by
     // replacing one path. Neither is traced from an official logo.
     MarkGenshin,
@@ -96,6 +104,20 @@ impl Icon {
             // A calendar page with two period bars: the events timeline.
             Self::Calendar => "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4M7 14h6M11 17h6",
             Self::Chevron => "M9 6l6 6-6 6",
+            Self::Bell => "M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15ZM10 20.5a2 2 0 0 0 4 0",
+            Self::Shield => "M12 3 4.5 6v5.5c0 4.5 3 8 7.5 9.5 4.5-1.5 7.5-5 7.5-9.5V6Z",
+            // The shield struck through: taking the administrator role away.
+            Self::ShieldOff => {
+                "M12 3 4.5 6v5.5c0 4.5 3 8 7.5 9.5 4.5-1.5 7.5-5 7.5-9.5V6ZM3.5 3.5l17 17"
+            }
+            Self::Key => {
+                "M8 11a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM10.8 12.2 19 4M16 7l2.5 2.5M13.5 9.5l2 2"
+            }
+            Self::Trash => "M4 7h16M9.5 7V4h5v3M6.5 7l1 13h9l1-13M10 11v5.5M14 11v5.5",
+            // A struck-through circle: disabled, removed, stopped.
+            Self::Ban => "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM5.7 5.7l12.6 12.6",
+            // One arrow up and one down: settings saved to and read from a file.
+            Self::Transfer => "M7 20V5M3.5 8.5 7 5l3.5 3.5M17 4v15M13.5 15.5 17 19l3.5-3.5",
             // A four-pointed gem.
             Self::MarkGenshin => {
                 "M12 2.5C12.8 8.2 15.8 11.2 21.5 12 15.8 12.8 12.8 15.8 12 21.5 11.2 15.8 8.2 12.8 2.5 12 8.2 11.2 11.2 8.2 12 2.5ZM12 9.2 14.8 12 12 14.8 9.2 12Z"
@@ -231,6 +253,8 @@ pub(super) enum Status {
     Running,
     /// Announced, not started yet.
     Upcoming,
+    /// Switched off on purpose: disabled, removed, stopped.
+    Off,
 }
 
 impl Status {
@@ -246,6 +270,7 @@ impl Status {
             Self::Loading => Icon::Loading,
             Self::Running => Icon::Running,
             Self::Upcoming => Icon::Upcoming,
+            Self::Off => Icon::Ban,
         }
     }
 
@@ -262,6 +287,7 @@ impl Status {
             Self::Loading => "loading",
             Self::Running => "running",
             Self::Upcoming => "upcoming",
+            Self::Off => "off",
         }
     }
 }
@@ -298,7 +324,7 @@ mod tests {
     use super::*;
     use std::collections::BTreeSet;
 
-    const ALL: [Icon; 50] = [
+    const ALL: [Icon; 57] = [
         Icon::Home,
         Icon::Menu,
         Icon::Close,
@@ -315,6 +341,13 @@ mod tests {
         Icon::Refresh,
         Icon::Calendar,
         Icon::Chevron,
+        Icon::Bell,
+        Icon::Shield,
+        Icon::ShieldOff,
+        Icon::Key,
+        Icon::Trash,
+        Icon::Ban,
+        Icon::Transfer,
         Icon::MarkGenshin,
         Icon::MarkStarRail,
         Icon::Resin,
@@ -387,6 +420,7 @@ mod tests {
             Status::Loading,
             Status::Running,
             Status::Upcoming,
+            Status::Off,
         ];
         let icons: BTreeSet<_> = all.iter().map(|status| status.icon().path()).collect();
         let names: BTreeSet<_> = all.iter().map(|status| status.name()).collect();
