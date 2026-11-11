@@ -56,13 +56,16 @@ pub(super) fn RewardsPage(state: Signal<AppState>) -> Element {
     }
 }
 
-/// Automatic claiming ON/OFF, saved immediately, wherever it appears.
+/// Automatic claiming ON/OFF, saved immediately, wherever it appears. The settings page
+/// shows the state as "ON"/"OFF" beside its heading; the dashboard card passes a `caption`
+/// (a catalog key) that names the switch instead, because its heading is only an icon.
 #[component]
 pub(super) fn AutomationSwitch(
     state: Signal<AppState>,
     setting: RewardSetting,
     id: String,
     disabled: bool,
+    #[props(default)] caption: Option<&'static str>,
 ) -> Element {
     let ui = use_preferences();
     rsx! {
@@ -84,7 +87,10 @@ pub(super) fn AutomationSwitch(
                 }
             }
             span { class: "switch-track", "aria-hidden": "true" }
-            span { if setting.enabled { {ui.text("dashboard.on")} } else { {ui.text("dashboard.off")} } }
+            span { "aria-hidden": caption.map(|_| "true"),
+                if let Some(caption) = caption { {ui.text(caption)} }
+                else if setting.enabled { {ui.text("dashboard.on")} } else { {ui.text("dashboard.off")} }
+            }
         }
     }
 }

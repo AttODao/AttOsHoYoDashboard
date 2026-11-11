@@ -1,4 +1,5 @@
-use super::common::refresh_problem;
+use super::common::{WarningLine, refresh_problem};
+use super::icons::{Glyph, Icon, Status};
 use crate::app::display::{days_hours, hours_minutes};
 use crate::app::preferences::{Preferences, use_preferences};
 use crate::models::{HistorySegment, ResourceHistory};
@@ -8,9 +9,10 @@ use dioxus::prelude::*;
 /// `width`, so the hatch pattern keeps its pixel size at every card width.
 const TIMELINE_WIDTH: f64 = 100.0;
 
-/// Time at cap in the last 7 days below the primary resource: the total, a 7-day
-/// timeline (at cap, recovering, unknown) with a legend, and the same breakdown as a
-/// sentence for screen readers. The timeline is SVG geometry (percentage `x`/`width`
+/// Time at cap in the last 7 days below the primary resource: the history icon with a
+/// short title and the total, a 7-day timeline told apart by shape (at cap: a full-height
+/// block; recovering: a thin line; unknown: hatched), the unknown time when there is any,
+/// and the same breakdown as a sentence for screen readers. There is no axis or legend. The timeline is SVG geometry (percentage `x`/`width`
 /// attributes), so it needs no inline styles under the CSP. Hidden until the first history arrives (and on servers
 /// without the endpoint).
 #[component]
@@ -40,13 +42,17 @@ pub(super) fn CapHistory(
     rsx! {
         div { class: "cap-history",
             p { class: "cap-history-head",
+                Glyph { icon: Icon::History }
                 span { class: "cap-history-title", {ui.text("history.title")} }
                 if let Some(totals) = totals {
                     strong { class: "cap-history-value", {elapsed_text(totals.at_cap, ui)} }
                 }
             }
             if let Some(key) = error {
-                p { class: "warning", role: "status", {ui.text(refresh_problem(key, history.is_some(), "history.fetch_failed"))} }
+                WarningLine {
+                    status: if history.is_some() { Status::Warn } else { Status::Failed },
+                    text: ui.text(refresh_problem(key, history.is_some(), "history.fetch_failed")),
+                }
             }
             if let Some(totals) = totals {
                 svg {
@@ -59,26 +65,17 @@ pub(super) fn CapHistory(
                     for (index, rect) in rects.into_iter().enumerate() {
                         rect {
                             key: "{index}", class: "cap-segment", "data-state": rect.state,
-                            x: "{rect.x:.2}%", y: "0", width: "{rect.width:.2}%", height: "100%",
+                            x: "{rect.x:.2}%", y: rect.y(), width: "{rect.width:.2}%", height: rect.height(),
                         }
                         if rect.state == "unknown" {
                             rect { key: "hatch-{index}", fill: "url(#{pattern})", x: "{rect.x:.2}%", y: "0", width: "{rect.width:.2}%", height: "100%" }
                         }
                     }
                 }
-                div { class: "cap-axis", "aria-hidden": "true",
-                    span { {ui.format("time.days_ago", &[("count", "7")])} }
-                    span { {ui.text("history.axis_end")} }
-                }
-                ul { class: "cap-legend", "aria-hidden": "true",
-                    li { span { class: "cap-swatch", "data-state": "at_cap" } {ui.text("dashboard.at_cap")} }
-                    li { span { class: "cap-swatch", "data-state": "below_cap" } {ui.text("history.legend_below")} }
-                    if totals.unknown > 0 {
-                        li { span { class: "cap-swatch", "data-state": "unknown" }
-                            {ui.format("history.unknown", &[("duration", &elapsed_text(totals.unknown, ui))])}
-                        }
-                    } else {
-                        li { span { class: "cap-swatch", "data-state": "unknown" } {ui.text("history.legend_unknown")} }
+                if totals.unknown > 0 {
+                    p { class: "cap-unknown", "aria-hidden": "true",
+                        span { class: "cap-swatch" }
+                        {ui.format("history.unknown", &[("duration", &elapsed_text(totals.unknown, ui))])}
                     }
                 }
                 p { class: "visually-hidden", {description(resource, totals, ui)} }
@@ -131,6 +128,26 @@ struct Rect {
     state: &'static str,
     x: f64,
     width: f64,
+}
+
+impl Rect {
+    /// Recovering is a thin line through the middle; the other states fill the height,
+    /// so time at cap stands out by shape as well as by colour.
+    fn y(&self) -> &'static str {
+        if self.state == "below_cap" {
+            "36%"
+        } else {
+            "0"
+        }
+    }
+
+    fn height(&self) -> &'static str {
+        if self.state == "below_cap" {
+            "28%"
+        } else {
+            "100%"
+        }
+    }
 }
 
 /// Segments laid end to end across the timeline in proportion to their length.
@@ -230,6 +247,10 @@ mod tests {
         assert!((rects[2].width - 5.0).abs() < 1e-9);
         let last = rects.last().unwrap();
         assert!((last.x + last.width - TIMELINE_WIDTH).abs() < 1e-9);
+        // Shape, not only colour: recovering is thin, at cap and unknown are full height.
+        assert_eq!((rects[1].y(), rects[1].height()), ("36%", "28%"));
+        assert_eq!((rects[2].y(), rects[2].height()), ("0", "100%"));
+        assert_eq!((rects[0].y(), rects[0].height()), ("0", "100%"));
         assert!(timeline(&[]).is_empty());
         assert!(timeline(&[segment("at_cap", 0)]).is_empty());
     }

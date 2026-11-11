@@ -19,12 +19,11 @@ h1,h2,h3{line-height:1.45;margin:0 0 20px;font-weight:600;overflow-wrap:anywhere
 .tabs{display:flex;gap:24px;margin-bottom:28px;border-bottom:1px solid var(--decorative)}.tabs [role=tab]{border:0;border-bottom:3px solid transparent;border-radius:0;background:transparent;color:var(--muted);padding:12px 4px;min-height:52px;font-weight:500}.tabs [role=tab]:hover{background:transparent;color:var(--text)}.tabs [aria-selected=true]{color:var(--cyan);border-bottom-color:var(--cyan)}.tabs [role=tab]:focus-visible{outline-offset:-3px}
 .tab-short{display:none}.game-tabs{display:none}.dashboard-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;align-items:start}
 .game-panel.genshin{background:#132B27;border-color:#456A5D;--muted:#B7D9CC}.game-panel.starrail{background:#27223E;border-color:#74638F;--muted:#CDC3E7}.game-title{color:var(--mint);font-size:26px;margin-bottom:12px}.starrail .game-title{color:var(--lavender)}
-.bonus-section{margin-top:32px;padding-top:24px;border-top:1px solid #7F778E}.card-automation{display:flex;align-items:center;justify-content:space-between;gap:12px}.card-automation h3{margin:0;font-size:18px}.uid-select{display:grid;gap:8px;margin:24px 0 32px}.uid-select span{font-size:14px;color:var(--muted)}
+.card-automation{display:flex;align-items:center;justify-content:space-between;gap:12px}.card-automation h3{margin:0;font-size:18px}
 select,input:not([type]),input:is([type=text],[type=password],[type=time],[type=url],[type=number],[type=email],[type=search],[type=tel]),.generated-password{width:100%;min-width:0;min-height:48px;background:var(--elevated);border:1px solid var(--line);border-radius:8px;padding:10px 14px;color:var(--text)}
-.resource-label{margin-bottom:8px}.resource{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}.resource strong{font-family:'Orbitron',sans-serif;font-size:clamp(44px,5vw,60px);color:var(--mint);line-height:1.3}.starrail .resource strong{color:var(--lavender)}.resource span{font-size:22px;color:var(--muted)}
 progress{width:100%;height:8px;border:0;border-radius:8px;overflow:hidden;background:var(--elevated);margin:20px 0 24px}progress::-webkit-progress-bar{background:var(--elevated)}progress::-webkit-progress-value{background:var(--mint)}progress::-moz-progress-bar{background:var(--mint)}.starrail progress::-webkit-progress-value{background:var(--lavender)}.starrail progress::-moz-progress-bar{background:var(--lavender)}
-.recovery-at{display:block;font-family:'Orbitron',sans-serif;font-size:clamp(18px,2vw,24px);font-weight:700;font-variant-numeric:tabular-nums;line-height:1.6;color:var(--mint)}.starrail .recovery-at{color:var(--lavender)}.recovery-in{display:block;font-size:16px;font-weight:500;color:var(--text)}.estimate-at{font-size:18px;line-height:1.6}.expeditions ul{list-style:none;padding:0;margin:0}.table-wrap tbody th{color:var(--text);font-size:16px;font-weight:500}.table-wrap td .actions{margin:0;flex-wrap:nowrap}.table-wrap .admin-user-actions{display:grid;grid-template-columns:192px 112px 160px 136px;justify-content:start}body .admin-user-actions button[data-style][data-size]{width:100%;white-space:nowrap}.table-wrap .role-chip{display:block;color:var(--muted);font-size:14px}.table-wrap table{min-width:620px}.admin-users table{min-width:1080px}.audit-log td{white-space:nowrap}/* Inside the scrolling region, names keep a readable column and status chips stay on one line. */.admin-users tr>:first-child{min-width:6.5rem}.admin-users tr>:nth-child(2){white-space:nowrap}.divider{width:100%}
-.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;margin-top:28px}.metric strong{display:block;font-family:'Orbitron',sans-serif;font-size:24px;margin:4px 0;color:var(--text)}.metric .metric-text{font-family:inherit;font-size:20px}.expeditions{margin-top:32px;padding-top:24px;border-top:1px solid #7F778E}.expedition{display:grid;grid-template-columns:48px minmax(0,1fr) auto;align-items:center;gap:16px;padding:14px 0}.expedition-icon{display:flex;align-items:center;justify-content:center;width:48px;height:48px;object-fit:contain}.expedition:last-child{padding-bottom:0}.last-updated{margin-top:28px}
+.table-wrap tbody th{color:var(--text);font-size:16px;font-weight:500}.table-wrap td .actions{margin:0;flex-wrap:nowrap}.table-wrap .admin-user-actions{display:grid;grid-template-columns:192px 112px 160px 136px;justify-content:start}body .admin-user-actions button[data-style][data-size]{width:100%;white-space:nowrap}.table-wrap .role-chip{display:block;color:var(--muted);font-size:14px}.table-wrap table{min-width:620px}.admin-users table{min-width:1080px}.audit-log td{white-space:nowrap}/* Inside the scrolling region, names keep a readable column and status chips stay on one line. */.admin-users tr>:first-child{min-width:6.5rem}.admin-users tr>:nth-child(2){white-space:nowrap}.divider{width:100%}
+.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;margin-top:28px}.metric strong{display:block;font-family:'Orbitron',sans-serif;font-size:24px;margin:4px 0;color:var(--text)}.metric .metric-text{font-family:inherit;font-size:20px}.expedition-icon{display:flex;align-items:center;justify-content:center;width:48px;height:48px;object-fit:contain}.last-updated{margin-top:28px}
 .status{display:inline-flex;align-items:center;padding:4px 10px;border-radius:6px;font-size:14px;color:var(--mint);background:#20372E;white-space:nowrap}.status.warn{color:var(--warning);background:#3D3120}.status.off{color:var(--muted);background:var(--elevated)}
 .switch{position:relative;display:flex;align-items:center;gap:10px;min-height:48px;min-width:104px;cursor:pointer}.switch input{position:absolute;inset:0;width:100%;height:100%;opacity:0;margin:0;cursor:pointer}.switch input:disabled{cursor:not-allowed}.switch-track{width:48px;height:28px;border:1px solid var(--line);border-radius:20px;background:var(--elevated);padding:3px}.switch-track:before{content:'';display:block;width:20px;height:20px;border-radius:50%;background:var(--muted);transition:transform 120ms ease-out}.switch input:checked+.switch-track{background:var(--cyan);border-color:var(--cyan)}.switch input:checked+.switch-track:before{background:var(--on-accent);transform:translateX(20px)}.switch:has(input:focus-visible){outline:2px solid var(--cyan);outline-offset:4px;border-radius:8px}
 .notice{padding:18px 20px;border-radius:10px;background:#2D2535;border:1px solid var(--decorative);margin-bottom:24px}.notice p{margin:6px 0 0;font-size:14px;color:var(--muted)}.notice.warn{background:#302719;color:var(--warning)}.notice.error{background:#31212A;color:var(--danger)}.notice.success{background:#1B3027;color:var(--mint)}.empty{padding:48px 0}
@@ -36,7 +35,7 @@ progress{width:100%;height:8px;border:0;border-radius:8px;overflow:hidden;backgr
 #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);max-width:calc(100vw - 40px);width:max-content;padding:16px 24px;background:var(--elevated);border:1px solid var(--cyan);border-radius:12px;z-index:20;font-size:14px}[hidden]{display:none!important}
 dialog{max-width:560px;width:calc(100% - 40px);max-height:calc(100vh - 64px);overflow:auto;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:16px;padding:28px}dialog::backdrop{background:#000B}
 @media(max-width:900px){.game-tabs{display:flex}.dashboard-grid{grid-template-columns:1fr}.game-panel[data-selected=false]{display:none}.account-name{display:none}}
-@media(max-width:600px){.topbar{height:72px}.topbar-inner{padding:0 20px}.container{padding:28px 20px 48px}.page-intro{gap:16px;margin-bottom:24px}.page-intro>button{font-size:12px;padding:8px 10px}.panel{padding:24px 20px}.form-grid{grid-template-columns:1fr}.metrics{gap:16px}.setting-row{align-items:flex-start;flex-direction:column;gap:16px}.game-tabs{gap:16px}.game-tabs [role=tab]{flex:1;padding:10px 2px;font-size:14px}.settings-tabs{gap:0}.settings-tabs [role=tab]{flex:1 1 auto;min-width:0;padding:10px 2px;font-size:14px;white-space:nowrap}.settings-tabs .tab-full{display:none}.settings-tabs .tab-short{display:inline}.resource span{font-size:18px}.expedition{font-size:14px}.history li{grid-template-columns:1fr}.status{justify-self:start}.auth-layout{margin:24px auto}.auth-panel{padding:28px 24px}.time-picker select{width:112px}.game-title{font-size:24px}}
+@media(max-width:600px){.topbar{height:72px}.topbar-inner{padding:0 20px}.container{padding:28px 20px 48px}.page-intro{gap:16px;margin-bottom:24px}.page-intro>button{font-size:12px;padding:8px 10px}.panel{padding:24px 20px}.form-grid{grid-template-columns:1fr}.metrics{gap:16px}.setting-row{align-items:flex-start;flex-direction:column;gap:16px}.game-tabs{gap:16px}.game-tabs [role=tab]{flex:1;padding:10px 2px;font-size:14px}.settings-tabs{gap:0}.settings-tabs [role=tab]{flex:1 1 auto;min-width:0;padding:10px 2px;font-size:14px;white-space:nowrap}.settings-tabs .tab-full{display:none}.settings-tabs .tab-short{display:inline}.history li{grid-template-columns:1fr}.status{justify-self:start}.auth-layout{margin:24px auto}.auth-panel{padding:28px 24px}.time-picker select{width:112px}.game-title{font-size:24px}}
 :root[data-theme=light]{color-scheme:light;--canvas:#F5F4F8;--surface:#FFFFFF;--elevated:#EFEDF4;--text:#201C29;--muted:#625B70;--line:#80758D;--decorative:#DED8E6;--pink:#B21192;--cyan:#00727F;--mint:#006A4E;--lavender:#674198;--warning:#825000;--danger:#A42A46}
 [data-theme=light] .game-panel.genshin{background:#E5F4EC;border-color:#87AC99;--muted:#476457}[data-theme=light] .game-panel.starrail{background:#EEE8FA;border-color:#AB95C6;--muted:#62546F}
 [data-theme=light] button:hover:not(:disabled){background:#E4E0EB}[data-theme=light] button.primary:hover:not(:disabled){background:linear-gradient(120deg,#FF83F0,#83F5FF)}[data-theme=light] button.danger{background:#FCE8ED}[data-theme=light] :is(input,select)[disabled],[data-theme=light] .time-field[disabled] select{background:var(--elevated)}
@@ -60,7 +59,7 @@ body [data-slot="card-title"]{margin:0;font-size:22px;line-height:1.45;font-weig
 .topbar:not(:has(.topbar-inner)){display:flex;align-items:center;justify-content:space-between;padding:0 max(20px,calc((100vw - 1232px)/2));gap:20px}
 .page-stack,.stack{display:grid;gap:24px}.page-stack>h1,.page-stack>h2{margin:0}.form-stack{display:grid;gap:16px}.form-stack .field{margin:0}.form-stack .auth-submit{margin-top:8px}.button-row,.actions{display:flex;gap:12px;flex-wrap:wrap}.inline-form{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
 .live-region:empty{display:none}.live-region>.status,.warning{display:block;background:#302719;color:var(--warning);padding:16px 20px;border:1px solid var(--decorative);border-radius:10px;margin:0 0 24px;white-space:normal}.live-region>.status.success{background:#1B3027;color:var(--mint)}.live-region>.status.error{background:#31212A;color:var(--danger)}.live-region>.status.info{background:var(--surface);color:var(--text)}
-.metric-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin:0}.metric dt{font-size:14px;color:var(--muted)}.metric dd{margin:4px 0 0;overflow-wrap:anywhere}.metric-list.wide{margin-top:24px}.status-card{display:block}.game-panel .status-card{margin-top:0}.status-details{margin-top:24px;padding-top:12px;border-top:1px solid var(--line)}.status-details summary{min-height:48px;padding:10px 0}.dashboard>.tabs{margin-bottom:0}.game-panel .game-title{margin:0 0 12px}
+.metric-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin:0}.metric dt{font-size:14px;color:var(--muted)}.metric dd{margin:4px 0 0;overflow-wrap:anywhere}.metric-list.wide{margin-top:24px}.status-card{display:block}.game-panel .status-card{margin-top:0}.dashboard>.tabs{margin-bottom:0}.game-panel .game-title{margin:0 0 12px}
 .table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse}th,td{padding:12px;text-align:left;border-bottom:1px solid var(--decorative);vertical-align:top;overflow-wrap:anywhere}th{font-size:14px;color:var(--muted)}td input[type=checkbox]{width:24px;height:24px;min-height:24px}.checkbox-row{display:flex;align-items:center;gap:12px;min-height:48px}.checkbox-row input{width:24px;height:24px;min-height:24px}.checkbox-row label{font-weight:400}
 textarea{width:100%;min-height:120px;resize:vertical;background:var(--elevated);border:1px solid var(--line);border-radius:8px;padding:12px 14px;color:var(--text);font:inherit}.item-list{margin:16px 0;padding:0;list-style:none}.item-list li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid var(--decorative)}
 .modal-dialog{width:calc(100% - 40px);max-width:560px}.generated-password{overflow-wrap:anywhere;user-select:all}.modal-dialog .field{margin:0 0 24px}.modal-dialog .actions{margin-top:24px}:is(.settings-section>div,.settings-section .page-stack)>h2:first-child{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}.settings-section .time-picker select{font-size:24px}.game-panel .status.off{color:var(--muted)}
@@ -77,18 +76,11 @@ textarea{width:100%;min-height:120px;resize:vertical;background:var(--elevated);
 .live-region>.status{display:flex;align-items:center;justify-content:space-between;gap:12px}.live-region>.status p{margin:0}.status-dismiss{flex-shrink:0;margin:-12px -12px -12px 0;color:inherit}
 .load-error{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.load-error button{min-height:44px}
 /* Dashboard: one claim control beside the title, freshness beside refresh. */
-.claim-now{display:grid;justify-items:end;gap:6px;max-width:28rem}.claim-now .field-hint{text-align:right}
 .refresh-row{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:24px}.freshness{margin:0;font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}.freshness.stale{color:var(--warning)}
-.resource-label{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.cap-badge{font-size:13px;padding:2px 8px}
-.resource[data-fill=full] strong{color:var(--warning)}.starrail .resource[data-fill=full] strong{color:var(--warning)}
-.resource[data-fill=full]~progress::-webkit-progress-value{background:var(--warning)}.resource[data-fill=full]~progress::-moz-progress-bar{background:var(--warning)}
-/* Realm currency: the same number and bar as the primary resource, one step smaller. */
-.resource-block.secondary{margin-top:24px}.resource-block.secondary .resource strong{font-size:clamp(28px,3vw,36px)}.resource-block.secondary .resource span{font-size:18px}.resource-block.secondary progress{margin:12px 0 16px}
 /* Web refresh: a circular-arrow icon button at the card's top right. */
 .game-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px}.game-panel .game-heading .game-title{margin:0;min-width:0}.refresh-button{flex-shrink:0;margin:-8px -12px -8px 0;color:var(--muted)}.refresh-button:hover:not(:disabled){color:var(--text)}.refresh-button[aria-busy=true] svg{animation:ahd-spin 900ms linear infinite}@keyframes ahd-spin{to{transform:rotate(360deg)}}
-.expeditions-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px}.expeditions-heading h3{margin:0 0 8px}
-.bonus-section .run-state{margin-top:12px}.bonus-today{font-size:16px}.award{display:flex;align-items:center;gap:10px;margin:12px 0 0;font-size:14px;color:var(--muted)}.award strong{color:var(--text);font-weight:600}.award-icon{width:32px;height:32px;object-fit:contain;flex-shrink:0}
-.bonus-attention{margin:16px 0 0;font-size:14px}.bonus-attention p{margin-top:12px}.bonus-status{margin-top:16px}.bonus-status summary{min-height:48px;padding:10px 0;color:var(--muted)}
+.award{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:var(--muted)}.award strong{color:var(--text);font-weight:600}.award-icon{width:32px;height:32px;object-fit:contain;flex-shrink:0}
+.bonus-attention{margin:8px 0 0;font-size:14px}.bonus-attention p{margin-top:12px}
 /* Login bonus settings. */
 .reward-card .card-automation h3{margin:0}.unsaved{color:var(--warning)}
 .history-tools{display:flex;gap:12px;align-items:center}.history-tools select{width:auto;min-width:10rem}
@@ -97,7 +89,7 @@ textarea{width:100%;min-height:120px;resize:vertical;background:var(--elevated);
 /* HoYoLAB link. */
 .cookie-steps{margin:0;padding-left:1.4em;display:grid;gap:4px}.cookie-remove{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding-top:20px;border-top:1px solid var(--decorative)}.cookie-remove p{margin:0;color:var(--muted);font-size:14px}
 textarea[aria-invalid=true]{border-color:var(--danger)}
-@media(max-width:600px){.dashboard>.page-intro{flex-direction:column;align-items:stretch}.claim-now{justify-items:stretch;max-width:none}.claim-now .field-hint{text-align:left}.history-times{justify-items:start}.history-tools{width:100%}.history-tools select{flex:1}}
+@media(max-width:600px){.dashboard>.page-intro{flex-direction:column;align-items:stretch}.claim-now{justify-content:flex-start}.claim-now .primary{flex:1 1 auto}.claim-now .field-hint{text-align:left}.history-times{justify-items:start}.history-tools{width:100%}.history-tools select{flex:1}}
 /* Administration: search above the table; extra chips stack under the name. */
 .admin-search{display:grid;gap:8px;max-width:24rem}.admin-search label{font-weight:500}
 .table-wrap td .role-chip{display:block;color:var(--muted);font-size:14px}
@@ -120,28 +112,25 @@ input[type=file]{width:100%;min-width:0;min-height:48px;background:var(--elevate
 @media(max-width:600px){.settings-tabs{overflow-x:auto;scrollbar-width:none}.settings-tabs::-webkit-scrollbar{display:none}.settings-tabs [role=tab]{flex:1 0 auto;padding:10px 6px}}
 /* Admin user list: name search and the needs-attention filter share one row; link health reads like the reward history lines. */
 .admin-filters{display:flex;flex-wrap:wrap;align-items:end;gap:12px 32px}.admin-filters .admin-search{flex:1 1 16rem}.admin-filters .checkbox-row input{flex-shrink:0}.admin-users tr>:nth-child(3){min-width:10rem}.admin-link .run-state,.admin-link .run-reason{margin:6px 0 0;font-size:14px;color:var(--muted)}.admin-link time{font-variant-numeric:tabular-nums;white-space:nowrap}
-/* Endgame challenges: one row per mode; the name and the reset countdown share a line, progress sits below. */
-.challenge-section{margin-top:32px;padding-top:24px;border-top:1px solid #7F778E}.challenge-section h3{margin:0 0 8px}.challenge-list{list-style:none;padding:0;margin:0}.challenge{padding:14px 0;border-top:1px solid var(--line)}.challenge:first-child{border-top:0;padding-top:8px}.challenge:last-child{padding-bottom:0}.challenge-head{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:4px 16px}.challenge-name{font-weight:600;overflow-wrap:anywhere}.challenge-reset{font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}.challenge-progress{margin:4px 0 0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.challenge-progress.quiet{color:var(--muted)}.challenge-period{margin:2px 0 0;font-size:14px;color:var(--muted);overflow-wrap:anywhere}.challenge-section .refresh-row{margin-top:16px}
 /* Event calendar: the heading and one collapsed summary line; the disclosure lists banners, events and announced items with their countdowns. */
 
-.calendar-summary-part{display:inline-block}.calendar-empty{margin:0;color:var(--muted)}.calendar-head{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:4px 16px}.calendar-name{font-weight:600;overflow-wrap:anywhere}.calendar-left{font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}.calendar-featured{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin:4px 0 0;overflow-wrap:anywhere}.featured{display:inline-flex;align-items:center;gap:6px;min-width:0}.featured-icon{width:24px;height:24px;object-fit:contain;flex-shrink:0}.calendar-status{margin:4px 0 0;font-size:14px;font-variant-numeric:tabular-nums}.calendar-status.quiet{color:var(--muted)}
-/* Time at cap over the last 7 days, under the primary resource: the total beside its label, a thin SVG timeline (at cap, recovering, unknown), its two ends and a legend. */
-.cap-history{margin-top:20px}.cap-history-head{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:2px 16px;margin:0 0 8px;max-width:none}.cap-history-title{font-size:14px;color:var(--muted)}.cap-history-value{font-size:18px;font-variant-numeric:tabular-nums;white-space:nowrap}.cap-history-empty{margin:0;font-size:14px;color:var(--muted)}.cap-history .warning{margin:0 0 8px}
-.cap-timeline{display:block;width:100%;height:12px;border-radius:4px;overflow:hidden;background:var(--elevated)}.cap-segment[data-state=at_cap]{fill:var(--warning)}.cap-segment[data-state=below_cap]{fill:var(--mint)}.starrail .cap-segment[data-state=below_cap]{fill:var(--lavender)}.cap-segment[data-state=unknown]{fill:var(--elevated)}.cap-hatch{fill:var(--line)}
-.cap-axis{display:flex;justify-content:space-between;gap:16px;margin-top:4px;font-size:13px;color:var(--muted)}.cap-legend{display:flex;flex-wrap:wrap;gap:4px 16px;list-style:none;margin:8px 0 0;padding:0;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}.cap-legend li{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}.cap-swatch{flex:none;width:12px;height:12px;border-radius:3px}.cap-swatch[data-state=at_cap]{background:var(--warning)}.cap-swatch[data-state=below_cap]{background:var(--mint)}.starrail .cap-swatch[data-state=below_cap]{background:var(--lavender)}.cap-swatch[data-state=unknown]{border:1px solid var(--line);background:repeating-linear-gradient(45deg,var(--line) 0 2px,var(--elevated) 2px 5px)}
+.calendar-empty{margin:0;color:var(--muted)}.calendar-head{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:4px 10px}.calendar-name{font-weight:600;overflow-wrap:anywhere}.calendar-left{font-variant-numeric:tabular-nums;white-space:nowrap}.calendar-left .status-mark{font-size:15px;font-weight:600}.calendar-featured{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:8px 0 0;overflow-wrap:anywhere}.calendar-featured>span,.featured{display:inline-flex;align-items:center;min-width:0}.featured{gap:8px}.featured-icon{width:40px;height:40px;border-radius:8px;object-fit:contain;flex-shrink:0;background:var(--track)}.calendar-status{display:inline-flex;font-variant-numeric:tabular-nums}
 /* Admin user list: the four actions in two rows leave the link column room, and each health-line part is an inline block, so the column breaks between parts, not inside them. */
 .table-wrap .admin-user-actions{grid-template-columns:repeat(2,192px);gap:8px 12px}.admin-users table{min-width:900px}.admin-users td.admin-link{min-width:18rem}.admin-link .health-line>*,.admin-link time{display:inline-block}
-/* Dashboard: the claim state of each game beside the claim control, the status age under the game title (its line reserved before the status arrives), countdowns that move to the next line as a whole (an inline block, so a large text size still wraps inside instead of overflowing), and a missing number in the body face. */
-.claim-summary{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:baseline;gap:2px 12px;margin:0;font-size:14px;color:var(--muted)}.claim-summary>*{min-width:0}
-.game-heading-text{display:grid;gap:2px;min-width:0}.game-heading-text>:last-child{font-size:14px;min-height:1.6em}
+/* Countdowns that move to the next line as a whole (an inline block, so a large text size still wraps inside instead of overflowing). */
 .inline-unit{display:inline-block}
-.resource-block .resource strong.missing{font-family:inherit;font-size:24px;font-weight:600;color:var(--muted)}
-@media(max-width:600px){.claim-summary{justify-content:flex-start}}
-/* Events page: one panel per game (tabs at <=900px). Wide browser windows draw the timeline as a fixed-layout table (one column per day, bars placed with colspan, no inline styles); <=600px and the app read it downwards. */
+/* Events page: one panel per game (tabs at <=900px) with the dashboard's card heading (mark, name, clock + age, refresh) and the summary chips (status symbol + count or time left). Wide browser windows draw the timeline as a fixed-layout table (one column per day, bars placed with colspan, no inline styles); <=600px and the app read it downwards. Rows lead with their type icon; countdowns and event status are status marks. */
 .events-grid{display:grid;gap:24px}
-.events-panel .game-heading{margin-bottom:8px}
-.events-summary{margin:0 0 20px;max-width:none;font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}
-.events-source{margin:20px 0 0;font-size:13px;color:var(--muted)}
+.events-panel .card-heading{margin-bottom:12px}
+.event-chips{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:0 0 20px;padding:0}
+.event-chip{display:inline-flex;align-items:center;min-height:36px;padding:4px 12px;border:1px solid var(--decorative);border-radius:999px}
+.events .event-chip .status-mark{gap:6px;font-size:15px;color:var(--text);font-variant-numeric:tabular-nums}
+.event-chip .status-mark svg{color:var(--muted)}
+.event-chip[data-chip=running] .status-mark svg{color:var(--game)}
+.event-chip:not([data-chip=next-end]) .status-short{font-family:'Orbitron',sans-serif;font-weight:600}
+.events-source{display:flex;align-items:center;gap:6px;margin:20px 0 0;font-size:13px;color:var(--muted)}
+.events .status-mark.tl-left,.events .calendar-left .status-mark{color:var(--text)}.status-mark.tl-left svg,.calendar-left .status-mark svg{color:var(--muted)}
+:is(.calendar-status,.tl-status)[data-quiet=true] .status-mark{color:var(--muted)}:is(.calendar-status,.tl-status)[data-quiet=false] .status-mark[data-status=open]{color:var(--text)}
 .events-panel .empty{padding:24px 0}
 .events-panel .empty h3{margin-bottom:8px}
 .event-timeline{width:100%;table-layout:fixed;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
@@ -156,6 +145,7 @@ input[type=file]{width:100%;min-width:0;min-height:48px;background:var(--elevate
 .tl-lane th{padding:16px 0 6px;text-align:start;font-size:13px;font-weight:600}
 .tl-row td{position:relative;padding:3px 0;vertical-align:middle}
 .tl-lane th{position:relative}
+.tl-lane-title{position:relative;display:inline-flex;align-items:center;gap:6px}
 .tl-now{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
 .tl-now line{stroke:var(--cyan);stroke-width:2;stroke-opacity:.7}
 .tl-bar,.tl-outside{position:relative}
@@ -168,18 +158,19 @@ input[type=file]{width:100%;min-width:0;min-height:48px;background:var(--elevate
 .tl-bar:is([data-clip=end],[data-clip=both]){margin-right:0;border-right-width:0;border-start-end-radius:0;border-end-end-radius:0}
 .tl-label{min-width:0;padding:6px 10px;line-height:1.4;overflow-wrap:anywhere}
 .tl-outside[data-side=before]{text-align:end}
-.tl-name{display:block;font-size:14px;font-weight:600;color:var(--text)}
+.tl-title{display:flex;align-items:flex-start;gap:6px}.tl-title svg{flex:none;margin-top:3px;color:var(--muted)}.tl-row:not([data-kind=event]) .tl-title svg{color:var(--game)}
+.tl-outside[data-side=before] .tl-title{justify-content:flex-end}
+.tl-name{display:block;min-width:0;font-size:14px;font-weight:600;color:var(--text)}
 .tl-bar[data-tone=done] .tl-name{color:var(--muted)}
-.tl-meta{display:flex;flex-wrap:wrap;gap:0 10px;margin:2px 0 0;max-width:none;color:var(--muted)}
-.tl-label .calendar-featured{gap:2px 10px;margin-top:2px;font-size:13px}
+.tl-meta{display:flex;flex-wrap:wrap;align-items:center;gap:0 10px;margin:2px 0 0;max-width:none;color:var(--muted)}.tl-meta .status-mark{font-size:13px}
+.tl-label .calendar-featured{gap:4px 10px;margin-top:4px;font-size:13px}
 .tl-outside[data-side=before] :is(.tl-meta,.calendar-featured){justify-content:flex-end}
-.tl-label .featured-icon{width:20px;height:20px}
+.tl-label .featured-icon{width:32px;height:32px;border-radius:6px}
 .tl-left,.tl-status{white-space:nowrap}
-.tl-left{color:var(--text)}
 /* No known period: a label with a dashed marker instead of a bar across the axis. */
 .tl-undated{margin:0 1px;border-left:1px dashed var(--decorative)}
 .event-list{display:grid;gap:24px}
-.event-phase h3{margin:0 0 8px;font-size:16px}
+.event-phase h3{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:16px}.event-phase h3 svg{flex:none;width:18px;height:18px;color:var(--muted)}.event-phase[data-phase=running] h3 svg{color:var(--game)}
 .event-node{position:relative;display:flex;flex-wrap:wrap;align-items:baseline;gap:0 8px;margin:0;padding-left:24px;font-size:14px;font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums}
 .event-node::before{content:"";position:absolute;left:2px;top:6px;width:12px;height:12px;box-sizing:border-box;border:2px solid var(--line);border-radius:50%}
 .event-now{color:var(--text)}
@@ -188,8 +179,7 @@ input[type=file]{width:100%;min-width:0;min-height:48px;background:var(--elevate
 .event-cards{position:relative;display:grid;gap:8px;list-style:none;margin:6px 0 0 7px;padding:0 0 0 18px}
 .event-cards::before{content:"";position:absolute;top:0;bottom:0;left:0;width:2px;border-radius:1px;background:var(--decorative)}
 .event-card{min-width:0;padding:12px 14px;border:1px solid var(--decorative);border-radius:10px;background:#FFFFFF0A}
-.event-kind{font-size:12px;font-weight:600;color:var(--muted)}
-.event-card .calendar-name{display:block;margin-top:2px}
+.event-card>:not(.calendar-head){margin-left:30px}.event-meta{display:flex;flex-wrap:wrap;align-items:center;gap:2px 14px;margin-top:4px;margin-bottom:0}.event-kind{margin-top:2px;color:var(--muted)}.event-card[data-banner=true] .event-kind{color:var(--game)}
 .event-period{margin:4px 0 0;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
 .event-none{margin:6px 0 0 24px;font-size:14px;color:var(--muted)}
 [data-theme=light] .tl-bar{background:#FFFFFF99}
@@ -200,3 +190,63 @@ input[type=file]{width:100%;min-width:0;min-height:48px;background:var(--elevate
 [data-theme=light] .event-card{background:#FFFFFF99}
 @media(max-width:600px){.event-timeline-wrap{display:none}}
 @media(min-width:601px){.events-body[data-wide=true] .event-list{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}}
+/* Icon-centric dashboard (DESIGN.md). Icons (pages/icons.rs) are 20px by default; these classes size them. Status marks pair a symbol with its word, so the tone is never the only signal. */
+:root{--warn-bg:#3D3120}:root[data-theme=light]{--warn-bg:#F9ECCF}
+.icon-sm{width:16px;height:16px;stroke-width:2.2}.icon-lg{width:32px;height:32px;stroke-width:1.5}.icon-xl{width:44px;height:44px;stroke-width:1.25}
+.named-icon{display:inline-flex}.game-mark{flex:none}.spin{animation:ahd-spin 900ms linear infinite}.missing{color:var(--muted)}
+.status-mark{display:inline-flex;align-items:center;gap:4px;font-size:14px;white-space:nowrap}.status-mark svg{width:16px;height:16px;stroke-width:2.2}
+.status-mark[data-status=done]{color:var(--mint)}.status-mark:is([data-status=open],[data-status=warn]){color:var(--warning)}.status-mark[data-status=failed]{color:var(--danger)}.status-mark:is([data-status=locked],[data-status=unknown],[data-status=waiting],[data-status=loading],[data-status=upcoming]){color:var(--muted)}.status-mark[data-status=running]{color:var(--game,var(--text))}
+.cap-badge{padding:4px 8px;line-height:1.3;border-radius:6px;background:var(--warn-bg);font-size:13px}
+/* Game colours inside a card: the accent, hairlines between sections and the bar track. */
+.game-panel.genshin{--game:var(--mint);--hair:#35564C;--track:#0A1B18}.game-panel.starrail{--game:var(--lavender);--hair:#544A70;--track:#17132A}
+[data-theme=light] .game-panel.genshin{--hair:#B5D2C3;--track:#C4DDCF}[data-theme=light] .game-panel.starrail{--hair:#CDBEE3;--track:#D6CAEC}
+:where(.dashboard .game-panel) p{margin:0;max-width:none}
+/* Strip under the page heading: one chip per game (mark, symbol, word), then the one claim button; its reason wraps below. */
+.claim-now{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:12px 16px}.claim-now .field-hint{flex-basis:100%;text-align:right}.claim-now .primary{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.claim-chips{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:0;padding:0}.claim-chip{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:4px 12px;border:1px solid var(--decorative);border-radius:999px}
+.claim-chip.genshin .game-mark{color:var(--mint)}.claim-chip.starrail .game-mark{color:var(--lavender)}
+/* Game tabs and the card heading: mark and name, the age of the data, the web refresh button. */
+.game-tabs [role=tab]{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.card-heading{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:4px 12px;margin:0 0 8px}.card-heading .game-title{display:flex;align-items:center;gap:10px;font-size:22px}.game-title .game-mark{width:28px;height:28px;stroke-width:1.6}
+.card-heading .freshness{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}.card-heading .freshness svg{width:16px;height:16px;stroke-width:2}
+.uid-one{margin:0 0 20px;font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}.uid-select{margin:8px 0 20px}
+.state-line{display:flex;align-items:center;gap:10px;margin:12px 0;color:var(--muted)}.quiet-line{font-size:14px;color:var(--muted)}
+.warning-line{display:flex;align-items:flex-start;gap:10px;margin:12px 0}.warning-line>svg{margin-top:3px}.warning-line>span{flex:1 1 0;min-width:0}.warning-line[data-status=failed]>svg{color:var(--danger)}
+/* Primary resource: a large icon and the largest number, the bar, then the hourglass with the time left and a small clock time. */
+.resource-top{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;margin-bottom:12px}.resource-icon{color:var(--game)}
+.resource{display:inline-flex;align-items:baseline;gap:6px;font-variant-numeric:tabular-nums}.resource strong{font-family:'Orbitron',sans-serif;font-size:48px;line-height:1.1;color:var(--game)}.resource>span{font-size:18px;color:var(--muted)}.resource .status-mark{font-size:20px;font-weight:600}.resource .status-mark svg{width:22px;height:22px}
+.resource-block[data-fill=full] .resource strong{color:var(--warning)}
+.dashboard .game-panel progress{display:block;margin:0;background:var(--track)}.dashboard .game-panel progress::-webkit-progress-bar{background:var(--track)}.dashboard .game-panel progress::-webkit-progress-value{background:var(--game)}.dashboard .game-panel progress::-moz-progress-bar{background:var(--game)}
+.resource-block progress{height:10px}.dashboard .game-panel :is(.resource-block[data-fill=full],.tile[data-warn=true]) progress::-webkit-progress-value{background:var(--warning)}.dashboard .game-panel :is(.resource-block[data-fill=full],.tile[data-warn=true]) progress::-moz-progress-bar{background:var(--warning)}
+.eta{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;margin-top:12px}.eta svg{width:18px;height:18px;color:var(--muted)}.recovery-in{font-size:17px;font-weight:600}.recovery-at{font-size:15px;color:var(--muted);font-variant-numeric:tabular-nums}
+/* Time at cap over the last 7 days: icon, short title and total, then a timeline told apart by shape (at cap: full-height block; recovering: thin line; unknown: hatched). */
+.cap-history{margin-top:16px}.cap-history-head{display:flex;align-items:center;gap:8px;margin:0 0 6px;font-size:14px;color:var(--muted)}.cap-history-head svg{width:18px;height:18px}.cap-history-value{margin-left:auto;font-size:16px;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap}.cap-history-empty{font-size:14px;color:var(--muted)}.cap-history .warning{margin:0 0 8px}
+.cap-timeline{display:block;width:100%;height:14px}.cap-segment[data-state=at_cap]{fill:var(--warning)}.cap-segment[data-state=below_cap]{fill:var(--game)}.cap-segment[data-state=unknown]{fill:var(--track)}.cap-hatch{fill:var(--line)}
+.cap-unknown{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}.cap-swatch{flex:none;width:12px;height:12px;border:1px solid var(--line);border-radius:3px;background:repeating-linear-gradient(45deg,var(--line) 0 2px,transparent 2px 5px)}
+/* Icon tiles: icon and short name, the value in the numeric face, then a bar, pips or a status mark. The grid fits as many columns as the card allows (two at 360px). */
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(124px,1fr));gap:22px 12px;list-style:none;margin:20px 0 0;padding:20px 0 0;border-top:1px solid var(--hair)}.tile{display:grid;align-content:start;justify-items:start;gap:4px;min-width:0}
+.tile-h{display:flex;align-items:center;gap:8px;font-size:13px;line-height:1.3;color:var(--muted);overflow-wrap:anywhere}.tile-h svg{width:28px;height:28px;stroke-width:1.6;color:var(--game)}
+.tile-v{display:flex;align-items:baseline;gap:4px;font-variant-numeric:tabular-nums}.tile-v strong{font-family:'Orbitron',sans-serif;font-size:21px;line-height:1.4}.tile-v>span,.tile-count>span{font-size:14px;color:var(--muted)}.tile-count{display:inline-flex;align-items:baseline;gap:4px}
+.tile-v.quiet{align-items:center;min-height:30px}.tile-v>svg{align-self:center;color:var(--muted)}.tile-v .tile-text,.tile-v.tile-text{font-family:inherit;font-size:16px;font-weight:600;line-height:1.6}.tile-v.tile-text>span{font-size:16px;color:var(--text)}
+.tile[data-warn=true] .tile-v strong{color:var(--warning)}
+.tile-x{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;width:100%;min-height:20px}.tile-bar{flex:1 1 100%;height:8px}.tile-note,.tile-sub{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.tile-extra{display:inline-flex;align-items:center;gap:2px;color:var(--muted)}.tile-extra>svg{width:16px;height:16px}.tile-extra[data-status=open]{color:var(--warning)}.tile-extra[data-status=done]{color:var(--mint)}
+.tile-r{display:inline-flex;align-items:center;gap:4px;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}.tile-r svg{width:14px;height:14px;stroke-width:2.2}
+.pips{display:inline-flex;gap:4px}.pips i{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--game)}.pips i[data-on=true]{background:var(--game)}
+/* Expeditions: the flag with "finished/total", then avatars in a row with only the time left below (a ring and the done mark once finished). */
+.expeditions{margin-top:20px;padding-top:20px;border-top:1px solid var(--hair)}.group-heading{display:flex;align-items:center;gap:8px;margin:0 0 12px}.group-heading>svg{width:28px;height:28px;stroke-width:1.6;color:var(--game)}
+.group-count{display:inline-flex;align-items:baseline;gap:4px;font-variant-numeric:tabular-nums}.group-count strong{font-family:'Orbitron',sans-serif;font-size:19px}.group-count span{font-size:14px;font-weight:400;color:var(--muted)}
+.expedition-list{display:flex;flex-wrap:wrap;gap:12px 14px;list-style:none;margin:0;padding:0}.expedition{display:grid;justify-items:center;align-content:start;gap:4px;min-width:56px;font-size:13px;text-align:center;font-variant-numeric:tabular-nums}
+.expedition-icon{border-radius:50%}span.expedition-icon{border:1.5px dashed var(--line);color:var(--muted)}.expedition[data-done=true] .expedition-icon{outline:2px solid var(--mint);outline-offset:2px}.expedition .status-mark{font-size:13px}
+/* Endgame: one tile per mode (icon and name, stars or medals, how far, the hourglass with the time to reset). Not attempted, locked and failed modes are quiet. */
+.challenge-section{margin-top:20px;padding-top:20px;border-top:1px solid var(--hair)}.challenge-section .tiles{margin:0;padding:0;border:0}.challenge-name{overflow-wrap:anywhere}
+.challenge-score{align-items:center}.challenge-score .named-icon svg{width:18px;height:18px;color:var(--game)}.challenge-score strong{font-size:20px}.challenge .status-mark[data-status=open]{color:var(--muted)}
+/* Login bonus: the gift, today's claim with its symbol, the day count and the reward; then the "Auto" switch with the next run. */
+.bonus-section{display:grid;gap:8px;margin-top:20px;padding-top:20px;border-top:1px solid var(--hair)}.bonus-section .load-error{margin:0}
+.bonus-main{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px}.bonus-main>svg{color:var(--game)}.bonus-today .status-mark,.bonus-main>.status-mark{font-size:16px;font-weight:600}.bonus-day{font-size:14px;color:var(--muted)}
+.bonus-auto{display:flex;align-items:center;flex-wrap:wrap;gap:4px 16px}.bonus-auto .switch{min-width:0}.bonus-next{display:inline-flex;align-items:center;flex-wrap:wrap;gap:0 6px;font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}.bonus-next svg{width:16px;height:16px;stroke-width:2}
+/* The one collapsed "Details" block at the end of a card; a fetch or bonus error stays on its summary line. */
+.status-details{margin-top:16px;border-top:1px solid var(--hair)}.status-details>summary{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;min-height:48px;padding:10px 0;list-style:none;font-size:14px;color:var(--muted)}.status-details>summary::-webkit-details-marker{display:none}
+.status-details>summary>svg:first-child{width:18px;height:18px}.status-details .chevron{width:18px;height:18px;margin-left:auto;transition:transform 150ms ease-out}.status-details[open] .chevron{transform:rotate(90deg)}
+.details-error{display:inline-flex;align-items:center;gap:6px;min-width:0;color:var(--danger)}.details-error svg{width:16px;height:16px}.status-details .metrics{margin:4px 0 0;gap:12px 16px;font-size:14px}
+@media(max-width:600px){.game-tabs [role=tab]{gap:6px;white-space:nowrap}.game-tabs .game-mark{width:20px;height:20px}.card-heading{grid-template-columns:minmax(0,1fr) auto}.card-heading .game-title{font-size:20px;gap:8px}.game-title .game-mark{width:24px;height:24px}.card-heading .freshness{grid-column:1;grid-row:2;min-height:1.6em}.card-heading .refresh-button{grid-column:2;grid-row:1/3}.expedition-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:12px 4px}.expedition{min-width:0;font-size:12px;white-space:nowrap}.expedition .status-mark{font-size:12px}.status-details .metrics{grid-template-columns:1fr}}

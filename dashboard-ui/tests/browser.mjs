@@ -482,36 +482,74 @@ try{
  await starrail.locator('.resource strong').getByText('12',{exact:true}).waitFor();
  assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');
  assert.equal(await genshin.getAttribute('role'),'region');
- assert.equal(await genshin.locator('time.recovery-at').innerText(),'10/17 21:38 JST');
- assert.equal(await starrail.locator('time.recovery-at').innerText(),'10/18 01:52 JST','local date rollover uses 24-hour time');
- assert.match(await genshin.locator('time.recovery-at').evaluate(e=>getComputedStyle(e).fontFamily),/Orbitron/);
- assert.equal(await genshin.locator('.recovery-in').first().innerText(),'Fully recovered','a passed estimate is not a negative countdown');
- assert.doesNotMatch(await genshin.locator('.recovery-in').first().evaluate(e=>getComputedStyle(e).fontFamily),/Orbitron/);
- assert.equal(await genshin.locator('.recovery-in').nth(1).innerText(),'At cap','a passed currency estimate states the cap, not recovery');
- // Freshness sits under the game title, beside Refresh; weekly allowances and the transformer show beside dailies.
- assert.equal(await genshin.locator('.game-heading .freshness').innerText(),'Updated just now');
+ // Card times are short: another day keeps its date but no time zone; the full datetime is the tooltip.
+ assert.equal(await genshin.locator('time.recovery-at').innerText(),'10/17 21:38');
+ assert.equal(await genshin.locator('time.recovery-at').getAttribute('title'),'10/17 21:38 JST');
+ assert.equal(await starrail.locator('time.recovery-at').innerText(),'10/18 01:52','local date rollover uses 24-hour time');
+ assert.doesNotMatch(await genshin.locator('time.recovery-at').evaluate(e=>getComputedStyle(e).fontFamily),/Orbitron/);
+ assert.equal(await genshin.locator('.recovery-in').innerText(),'Fully recovered','a passed estimate is not a negative countdown');
+ assert.equal(await genshin.locator('.eta .visually-hidden').textContent(),'Full recovery at ','the hourglass keeps its label for screen readers');
+ // The primary resource is its icon and number; the name is the section's accessible name.
+ assert.equal(await genshin.locator('.resource-block').getAttribute('aria-label'),'Resin');
+ assert.equal(await starrail.locator('.resource-block').getAttribute('aria-label'),'Trailblaze Power');
+ assert.match(await genshin.locator('.resource strong').evaluate(e=>getComputedStyle(e).fontFamily),/Orbitron/);
+ // Game marks: decorative beside the game name in the card heading, one distinct shape per game.
+ assert.equal(await genshin.locator('.game-title').innerText(),'Genshin Impact');
+ const markPath=panel=>panel.locator('.game-title svg.game-mark[aria-hidden=true] path').getAttribute('d');
+ assert.ok((await markPath(genshin))&&(await markPath(genshin))!==(await markPath(starrail)),'each game has its own mark');
+ // Every icon is either decorative or a named image, and nothing uses an inline style (CSP).
+ assert.equal(await page.locator('.dashboard svg:not([aria-hidden=true])').count(),0);
+ assert.equal(await page.locator('.dashboard [role=img]').evaluateAll(nodes=>nodes.filter(node=>!node.getAttribute('aria-label')).length),0,'icon-only images have a name');
+ assert.equal(await page.locator('.dashboard .game-panel [style]').count(),0);
+ // The age of the status sits beside the game title as a clock and a short age; the sentence is read out.
+ assert.equal(await genshin.locator('.game-heading .freshness time').innerText(),'just now');
+ assert.equal(await genshin.locator('.game-heading .freshness .visually-hidden').textContent(),'Updated just now');
+ assert.equal(await genshin.locator('.game-heading .freshness time').getAttribute('aria-hidden'),'true');
  assert.equal(await genshin.locator(':scope > .refresh-row').count(),0,'the status age is not repeated below the card');
  // Today's claim per game sits beside the one claim control, above the game cards.
  const claimSummary=page.locator('.page-intro #claim-summary');
  await claimSummary.waitFor();
- assert.equal((await claimSummary.textContent()).replace(/\s+/g,' ').trim(),'Today · Genshin Impact Not received · Honkai: Star Rail Received');
- assert.equal(await claimSummary.locator('[data-game=genshin].pending strong').innerText(),'Not received');
- assert.equal(await claimSummary.locator('[data-game=starrail].success strong').innerText(),'Received');
+ assert.equal(await claimSummary.getAttribute('aria-label'),"Today's login bonuses");
+ // One chip per game: the game mark (its name is read out), a status symbol and the word.
+ assert.deepEqual(await claimSummary.locator('li').evaluateAll(chips=>chips.map(chip=>[chip.dataset.game,chip.dataset.state,chip.querySelector('.status-mark').dataset.status,chip.textContent.replace(/\s+/g,' ').trim(),chip.querySelectorAll('svg[aria-hidden=true]').length])),[['genshin','pending','open','Genshin Impact Not received',2],['starrail','success','done','Honkai: Star Rail Received',2]]);
+ assert.equal(await page.locator('.page-intro #claim-now').evaluate(node=>node.textContent),'Claim now (login bonuses)','the short label keeps "login bonuses" in its accessible name');
  // The login bonus behind the claim control is read before the per-game history and endgame reads.
  await starrail.locator('section.challenge-section li.challenge').first().waitFor();
  const firstRead=suffix=>[...counts.keys()].findIndex(key=>key.endsWith(suffix));
  assert.ok(firstRead('/api/v1/reward-settings')>=0,'reward settings were read');
  for(const later of ['/resource-history','/challenges'])assert.ok(firstRead('/api/v1/reward-settings')<firstRead(later),'reward settings before '+later);
- assert.equal(await genshin.locator('.metric').filter({hasText:'Weekly boss discounts'}).locator('dd').innerText(),'2/3 left');
- assert.equal(await genshin.locator('.metric').filter({hasText:'Parametric Transformer'}).locator('dd').innerText(),'Ready');
- assert.equal(await starrail.locator('.metric').filter({hasText:'Echo of War'}).locator('dd').innerText(),'1/3 left');
- assert.equal(await starrail.locator('.metric').filter({hasText:'Simulated Universe'}).locator('dd').innerText(),'2000/14000');
- assert.equal(await genshin.locator('.expeditions-heading .muted').innerText(),'1/5 done');
- // Realm currency is a second number and bar under resin, not a plain metric.
+ // Icon tiles: a short visible name (the full name is read out), the value, then pips, a bar or a status symbol.
+ const tile=(panel,id)=>panel.locator(`.tile[data-tile=${id}]`);
+ const compact=async locator=>(await locator.innerText()).replace(/\s+/g,'');
+ const pipsOn=locator=>locator.locator('.pips i').evaluateAll(pips=>pips.map(pip=>pip.dataset.on));
+ assert.deepEqual(await genshin.locator('.tile[data-tile]').evaluateAll(tiles=>tiles.map(node=>node.dataset.tile)),['coin','daily','discount','transformer']);
+ assert.deepEqual(await starrail.locator('.tile[data-tile]').evaluateAll(tiles=>tiles.map(node=>node.dataset.tile)),['reserve','training','simulated','echo'],'Divergent Universe stays out until it is unlocked');
+ assert.equal(await tile(genshin,'discount').locator('.tile-h .visually-hidden').textContent(),'Weekly boss discounts');
+ assert.equal(await tile(genshin,'discount').locator('.tile-h span[aria-hidden=true]').textContent(),'Boss discount');
+ assert.equal(await tile(genshin,'discount').locator('.tile-v .visually-hidden').textContent(),'2/3 left');
+ assert.deepEqual(await pipsOn(tile(genshin,'discount')),['true','true','false'],'filled pips are the uses left');
+ assert.equal(await tile(genshin,'discount').locator('.pips').getAttribute('aria-hidden'),'true');
+ assert.equal(await tile(genshin,'transformer').locator('.status-mark[data-status=done]').innerText(),'Ready');
+ assert.equal(await tile(starrail,'echo').locator('.tile-v .visually-hidden').textContent(),'1/3 left');
+ assert.deepEqual(await pipsOn(tile(starrail,'echo')),['true','false','false']);
+ assert.equal(await compact(tile(starrail,'simulated').locator('.tile-v')),'2000/14000');
+ assert.equal(await tile(starrail,'simulated').locator('.status-mark').count(),0,'an unfinished weekly score has no done symbol');
+ assert.equal(await compact(tile(genshin,'daily').locator('.tile-v')),'0/4');
+ assert.deepEqual(await pipsOn(tile(genshin,'daily')),['false','false','false','false']);
+ // Values the payload does not carry are the unknown symbol with its word, never a number or "not received".
+ assert.equal(await tile(genshin,'daily').locator('.tile-extra .status-mark').getAttribute('data-status'),'unknown');
+ assert.equal(await tile(genshin,'daily').locator('.tile-extra .visually-hidden').textContent(),'Extra commission reward Not fetched');
+ assert.equal(await tile(starrail,'reserve').locator('.status-mark[data-status=unknown]').innerText(),'Not fetched');
+ assert.equal(await tile(starrail,'reserve').locator('.tile-h span[aria-hidden=true]').textContent(),'Reserve');
+ assert.equal(await tile(starrail,'reserve').locator('strong').count(),0,'an unknown value does not use the numeric face');
+ assert.deepEqual(await genshin.locator('.expeditions h3 .visually-hidden').allTextContents(),['Expeditions',' 1/5 done']);
+ assert.equal(await genshin.locator('.expeditions h3 .group-count').textContent(),'1/5');
+ // Realm currency is a tile: number and bar; its date is gone and a passed estimate states the cap.
  assert.equal(await genshin.locator('progress').count(),2);
- assert.equal(await genshin.locator('progress').nth(1).getAttribute('aria-label'),'Realm currency');
- assert.equal(await genshin.locator('.resource-block.secondary .resource strong').innerText(),'510');
- assert.equal(await genshin.locator('.metric').filter({hasText:'Realm currency'}).count(),0);
+ assert.equal(await genshin.locator('progress').first().getAttribute('aria-label'),'Resin');
+ assert.equal(await compact(tile(genshin,'coin').locator('.tile-v')),'510/2400');
+ assert.equal(await tile(genshin,'coin').locator('.cap-badge').innerText(),'At cap');
+ assert.equal(await genshin.locator('time.estimate-at').count(),0);
  // Refresh is a circular-arrow icon button at each card's top right.
  assert.equal(await page.locator('.refresh-row button').count(),0);
  for(const [panel,game] of [[genshin,'genshin'],[starrail,'starrail']]){
@@ -525,16 +563,16 @@ try{
  }
  // Card order: UID, primary resource with full recovery, other stats, then the login bonus.
  for(const panel of [genshin,starrail]){
-  const order=await panel.evaluate(card=>['.uid-select','.resource','.recovery-at','.metrics','.bonus-section'].map(selector=>card.querySelector(selector)).map((node,i,nodes)=>i===0||Boolean(nodes[i-1].compareDocumentPosition(node)&Node.DOCUMENT_POSITION_FOLLOWING)));
+  const order=await panel.evaluate(card=>['.uid-select','.resource','.recovery-at','.tiles','.bonus-section'].map(selector=>card.querySelector(selector)).map((node,i,nodes)=>i===0||Boolean(nodes[i-1].compareDocumentPosition(node)&Node.DOCUMENT_POSITION_FOLLOWING)));
   assert.deepEqual(order,[true,true,true,true,true],'dashboard card order');
   assert.ok(await panel.locator('.bonus-section #automation-'+(panel===genshin?'genshin':'starrail')).count(),'bonus toggle lives in the last section');
  }
  const expeditionRows=genshin.locator('.expedition');
  assert.equal(await expeditionRows.count(),2);
- assert.equal((await expeditionRows.nth(0).innerText()).replace(/\s+/g,' ').trim(),'Ongoing Remaining: 8h 26m');
+ assert.equal((await expeditionRows.nth(0).textContent()).replace(/\s+/g,' ').trim(),'Remaining 8h 26m','an ongoing expedition shows only its time left');
+ assert.equal(await expeditionRows.nth(0).getAttribute('data-done'),'false');
  assert.equal((await expeditionRows.nth(1).innerText()).trim(),'Finished','a finished expedition shows no zero remaining time');
- assert.doesNotMatch(await genshin.locator('time.estimate-at').evaluate(e=>getComputedStyle(e).fontFamily),/Orbitron/);
- assert.ok(!(await genshin.locator('time.estimate-at').innerText()).includes('T08:38:40'),'currency estimate is not raw ISO');
+ assert.equal(await expeditionRows.nth(1).locator('.status-mark').getAttribute('data-status'),'done');
  assert.equal(await genshin.locator('.expedition-icon').first().getAttribute('src'),avatarIcon);
  assert.equal(await genshin.locator('.expedition-icon').first().getAttribute('alt'),'Expedition 1');
  assert.equal(await genshin.locator('.expedition-icon').nth(1).getAttribute('alt'),'Expedition 2');
@@ -551,9 +589,10 @@ try{
  assert.equal(await page.locator('#selected-genshin option').count(),2);
  assert.equal(await page.locator('#selected-starrail option').count(),2);
  assert.ok(await genshin.locator('.status-metadata').isHidden(),'technical data is collapsed by default');
- await genshin.getByText('Fetch details',{exact:true}).click();
+ await genshin.locator('details.status-details > summary').getByText('Details',{exact:true}).click();
  assert.ok(await genshin.locator('.status-metadata').isVisible(),'all stored metadata stays available');
- await genshin.getByText('Fetch details',{exact:true}).click();
+ assert.equal(await genshin.locator('details').count(),1,'no second disclosure in the card');
+ await genshin.locator('details.status-details > summary').click();
  for(const n of [3,4])assert.equal(counts.get('/api/v1/game-accounts/'+uid(n)+'/status')||0,0);
  // Endgame summary: one row per mode between the status and the login bonus, read after the status.
  for(const n of [3,4])assert.equal(counts.get('/api/v1/game-accounts/'+uid(n)+'/challenges')||0,0,'hidden or undetected UIDs never load challenges');
@@ -562,28 +601,35 @@ try{
  await genshinChallenges.locator('li.challenge').first().waitFor();
  await starrail.locator('section.challenge-section li.challenge').first().waitFor();
  assert.ok(await genshin.evaluate(panel=>{const c=panel.querySelector('.challenge-section'),b=panel.querySelector('.bonus-section');return !!(c.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING);}),'challenges sit above the login bonus');
- const challengeRows=async section=>section.locator('li.challenge').evaluateAll(rows=>rows.map(row=>[row.dataset.mode,row.querySelector('.challenge-name').textContent,row.querySelector('.challenge-reset')?.textContent??null,row.querySelector('.challenge-progress').textContent,row.querySelector('.challenge-period')?.textContent??null]));
+ // Per tile: mode, name, reset (as read out), the score icon's name and count, what was reached (as read out), the status symbol.
+ const challengeRows=async section=>section.locator('li.challenge').evaluateAll(rows=>rows.map(row=>{const text=selector=>row.querySelector(selector)?.textContent??null;return [row.dataset.mode,text('.challenge-name'),text('.challenge-reset .visually-hidden')??text('.challenge-reset'),row.querySelector('.challenge-score [role=img]')?.getAttribute('aria-label')??null,text('.challenge-score strong'),text('.challenge-progress .visually-hidden')??text('.challenge-progress'),row.querySelector('.challenge-progress .status-mark')?.dataset.status??null];}));
  assert.deepEqual(await challengeRows(genshinChallenges),[
-  ['spiral_abyss','Spiral Abyss','Resets in 5d 3h','33 stars · Reached 12-3',null],
-  ['imaginarium_theater','Imaginarium Theater','Resets in 5d 3h','Act 8 · Difficulty 4 · 6 medals',null],
-  ['stygian_onslaught','Stygian Onslaught',null,'Not attempted',null]]);
+  ['spiral_abyss','Spiral Abyss','Resets in 5d 3h','Stars','33','Reached 12-3',null],
+  ['imaginarium_theater','Imaginarium Theater','Resets in 5d 3h','Medals','6','Act 8 · Difficulty 4',null],
+  ['stygian_onslaught','Stygian Onslaught',null,null,null,'Not attempted','open']]);
  const starrailChallenges=starrail.locator('section.challenge-section');
  assert.deepEqual(await challengeRows(starrailChallenges),[
-  ['memory_of_chaos','Memory of Chaos','Resets in 5d 3h','30 stars · Reached Synthetic floor 12','Synthetic period'],
-  ['pure_fiction','Pure Fiction',null,'Could not be loaded',null],
-  ['apocalyptic_shadow','Apocalyptic Shadow','Resets in 5d 3h','Not attempted',null],
-  ['anomaly_arbitration','Anomaly Arbitration','Period ended','Locked',null]]);
+  ['memory_of_chaos','Memory of Chaos','Resets in 5d 3h','Stars','30','Reached Synthetic floor 12',null],
+  ['pure_fiction','Pure Fiction',null,null,null,'Fetch failed','failed'],
+  ['apocalyptic_shadow','Apocalyptic Shadow','Resets in 5d 3h',null,null,'Not attempted','open'],
+  ['anomaly_arbitration','Anomaly Arbitration','Period ended',null,null,'Locked','locked']]);
+ assert.equal(await genshinChallenges.locator('.challenge-reset span[aria-hidden=true]').first().textContent(),'5d 3h','the visible reset is the hourglass and the time left');
+ assert.equal(await genshinChallenges.locator('.challenge-progress span[aria-hidden=true]').first().textContent(),'12-3');
+ assert.ok(!(await starrailChallenges.evaluate(node=>node.textContent)).includes('Synthetic period'),'the period name is not shown');
  const reset=genshinChallenges.locator('time.challenge-reset').first();
  assert.ok(Date.parse(await reset.getAttribute('datetime'))>Date.now(),'the reset keeps its machine-readable end');
  assert.match(await reset.getAttribute('title'),/^\d\d\/\d\d \d\d:\d\d JST$/);
  assert.equal(await starrailChallenges.locator('.challenge-progress.quiet').count(),3,'unavailable, not attempted and locked modes are quieter');
- assert.match(await genshinChallenges.locator('.freshness').innerText(),/^Updated 2\d min ago$/);
+ assert.equal(await genshinChallenges.locator('.freshness').count(),0,'when the records were fetched is in the details');
+ assert.match(await genshin.locator('.status-metadata').evaluate(node=>node.textContent),/Endgame fetched\d\d\/\d\d \d\d:\d\d JST/);
+ // One fold per card holds the fetch details, the endgame fetch time and the bonus state.
+ assert.deepEqual(await genshin.locator('.status-metadata dt').allTextContents(),['UID','Server','Last fetched','Endgame fetched','Bonus auth status','Bonus checked','Last run state']);
  assert.equal(await genshinChallenges.locator('.warning').count(),0);
  assert.ok(!(await starrailChallenges.innerText()).includes('network'),'raw per-mode codes stay out of the card');
  // Events and banners are not tied to a UID: they moved to the events page, so the dashboard
  // neither reads nor shows a calendar.
  assert.equal([...counts.keys()].filter(key=>key.endsWith('/calendar')).length,0,'the dashboard loads no calendar');
- assert.equal(await page.locator('.calendar-section, .event-timeline, .event-list, .calendar-summary-part').count(),0,'the dashboard shows no calendar');
+ assert.equal(await page.locator('.calendar-section, .event-timeline, .event-list, .event-chips').count(),0,'the dashboard shows no calendar');
  // Fetch details close each card: its last element, after the endgame summary and login bonus.
  const detailsLast=()=>Promise.all([genshin,starrail].map(panel=>panel.evaluate(card=>{const last=card.lastElementChild;return Boolean(last?.matches('details.status-details'))&&card.querySelectorAll('details.status-details').length===1&&['.challenge-section','.bonus-section'].every(selector=>{const section=card.querySelector(selector);return !section||Boolean(section.compareDocumentPosition(last)&Node.DOCUMENT_POSITION_FOLLOWING);});})));
  assert.equal(await genshin.locator('.challenge-section, .bonus-section').count(),2,'every section the details must follow is shown');
@@ -592,17 +638,18 @@ try{
  for(const n of [3,4])assert.equal(counts.get('/api/v1/game-accounts/'+uid(n)+'/resource-history')||0,0,'hidden or undetected UIDs never load the history');
  const genshinHistory=genshin.locator('.cap-history');
  await genshinHistory.locator('.cap-history-value').waitFor();
- assert.ok(await genshin.evaluate(panel=>{const h=panel.querySelector('.cap-history'),r=panel.querySelector('.resource-block'),s=panel.querySelector('.resource-block.secondary');return h.previousElementSibling===r&&h.nextElementSibling===s;}),'the history sits between the resin and the realm currency');
- assert.equal(await genshinHistory.locator('.cap-history-title').innerText(),'Time at cap (last 7 days)');
+ assert.ok(await genshin.evaluate(panel=>{const h=panel.querySelector('.cap-history'),r=panel.querySelector('.resource-block'),t=panel.querySelector('.tiles');return h.previousElementSibling===r&&Boolean(h.compareDocumentPosition(t)&Node.DOCUMENT_POSITION_FOLLOWING);}),'the history sits between the resin and the tiles');
+ assert.equal(await genshinHistory.locator('.cap-history-title').innerText(),'At cap, 7 days');
  assert.equal(await genshinHistory.locator('.cap-history-value').innerText(),'3h 12m');
- assert.deepEqual(await genshinHistory.locator('.cap-axis span').allInnerTexts(),['7 d ago','Now']);
- assert.deepEqual(await genshinHistory.locator('.cap-legend li').allInnerTexts(),['At cap','Recovering','Unknown 2h 00m']);
+ assert.equal(await genshinHistory.locator('.cap-axis, .cap-legend').count(),0,'no axis or legend: the states differ by shape');
+ assert.equal((await genshinHistory.locator('.cap-unknown').innerText()).trim(),'Unknown 2h 00m','unknown time is named when there is some');
+ assert.deepEqual(await genshinHistory.locator('rect.cap-segment').evaluateAll(rects=>rects.map(rect=>[rect.dataset.state,rect.getAttribute('height')])),[['unknown','100%'],['below_cap','28%'],['at_cap','100%']],'recovering is a thin line; at cap and unknown fill the height');
  assert.deepEqual(await genshinHistory.locator('rect.cap-segment').evaluateAll(rects=>rects.map(rect=>[rect.dataset.state,Math.round(parseFloat(rect.getAttribute('width'))*10)/10])),[['unknown',1.2],['below_cap',96.9],['at_cap',1.9]]);
  assert.equal(await genshinHistory.locator('svg.cap-timeline').getAttribute('aria-hidden'),'true','the timeline is decorative; the sentence carries it');
  assert.equal(await genshinHistory.locator('p.visually-hidden').textContent(),'Resin was at its cap for 3h 12m in the last 7 days, recovering for 6d 18h, and unknown (no records) for 2h 00m.');
- assert.ok(await genshinHistory.evaluate(node=>{const box=node.getBoundingClientRect(),bar=node.querySelector('svg').getBoundingClientRect();return bar.width>=box.width-1&&bar.height>=10;}),'the timeline spans the card');
+ assert.ok(await genshinHistory.evaluate(node=>{const box=node.getBoundingClientRect(),bar=node.querySelector('svg.cap-timeline').getBoundingClientRect();return bar.width>=box.width-1&&bar.height>=10;}),'the timeline spans the card');
  await starrail.locator('.cap-history').getByText('No history recorded yet.',{exact:true}).waitFor();
- assert.equal(await starrail.locator('.cap-history svg').count(),0,'nothing recorded draws no timeline');
+ assert.equal(await starrail.locator('.cap-history svg.cap-timeline').count(),0,'nothing recorded draws no timeline');
  // While the new UID's endgame read is held, its section says it is loading.
  let releaseQueued,heldQueued=0;const queuedGate=new Promise(resolve=>{releaseQueued=resolve;});
  const queuedPaths=[`/api/v1/game-accounts/${uid(6)}/challenges`];
@@ -630,11 +677,15 @@ try{
  // A failed fetch without data reports only the failure; stale data states its age.
  statusMode='failed';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
  await starrail.getByText('Could not fetch the status (Could not reach HoYoLAB)',{exact:true}).waitFor();
+ assert.equal(await starrail.locator('.warning-line[data-status=failed]').count(),1,'a failed fetch carries the failure symbol');
+ assert.equal(await starrail.locator('.resource-block, .tile[data-tile]').count(),0,'no value is drawn without data');
  for(const contradiction of ['not the latest','may be out of date','No daily summary','network'])assert.ok(!(await starrail.innerText()).includes(contradiction),'failed fetch without data: '+contradiction);
  statusMode='stale';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
  await starrail.getByText('Data from 6 h ago (HoYoLAB is temporarily unavailable)',{exact:true}).waitFor();
  assert.ok(!(await starrail.innerText()).includes('http:503'),'raw codes stay out of the visible card');
- assert.equal(await starrail.locator('details.status-details > summary').innerText(),'Fetch details · HoYoLAB is temporarily unavailable','the collapsed details still name the fetch error');
+ assert.equal((await starrail.locator('details.status-details > summary').innerText()).replace(/\s+/g,' ').trim(),'Details HoYoLAB is temporarily unavailable','the collapsed details still name the fetch error');
+ assert.equal(await starrail.locator('.game-heading .freshness.stale .visually-hidden').textContent(),'Updated 6 h ago (out of date)','outdated data says so beside the game title');
+ assert.equal(await starrail.locator('.warning-line[data-status=warn]').count(),1,'outdated data carries the warning symbol, not the failure symbol');
  assert.deepEqual(await detailsLast(),[true,true],'a failed fetch keeps its details at the card bottom');
  // A failed first summary says only why; the refresh button reloads it with the status.
  challengeMode='failed';await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
@@ -652,7 +703,8 @@ try{
  assert.equal(await starrail.locator('.recovery-in').innerText(),'in 7h 13m','full recovery also states the time left');
  await starrail.locator('.recovery-in').getByText('in 7h 12m',{exact:true}).waitFor({timeout:10000});
  assert.equal(counts.get('/api/v1/game-accounts/'+uid(8)+'/status'),statusReads,'the countdown moved by the clock alone');
- assert.match(await starrail.locator('time.recovery-at').innerText(),/^\d\d\/\d\d \d\d:\d\d JST$/);
+ assert.match(await starrail.locator('time.recovery-at').innerText(),/^(tomorrow )?\d\d:\d\d$/,'today and tomorrow need no date');
+ assert.match(await starrail.locator('time.recovery-at').getAttribute('title'),/^\d\d\/\d\d \d\d:\d\d JST$/);
  statusMode=null;await starrail.getByRole('button',{name:'Refresh',exact:true}).click();
  await starrail.locator('.resource strong').getByText('24',{exact:true}).waitFor();
  assert.ok(await page.locator('#refresh-starrail').evaluate(e=>e===document.activeElement),'refresh keeps keyboard focus while and after loading');
@@ -720,7 +772,8 @@ try{
  assert.equal(await page.locator('#ahd-menu-trigger').getAttribute('aria-label'),'メニューを開く');
  assert.equal(await drawer.getByRole('combobox',{name:'言語',exact:true}).inputValue(),'ja');
  await page.locator('h1').getByText('ダッシュボード',{exact:true}).waitFor();
- assert.equal(await genshin.locator('time.estimate-at').innerText(),'10/19 17:38 JST','compact dates stay consistent after language changes');
+ assert.equal(await tile(genshin,'coin').locator('.tile-h span[aria-hidden=true]').textContent(),'宝銭','tile names follow the language');
+ assert.equal(await tile(genshin,'coin').locator('.tile-h .visually-hidden').textContent(),'洞天宝銭');
  assert.equal(await page.locator('#selected-genshin').inputValue(),uid(6),'language change preserves selected UID');
  assert.equal(await page.locator('#selected-starrail').inputValue(),uid(8));
  await page.reload();await idle();
@@ -829,6 +882,11 @@ try{
  // Mobile ARIA tabs: hidden panel, roving focus and keyboard edges.
  await page.setViewportSize({width:390,height:844});
  await page.waitForFunction(()=>document.getElementById('game-panel-genshin')?.getAttribute('role')==='tabpanel');
+ for(const [game,name] of [['genshin','Genshin Impact'],['starrail','Honkai: Star Rail']]){
+  assert.equal(await page.locator(`#game-tab-${game} svg.game-mark[aria-hidden=true]`).count(),1,'each tab carries its game mark');
+  assert.equal((await page.locator(`#game-tab-${game}`).innerText()).trim(),name);
+ }
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth),'the tabs with marks do not widen a narrow page');
  assert.ok(await brandIcon.isVisible());
  assert.ok(await page.locator('.topbar-inner').evaluate(e=>e.scrollWidth<=e.clientWidth),'mobile header fits with icon');
  assert.ok(await genshin.isVisible());assert.ok(await starrail.isHidden());
@@ -1009,15 +1067,25 @@ try{
  const genshinList=genshinEvents.locator('.event-list');
  assert.ok(await genshinList.evaluate(list=>{const box=list.getBoundingClientRect();return box.width<=1&&box.height<=1;}),'the list is visually hidden beside the timeline');
  await genshinEvents.getByRole('heading',{name:'Running now',exact:true,level:3}).waitFor({state:'attached'});
- assert.equal(await genshinEvents.locator('.events-summary').innerText(),'2 running · 1 upcoming · next ends in 1d 6h');
- assert.match(await genshinEvents.locator('.game-heading .freshness').innerText(),/^Updated 2\d min ago$/);
- assert.match(await genshinEvents.locator('.events-source').innerText(),/^Progress shown for UID 60000000[56]$/,'event progress names its UID');
+ // The summary is chips: a status symbol, the count or time left on screen, the sentence for readers.
+ const eventChips=panel=>panel.locator('.event-chip').evaluateAll(chips=>chips.map(chip=>[chip.dataset.chip,chip.querySelector('.status-mark').dataset.status,chip.querySelector('.status-short').textContent,chip.querySelector('.visually-hidden').textContent,chip.querySelector('.status-mark').title,chip.querySelectorAll('svg[aria-hidden=true]').length]));
+ assert.deepEqual(await eventChips(genshinEvents),[['running','running','2','2 running','2 running',1],['upcoming','upcoming','1','1 upcoming','1 upcoming',1],['next-end','waiting','1d 6h','next ends in 1d 6h','next ends in 1d 6h',1]]);
+ // The heading is the dashboard's: the game mark, the name, then the clock with the short age.
+ assert.equal(await genshinEvents.locator('.card-heading .game-title svg.game-mark[aria-hidden=true]').count(),1,'the panel heading carries the game mark');
+ assert.equal(await genshinEvents.locator('.card-heading .game-title').innerText(),'Genshin Impact');
+ assert.match(await genshinEvents.locator('.card-heading .freshness time').innerText(),/^2\d min ago$/);
+ assert.match(await genshinEvents.locator('.card-heading .freshness .visually-hidden').textContent(),/^Updated 2\d min ago$/);
+ assert.match(await genshinEvents.locator('.events-source .visually-hidden').textContent(),/^Progress shown for UID 60000000[56]$/,'event progress names its UID');
+ assert.match(await genshinEvents.locator('.events-source span[aria-hidden=true]').textContent(),/^UID 60000000[56]$/);
  assert.deepEqual(await genshinTimeline.locator('tr.tl-lane th').allInnerTexts(),['Wishes','Events'],'banners come first');
- const timelineRows=await genshinTimeline.locator('tr.tl-row').evaluateAll(rows=>rows.map(row=>[row.dataset.kind,row.querySelector('.tl-name').textContent,row.querySelector('.tl-left')?.textContent??null,row.querySelector('.tl-status')?.textContent??null,row.querySelector('.tl-bar').dataset.upcoming]));
+ const timelineRows=await genshinTimeline.locator('tr.tl-row').evaluateAll(rows=>rows.map(row=>[row.dataset.kind,row.querySelector('.tl-name').textContent,row.querySelector('.tl-left')?.title??null,(mark=>mark?(mark.title||mark.textContent):null)(row.querySelector('.tl-status .status-mark')),row.querySelector('.tl-bar').dataset.upcoming]));
  assert.deepEqual(timelineRows,[
   ['character_banner','Synthetic Wish','2d 3h left',null,'false'],
   ['weapon_banner','Weapon Event Wish','Starts in 3d 1h',null,'true'],
   ['event','Synthetic Event','1d 6h left','Progress 2/3','false']]);
+ // On screen: a type icon per row, and symbols with the short forms (time left, 2/3).
+ assert.deepEqual(await genshinTimeline.locator('tr.tl-row').evaluateAll(rows=>rows.map(row=>[row.querySelectorAll('.tl-title > svg[aria-hidden=true]').length,row.querySelector('.tl-left').dataset.status,row.querySelector('.tl-left .status-short').textContent,(mark=>mark?[mark.dataset.status,mark.querySelector('.status-short').textContent]:null)(row.querySelector('.tl-status .status-mark'))])),[[1,'waiting','2d 3h',null],[1,'upcoming','3d 1h',null],[1,'waiting','1d 6h',['open','2/3']]]);
+ assert.equal(await genshinTimeline.locator('tr.tl-lane .tl-lane-title > svg[aria-hidden=true]').count(),2,'each lane title leads with its type icon');
  assert.ok(!(await genshinEvents.innerText()).includes('Synthetic Ended'),'ended items are not shown');
  // Every row spans the whole axis (colspans add up to one column per day), and today is marked.
  const axis=await genshinTimeline.evaluate(table=>{const days=table.querySelectorAll('col').length;const span=row=>[...row.cells].reduce((sum,cell)=>sum+cell.colSpan,0);return {days,rows:[...table.querySelectorAll('tr')].map(span),now:[...table.tBodies[0].rows].map(row=>row.querySelectorAll('svg.tl-now').length),nowX:(xs=>Math.max(...xs)-Math.min(...xs))([...table.querySelectorAll('svg.tl-now line')].map(line=>line.getBoundingClientRect().x)),label:table.querySelector('th[data-today=true] .tl-today-label')?.textContent,width:table.getBoundingClientRect().width,panel:table.closest('.panel').getBoundingClientRect().width};});
@@ -1039,7 +1107,11 @@ try{
  assert.deepEqual(await genshinList.locator('section[data-phase=upcoming] li.event-card .calendar-name').allTextContents(),['Weapon Event Wish']);
  assert.match(await genshinList.locator('section[data-phase=upcoming] h4.event-node').textContent(),/^Starts \d\d\/\d\d$/);
  assert.ok(await genshinList.locator('li.event-card time[datetime]').evaluateAll(times=>times.length>=5&&times.every(time=>!Number.isNaN(Date.parse(time.getAttribute('datetime'))))),'every time has a machine-readable datetime');
- assert.match(await genshinList.locator('.event-now time').textContent(),/^\d\d\/\d\d \d\d:\d\d JST$/);
+ assert.match(await genshinList.locator('.event-now time').textContent(),/^\d\d\/\d\d \d\d:\d\d$/);
+ assert.match(await genshinList.locator('.event-now time').getAttribute('title'),/^\d\d\/\d\d \d\d:\d\d JST$/);
+ // Each card names its type through the icon; countdowns and progress read as sentences.
+ assert.deepEqual(await genshinList.locator('li.event-card').evaluateAll(cards=>cards.map(card=>[(icon=>[icon.getAttribute('role'),icon.getAttribute('aria-label'),icon.title])(card.querySelector('.event-kind')),card.querySelector('.calendar-left .visually-hidden').textContent,card.querySelector('.calendar-status .visually-hidden')?.textContent??null])),[[['img','Wishes','Wishes'],'2d 3h left',null],[['img','Events','Events'],'1d 6h left','Progress 2/3'],[['img','Wishes','Wishes'],'Starts in 3d 1h',null]]);
+ assert.deepEqual(await genshinList.locator('.event-phase h3').evaluateAll(headings=>headings.map(heading=>[heading.textContent,heading.querySelectorAll('svg[aria-hidden=true]').length])),[['Running now',1],['Upcoming',1]]);
  await page.screenshot({path:path.join(root,'target/ui-events-desktop-dark.png'),fullPage:true});
  // Refresh: a failed refresh keeps the timeline and says so; a failed first fetch says only why;
  // a server without the endpoint says the calendar could not be loaded.
@@ -1047,10 +1119,13 @@ try{
  calendarMode='error';await genshinRefresh.click();
  await genshinEvents.getByText('Could not refresh the calendar. What is shown may be out of date.',{exact:true}).waitFor();
  assert.equal(await genshinTimeline.locator('tr.tl-row').count(),3,'the last timeline stays');
+ assert.equal(await genshinEvents.locator('.warning-line[data-status=warn]').count(),1,'a failed refresh over shown content is a warning, not a failed fetch');
  assert.ok(await genshinRefresh.evaluate(button=>button===document.activeElement),'refresh keeps keyboard focus');
  calendarMode='failed';await page.locator('#events-refresh-starrail').click();
  await starrailEvents.getByText('Could not load the calendar (The HoYoLAB battle record is private)',{exact:true}).waitFor();
  assert.equal(await starrailEvents.locator('tr.tl-row, li.event-card').count(),0,'no calendar is invented after a failed fetch');
+ assert.equal(await starrailEvents.locator('.warning-line[data-status=failed]').count(),1,'a failed fetch carries the failed symbol');
+ assert.equal(await starrailEvents.locator('.event-chips').count(),0,'no summary without a calendar');
  calendarMode='missing';await page.locator('#events-refresh-starrail').click();
  await starrailEvents.getByText('Could not load the calendar.',{exact:true}).waitFor();
  calendarMode=null;await page.locator('#events-refresh-starrail').click();
@@ -1059,10 +1134,11 @@ try{
  // A realistic calendar (4 banners, 10 events, 3 announced, long names) at every width and theme.
  calendarMode='many';await genshinRefresh.click();await page.locator('#events-refresh-starrail').click();
  await genshinTimeline.locator('tr.tl-row').nth(18).waitFor();await starrailEvents.locator('tr.tl-row').nth(3).waitFor();
- assert.equal(await genshinEvents.locator('.events-summary').innerText().then(text=>text.split(' · ').slice(0,3).join(' · ')),'14 running · 3 upcoming · 2 with unknown period');
+ assert.deepEqual((await eventChips(genshinEvents)).map(chip=>chip.slice(0,4)).slice(0,3),[['running','running','14','14 running'],['upcoming','upcoming','3','3 upcoming'],['undated','unknown','2','2 with unknown period']]);
+ assert.equal(await genshinTimeline.locator('tr.tl-row .tl-title > svg').count(),19,'every row has its type icon');
  // Items without any known period: their own group of labels without a bar, off the axis and the now line.
  assert.deepEqual(await genshinTimeline.locator('tr.tl-lane th').allInnerTexts(),['Wishes','Events','Period unknown']);
- const undatedRows=await genshinTimeline.evaluate(table=>{const days=table.querySelectorAll('col').length;return [...table.querySelectorAll('tr.tl-row[data-undated=true]')].map(row=>({name:row.querySelector('.tl-name').textContent,bars:row.querySelectorAll('.tl-bar').length,period:row.querySelectorAll('.tl-period').length,now:row.querySelectorAll('svg.tl-now').length,cells:row.cells.length,full:row.cells[0].colSpan===days,border:getComputedStyle(row.querySelector('.tl-label')).borderTopWidth,status:row.querySelector('.tl-status')?.textContent}));});
+ const undatedRows=await genshinTimeline.evaluate(table=>{const days=table.querySelectorAll('col').length;return [...table.querySelectorAll('tr.tl-row[data-undated=true]')].map(row=>({name:row.querySelector('.tl-name').textContent,bars:row.querySelectorAll('.tl-bar').length,period:row.querySelectorAll('.tl-period').length,now:row.querySelectorAll('svg.tl-now').length,cells:row.cells.length,full:row.cells[0].colSpan===days,border:getComputedStyle(row.querySelector('.tl-label')).borderTopWidth,status:(mark=>mark?(mark.title||mark.textContent):null)(row.querySelector('.tl-status .status-mark'))}));});
  assert.deepEqual(undatedRows.map(row=>[row.name,row.status]),[['Synthetic Undated Record','Not completed'],['Synthetic Undated Leyline','Progress 0/3']]);
  assert.ok(undatedRows.every(row=>row.bars===0&&row.period===0&&row.now===0&&row.cells===1&&row.full&&row.border==='0px'),'an undated item is a label, not a bar across the axis: '+JSON.stringify(undatedRows));
  assert.equal(await genshinTimeline.locator('tr.tl-row:not([data-undated]) .tl-bar').count(),17,'every dated item keeps its bar');
@@ -1095,7 +1171,7 @@ try{
  assert.equal(await genshinList.locator('section[data-phase=undated] li.event-card').count(),2);
  assert.equal(await genshinList.locator('section[data-phase=undated] .event-period').count(),0,'undated cards show no bare dash');
  assert.equal(await genshinList.locator('section[data-phase=upcoming] li.event-card').count(),3);
- const firstRunning=await genshinList.locator('section[data-phase=running] li.event-card').first().locator('.calendar-left').textContent();
+ const firstRunning=await genshinList.locator('section[data-phase=running] li.event-card').first().locator('.calendar-left .visually-hidden').textContent();
  assert.match(firstRunning,/left$/,'running items count down to their end');
  await fits('360px');
  await page.screenshot({path:path.join(root,'target/ui-events-360-dark.png'),fullPage:true});
@@ -1189,15 +1265,21 @@ try{
  assert.equal(await page.locator('#reward-run-state-'+uid(20)).innerText(),'Last run: Never');
  // One dashboard control claims every game still open today, then follows by GET only.
  await page.locator('a.wordmark').click();await dashboard();
- const claim=button('Claim login bonuses now');
+ const claim=button('Claim now (login bonuses)');
  assert.equal(await page.title(),'Dashboard – AHD');
  // The skip link targets main, not the Dioxus root (#main), and moves focus there.
  assert.equal(await page.locator('a.skip-link').getAttribute('href'),'#content');
  assert.equal(await page.locator('[id=main]').count(),1,'only the Dioxus root uses #main');
  await page.locator('a.skip-link').focus();await page.keyboard.press('Enter');
  assert.ok(await page.locator('main#content').evaluate(e=>e===document.activeElement),'skip link focuses the page content');
- assert.equal(await genshin.locator('.award').innerText(),'Next reward: Primogem ×20');
- assert.match(await genshin.locator('.bonus-today').innerText(),/^Today: Not received · Day 12 this month$/);
+ // Login bonus: the heading and the labels are read out only; symbols, the reward and the "Auto" switch are what shows.
+ assert.equal(await genshin.getByRole('heading',{name:'Login bonus',exact:true,level:3}).count(),1);
+ assert.equal((await genshin.locator('.award').evaluate(node=>node.textContent)).replace(/\s+/g,' ').trim(),'Next reward Primogem ×20');
+ assert.equal((await genshin.locator('.bonus-today').evaluate(node=>node.textContent)).replace(/\s+/g,' ').trim(),'Today Not received');
+ assert.equal(await genshin.locator('.bonus-today .status-mark').getAttribute('data-status'),'open');
+ assert.equal(await genshin.locator('.bonus-day').innerText(),'Day 12 this month');
+ assert.equal((await genshin.locator('.bonus-auto .switch').innerText()).trim(),'Auto');
+ assert.equal(await genshin.getByRole('switch',{name:'Genshin Impact · Automatic claiming',exact:true}).count(),1);
  await page.waitForLoadState('networkidle');
  const settingsReads=counts.get('/api/v1/reward-settings');
  await claim.click();await idle();

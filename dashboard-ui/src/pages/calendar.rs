@@ -1,13 +1,14 @@
 //! What the event calendar of one game says, shared by both events-page layouts
 //! (`event_timeline.rs` across, `event_list.rs` down): which items run or are announced,
 //! their countdowns, names, status and notices.
+use super::icons::{Icon, Status, StatusMark};
 use crate::app::display::{days_hours, error_text};
-use crate::app::preferences::Preferences;
+use crate::app::preferences::{Preferences, use_preferences};
 use crate::models::{CalendarFeatured, CalendarItem, GameCalendar};
 use dioxus::prelude::*;
 
-/// The rate-up line: 5-star items (or items without a rarity) with their icons, then the
-/// other names as quieter text.
+/// The rate-up line: 5-star items (or items without a rarity) with their official images,
+/// then the other names as quieter text.
 #[component]
 pub(super) fn FeaturedLine(item: CalendarItem) -> Element {
     let (main, minor) = featured_parts(&item);
@@ -46,7 +47,8 @@ fn featured_parts(item: &CalendarItem) -> (Vec<CalendarFeatured>, String) {
     (main, minor)
 }
 
-/// A rate-up item: the official icon when it loads, and its name as text either way.
+/// A rate-up item: the official image when it loads, and its name as text either way
+/// (`dashboard.css` sizes the image: larger in the list than on a timeline bar).
 #[component]
 fn FeaturedName(featured: CalendarFeatured) -> Element {
     let mut failed = use_signal(|| false);
@@ -54,7 +56,7 @@ fn FeaturedName(featured: CalendarFeatured) -> Element {
     rsx! {
         span { class: "featured",
             if let Some(icon) = featured.icon.clone().filter(|icon| !icon.is_empty() && !failed()) {
-                img { class: "featured-icon", src: icon, alt: "", width: "24", height: "24",
+                img { class: "featured-icon", src: icon, alt: "", width: "40", height: "40",
                     loading: "lazy", decoding: "async", referrerpolicy: "no-referrer",
                     onerror: move |_| failed.set(true),
                 }
@@ -190,79 +192,176 @@ impl Groups {
     }
 }
 
-/// "3 running", "1 upcoming", "2 with unknown period" and "next ends in 2d 3h" as parts
-/// that wrap as a whole; unknown ends are left out of the nearest end.
-pub(super) fn summary_parts(groups: &Groups, ui: Preferences) -> Vec<String> {
+/// One summary chip: a status symbol with a count or a duration, and the sentence it
+/// stands for (readers and the tooltip get the sentence).
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct Chip {
+    /// The `data-chip` value.
+    pub(super) name: &'static str,
+    pub(super) status: Status,
+    pub(super) text: String,
+    pub(super) label: String,
+}
+
+/// "3 running", "1 upcoming", "2 with unknown period" and "next ends in 2d 3h" as chips;
+/// unknown ends are left out of the nearest end.
+pub(super) fn summary_chips(groups: &Groups, ui: Preferences) -> Vec<Chip> {
+    let count = |name, status, count: usize, key| Chip {
+        name,
+        status,
+        text: count.to_string(),
+        label: ui.format(key, &[("count", &count.to_string())]),
+    };
     let running = groups.running().count();
-    let mut parts = vec![if running == 0 {
-        ui.text("calendar.summary_none").to_owned()
+    let mut chips = vec![if running == 0 {
+        Chip {
+            name: "running",
+            status: Status::Running,
+            text: "0".to_owned(),
+            label: ui.text("calendar.summary_none").to_owned(),
+        }
     } else {
-        ui.format(
+        count(
+            "running",
+            Status::Running,
+            running,
             "calendar.summary_running",
-            &[("count", &running.to_string())],
         )
     }];
     if !groups.upcoming.is_empty() {
-        parts.push(ui.format(
+        chips.push(count(
+            "upcoming",
+            Status::Upcoming,
+            groups.upcoming.len(),
             "calendar.summary_upcoming",
-            &[("count", &groups.upcoming.len().to_string())],
         ));
     }
     if !groups.undated.is_empty() {
-        parts.push(ui.format(
+        chips.push(count(
+            "undated",
+            Status::Unknown,
+            groups.undated.len(),
             "calendar.summary_undated",
-            &[("count", &groups.undated.len().to_string())],
         ));
     }
-    // The counts fit one line on a phone; the nearest end follows.
     let nearest = groups.running().filter_map(|timed| timed.since_end).max();
     if let Some(since) = nearest {
-        parts.push(ui.format(
-            "calendar.summary_next_end",
-            &[("duration", &days_hours(-since, ui))],
-        ));
+        let duration = days_hours(-since, ui);
+        chips.push(Chip {
+            name: "next-end",
+            status: Status::Waiting,
+            label: ui.format("calendar.summary_next_end", &[("duration", &duration)]),
+            text: duration,
+        });
     }
-    parts
+    chips
 }
 
-/// Time until an announced item starts, else until a running item ends, with the
-/// moment it counts down to.
-pub(super) fn countdown(timed: &Timed, ui: Preferences) -> Option<(String, Option<String>)> {
+/// The summary under the game heading: one chip per count, then the nearest end.
+#[component]
+pub(super) fn SummaryChips(groups: Groups) -> Element {
+    let ui = use_preferences();
+    rsx! {
+        ul { class: "event-chips",
+            for chip in summary_chips(&groups, ui) {
+                li { key: "{chip.name}", class: "event-chip", "data-chip": chip.name,
+                    StatusMark { status: chip.status, text: chip.text, label: chip.label }
+                }
+            }
+        }
+    }
+}
+
+/// A countdown as a status symbol with the time left: `sentence` says what it counts
+/// down to, `at` is that moment.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct Countdown {
+    pub(super) status: Status,
+    pub(super) duration: String,
+    pub(super) sentence: String,
+    pub(super) at: Option<String>,
+}
+
+/// Time until an announced item starts, else until a running item ends.
+pub(super) fn countdown(timed: &Timed, ui: Preferences) -> Option<Countdown> {
     if let Some(since) = timed.since_start.filter(|since| *since < 0) {
-        let text = ui.format(
-            "calendar.starts_in",
-            &[("duration", &days_hours(-since, ui))],
-        );
-        return Some((text, timed.item.starts_at.clone()));
+        let duration = days_hours(-since, ui);
+        return Some(Countdown {
+            status: Status::Upcoming,
+            sentence: ui.format("calendar.starts_in", &[("duration", &duration)]),
+            duration,
+            at: timed.item.starts_at.clone(),
+        });
     }
-    let since = timed.since_end?;
-    let text = ui.format("calendar.ends_in", &[("duration", &days_hours(-since, ui))]);
-    Some((text, timed.item.ends_at.clone()))
+    let duration = days_hours(-timed.since_end?, ui);
+    Some(Countdown {
+        status: Status::Waiting,
+        sentence: ui.format("calendar.ends_in", &[("duration", &duration)]),
+        duration,
+        at: timed.item.ends_at.clone(),
+    })
 }
 
-/// What the player did in an event, as reported; banners have no status.
-pub(super) fn status_text(item: &CalendarItem, ui: Preferences) -> Option<String> {
+/// What the player did in an event, as a status symbol with its word (or "2/5" for a
+/// progress, whose sentence is the label).
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct ItemStatus {
+    pub(super) status: Status,
+    pub(super) text: String,
+    pub(super) label: Option<String>,
+    /// Locked, or not completed and without a progress fraction: shown in the quiet tone.
+    pub(super) quiet: bool,
+}
+
+/// The reported status of an event; banners have none.
+pub(super) fn item_status(item: &CalendarItem, ui: Preferences) -> Option<ItemStatus> {
+    let word = |status, key, quiet| ItemStatus {
+        status,
+        text: ui.text(key).to_owned(),
+        label: None,
+        quiet,
+    };
     if item.locked == Some(true) {
-        return Some(ui.text("calendar.locked").to_owned());
+        return Some(word(Status::Locked, "calendar.locked", true));
     }
     if item.finished == Some(true) {
-        return Some(ui.text("calendar.finished").to_owned());
+        return Some(word(Status::Done, "calendar.finished", false));
     }
     if let (Some(current), Some(total)) = (item.progress, item.progress_total) {
-        return Some(ui.format(
-            "calendar.progress",
-            &[
-                ("current", &current.to_string()),
-                ("total", &total.to_string()),
-            ],
-        ));
+        let (current, total) = (current.to_string(), total.to_string());
+        return Some(ItemStatus {
+            status: Status::Open,
+            text: format!("{current}/{total}"),
+            label: Some(ui.format(
+                "calendar.progress",
+                &[("current", &current), ("total", &total)],
+            )),
+            quiet: false,
+        });
     }
-    (item.finished == Some(false)).then(|| ui.text("calendar.not_finished").to_owned())
+    (item.finished == Some(false)).then(|| word(Status::Open, "calendar.not_finished", true))
 }
 
-/// Whether the status is a quiet one (locked or not completed yet).
-pub(super) fn quiet_status(item: &CalendarItem) -> bool {
-    item.locked == Some(true) || item.finished == Some(false)
+/// The status of an event as its symbol and word; nothing for banners.
+#[component]
+pub(super) fn ItemStatusMark(item: CalendarItem, class: &'static str) -> Element {
+    let ui = use_preferences();
+    rsx! {
+        if let Some(status) = item_status(&item, ui) {
+            span { class, "data-quiet": status.quiet,
+                StatusMark { status: status.status, text: status.text, label: status.label }
+            }
+        }
+    }
+}
+
+/// The type symbol of a row: a ticket for wishes and warps, the calendar for events.
+pub(super) fn kind_icon(item: &CalendarItem) -> Icon {
+    if item.kind == "event" {
+        Icon::Calendar
+    } else {
+        Icon::Ticket
+    }
 }
 
 /// The shown name: upstream's, else the name of the kind.
@@ -365,13 +464,41 @@ mod tests {
         assert!(!Groups::from_items(&items[4..], |_| None).is_empty());
 
         let ui = Preferences::default();
+        // Each chip: its symbol, the short form on screen and the sentence for readers.
+        let chips = |groups: &Groups, ui| {
+            summary_chips(groups, ui)
+                .into_iter()
+                .map(|chip| (chip.name, chip.status, chip.text, chip.label))
+                .collect::<Vec<_>>()
+        };
+        let chip = |name, status, text: &str, label: &str| {
+            (name, status, text.to_owned(), label.to_owned())
+        };
         assert_eq!(
-            summary_parts(&groups, ui).join(" · "),
-            "開催中2件 · 開催予定1件 · 期間不明1件 · 次の終了まであと2時間00分"
+            chips(&groups, ui),
+            [
+                chip("running", Status::Running, "2", "開催中2件"),
+                chip("upcoming", Status::Upcoming, "1", "開催予定1件"),
+                chip("undated", Status::Unknown, "1", "期間不明1件"),
+                chip(
+                    "next-end",
+                    Status::Waiting,
+                    "2時間00分",
+                    "次の終了まであと2時間00分"
+                ),
+            ]
         );
         assert_eq!(
-            summary_parts(&groups, english()).join(" · "),
-            "2 running · 1 upcoming · 1 with unknown period · next ends in 2h 00m"
+            chips(&groups, english())
+                .into_iter()
+                .map(|(_, _, text, label)| format!("{text}={label}"))
+                .collect::<Vec<_>>(),
+            [
+                "2=2 running",
+                "1=1 upcoming",
+                "1=1 with unknown period",
+                "2h 00m=next ends in 2h 00m"
+            ]
         );
         // Running items without a known end leave the nearest end out.
         let open = Groups::from_items(
@@ -380,19 +507,33 @@ mod tests {
             )],
             |at| at.and_then(|at| at.parse().ok()),
         );
-        assert_eq!(summary_parts(&open, ui).join(" · "), "開催中1件");
-        let unknown = groups_of_unknown();
         assert_eq!(
-            summary_parts(&unknown, ui).join(" · "),
-            "開催中のイベントはありません · 期間不明1件"
+            chips(&open, ui),
+            [chip("running", Status::Running, "1", "開催中1件")]
+        );
+        // Nothing running still shows the running chip, as zero.
+        assert_eq!(
+            chips(&groups_of_unknown(), ui),
+            [
+                chip(
+                    "running",
+                    Status::Running,
+                    "0",
+                    "開催中のイベントはありません"
+                ),
+                chip("undated", Status::Unknown, "1", "期間不明1件"),
+            ]
         );
         let only_upcoming = Groups {
             upcoming: groups.upcoming.clone(),
             ..Groups::default()
         };
         assert_eq!(
-            summary_parts(&only_upcoming, ui).join(" · "),
-            "開催中のイベントはありません · 開催予定1件"
+            chips(&only_upcoming, ui)
+                .into_iter()
+                .map(|(name, ..)| name)
+                .collect::<Vec<_>>(),
+            ["running", "upcoming"]
         );
     }
 
@@ -409,48 +550,86 @@ mod tests {
         ]);
         assert_eq!(
             countdown(&groups.upcoming[0], ui),
-            Some(("開始まで1日1時間".to_owned(), Some("-90000".to_owned())))
+            Some(Countdown {
+                status: Status::Upcoming,
+                duration: "1日1時間".to_owned(),
+                sentence: "開始まで1日1時間".to_owned(),
+                at: Some("-90000".to_owned()),
+            })
         );
         assert_eq!(
             countdown(&groups.events[0], ui),
-            Some(("残り1時間30分".to_owned(), Some("-5400".to_owned())))
+            Some(Countdown {
+                status: Status::Waiting,
+                duration: "1時間30分".to_owned(),
+                sentence: "残り1時間30分".to_owned(),
+                at: Some("-5400".to_owned()),
+            })
         );
         assert_eq!(countdown(&groups_of_unknown().undated[0], ui), None);
+        let english = countdown(&groups.events[0], english()).unwrap();
         assert_eq!(
-            countdown(&groups.events[0], english()).unwrap().0,
-            "1h 30m left"
+            (english.duration.as_str(), english.sentence.as_str()),
+            ("1h 30m", "1h 30m left")
         );
     }
 
     #[test]
     fn status_shows_what_the_event_reports_and_banners_have_none() {
         let ui = Preferences::default();
-        let status = |value| status_text(&item(value), ui);
+        let status = |value| {
+            item_status(&item(value), ui)
+                .map(|status| (status.status, status.text, status.label, status.quiet))
+        };
         assert_eq!(
             status(serde_json::json!({"kind": "character_banner"})),
             None
         );
         assert_eq!(
-            status(serde_json::json!({"kind": "event", "locked": true, "finished": true})).unwrap(),
-            "未開放"
+            status(serde_json::json!({"kind": "event", "locked": true, "finished": true})),
+            Some((Status::Locked, "未開放".to_owned(), None, true))
         );
         assert_eq!(
-            status(serde_json::json!({"kind": "event", "finished": true, "progress": 1, "progress_total": 5})).unwrap(),
-            "完了"
+            status(
+                serde_json::json!({"kind": "event", "finished": true, "progress": 1, "progress_total": 5})
+            ),
+            Some((Status::Done, "完了".to_owned(), None, false))
+        );
+        // A progress shows the fraction; its sentence is the readers' label.
+        assert_eq!(
+            status(
+                serde_json::json!({"kind": "event", "finished": false, "progress": 2, "progress_total": 5})
+            ),
+            Some((
+                Status::Open,
+                "2/5".to_owned(),
+                Some("進捗 2/5".to_owned()),
+                false
+            ))
         );
         assert_eq!(
-            status(serde_json::json!({"kind": "event", "finished": false, "progress": 2, "progress_total": 5})).unwrap(),
-            "進捗 2/5"
-        );
-        assert_eq!(
-            status(serde_json::json!({"kind": "event", "finished": false})).unwrap(),
-            "未完了"
+            status(serde_json::json!({"kind": "event", "finished": false})),
+            Some((Status::Open, "未完了".to_owned(), None, true))
         );
         // A progress without its total is not shown as a fraction.
         assert_eq!(
             status(serde_json::json!({"kind": "event", "progress": 2})),
             None
         );
+    }
+
+    #[test]
+    fn rows_carry_a_ticket_for_wishes_and_warps_and_the_calendar_for_events() {
+        for (kind, icon) in [
+            ("character_banner", Icon::Ticket),
+            ("weapon_banner", Icon::Ticket),
+            ("chronicled_banner", Icon::Ticket),
+            ("light_cone_banner", Icon::Ticket),
+            ("future_kind", Icon::Ticket),
+            ("event", Icon::Calendar),
+        ] {
+            assert_eq!(kind_icon(&item(serde_json::json!({"kind": kind}))), icon);
+        }
     }
 
     #[test]
@@ -522,12 +701,6 @@ mod tests {
         );
         assert_eq!(groups.banners[0].start(1_000), Some(900));
         assert_eq!(groups.banners[0].end(1_000), Some(1_100));
-        assert!(quiet_status(&item(
-            serde_json::json!({"kind": "event", "finished": false})
-        )));
-        assert!(!quiet_status(&item(
-            serde_json::json!({"kind": "event", "finished": true})
-        )));
     }
 
     #[test]

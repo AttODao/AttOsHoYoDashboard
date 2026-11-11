@@ -1,6 +1,7 @@
 use super::app_server::ServerSetting;
-use super::common::{Field, Icon, PasswordInput};
+use super::common::{Field, PasswordInput};
 use super::hoyolab::CookieCard;
+use super::icons::{Glyph, Icon};
 use super::security::PasswordCard;
 use super::shell::{Header, Status};
 use crate::app::actions::{handle_api_error_for, spawn_action};
@@ -187,7 +188,7 @@ fn SetupStepItem(number: u8, label: &'static str, step: SetupStep) -> Element {
     rsx! {
         li { class: "setup-step {step.class()}", "aria-current": (step == SetupStep::Current).then_some("step"),
             span { class: "step-marker", "aria-hidden": "true",
-                if step == SetupStep::Done { Icon { name: "check" } } else { "{number}" }
+                if step == SetupStep::Done { Glyph { icon: Icon::Check } } else { "{number}" }
             }
             span { class: "step-label", "{label}" }
             if step == SetupStep::Done { span { class: "visually-hidden", {ui.text("auth.step_done")} } }

@@ -1,6 +1,6 @@
 //! App-only bottom navigation and head additions.
 
-use super::common::Icon;
+use super::icons::{Glyph, Icon};
 use crate::app::preferences::use_preferences;
 use crate::app::state::{AppState, Page, set_page};
 use dioxus::prelude::*;
@@ -61,13 +61,9 @@ pub(super) fn AppNav(state: Signal<AppState>, mut open: Signal<bool>) -> Element
                     onclick: move |_| set_page(state, entry.page()),
                     span { class: "app-nav-icon",
                         match entry {
-                            NavTarget::Dashboard => rsx! {
-                                svg { view_box: "0 0 24 24", "aria-hidden": "true", "focusable": "false",
-                                    path { d: "M3 10.5 12 3l9 7.5M5.5 9v11h5v-6h3v6h5V9" }
-                                }
-                            },
-                            NavTarget::Events => rsx! { Icon { name: "calendar" } },
-                            NavTarget::Settings => rsx! { Icon { name: "settings" } },
+                            NavTarget::Dashboard => rsx! { Glyph { icon: Icon::Home } },
+                            NavTarget::Events => rsx! { Glyph { icon: Icon::Calendar } },
+                            NavTarget::Settings => rsx! { Glyph { icon: Icon::Settings } },
                         }
                     }
                     span { class: "app-nav-label", {ui.text(entry.label())} }
@@ -76,7 +72,7 @@ pub(super) fn AppNav(state: Signal<AppState>, mut open: Signal<bool>) -> Element
             button { id: "ahd-app-menu-trigger", r#type: "button",
                 "aria-controls": "ahd-menu", "aria-haspopup": "dialog", "aria-expanded": open().to_string(),
                 onclick: move |_| open.set(true),
-                span { class: "app-nav-icon", Icon { name: "menu" } }
+                span { class: "app-nav-icon", Glyph { icon: Icon::Menu } }
                 span { class: "app-nav-label", {ui.text("shell.menu")} }
             }
         }

@@ -3,11 +3,12 @@
 //! the other. Narrow screens (<=900px) show one game panel at a time; wider screens show
 //! every panel and hide the tab bar (`dashboard.css`, `.game-tabs`).
 use super::common::{focus_element, game_name};
+use super::icons::{Glyph, Icon};
 use crate::app::preferences::use_preferences;
 use crate::app::state::{AppState, DASHBOARD_GAMES};
 use dioxus::prelude::*;
 
-/// The tab bar. Tabs are `{prefix}-tab-{game}` and control `{prefix}-panel-{game}`.
+/// The tab bar: each tab is the game's mark and name. Tabs are `{prefix}-tab-{game}` and control `{prefix}-panel-{game}`.
 #[component]
 pub(super) fn GameTabs(state: Signal<AppState>, prefix: &'static str) -> Element {
     let ui = use_preferences();
@@ -31,7 +32,8 @@ pub(super) fn GameTabs(state: Signal<AppState>, prefix: &'static str) -> Element
                             focus_element(&format!("{prefix}-tab-{next}"));
                         }
                     },
-                    {game_name(game, ui)}
+                    if let Some(mark) = Icon::game_mark(game) { Glyph { icon: mark, class: "game-mark" } }
+                    span { {game_name(game, ui)} }
                 }
             }
         }

@@ -2,10 +2,14 @@
 //! structure readers get on every width (visually hidden beside the wide timeline). "Now"
 //! heads the running items, which end soonest first; announced items follow under the date
 //! they start on, and items without any known period close the list in their own group.
+//! Each phase heading leads with its status symbol; each card with its type icon (a ticket
+//! for wishes and warps, the calendar for events), whose name is the readers' text.
 use super::calendar::{
-    FeaturedLine, Groups, Timed, countdown, display_name, kind_label, quiet_status, status_text,
+    FeaturedLine, Groups, ItemStatusMark, Timed, countdown, display_name, item_status, kind_icon,
+    kind_label,
 };
 use super::event_timeline::{LocalTime, day_text, iso};
+use super::icons::{Glyph, NamedIcon, Status, StatusMark};
 use crate::app::display::compact_datetime;
 use crate::app::preferences::use_preferences;
 use dioxus::prelude::*;
@@ -16,15 +20,18 @@ pub(super) fn EventList(groups: Groups, game: &'static str, local: LocalTime) ->
     let running = groups.running_by_end();
     let upcoming = start_days(local, groups.upcoming_by_start());
     let undated = groups.undated.clone();
-    let now = compact_datetime(Some(&iso(local.now))).unwrap_or_else(|| local.date_time(local.now));
     rsx! {
         div { class: "event-list",
             section { class: "event-phase", "data-phase": "running", "aria-labelledby": "events-running-{game}",
-                h3 { id: "events-running-{game}", {ui.text("calendar.running")} }
+                h3 { id: "events-running-{game}",
+                    Glyph { icon: Status::Running.icon() }
+                    {ui.text("calendar.running")}
+                }
+                // The short form; the tooltip keeps the time zone.
                 p { class: "event-node event-now",
                     span { class: "event-node-label", {ui.text("calendar.now")} }
                     " "
-                    time { datetime: iso(local.now), "{now}" }
+                    time { datetime: iso(local.now), title: compact_datetime(Some(&iso(local.now))), {local.date_time(local.now)} }
                 }
                 if running.is_empty() {
                     p { class: "event-none", {ui.text("calendar.summary_none")} }
@@ -38,7 +45,10 @@ pub(super) fn EventList(groups: Groups, game: &'static str, local: LocalTime) ->
             }
             if !upcoming.is_empty() {
                 section { class: "event-phase", "data-phase": "upcoming", "aria-labelledby": "events-upcoming-{game}",
-                    h3 { id: "events-upcoming-{game}", {ui.text("calendar.upcoming")} }
+                    h3 { id: "events-upcoming-{game}",
+                        Glyph { icon: Status::Upcoming.icon() }
+                        {ui.text("calendar.upcoming")}
+                    }
                     for (day, items) in upcoming {
                         div { key: "{day}", class: "event-day",
                             h4 { class: "event-node",
@@ -55,7 +65,10 @@ pub(super) fn EventList(groups: Groups, game: &'static str, local: LocalTime) ->
             }
             if !undated.is_empty() {
                 section { class: "event-phase", "data-phase": "undated", "aria-labelledby": "events-undated-{game}",
-                    h3 { id: "events-undated-{game}", {ui.text("calendar.undated")} }
+                    h3 { id: "events-undated-{game}",
+                        Glyph { icon: Status::Unknown.icon() }
+                        {ui.text("calendar.undated")}
+                    }
                     ol { class: "event-cards",
                         for (index, timed) in undated.into_iter().enumerate() {
                             EventCard { key: "undated-{index}", timed, game, local }
@@ -82,6 +95,8 @@ fn start_days(local: LocalTime, upcoming: Vec<Timed>) -> Vec<(i64, Vec<Timed>)> 
     days
 }
 
+/// One item: the type icon and its name, then the countdown with what the player did,
+/// the rate-up items and the period.
 #[component]
 fn EventCard(timed: Timed, game: &'static str, local: LocalTime) -> Element {
     let ui = use_preferences();
@@ -89,17 +104,23 @@ fn EventCard(timed: Timed, game: &'static str, local: LocalTime) -> Element {
     let start = timed.start(local.now);
     let end = timed.end(local.now);
     let left = countdown(&timed, ui);
-    let status = status_text(&timed.item, ui);
-    let quiet = quiet_status(&timed.item);
+    let has_meta = left.is_some() || item_status(&timed.item, ui).is_some();
     rsx! {
         li { class: "event-card", "data-kind": "{timed.item.kind}", "data-banner": !timed.is_event(),
             div { class: "calendar-head",
-                span { class: "event-kind", {kind_label(&timed.item, game, ui)} }
-                if let Some((left, at)) = left {
-                    time { class: "calendar-left", datetime: at.clone(), title: compact_datetime(at.as_deref()), "{left}" }
+                NamedIcon { icon: kind_icon(&timed.item), name: kind_label(&timed.item, game, ui), class: "event-kind" }
+                strong { class: "calendar-name", "{name}" }
+            }
+            if has_meta {
+                p { class: "event-meta",
+                    if let Some(left) = left {
+                        time { class: "calendar-left", datetime: left.at.clone(),
+                            StatusMark { status: left.status, text: left.duration, label: left.sentence }
+                        }
+                    }
+                    ItemStatusMark { item: timed.item.clone(), class: "calendar-status" }
                 }
             }
-            strong { class: "calendar-name", "{name}" }
             FeaturedLine { item: timed.item.clone() }
             // An undated item sits under the "period unknown" heading instead of a bare dash.
             if start.is_some() || end.is_some() {
@@ -112,9 +133,6 @@ fn EventCard(timed: Timed, game: &'static str, local: LocalTime) -> Element {
                         time { datetime: iso(end), {local.date_time(end)} }
                     }
                 }
-            }
-            if let Some(status) = status {
-                p { class: if quiet { "calendar-status quiet" } else { "calendar-status" }, "{status}" }
             }
         }
     }
