@@ -32,6 +32,19 @@ fn zone_label(offset_minutes: i32) -> String {
     }
 }
 
+/// Local calendar days from today, "HH:MM" and "MM/DD" in device time.
+pub(crate) fn local_moment(value: &str) -> Option<(i64, String, String)> {
+    let local = DateTime::parse_from_rfc3339(value.trim())
+        .ok()?
+        .with_timezone(&Local);
+    let days = (local.date_naive() - Local::now().date_naive()).num_days();
+    Some((
+        days,
+        local.format("%H:%M").to_string(),
+        local.format("%m/%d").to_string(),
+    ))
+}
+
 /// Whole seconds since an RFC 3339 timestamp by the device clock.
 pub(crate) fn seconds_since(value: &str) -> Option<i64> {
     let then = DateTime::parse_from_rfc3339(value.trim()).ok()?;
@@ -57,5 +70,10 @@ mod tests {
         assert!(compact_datetime("2026-10-27T07:16:00.123+09:00").is_some());
         assert!(compact_datetime("yesterday").is_none());
         assert!(seconds_since("2000-01-01T00:00:00Z").is_some_and(|s| s > 0));
+        let (days, clock, month_day) = local_moment("2000-01-01T12:00:00Z").unwrap();
+        assert!(days < -9000);
+        assert_eq!((clock.len(), month_day.len()), (5, 5));
+        assert_eq!(local_moment(&Utc::now().to_rfc3339()).unwrap().0, 0);
+        assert!(local_moment("soon").is_none());
     }
 }

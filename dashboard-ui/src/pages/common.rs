@@ -1,4 +1,4 @@
-use super::icons::{Glyph, Icon};
+use super::icons::{Glyph, Icon, Status};
 use crate::app::actions::spawn_root;
 use crate::app::data::load_page_data;
 use crate::app::preferences::{Preferences, use_preferences};
@@ -62,6 +62,30 @@ pub(super) fn LoadError(state: Signal<AppState>, message: &'static str) -> Eleme
                 let page = state.read().page;
                 spawn_root(async move { load_page_data(state, page).await; });
             }, {ui.text("common.retry")} }
+        }
+    }
+}
+
+/// A section that is still loading: the loading symbol with its word.
+#[component]
+pub(super) fn LoadingLine() -> Element {
+    let ui = use_preferences();
+    rsx! {
+        p { class: "state-line", role: "status", "data-status": Status::Loading.name(),
+            Glyph { icon: Status::Loading.icon(), class: "spin" }
+            span { {ui.text("dashboard.loading")} }
+        }
+    }
+}
+
+/// A warning inside a card, led by its status symbol: `Status::Failed` when nothing could
+/// be fetched, `Status::Warn` when the shown data is outdated.
+#[component]
+pub(super) fn WarningLine(status: Status, text: String) -> Element {
+    rsx! {
+        p { class: "warning warning-line", role: "status", "data-status": status.name(),
+            Glyph { icon: status.icon() }
+            span { "{text}" }
         }
     }
 }

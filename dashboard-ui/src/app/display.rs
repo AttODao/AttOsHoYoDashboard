@@ -1,12 +1,5 @@
 use super::preferences::Preferences;
 
-pub(super) fn count_pair(current: i64, max: Option<i64>) -> String {
-    match max {
-        Some(max) => format!("{current}/{max}"),
-        None => current.to_string(),
-    }
-}
-
 /// Remaining seconds as hours and minutes, rounding up so unfinished work never shows zero.
 pub(super) fn hours_minutes(seconds: i64, ui: Preferences) -> String {
     let minutes = seconds.max(0).unsigned_abs().div_ceil(60);
@@ -159,6 +152,67 @@ pub(super) fn compact_datetime(value: Option<&str>) -> Option<String> {
     }
 }
 
+/// A moment in browser-local time, split for the short forms on the dashboard cards.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct LocalMoment {
+    /// Local calendar days from today: 0 today, 1 tomorrow, negative in the past.
+    pub day_offset: i64,
+    /// 24-hour "HH:MM".
+    pub clock: String,
+    /// "MM/DD".
+    pub month_day: String,
+}
+
+pub(super) fn local_moment(value: Option<&str>) -> Option<LocalMoment> {
+    let value = value.filter(|value| !value.trim().is_empty())?;
+    #[cfg(target_arch = "wasm32")]
+    {
+        let date = js_sys::Date::new(&wasm_bindgen::JsValue::from_str(value));
+        if !date.get_time().is_finite() {
+            return None;
+        }
+        // Local midnights, so the difference counts calendar days across DST changes too.
+        let midnight = |date: &js_sys::Date| {
+            js_sys::Date::new_with_year_month_day(
+                date.get_full_year(),
+                date.get_month() as i32,
+                date.get_date() as i32,
+            )
+            .get_time()
+        };
+        let days = (midnight(&date) - midnight(&js_sys::Date::new_0())) / 86_400_000.0;
+        Some(LocalMoment {
+            day_offset: days.round() as i64,
+            clock: format!("{:02}:{:02}", date.get_hours(), date.get_minutes()),
+            month_day: format!("{:02}/{:02}", date.get_month() + 1, date.get_date()),
+        })
+    }
+    #[cfg(feature = "mobile")]
+    {
+        let (day_offset, clock, month_day) = crate::mobile::time::local_moment(value)?;
+        Some(LocalMoment {
+            day_offset,
+            clock,
+            month_day,
+        })
+    }
+    #[cfg(not(any(target_arch = "wasm32", feature = "mobile")))]
+    {
+        let _ = value;
+        None
+    }
+}
+
+/// The short time on a card: the clock alone today, "tomorrow 13:14" the next day, and
+/// month/day with the clock otherwise. The full datetime with its zone stays in the tooltip.
+pub(super) fn short_time(moment: &LocalMoment, ui: Preferences) -> String {
+    match moment.day_offset {
+        0 => moment.clock.clone(),
+        1 => ui.format("time.tomorrow", &[("time", &moment.clock)]),
+        _ => format!("{} {}", moment.month_day, moment.clock),
+    }
+}
+
 /// Compact local datetime for display, or the shared "not fetched" placeholder.
 /// Absent and unparseable values never fall back to the raw ISO string.
 pub(super) fn datetime_text(value: Option<&str>, ui: Preferences) -> String {
@@ -240,6 +294,28 @@ mod tests {
         assert_eq!(fill_level(Some(179), Some(200)), "");
         assert_eq!(fill_level(Some(5), None), "");
         assert_eq!(fill_level(Some(0), Some(0)), "");
+    }
+
+    #[test]
+    fn card_times_shorten_by_how_far_the_day_is() {
+        let ui = Preferences::default();
+        let moment = |day_offset| LocalMoment {
+            day_offset,
+            clock: "13:14".to_owned(),
+            month_day: "11/12".to_owned(),
+        };
+        assert_eq!(short_time(&moment(0), ui), "13:14");
+        assert_eq!(short_time(&moment(1), ui), "明日 13:14");
+        assert_eq!(short_time(&moment(2), ui), "11/12 13:14");
+        assert_eq!(short_time(&moment(-1), ui), "11/12 13:14");
+        let english = Preferences {
+            language: crate::i18n::Language::English,
+            ..ui
+        };
+        assert_eq!(short_time(&moment(1), english), "tomorrow 13:14");
+        // Native builds have no local clock; nothing is invented.
+        assert_eq!(local_moment(Some("2026-11-12T04:14:00Z")), None);
+        assert_eq!(local_moment(None), None);
     }
 
     #[test]
@@ -343,12 +419,5 @@ mod tests {
             ..ui
         };
         assert_eq!(hours_minutes(3_723, english), "1h 03m");
-    }
-
-    #[test]
-    fn known_values_do_not_invent_a_missing_maximum() {
-        assert_eq!(count_pair(2, Some(5)), "2/5");
-        assert_eq!(count_pair(2, None), "2");
-        assert_eq!(count_pair(0, None), "0");
     }
 }

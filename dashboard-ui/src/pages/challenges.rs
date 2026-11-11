@@ -1,14 +1,17 @@
-use super::common::{pending, refresh_problem};
-use super::dashboard::{Freshness, use_clock};
+use super::common::{LoadingLine, WarningLine, pending, refresh_problem};
+use super::dashboard::use_clock;
+use super::icons::{Glyph, Icon, NamedIcon, Status, StatusMark};
 use crate::app::display::{compact_datetime, days_hours, error_text, seconds_since};
 use crate::app::preferences::{Preferences, use_preferences};
 use crate::app::state::AppState;
 use crate::models::{ChallengeMode, GameChallenges};
 use dioxus::prelude::*;
 
-/// Endgame summary of the selected UID: each mode's current progress and the time
-/// until its period resets. Hidden until the game has a selected UID (the status
-/// section above explains how to choose one).
+/// Endgame summary of the selected UID as one tile per mode: the mode's icon and name,
+/// the stars or medals reached, how far, and the time until its period resets. The
+/// section heading is for screen readers; when the records were fetched is in the card's
+/// details. Hidden until the game has a selected UID (the status section above explains
+/// how to choose one).
 #[component]
 pub(super) fn ChallengeSection(state: Signal<AppState>, game: &'static str) -> Element {
     let ui = use_preferences();
@@ -42,20 +45,18 @@ pub(super) fn ChallengeSection(state: Signal<AppState>, game: &'static str) -> E
     }
     rsx! {
         section { class: "challenge-section", id: "challenges-{game}", "aria-labelledby": "challenge-title-{game}",
-            h3 { id: "challenge-title-{game}", {ui.text("challenges.title")} }
+            h3 { class: "visually-hidden", id: "challenge-title-{game}", {ui.text("challenges.title")} }
             if let Some(key) = selection.challenges_error {
-                p { class: "warning", role: "status", {ui.text(refresh_problem(key, challenges.is_some(), "challenges.fetch_failed"))} }
-            }
-            div { "aria-busy": loading,
-                if let Some(challenges) = challenges.clone() {
-                    ChallengeList { challenges }
-                } else if loading {
-                    p { role: "status", {ui.text("dashboard.loading")} }
+                WarningLine {
+                    status: if challenges.is_some() { Status::Warn } else { Status::Failed },
+                    text: ui.text(refresh_problem(key, challenges.is_some(), "challenges.fetch_failed")),
                 }
             }
-            if let Some(challenges) = challenges {
-                div { class: "refresh-row",
-                    Freshness { fetched_at: challenges.fetched_at.clone(), stale: challenges.stale }
+            div { "aria-busy": loading,
+                if let Some(challenges) = challenges {
+                    ChallengeList { challenges }
+                } else if loading {
+                    LoadingLine {}
                 }
             }
         }
@@ -66,17 +67,18 @@ pub(super) fn ChallengeSection(state: Signal<AppState>, game: &'static str) -> E
 fn ChallengeList(challenges: GameChallenges) -> Element {
     let ui = use_preferences();
     let notice = challenge_notice(&challenges, ui);
+    let failed = challenges.modes.is_none();
     rsx! {
         if let Some(notice) = notice {
-            p { class: "warning", role: "status", {notice} }
+            WarningLine { status: if failed { Status::Failed } else { Status::Warn }, text: notice }
         }
         if let Some(modes) = challenges.modes {
             if modes.is_empty() {
-                p { {ui.text("challenges.no_modes")} }
+                p { class: "quiet-line", {ui.text("challenges.no_modes")} }
             }
-            ul { class: "challenge-list",
+            ul { class: "tiles challenge-list",
                 for mode in modes {
-                    ChallengeRow { key: "{mode.mode}", mode }
+                    ChallengeTile { key: "{mode.mode}", mode }
                 }
             }
         }
@@ -84,29 +86,51 @@ fn ChallengeList(challenges: GameChallenges) -> Element {
 }
 
 #[component]
-fn ChallengeRow(mode: ChallengeMode) -> Element {
+fn ChallengeTile(mode: ChallengeMode) -> Element {
     let ui = use_preferences();
     let clock = use_clock();
     let _ = clock();
-    let reset = reset_text(seconds_since(mode.ends_at.as_deref()), ui);
-    let progress = progress_text(&mode, ui);
-    let quiet =
-        mode.error_code.is_some() || mode.unlocked == Some(false) || mode.has_data == Some(false);
+    let reset = seconds_since(mode.ends_at.as_deref());
+    let progress = progress(&mode, ui);
     rsx! {
-        li { class: "challenge", "data-mode": "{mode.mode}",
-            div { class: "challenge-head",
-                strong { class: "challenge-name", {mode_name(&mode.mode, ui)} }
-                if let Some(reset) = reset {
-                    time {
-                        class: "challenge-reset", datetime: mode.ends_at.clone(),
-                        title: compact_datetime(mode.ends_at.as_deref()),
-                        "{reset}"
+        li { class: "tile challenge", "data-mode": "{mode.mode}",
+            p { class: "tile-h",
+                Glyph { icon: mode_icon(&mode.mode) }
+                span { class: "challenge-name", {mode_name(&mode.mode, ui)} }
+            }
+            match progress {
+                Progress::Quiet(status, text) => rsx! {
+                    p { class: "tile-v quiet challenge-progress", StatusMark { status, text } }
+                },
+                Progress::Reached { score, detail, spoken } => {
+                    // Without a score the detail is the tile's value, not a footnote.
+                    let detail_class = if score.is_some() { "tile-sub challenge-progress" } else { "tile-v tile-text challenge-progress" };
+                    rsx! {
+                        if let Some((icon, name, count)) = score {
+                            p { class: "tile-v challenge-score",
+                                NamedIcon { icon, name }
+                                strong { "{count}" }
+                            }
+                        }
+                        if !detail.is_empty() {
+                            p { class: detail_class,
+                                span { class: "visually-hidden", "{spoken}" }
+                                span { "aria-hidden": "true", "{detail}" }
+                            }
+                        }
                     }
                 }
             }
-            p { class: if quiet { "challenge-progress quiet" } else { "challenge-progress" }, "{progress}" }
-            if let Some(name) = mode.name.clone() {
-                p { class: "challenge-period", "{name}" }
+            if let Some(elapsed) = reset {
+                time { class: "tile-r challenge-reset", datetime: mode.ends_at.clone(), title: compact_datetime(mode.ends_at.as_deref()),
+                    if elapsed >= 0 {
+                        {ui.text("challenges.period_ended")}
+                    } else {
+                        Glyph { icon: Icon::Hourglass }
+                        span { class: "visually-hidden", {ui.format("challenges.resets_in", &[("duration", &days_hours(-elapsed, ui))])} }
+                        span { "aria-hidden": "true", {days_hours(-elapsed, ui)} }
+                    }
+                }
             }
         }
     }
@@ -125,57 +149,78 @@ fn mode_name(mode: &str, ui: Preferences) -> &'static str {
     })
 }
 
-/// What the player reached this period, as reported; unknown values are left out.
-fn progress_text(mode: &ChallengeMode, ui: Preferences) -> String {
-    if mode.error_code.is_some() {
-        return ui.text("challenges.mode_unavailable").to_owned();
-    }
-    if mode.unlocked == Some(false) {
-        return ui.text("challenges.locked").to_owned();
-    }
-    if mode.has_data == Some(false) {
-        return ui.text("challenges.not_attempted").to_owned();
-    }
-    let count = |key: &str, name: &str, value: i64| ui.format(key, &[(name, &value.to_string())]);
-    let mut parts = Vec::new();
-    if let Some(round) = mode.max_round {
-        parts.push(count("challenges.act", "round", round));
-    }
-    if let Some(level) = mode.difficulty {
-        parts.push(count("challenges.difficulty", "level", level));
-    }
-    if let Some(stars) = mode.stars {
-        let key = if mode.mode == "imaginarium_theater" {
-            "challenges.medals"
-        } else {
-            "challenges.stars"
-        };
-        parts.push(count(key, "count", stars));
-    }
-    if let Some(floor) = &mode.max_floor {
-        parts.push(ui.format("challenges.reached", &[("floor", floor)]));
-    }
-    if let Some(seconds) = mode.best_seconds {
-        parts.push(count("challenges.clear_time", "seconds", seconds));
-    }
-    if parts.is_empty() {
-        ui.text("dashboard.unknown").to_owned()
-    } else {
-        parts.join(" · ")
+fn mode_icon(mode: &str) -> Icon {
+    match mode {
+        "spiral_abyss" | "memory_of_chaos" => Icon::Spiral,
+        "imaginarium_theater" => Icon::Curtain,
+        "stygian_onslaught" => Icon::Swords,
+        "pure_fiction" => Icon::Book,
+        "apocalyptic_shadow" => Icon::Eclipse,
+        "anomaly_arbitration" => Icon::Scales,
+        _ => Icon::Unknown,
     }
 }
 
-/// Time left in the period from the seconds elapsed since its end (negative while running).
-fn reset_text(elapsed_since_end: Option<i64>, ui: Preferences) -> Option<String> {
-    let elapsed = elapsed_since_end?;
-    Some(if elapsed >= 0 {
-        ui.text("challenges.period_ended").to_owned()
-    } else {
-        ui.format(
-            "challenges.resets_in",
-            &[("duration", &days_hours(-elapsed, ui))],
-        )
-    })
+/// What a mode's tile shows below its name.
+#[derive(Clone, Debug, PartialEq)]
+enum Progress {
+    /// Nothing reached to show: a status symbol with its word, in the quiet tone.
+    Quiet(Status, String),
+    /// What the player reached this period, as reported; unknown values are left out.
+    Reached {
+        /// Stars or medals: the icon, its accessible name and the count.
+        score: Option<(Icon, String, i64)>,
+        /// The rest in its short visual form, e.g. "12-3" or "Act 8 · Difficulty 4".
+        detail: String,
+        /// The same with its words, for screen readers, e.g. "Reached 12-3".
+        spoken: String,
+    },
+}
+
+fn progress(mode: &ChallengeMode, ui: Preferences) -> Progress {
+    let quiet = |status, key| Progress::Quiet(status, ui.text(key).to_owned());
+    if mode.error_code.is_some() {
+        return quiet(Status::Failed, "challenges.mode_unavailable");
+    }
+    if mode.unlocked == Some(false) {
+        return quiet(Status::Locked, "challenges.locked");
+    }
+    if mode.has_data == Some(false) {
+        return quiet(Status::Open, "challenges.not_attempted");
+    }
+    let count = |key: &str, name: &str, value: i64| ui.format(key, &[(name, &value.to_string())]);
+    let score = mode.stars.map(|stars| {
+        if mode.mode == "imaginarium_theater" {
+            (Icon::Medal, ui.text("challenges.medals").to_owned(), stars)
+        } else {
+            (Icon::Star, ui.text("challenges.stars").to_owned(), stars)
+        }
+    });
+    let (mut detail, mut spoken) = (Vec::new(), Vec::new());
+    if let Some(round) = mode.max_round {
+        detail.push(count("challenges.act", "round", round));
+    }
+    if let Some(level) = mode.difficulty {
+        detail.push(count("challenges.difficulty", "level", level));
+    }
+    spoken.clone_from(&detail);
+    if let Some(floor) = &mode.max_floor {
+        detail.push(floor.clone());
+        spoken.push(ui.format("challenges.reached", &[("floor", floor)]));
+    }
+    if let Some(seconds) = mode.best_seconds {
+        let time = count("challenges.clear_time", "seconds", seconds);
+        detail.push(time.clone());
+        spoken.push(time);
+    }
+    if score.is_none() && detail.is_empty() {
+        return quiet(Status::Unknown, "dashboard.unknown");
+    }
+    Progress::Reached {
+        score,
+        detail: detail.join(" · "),
+        spoken: spoken.join(" · "),
+    }
 }
 
 /// A failed fetch without a summary says only that; an outdated summary says why.
@@ -209,73 +254,84 @@ mod tests {
     #[test]
     fn progress_shows_what_each_mode_reports_and_never_invents_values() {
         let ui = Preferences::default();
+        let reached =
+            |score: Option<(Icon, &str, i64)>, detail: &str, spoken: &str| Progress::Reached {
+                score: score.map(|(icon, name, count)| (icon, name.to_owned(), count)),
+                detail: detail.to_owned(),
+                spoken: spoken.to_owned(),
+            };
         assert_eq!(
-            progress_text(
+            progress(
                 &mode(
                     serde_json::json!({"mode": "spiral_abyss", "stars": 33, "max_floor": "12-3"})
                 ),
                 ui
             ),
-            "星33 · 到達 12-3"
+            reached(Some((Icon::Star, "星", 33)), "12-3", "到達 12-3")
         );
         assert_eq!(
-            progress_text(
+            progress(
                 &mode(
                     serde_json::json!({"mode": "imaginarium_theater", "max_round": 8, "difficulty": 4, "stars": 6})
                 ),
                 ui
             ),
-            "第8幕 · 難易度4 · 勲章6"
+            reached(
+                Some((Icon::Medal, "勲章", 6)),
+                "第8幕 · 難易度4",
+                "第8幕 · 難易度4"
+            )
         );
+        // No stars reported: no score symbol, and no zero in its place.
         assert_eq!(
-            progress_text(
+            progress(
                 &mode(
                     serde_json::json!({"mode": "stygian_onslaught", "difficulty": 5, "best_seconds": 112})
                 ),
                 ui
             ),
-            "難易度5 · 112秒"
+            reached(None, "難易度5 · 112秒", "難易度5 · 112秒")
         );
-        // Unknown fields stay out; nothing at all reads as unknown, not as zero.
+        // Nothing at all reads as unknown, not as zero.
         assert_eq!(
-            progress_text(&mode(serde_json::json!({"mode": "pure_fiction"})), ui),
-            "不明"
+            progress(&mode(serde_json::json!({"mode": "pure_fiction"})), ui),
+            Progress::Quiet(Status::Unknown, "不明".to_owned())
         );
         assert_eq!(
-            progress_text(
+            progress(
                 &mode(
                     serde_json::json!({"mode": "memory_of_chaos", "has_data": false, "stars": 0})
                 ),
                 ui
             ),
-            "未挑戦"
+            Progress::Quiet(Status::Open, "未挑戦".to_owned())
         );
         assert_eq!(
-            progress_text(
+            progress(
                 &mode(serde_json::json!({"mode": "imaginarium_theater", "unlocked": false})),
                 ui
             ),
-            "未開放"
+            Progress::Quiet(Status::Locked, "未開放".to_owned())
         );
         assert_eq!(
-            progress_text(
+            progress(
                 &mode(
                     serde_json::json!({"mode": "apocalyptic_shadow", "error_code": "network", "stars": 3})
                 ),
                 ui
             ),
-            "取得できませんでした"
+            Progress::Quiet(Status::Failed, "取得失敗".to_owned())
         );
         let english = Preferences {
             language: Language::English,
             ..ui
         };
         assert_eq!(
-            progress_text(
+            progress(
                 &mode(serde_json::json!({"mode": "anomaly_arbitration", "stars": 11})),
                 english
             ),
-            "11 stars"
+            reached(Some((Icon::Star, "Stars", 11)), "", "")
         );
     }
 
@@ -297,27 +353,15 @@ mod tests {
     }
 
     #[test]
-    fn reset_counts_down_in_days_then_says_the_period_ended() {
-        let ui = Preferences::default();
-        assert_eq!(reset_text(None, ui), None);
-        assert_eq!(
-            reset_text(Some(-(5 * 86_400 + 3 * 3600)), ui).unwrap(),
-            "リセットまで5日3時間"
-        );
-        assert_eq!(
-            reset_text(Some(-(2 * 3600 + 30 * 60)), ui).unwrap(),
-            "リセットまで2時間30分"
-        );
-        assert_eq!(reset_text(Some(0), ui).unwrap(), "期間終了");
-        assert_eq!(reset_text(Some(90), ui).unwrap(), "期間終了");
-        let english = Preferences {
-            language: Language::English,
-            ..ui
-        };
-        assert_eq!(
-            reset_text(Some(-(5 * 86_400 + 3 * 3600)), english).unwrap(),
-            "Resets in 5d 3h"
-        );
+    fn every_mode_has_an_icon_and_the_paired_modes_share_one() {
+        assert_eq!(mode_icon("spiral_abyss"), Icon::Spiral);
+        assert_eq!(mode_icon("memory_of_chaos"), Icon::Spiral);
+        assert_eq!(mode_icon("imaginarium_theater"), Icon::Curtain);
+        assert_eq!(mode_icon("stygian_onslaught"), Icon::Swords);
+        assert_eq!(mode_icon("pure_fiction"), Icon::Book);
+        assert_eq!(mode_icon("apocalyptic_shadow"), Icon::Eclipse);
+        assert_eq!(mode_icon("anomaly_arbitration"), Icon::Scales);
+        assert_eq!(mode_icon("future_mode"), Icon::Unknown);
     }
 
     #[test]

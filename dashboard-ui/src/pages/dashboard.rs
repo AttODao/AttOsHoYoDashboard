@@ -1,20 +1,24 @@
 use super::cap_history::CapHistory;
 use super::challenges::ChallengeSection;
-use super::common::{LoadError, Metric, game_name, pending, refresh_problem};
+use super::common::{
+    LoadError, LoadingLine, Metric, WarningLine, game_name, pending, refresh_problem,
+};
+use super::expeditions::ExpeditionList;
 use super::game_tabs::{GameTabs, game_index, select_game_index, use_narrow_games};
-use super::icons::{Glyph, Icon};
+use super::icons::{Glyph, Icon, Status, StatusMark};
 use super::rewards::AutomationSwitch;
+use super::status_tiles::{GenshinTiles, StarRailTiles};
 use super::swipe_tabs::SwipeableTabs;
 use crate::app::actions::spawn_root;
 use crate::app::data::{RunAll, load_game, run_all_targets, run_rewards_now};
 use crate::app::display::{
-    compact_datetime, count_pair, data_age, datetime_text, days_hours, error_text, fill_level,
-    hours_minutes, relative_age, seconds_since,
+    compact_datetime, data_age, datetime_text, error_text, fill_level, hours_minutes, local_moment,
+    relative_age, seconds_since, short_time,
 };
 use crate::app::preferences::{Preferences, use_preferences};
 use crate::app::state::{AppState, DASHBOARD_GAMES, Page, set_page};
 use crate::models::{
-    DailyAward, DailySummary, Expedition, GameStatus, ResourceHistory, RewardSetting,
+    DailyAward, DailySummary, GameChallenges, GameStatus, ResourceHistory, RewardSetting,
 };
 use dioxus::prelude::*;
 use uuid::Uuid;
@@ -70,34 +74,36 @@ fn ClaimNow(state: Signal<AppState>) -> Element {
         RunAll::Ready(_) => None,
         RunAll::Blocked(key) => Some(*key),
     };
-    // "All claimed" already says it for every game.
-    let summarize = loaded && !today.is_empty() && blocked != Some("rewards.all_claimed_today");
     rsx! {
         div { class: "claim-now",
+            // Today's claim per game beside the control that claims it; the bonus section at
+            // the bottom of each card keeps the details.
+            if loaded && !today.is_empty() {
+                ul { class: "claim-chips", id: "claim-summary", "aria-label": ui.text("dashboard.today_s_bonus"),
+                    for (game, signed) in today {
+                        li { class: "claim-chip {game}", "data-game": game, "data-state": claim_tone(signed),
+                            if let Some(mark) = Icon::game_mark(game) { Glyph { icon: mark, class: "game-mark" } }
+                            span { class: "visually-hidden", {game_name(game, ui)} " " }
+                            StatusMark { status: claim_status(signed), text: received(signed, ui) }
+                        }
+                    }
+                }
+            }
             button {
                 r#type: "button", class: "primary", id: "claim-now",
                 disabled: blocked.is_some() || !loaded,
                 "aria-describedby": blocked.map(|_| "claim-now-hint"),
                 onclick: move |_| run_rewards_now(state, Page::Dashboard),
-                {ui.text("rewards.claim_now")}
+                Glyph { icon: Icon::Gift }
+                span { {ui.text("rewards.claim_now")} }
+                span { class: "visually-hidden", {ui.text("rewards.claim_now_suffix")} }
             }
             if following {
                 p { class: "field-hint", role: "status", {ui.text("rewards.checking_automatically")} }
             } else if let Some(key) = blocked.filter(|_| loaded) {
-                p { id: "claim-now-hint", class: "field-hint", {ui.text(key)} }
-            }
-            // Today's claim per game beside the control that claims it; the bonus section at
-            // the bottom of each card keeps the details.
-            if summarize {
-                p { class: "claim-summary", id: "claim-summary",
-                    span { class: "claim-summary-label", {ui.text("dashboard.today_s_reward")} }
-                    for (game, signed) in today {
-                        span { class: "run-state claim-summary-game {claim_tone(signed)}", "data-game": game,
-                            span { class: "visually-hidden", " · " }
-                            {game_name(game, ui)} " " strong { {received(signed, ui)} }
-                        }
-                    }
-                }
+                // The chips already show that every game is claimed; that reason stays as
+                // the button's description only.
+                p { id: "claim-now-hint", class: if key == "rewards.all_claimed_today" { "visually-hidden" } else { "field-hint" }, {ui.text(key)} }
             }
         }
     }
@@ -116,6 +122,15 @@ fn claim_summary(settings: &[RewardSetting]) -> Vec<(&'static str, Option<bool>)
         .collect()
 }
 
+/// The symbol of a claim state: claimed, still open, or unknown.
+fn claim_status(signed: Option<bool>) -> Status {
+    match signed {
+        Some(true) => Status::Done,
+        Some(false) => Status::Open,
+        None => Status::Unknown,
+    }
+}
+
 /// The status colour of a claim state: claimed, still open, or unknown.
 fn claim_tone(signed: Option<bool>) -> &'static str {
     match signed {
@@ -125,9 +140,10 @@ fn claim_tone(signed: Option<bool>) -> &'static str {
     }
 }
 
-/// Card order puts what players check first at the top: UID, then the primary
-/// resource with its full-recovery estimate and its time at cap over 7 days, other stats, the endgame summary,
-/// the login bonus, and the collapsed fetch details last. Events and banners are not tied to
+/// Card order puts what players check first at the top: the game mark and name with the
+/// age of the data, the UID, the primary resource with its full-recovery estimate and its
+/// time at cap over 7 days, the icon tiles, expeditions, the endgame tiles, the login
+/// bonus, and the one collapsed details block last. Events and banners are not tied to
 /// a UID and live on the events page (`events.rs`).
 #[component]
 fn GamePanel(state: Signal<AppState>, game: &'static str, active: bool, mobile: bool) -> Element {
@@ -140,18 +156,19 @@ fn GamePanel(state: Signal<AppState>, game: &'static str, active: bool, mobile: 
             "data-selected": active, hidden: mobile && !active,
             tabindex: if mobile { "0" } else { "-1" },
             // The age of the shown status sits beside the control that renews it.
-            div { class: "game-heading",
-                div { class: "game-heading-text",
-                    h2 { class: "game-title", id: "game-title-{game}", {game_name(game, ui)} }
-                    StatusFreshness { state, game }
+            div { class: "game-heading card-heading",
+                h2 { class: "game-title", id: "game-title-{game}",
+                    if let Some(mark) = Icon::game_mark(game) { Glyph { icon: mark, class: "game-mark" } }
+                    span { {game_name(game, ui)} }
                 }
+                StatusFreshness { state, game }
                 // The app refreshes by pulling the dashboard down instead.
                 if !crate::platform::APP { RefreshButton { state, game } }
             }
             GameStatusSection { state, game }
             ChallengeSection { state, game }
             BonusSection { state, game }
-            StatusDetails { state, game }
+            CardDetails { state, game }
         }
     }
 }
@@ -197,44 +214,55 @@ fn GameStatusSection(mut state: Signal<AppState>, game: &'static str) -> Element
     rsx! {
         if !accounts_loaded {
             // A failed first load shows the page-level warning instead.
-            if !accounts_failed { p { role: "status", {ui.text("dashboard.loading")} } }
+            if !accounts_failed { LoadingLine {} }
         } else if visible.is_empty() {
             div { class: "empty",
                 h3 { {ui.text("dashboard.no_visible_uids")} }
                 button { r#type: "button", onclick: move |_| set_page(state, Page::Uids), {ui.text("dashboard.choose_uids")} }
             }
         } else {
-            label { class: "uid-select", r#for: "selected-{game}",
-                span { {ui.text("dashboard.selected_uid")} }
-                select {
-                    id: "selected-{game}", value: selected.map(|id| id.to_string()).unwrap_or_default(),
-                    onchange: move |event| {
-                        if let Ok(id) = event.value().parse::<Uuid>() {
-                            state.write().select_game_account(game, Some(id));
-                            spawn_root(async move { load_game(state, game).await; });
+            if let [only] = visible.as_slice() {
+                // Nothing to choose: the UID is plain text, its server is in the details.
+                p { class: "uid-one",
+                    span { class: "visually-hidden", {ui.text("dashboard.selected_uid")} " " }
+                    {ui.format("dashboard.uid_only", &[("uid", &only.game_uid)])}
+                }
+            } else {
+                div { class: "uid-select",
+                    label { class: "visually-hidden", r#for: "selected-{game}", {ui.text("dashboard.selected_uid")} }
+                    select {
+                        id: "selected-{game}", value: selected.map(|id| id.to_string()).unwrap_or_default(),
+                        onchange: move |event| {
+                            if let Ok(id) = event.value().parse::<Uuid>() {
+                                state.write().select_game_account(game, Some(id));
+                                spawn_root(async move { load_game(state, game).await; });
+                            }
+                        },
+                        for account in visible {
+                            option { value: "{account.id}", {ui.format("dashboard.uid_option", &[("region", &account.region), ("uid", &account.game_uid)])} }
                         }
-                    },
-                    for account in visible {
-                        option { value: "{account.id}", {ui.format("dashboard.uid_option", &[("region", &account.region), ("uid", &account.game_uid)])} }
                     }
                 }
             }
             if let Some(key) = selection.error {
                 // Without a payload there is nothing that could be outdated.
-                p { class: "warning", role: "status", {ui.text(refresh_problem(key, status.is_some(), "dashboard.status_fetch_failed"))} }
+                WarningLine {
+                    status: if status.is_some() { Status::Warn } else { Status::Failed },
+                    text: ui.text(refresh_problem(key, status.is_some(), "dashboard.status_fetch_failed")),
+                }
             }
             div { "aria-busy": loading,
                 if let Some(status) = status.clone() {
                     GameStatusCard { status, history, history_error: selection.history_error }
                 } else if loading {
-                    p { role: "status", {ui.text("dashboard.loading")} }
+                    LoadingLine {}
                 }
             }
         }
     }
 }
 
-/// Age of the selected UID's status, under the game title.
+/// Age of the selected UID's status, beside the game title.
 #[component]
 fn StatusFreshness(state: Signal<AppState>, game: &'static str) -> Element {
     let snapshot = state.read();
@@ -247,7 +275,7 @@ fn StatusFreshness(state: Signal<AppState>, game: &'static str) -> Element {
     });
     drop(snapshot);
     let (fetched_at, stale) = status.unwrap_or_default();
-    rsx! { Freshness { fetched_at, stale } }
+    rsx! { Freshness { fetched_at, stale, short: true } }
 }
 
 /// Web refresh control: a circular-arrow icon button at the card's top right.
@@ -325,25 +353,47 @@ fn PullRefresh(state: Signal<AppState>, page: Page) -> Element {
     }
 }
 
-/// Always-visible age of the shown data, kept current by the dashboard clock.
+/// Always-visible age of the shown data, kept current by the dashboard clock. The short
+/// form (game cards) is the clock icon with "12 min ago"; outdated data swaps in the
+/// warning symbol. The full sentence stays for screen readers.
 #[component]
-pub(super) fn Freshness(fetched_at: Option<String>, stale: bool) -> Element {
+pub(super) fn Freshness(
+    fetched_at: Option<String>,
+    stale: bool,
+    #[props(default)] short: bool,
+) -> Element {
     let ui = use_preferences();
     let clock = use_clock();
     let _ = clock();
     let age = seconds_since(fetched_at.as_deref()).map(|seconds| relative_age(seconds, ui));
+    let sentence = age.as_ref().map(|age| {
+        let key = if short && stale {
+            "dashboard.updated_ago_stale"
+        } else {
+            "dashboard.updated_ago"
+        };
+        ui.format(key, &[("age", age)])
+    });
     rsx! {
-        if let Some(age) = age {
+        if let (Some(age), Some(sentence)) = (age, sentence) {
             p { class: if stale { "freshness stale" } else { "freshness" },
-                time { datetime: fetched_at, {ui.format("dashboard.updated_ago", &[("age", &age)])} }
+                if short {
+                    Glyph { icon: if stale { Icon::Warning } else { Icon::Clock } }
+                    span { class: "visually-hidden", "{sentence}" }
+                    time { datetime: fetched_at.clone(), title: compact_datetime(fetched_at.as_deref()), "aria-hidden": "true", "{age}" }
+                } else {
+                    time { datetime: fetched_at, "{sentence}" }
+                }
             }
         } else {
-            span {}
+            // Keeps the heading's columns in place until the status arrives.
+            span { class: "freshness" }
         }
     }
 }
 
-/// Automatic login bonus toggle and today's claim summary for one game.
+/// Today's claim, this month's count and reward, then the automatic claim switch with its
+/// next run. The heading is the gift icon; its text is for screen readers.
 #[component]
 fn BonusSection(state: Signal<AppState>, game: &'static str) -> Element {
     let ui = use_preferences();
@@ -357,31 +407,27 @@ fn BonusSection(state: Signal<AppState>, game: &'static str) -> Element {
     drop(snapshot);
     rsx! {
         section { class: "bonus-section", "aria-labelledby": "bonus-title-{game}",
-            div { class: "card-automation",
-                h3 { id: "bonus-title-{game}", {ui.text("dashboard.login_bonus")} }
-                if let Some(setting) = setting.clone() {
-                    AutomationSwitch { state, setting, id: "automation-{game}", disabled: rewards_error }
-                } else {
-                    span { {ui.text("common.not_fetched")} }
-                }
-            }
+            h3 { class: "visually-hidden", id: "bonus-title-{game}", {ui.text("dashboard.login_bonus")} }
             if rewards_error {
                 LoadError { state, message: ui.text("dashboard.could_not_load_bonus_settings") }
             }
             if let Some(setting) = setting {
-                BonusToday { state, setting }
+                BonusToday { state, setting, disabled: rewards_error }
+            } else if !rewards_error {
+                div { class: "bonus-main",
+                    Glyph { icon: Icon::Gift, class: "icon-lg" }
+                    StatusMark { status: Status::Unknown, text: ui.text("common.not_fetched") }
+                }
             }
         }
     }
 }
 
-/// Today's claim, this month's count and reward, the next automatic run, then details.
 #[component]
-fn BonusToday(state: Signal<AppState>, setting: RewardSetting) -> Element {
+fn BonusToday(state: Signal<AppState>, setting: RewardSetting, disabled: bool) -> Element {
     let ui = use_preferences();
     let clock = use_clock();
     let _ = clock();
-    let tone = claim_tone(setting.is_sign);
     let needs_link = matches!(
         setting.auth_status.as_str(),
         "action_required" | "cookie_invalid"
@@ -392,25 +438,38 @@ fn BonusToday(state: Signal<AppState>, setting: RewardSetting) -> Element {
         .and_then(|next| seconds_since(Some(next)))
         .filter(|elapsed| *elapsed < 0)
         .map(|elapsed| hours_minutes(-elapsed, ui));
+    let next_at = local_moment(setting.next_run_at.as_deref());
+    let game = setting.game_kind.clone();
     rsx! {
-        p { class: "run-state bonus-today {tone}",
-            {ui.text("dashboard.today_s_reward")} ": "
-            strong { {received(setting.is_sign, ui)} }
+        div { class: "bonus-main",
+            Glyph { icon: Icon::Gift, class: "icon-lg" }
+            span { class: "bonus-today", "data-state": claim_tone(setting.is_sign),
+                span { class: "visually-hidden", {ui.text("dashboard.today_s_reward")} " " }
+                StatusMark { status: claim_status(setting.is_sign), text: received(setting.is_sign, ui) }
+            }
             if let Some(days) = setting.total_sign_day {
-                " · " {ui.format("dashboard.month_sign_days", &[("count", &days.to_string())])}
+                span { class: "bonus-day", {ui.format("dashboard.month_sign_days", &[("count", &days.to_string())])} }
+            }
+            if let Some(award) = setting.today_award.clone() {
+                AwardLine { award, claimed: setting.is_sign == Some(true) }
             }
         }
-        if let Some(award) = setting.today_award.clone() {
-            AwardLine { award, claimed: setting.is_sign == Some(true) }
-        }
-        p { class: "run-state",
+        div { class: "bonus-auto",
+            AutomationSwitch { state, setting: setting.clone(), id: "automation-{game}", disabled, caption: "dashboard.auto" }
+            // No line while it is off: the switch says so.
             if setting.enabled {
-                {ui.text("dashboard.next_run")} ": "
-                strong { {date(&setting.next_run_at, ui)} }
-                // The countdown moves to the next line as a whole rather than splitting "13h 05m".
-                if let Some(next_in) = next_in { " · " span { class: "inline-unit", {ui.format("dashboard.in_duration", &[("duration", &next_in)])} } }
-            } else {
-                {ui.text("dashboard.automation_off")}
+                span { class: "bonus-next",
+                    Glyph { icon: Icon::Clock }
+                    span { class: "visually-hidden", {ui.text("dashboard.next_run")} " " }
+                    if let Some(next_at) = next_at {
+                        // The run is daily at the same time, so the clock alone is enough.
+                        time { datetime: setting.next_run_at.clone(), title: compact_datetime(setting.next_run_at.as_deref()), "{next_at.clock}" }
+                    } else {
+                        span { class: "missing", {ui.text("common.not_fetched")} }
+                    }
+                    // The countdown moves to the next line as a whole rather than splitting "13h 05m".
+                    if let Some(next_in) = next_in { " · " span { class: "inline-unit", {ui.format("dashboard.in_duration", &[("duration", &next_in)])} } }
+                }
             }
         }
         if needs_link {
@@ -419,29 +478,11 @@ fn BonusToday(state: Signal<AppState>, setting: RewardSetting) -> Element {
                 p { button { r#type: "button", onclick: move |_| set_page(state, Page::Link), {ui.text("dashboard.open_link_settings")} } }
             }
         }
-        details { class: "bonus-status",
-            summary {
-                {ui.text("dashboard.bonus_details")}
-                if let Some(run) = &setting.last_run {
-                    " · " {ui.text("dashboard.last_run_state")} ": " {model_status(&run.state, ui)}
-                }
-                if setting.error_code.is_some() {
-                    " · " {error_text(setting.error_code.as_deref(), ui)}
-                }
-            }
-            dl { class: "metrics",
-                Metric { label: ui.text("dashboard.auth_status"), value: model_status(&setting.auth_status, ui).to_owned() }
-                Metric { label: ui.text("dashboard.checked"), value: date(&setting.last_checked_at, ui) }
-                Metric { label: ui.text("dashboard.last_run_state"), value: setting.last_run.as_ref().map(|run| model_status(&run.state, ui).to_owned()).unwrap_or_else(|| ui.text("dashboard.never_run").to_owned()) }
-                if setting.error_code.is_some() {
-                    Metric { label: ui.text("dashboard.bonus_error"), value: error_text(setting.error_code.as_deref(), ui).to_owned() }
-                    Metric { label: ui.text("dashboard.error_at"), value: date(&setting.error_at, ui) }
-                }
-            }
-        }
     }
 }
 
+/// The reward of the day: the official image from the URL HoYoLAB returned (dropped if
+/// it fails to load), its name and count. Whether it is today's or the next one is read out.
 #[component]
 fn AwardLine(award: DailyAward, claimed: bool) -> Element {
     let ui = use_preferences();
@@ -452,14 +493,14 @@ fn AwardLine(award: DailyAward, claimed: bool) -> Element {
         "dashboard.award_next"
     };
     rsx! {
-        p { class: "award",
+        span { class: "award",
             if !award.icon.is_empty() && !failed() {
                 img { class: "award-icon", src: award.icon.clone(), alt: "", width: "32", height: "32",
                     loading: "lazy", decoding: "async", referrerpolicy: "no-referrer",
                     onerror: move |_| failed.set(true),
                 }
             }
-            span { {ui.text(key)} ": " strong { {award.name.clone()} } " ×{award.count}" }
+            span { span { class: "visually-hidden", {ui.text(key)} " " } strong { {award.name.clone()} } " ×{award.count}" }
         }
     }
 }
@@ -471,276 +512,155 @@ fn GameStatusCard(
     history_error: Option<&'static str>,
 ) -> Element {
     let ui = use_preferences();
-    // The transformer countdown reads the clock.
-    let clock = use_clock();
-    let _ = clock();
     rsx! {
         div { class: "status-card",
-            if let Some(notice) = freshness_notice(&status, ui) { p { class: "warning", role: "status", {notice} } }
+            if let Some(notice) = freshness_notice(&status, ui) {
+                WarningLine { status: if status.data.is_some() { Status::Warn } else { Status::Failed }, text: notice }
+            }
             if let Some(data) = status.data.as_ref() {
                 if status.game_kind == "genshin" {
-                    Resource { label: ui.text("dashboard.resin"), current: data.current_resin, maximum: data.max_resin, full_at: data.resin_full_at.clone() }
+                    PrimaryResource { icon: Icon::Resin, label: ui.text("dashboard.resin"), current: data.current_resin, maximum: data.max_resin, full_at: data.resin_full_at.clone() }
                     CapHistory { game: "genshin", resource: ui.text("dashboard.resin"), history: history.clone(), error: history_error }
-                    Resource {
-                        label: ui.text("dashboard.realm_currency"), current: data.current_home_coin, maximum: data.max_home_coin,
-                        full_at: data.home_coin_full_at.clone(), estimate: "dashboard.currency_full_at", reached: "dashboard.at_cap", secondary: true,
-                    }
-                    dl { class: "metrics",
-                        Metric { label: ui.text("dashboard.commissions"), value: pair(data.finished_task_num, data.total_task_num, ui) }
-                        Metric { label: ui.text("dashboard.extra_commission_reward"), value: received(data.is_extra_task_reward_received, ui).to_owned() }
-                        Metric { label: ui.text("dashboard.weekly_boss_discounts"), value: remaining(data.remain_resin_discount_num, data.resin_discount_num_limit, ui) }
-                        Metric { label: ui.text("dashboard.transformer"), value: transformer_text(data, ui) }
-                    }
-                } else if status.game_kind == "starrail" {
-                    Resource { label: ui.text("dashboard.trailblaze_power"), current: data.current_stamina, maximum: data.max_stamina, full_at: data.stamina_full_at.clone() }
-                    CapHistory { game: "starrail", resource: ui.text("dashboard.trailblaze_power"), history: history.clone(), error: history_error }
-                    dl { class: "metrics",
-                        Metric { label: ui.text("dashboard.reserved_trailblaze_power"), value: reserve_text(data, ui) }
-                        Metric { label: ui.text("dashboard.daily_training"), value: pair(data.current_train_score, data.max_train_score, ui) }
-                        Metric { label: ui.text("dashboard.simulated_universe"), value: pair(data.current_rogue_score, data.max_rogue_score, ui) }
-                        Metric { label: ui.text("dashboard.echo_of_war"), value: remaining(data.weekly_cocoon_cnt, data.weekly_cocoon_limit, ui) }
-                        if data.rogue_tourn_weekly_unlocked == Some(true) {
-                            Metric { label: ui.text("dashboard.divergent_universe"), value: pair(data.rogue_tourn_weekly_cur, data.rogue_tourn_weekly_max, ui) }
-                        }
-                    }
-                }
-                if status.game_kind == "genshin" {
+                    GenshinTiles { data: data.clone() }
                     ExpeditionList { expeditions: data.expeditions.clone(), maximum: data.max_expedition_num, fetched_at: status.fetched_at.clone() }
+                } else if status.game_kind == "starrail" {
+                    PrimaryResource { icon: Icon::Bolt, label: ui.text("dashboard.trailblaze_power"), current: data.current_stamina, maximum: data.max_stamina, full_at: data.stamina_full_at.clone() }
+                    CapHistory { game: "starrail", resource: ui.text("dashboard.trailblaze_power"), history: history.clone(), error: history_error }
+                    StarRailTiles { data: data.clone() }
                 }
             }
             if let Some(key) = missing_payload_notice(status.data.as_ref()).filter(|_| status.error_code.is_none()) {
-                p { {ui.text(key)} }
+                p { class: "quiet-line", {ui.text(key)} }
             }
         }
     }
 }
 
-/// The selected UID's fetch details (UID, region, last fetch, the error if any), collapsed
-/// as the last element of its game card, below the login bonus. Only a status payload has
-/// details; the summary line names the fetch error so it shows without opening.
+/// The one collapsed block at the end of a game card: the selected UID's fetch details
+/// (UID, server, last fetch, the error if any), when the endgame records were fetched,
+/// and the login bonus state (auth, last check, last run, its error). The summary line
+/// names an error so it shows without opening.
 #[component]
-fn StatusDetails(state: Signal<AppState>, game: &'static str) -> Element {
+fn CardDetails(state: Signal<AppState>, game: &'static str) -> Element {
     let ui = use_preferences();
     let snapshot = state.read();
-    let status: Option<GameStatus> = snapshot.selected_game_account(game).and_then(|id| {
+    let selected = snapshot.selected_game_account(game);
+    let status: Option<GameStatus> = selected.and_then(|id| {
         snapshot
             .account_statuses
             .iter()
             .find(|entry| entry.id == id)
             .map(|entry| entry.status.clone())
     });
+    let challenges: Option<GameChallenges> = selected.and_then(|id| {
+        snapshot
+            .account_challenges
+            .iter()
+            .find(|entry| entry.id == id)
+            .map(|entry| entry.challenges.clone())
+    });
+    let setting = snapshot
+        .rewards
+        .iter()
+        .find(|setting| setting.game_kind == game)
+        .cloned();
     drop(snapshot);
-    let Some(status) = status else {
+    if status.is_none() && setting.is_none() {
         return rsx! {};
-    };
+    }
+    let status_error = status.as_ref().and_then(|status| status.error_code.clone());
+    let bonus_error = setting
+        .as_ref()
+        .and_then(|setting| setting.error_code.clone());
     rsx! {
         details { class: "status-details",
             summary {
-                {ui.text("dashboard.data_details")}
-                if status.error_code.is_some() { " · " {error_text(status.error_code.as_deref(), ui)} }
+                Glyph { icon: Icon::Info }
+                span { {ui.text("dashboard.data_details")} }
+                if let Some(code) = &status_error {
+                    span { class: "details-error", "data-source": "status", Glyph { icon: Icon::Failed } span { {error_text(Some(code), ui)} } }
+                }
+                if let Some(code) = &bonus_error {
+                    span { class: "details-error", "data-source": "bonus", Glyph { icon: Icon::Failed } span { {error_text(Some(code), ui)} } }
+                }
+                Glyph { icon: Icon::Chevron, class: "chevron" }
             }
             dl { class: "metrics status-metadata",
-                Metric { label: ui.text("dashboard.uid"), value: if status.game_uid.is_empty() { ui.text("dashboard.missing").to_owned() } else { status.game_uid.clone() } }
-                Metric { label: ui.text("dashboard.region"), value: status.region.clone() }
-                Metric { label: ui.text("dashboard.last_fetched"), value: date(&status.fetched_at, ui) }
-                if let Some(code) = &status.error_code {
-                    Metric { label: ui.text("dashboard.error"), value: error_text(Some(code), ui).to_owned() }
-                    Metric { label: ui.text("dashboard.error_code"), value: code.clone() }
-                    Metric { label: ui.text("dashboard.error_at"), value: date(&status.error_at, ui) }
+                if let Some(status) = &status {
+                    Metric { label: ui.text("dashboard.uid"), value: if status.game_uid.is_empty() { ui.text("dashboard.missing").to_owned() } else { status.game_uid.clone() } }
+                    Metric { label: ui.text("dashboard.region"), value: status.region.clone() }
+                    Metric { label: ui.text("dashboard.last_fetched"), value: date(&status.fetched_at, ui) }
+                    if let Some(code) = &status.error_code {
+                        Metric { label: ui.text("dashboard.error"), value: error_text(Some(code), ui).to_owned() }
+                        Metric { label: ui.text("dashboard.error_code"), value: code.clone() }
+                        Metric { label: ui.text("dashboard.error_at"), value: date(&status.error_at, ui) }
+                    }
+                }
+                if let Some(challenges) = &challenges {
+                    Metric { label: ui.text("dashboard.endgame_fetched"), value: date(&challenges.fetched_at, ui) }
+                }
+                if let Some(setting) = &setting {
+                    Metric { label: ui.text("dashboard.bonus_auth_status"), value: model_status(&setting.auth_status, ui).to_owned() }
+                    Metric { label: ui.text("dashboard.bonus_checked"), value: date(&setting.last_checked_at, ui) }
+                    Metric { label: ui.text("dashboard.last_run_state"), value: setting.last_run.as_ref().map(|run| model_status(&run.state, ui).to_owned()).unwrap_or_else(|| ui.text("dashboard.never_run").to_owned()) }
+                    if setting.error_code.is_some() {
+                        Metric { label: ui.text("dashboard.bonus_error"), value: error_text(setting.error_code.as_deref(), ui).to_owned() }
+                        Metric { label: ui.text("dashboard.bonus_error_at"), value: date(&setting.error_at, ui) }
+                    }
                 }
             }
         }
     }
 }
 
-/// A capped resource as a number and a bar with its estimate. The primary one
-/// (resin, Trailblaze Power) uses the numeric face; a secondary one (realm
-/// currency) is a step smaller and keeps its date in the body font.
+/// The primary resource (resin, Trailblaze Power): its icon, the largest number on the
+/// card, a bar, and the time until full recovery with a small clock time. The name is the
+/// section's accessible name only; a missing value is the unknown mark, not a numeral.
 #[component]
-fn Resource(
+fn PrimaryResource(
+    icon: Icon,
     label: &'static str,
     current: Option<i64>,
     maximum: Option<i64>,
     full_at: Option<String>,
-    #[props(default = "dashboard.full_recovery_at")] estimate: &'static str,
-    #[props(default = "dashboard.fully_recovered")] reached: &'static str,
-    #[props(default)] secondary: bool,
 ) -> Element {
     let ui = use_preferences();
+    // Re-rendered each second so the countdown changes the moment its value does.
+    let clock = use_clock();
+    let _ = clock();
     let fill = fill_level(current, maximum);
+    let recovery = local_moment(full_at.as_deref()).zip(seconds_since(full_at.as_deref()));
     rsx! {
-        // One wrapper per resource keeps the fill-state sibling selectors to its own bar.
-        div { class: if secondary { "resource-block secondary" } else { "resource-block" },
-            p { class: "resource-label", "{label}"
-                if fill == "full" { span { class: "status warn cap-badge", {ui.text("dashboard.at_cap")} } }
-                else if fill == "near" { span { class: "status warn cap-badge", {ui.text("dashboard.near_cap")} } }
-            }
-            div { class: "resource", "data-fill": fill,
-                // A missing value is a word in the body face, not a display numeral.
-                strong { class: if current.is_none() { "missing" } else { "" }, {number(current, ui)} }
-                if let Some(maximum) = maximum { span { "/ {maximum}" } }
+        section { class: "resource-block", "data-fill": fill, "aria-label": label,
+            div { class: "resource-top",
+                Glyph { icon, class: "icon-xl resource-icon" }
+                if let Some(value) = current {
+                    p { class: "resource", "data-fill": fill,
+                        strong { "{value}" }
+                        if let Some(maximum) = maximum { span { "/{maximum}" } }
+                    }
+                } else {
+                    p { class: "resource", StatusMark { status: Status::Unknown, text: ui.text("common.not_fetched"), class: "missing" } }
+                }
+                if fill == "full" { StatusMark { status: Status::Warn, text: ui.text("dashboard.at_cap"), class: "cap-badge" } }
+                else if fill == "near" { StatusMark { status: Status::Warn, text: ui.text("dashboard.near_cap"), class: "cap-badge" } }
             }
             if let (Some(value), Some(max)) = (current, maximum) {
                 if max > 0 && value >= 0 && value <= max {
                     progress { value: "{value}", max: "{max}", "aria-label": label }
                 }
             }
-            dl { class: "row",
-                Estimate { label: ui.text(estimate), value: full_at, numeric: !secondary, countdown: secondary, reached }
-            }
-        }
-    }
-}
-
-/// An estimated datetime. The numeric (full recovery) form also says how long
-/// is left, re-rendered each second so the countdown changes the moment its value does.
-#[component]
-fn Estimate(
-    label: &'static str,
-    value: Option<String>,
-    #[props(default)] numeric: bool,
-    /// Also state the time left, without the numeric display face.
-    #[props(default)]
-    countdown: bool,
-    /// Shown once the estimate has passed.
-    #[props(default = "dashboard.fully_recovered")]
-    reached: &'static str,
-) -> Element {
-    let ui = use_preferences();
-    let clock = use_clock();
-    let formatted = compact_datetime(value.as_deref());
-    let countdown = (numeric || countdown)
-        .then(|| {
-            let _ = clock();
-            seconds_since(value.as_deref())
-        })
-        .flatten()
-        .map(|elapsed| countdown_text(-elapsed, reached, ui));
-    rsx! {
-        div { class: "metric",
-            dt { "{label}" }
-            dd {
-                if let Some(formatted) = formatted {
-                    time { class: if numeric { "recovery-at" } else { "estimate-at" }, datetime: value, "{formatted}" }
-                    if let Some(countdown) = countdown { span { class: "recovery-in", "{countdown}" } }
+            p { class: "eta",
+                Glyph { icon: Icon::Hourglass }
+                span { class: "visually-hidden", {ui.text("dashboard.full_recovery_at")} " " }
+                if let Some((moment, elapsed)) = recovery {
+                    strong { class: "recovery-in", {countdown_text(-elapsed, "dashboard.fully_recovered", ui)} }
+                    time { class: "recovery-at", datetime: full_at.clone(), title: compact_datetime(full_at.as_deref()), {short_time(&moment, ui)} }
                 } else {
-                    {ui.text("common.not_fetched")}
+                    span { class: "missing", {ui.text("common.not_fetched")} }
                 }
             }
         }
-    }
-}
-
-/// Expeditions with their time left counted down from the fetch time.
-#[component]
-fn ExpeditionList(
-    expeditions: Option<Vec<Expedition>>,
-    maximum: Option<i64>,
-    fetched_at: Option<String>,
-) -> Element {
-    let ui = use_preferences();
-    let clock = use_clock();
-    let _ = clock();
-    let elapsed = seconds_since(fetched_at.as_deref());
-    let left = |row: &Expedition| expedition_left(expedition_seconds(row), elapsed);
-    let summary = expeditions
-        .as_ref()
-        .filter(|rows| !rows.is_empty())
-        .map(|rows| {
-            let finished = rows
-                .iter()
-                .filter(|row| row_finished(row.status.as_deref(), left(row)))
-                .count();
-            let total = maximum
-                .and_then(|max| usize::try_from(max).ok())
-                .filter(|max| *max >= rows.len())
-                .unwrap_or(rows.len());
-            ui.format(
-                "dashboard.expeditions_finished",
-                &[
-                    ("finished", &finished.to_string()),
-                    ("total", &total.to_string()),
-                ],
-            )
-        });
-    rsx! {
-        div { class: "expeditions",
-            div { class: "expeditions-heading",
-                h3 { {ui.text("dashboard.expeditions")} }
-                if let Some(summary) = summary { span { class: "muted", "{summary}" } }
-            }
-            if let Some(rows) = expeditions {
-                if rows.is_empty() { p { {ui.text("dashboard.no_expeditions")} } }
-                ul {
-                    for (index, expedition) in rows.into_iter().enumerate() {
-                        li { class: "expedition",
-                            ExpeditionIcon {
-                                key: "{index}-{expedition.avatar_side_icon:?}",
-                                source: expedition.avatar_side_icon.clone(),
-                                label: expedition_label(expedition.name.as_deref(), index, ui),
-                            }
-                            // A finished expedition (also one whose time ran out since the fetch)
-                            // has nothing left; "Finished" alone says so.
-                            if row_finished(expedition.status.as_deref(), left(&expedition)) {
-                                span { {model_status("Finished", ui)} }
-                            } else {
-                                span { {expedition.status.as_deref().map(|value| model_status(value, ui)).unwrap_or(ui.text("dashboard.unknown"))} }
-                                span { {ui.text("dashboard.remaining")} ": " {remaining_text(&expedition, left(&expedition), ui)} }
-                            }
-                        }
-                    }
-                }
-            } else { p { {ui.text("common.not_fetched")} } }
-        }
-    }
-}
-
-#[component]
-fn ExpeditionIcon(source: Option<String>, label: String) -> Element {
-    let mut failed = use_signal(|| false);
-    rsx! {
-        if let Some(source) = source.filter(|source| !source.is_empty() && !failed()) {
-            img { class: "expedition-icon", src: source, alt: label.clone(), title: label,
-                width: "48", height: "48", loading: "lazy", decoding: "async", referrerpolicy: "no-referrer",
-                onerror: move |_| failed.set(true),
-            }
-        } else {
-            span { class: "expedition-icon", role: "img", "aria-label": label.clone(), title: label,
-                Glyph { icon: Icon::User }
-            }
-        }
-    }
-}
-
-fn expedition_finished(status: Option<&str>) -> bool {
-    status == Some("Finished")
-}
-
-fn expedition_seconds(row: &Expedition) -> Option<i64> {
-    row.remained_time
-        .as_ref()
-        .or(row.remaining_time.as_ref())
-        .and_then(|duration| duration.seconds())
-}
-
-/// Seconds left now: the fetched remaining time minus the time since the fetch.
-fn expedition_left(remaining: Option<i64>, elapsed: Option<i64>) -> Option<i64> {
-    remaining.map(|left| left - elapsed.unwrap_or(0).max(0))
-}
-
-/// Upstream says finished, or the remaining time has run out since the fetch.
-fn row_finished(status: Option<&str>, left: Option<i64>) -> bool {
-    expedition_finished(status) || left.is_some_and(|seconds| seconds <= 0)
-}
-
-fn remaining_text(row: &Expedition, left: Option<i64>, ui: Preferences) -> String {
-    match (
-        left,
-        row.remained_time.as_ref().or(row.remaining_time.as_ref()),
-    ) {
-        (Some(seconds), _) => hours_minutes(seconds, ui),
-        (None, Some(duration)) => duration.to_string(),
-        (None, None) => ui.text("common.not_fetched").to_owned(),
     }
 }
 
@@ -780,17 +700,6 @@ pub(super) fn use_clock() -> Signal<u64> {
     use_context::<Clock>().0
 }
 
-fn expedition_label(name: Option<&str>, index: usize, ui: Preferences) -> String {
-    name.filter(|name| !name.trim().is_empty())
-        .map(str::to_owned)
-        .unwrap_or_else(|| {
-            ui.format(
-                "dashboard.expedition_number",
-                &[("number", &(index + 1).to_string())],
-            )
-        })
-}
-
 /// One warning per status: a failed fetch without data says only that it
 /// failed; stale data says how old it is, with the failure reason if known.
 fn freshness_notice(status: &GameStatus, ui: Preferences) -> Option<String> {
@@ -823,56 +732,6 @@ fn missing_payload_notice(data: Option<&DailySummary>) -> Option<&'static str> {
         .then_some("dashboard.no_daily_summary_payload_returned")
 }
 
-fn number(value: Option<i64>, ui: Preferences) -> String {
-    value
-        .map(|n| n.to_string())
-        .unwrap_or_else(|| ui.text("common.not_fetched").to_owned())
-}
-
-fn pair(current: Option<i64>, maximum: Option<i64>, ui: Preferences) -> String {
-    current
-        .map(|value| count_pair(value, maximum))
-        .unwrap_or_else(|| ui.text("common.not_fetched").to_owned())
-}
-
-/// Weekly allowances count down: "2/3 left".
-fn remaining(left: Option<i64>, maximum: Option<i64>, ui: Preferences) -> String {
-    match (left, maximum) {
-        (Some(left), Some(maximum)) => ui.format(
-            "dashboard.remaining_of",
-            &[("left", &left.to_string()), ("max", &maximum.to_string())],
-        ),
-        (Some(left), None) => left.to_string(),
-        _ => ui.text("common.not_fetched").to_owned(),
-    }
-}
-
-fn transformer_text(data: &DailySummary, ui: Preferences) -> String {
-    match (data.transformer_obtained, data.transformer_ready) {
-        (Some(false), _) => ui.text("dashboard.transformer_not_obtained").to_owned(),
-        (_, Some(true)) => ui.text("dashboard.transformer_ready").to_owned(),
-        (_, Some(false)) => match seconds_since(data.transformer_ready_at.as_deref()) {
-            // The cooldown ended since the fetch.
-            Some(elapsed) if elapsed >= 0 => ui.text("dashboard.transformer_ready").to_owned(),
-            Some(elapsed) => ui.format(
-                "dashboard.in_duration",
-                &[("duration", &days_hours(-elapsed, ui))],
-            ),
-            None => ui.text("dashboard.transformer_cooling").to_owned(),
-        },
-        _ => ui.text("common.not_fetched").to_owned(),
-    }
-}
-
-fn reserve_text(data: &DailySummary, ui: Preferences) -> String {
-    let value = number(data.current_reserve_stamina, ui);
-    if data.is_reserve_stamina_full == Some(true) {
-        format!("{value} · {}", ui.text("dashboard.at_cap"))
-    } else {
-        value
-    }
-}
-
 fn date(value: &Option<String>, ui: Preferences) -> String {
     datetime_text(value.as_deref(), ui)
 }
@@ -900,8 +759,6 @@ fn model_status(value: &str, ui: Preferences) -> &'static str {
         "failed" => ui.text("dashboard.failed"),
         "verified" => ui.text("dashboard.verified"),
         "invalid" => ui.text("dashboard.invalid"),
-        "Ongoing" => ui.text("dashboard.ongoing"),
-        "Finished" => ui.text("dashboard.finished"),
         _ => ui.text("dashboard.unknown"),
     }
 }
@@ -923,15 +780,6 @@ mod tests {
         assert!(summary.current_stamina.is_none());
         assert!(summary.max_stamina.is_none());
         assert!(summary.expeditions.is_none());
-        assert_eq!(
-            pair(
-                summary.current_resin,
-                summary.max_resin,
-                Preferences::default()
-            ),
-            "未取得"
-        );
-        assert_eq!(count_pair(0, None), "0");
     }
 
     #[test]
@@ -982,18 +830,14 @@ mod tests {
         assert_eq!(claim_tone(Some(true)), "success");
         assert_eq!(claim_tone(Some(false)), "pending");
         assert_eq!(claim_tone(None), "");
+        // Each tone has its own symbol; an unknown claim is not shown as open.
+        assert_eq!(claim_status(Some(true)), Status::Done);
+        assert_eq!(claim_status(Some(false)), Status::Open);
+        assert_eq!(claim_status(None), Status::Unknown);
     }
 
     #[test]
-    fn unnamed_expeditions_use_numbered_labels_without_inventing_locations() {
-        let ui = Preferences::default();
-        assert_eq!(expedition_label(Some("Crystal"), 0, ui), "Crystal");
-        assert_eq!(expedition_label(None, 0, ui), "派遣 1");
-        assert_eq!(expedition_label(Some("  "), 1, ui), "派遣 2");
-    }
-
-    #[test]
-    fn recovery_countdown_and_finished_expeditions_show_only_what_is_left() {
+    fn the_recovery_countdown_ends_as_fully_recovered() {
         let ui = Preferences::default();
         assert_eq!(
             countdown_text(7 * 3600 + 12 * 60, "dashboard.fully_recovered", ui),
@@ -1019,31 +863,5 @@ mod tests {
             countdown_text(7 * 3600 + 12 * 60, "dashboard.fully_recovered", english),
             "in 7h 12m"
         );
-        assert!(expedition_finished(Some("Finished")));
-        assert!(!expedition_finished(Some("Ongoing")));
-        assert!(!expedition_finished(None));
-    }
-
-    #[test]
-    fn expedition_time_counts_down_from_the_fetch() {
-        assert_eq!(expedition_left(None, Some(60)), None);
-        assert_eq!(expedition_left(Some(3600), None), Some(3600));
-        assert_eq!(expedition_left(Some(3600), Some(600)), Some(3000));
-        // A fetch time ahead of the device clock does not add time.
-        assert_eq!(expedition_left(Some(3600), Some(-30)), Some(3600));
-        assert_eq!(expedition_left(Some(60), Some(90)), Some(-30));
-        assert!(row_finished(Some("Ongoing"), Some(0)));
-        assert!(row_finished(Some("Ongoing"), Some(-30)));
-        assert!(row_finished(Some("Finished"), None));
-        assert!(!row_finished(Some("Ongoing"), Some(1)));
-        assert!(!row_finished(Some("Ongoing"), None));
-        let row: Expedition = serde_json::from_value(
-            serde_json::json!({"status": "Ongoing", "remained_time": "soon"}),
-        )
-        .unwrap();
-        let ui = Preferences::default();
-        assert_eq!(expedition_seconds(&row), None);
-        assert_eq!(remaining_text(&row, None, ui), "soon");
-        assert_eq!(remaining_text(&row, Some(3000), ui), "0時間50分");
     }
 }

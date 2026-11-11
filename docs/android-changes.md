@@ -124,7 +124,8 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 - イベントと祈願／跳躍のカレンダーはダッシュボードから「イベント」画面へ移した（下の「イベント」）。ダッシュボードのpull-to-refreshはカレンダーを読まない。
 - 全体レビューでweb版と共通に変えた点（アプリ専用のレイアウトはない）：見出しの「ログインボーナスを今すぐ受け取る」の下に、ゲームごとの本日の受け取り状態（「本日分 原神 未受け取り · 崩壊：スターレイル 受け取り済み」）を出す。状態の取得の経過時間はカードの下ではなくゲーム名の下に置く（アプリには更新ボタンがないので、見出しは名前と経過時間だけ）。読み込みは状態→ボーナス設定→7日間の記録→高難度コンテンツの順で、ボタンと受け取り状態がHoYoLABを待つ読み込みの後ろに並ばない。順番待ちの状態・高難度コンテンツは「読み込み中…」と表示する。表示UIDの選択肢は「UID … · 地域」の順。
 - 主リソース（樹脂・開拓力）の直下の「上限に達していた時間（直近7日間）」（`pages/cap_history.rs`）もweb版と同じ部品・同じCSSで、アプリ専用のレイアウトはない。合計の時間はラベルの右（360px幅では次の行）に置き、タイムラインはカード幅いっぱいのSVG（inline styleを使わない）、凡例は折り返す。pull-to-refreshは状態とボーナス設定の次に履歴も読み直す。履歴はサーバーに保存した状態の取得結果だけから計算するので、上流への要求は増えない。ホーム画面ウィジェットには出さない。
-- 畳んだ「取得の詳細」（UID・地域・最終取得日時、失敗時はエラー・コード・日時）は、web版と同じく各ゲームカードの最後（ログインボーナスの下）に置く（`pages/dashboard.rs` の `StatusDetails`）。状態の取得結果があるときだけ出し、開閉行にはエラーの要約も出す。アプリ専用の分岐やレイアウトはない。
+- 畳んだ「詳細」（UID・サーバー・最終取得日時、失敗時はエラー・コード・日時、高難度コンテンツの取得日時、ボーナスの認証状態・確認日時・前回の実行状態）は、web版と同じく各ゲームカードの最後（ログインボーナスの下）に1つだけ置く（`pages/dashboard.rs` の `CardDetails`）。開閉行にはエラーの要約も出す。アプリ専用の分岐やレイアウトはない。
+- ダッシュボードのアイコン中心UI（`DESIGN.md`、モックと決定事項は kanban t_c94a7f48）はweb版と同じ部品・同じCSS（`dashboard.css`）で、アプリ専用のレイアウトやCSS（`mobile.css`）の変更はない。上の各項目のうち文言と配置が変わった点：見出しの帯はゲームごとのチップ（ゲームのマーク＋状態の記号＋「未受け取り／受け取り済み」）と「今すぐ受け取る」（ギフトのアイコン付き。360px幅ではチップの行の下に全幅）。ゲームタブと各カードの見出しにゲームのマークが付く。取得の経過時間は時計のアイコン＋「12分前」（アプリには更新ボタンがないので、見出しはマーク・名前・経過時間だけ）。主リソースは大きいアイコンと数値、砂時計＋「あと1時間52分」と小さい時刻（当日は時刻だけ、翌日は「明日 13:14」。端末の時刻で計算し、`mobile/time.rs` の `local_moment` を使う）。「7日間の上限」は軸と凡例がなく、形で区別する。その他の数値はアイコンタイル（360px幅で2列）、派遣は画像を横に並べて残り時間だけ、高難度コンテンツもタイル、ログインボーナスは記号と「自動」のスイッチ。下部バーの「ダッシュボード」のアイコンも共通のアイコンセット（`pages/icons.rs` の `Icon::Home`）から描く。ホーム画面ウィジェットのアイコン（`ahd_indicator_icon_*`、スターレイルの見出しの四芒星 `ahd_widget_starrail_icon.xml`）は変えていない。画面のゲームのマーク（原神＝四芒星の宝石、スターレイル＝線路と星）とウィジェットのスターレイルのアイコンは形が違うままで、そろえるかどうかは今後の課題。
 
 ### イベント（新規、web版と共通）
 
@@ -474,7 +475,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/pages/app_server.rs` | ログイン画面の「接続先サーバー」欄（5.11節） |
 | `dashboard-ui/src/mobile/session.rs` | Cookie jarとサーバーURLの規則、保存先の一時的な失敗をログアウトと区別する規則（I/Oなし、テストあり） |
 | `dashboard-ui/src/mobile/storage.rs` | アプリ専用領域のファイル（JNIで `getFilesDir()`・`getCacheDir()` を取得） |
-| `dashboard-ui/src/mobile/time.rs` | 端末時刻での表示 |
+| `dashboard-ui/src/mobile/time.rs` | 端末時刻での表示（完全な日時の `compact_datetime` と、カード用の短い形に使う「今日から何日後か・時刻・月日」の `local_moment`） |
 | `dashboard-ui/src/mobile/locale.rs` | 端末のロケール一覧の取得とウィジェットへの言語変更の通知（JNI、5.10節） |
 | `dashboard-ui/src/mobile/dom.rs` | `document::eval` によるDOM操作（pull-to-refreshのタッチ処理を含む） |
 | `dashboard-ui/src/mobile/swipe.rs` | タブの横スワイプのタッチ収集（`document::eval`）。判定は共通の `app/swipe.rs` |
@@ -525,7 +526,8 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/pages/app_login.rs` | web版の `/app-login` 許可画面（アプリのログイン要求を承認してコードを発行する） |
 | `dashboard-ui/src/pages/security.rs` | パスワード変更・APIトークン・パスキー登録の除外、「ブラウザで開く」 |
 | `dashboard-ui/src/pages/notifications.rs` | 端末通知カードの配置、種類ごとの「この端末」／「Webhook」の表、`app_events` の送信と予測通知への反映 |
-| `dashboard-ui/src/pages/common.rs` | `external` アイコン、DOM操作・モーダルのアプリ分岐、戻るボタンで閉じるかどうか（`ModalDialog` の `back_closes`、`use_modal` の引数。web版では使わない） |
+| `dashboard-ui/src/pages/icons.rs` | アプリの画面で使うアイコン（`external`、下部バーの `Home` など。web版と共通のセット） |
+| `dashboard-ui/src/pages/common.rs` | DOM操作・モーダルのアプリ分岐、戻るボタンで閉じるかどうか（`ModalDialog` の `back_closes`、`use_modal` の引数。web版では使わない） |
 | `dashboard-ui/src/pages/dashboard.rs` | `matchMedia`・毎秒の時計のアプリ分岐、pull-to-refresh（更新ボタンの代わり） |
 | `dashboard-ui/src/pages/mod.rs` | 新しいモジュールの宣言 |
 | `dashboard-ui/locales/ja.json`, `en.json` | 24キーを追加（`shell.open_in_browser`、`shell.app_navigation`、`messages.could_not_open_the_browser`、`auth.change_password_in_browser`、`security.manage_in_browser`、`notifications.personal_hint_app`、`notifications.device_*` 18キー）。既存のキーは変えていない |
