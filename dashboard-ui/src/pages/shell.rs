@@ -2,11 +2,12 @@ use super::about::AboutPage;
 use super::accounts::UidsPage;
 use super::admin::AdminPage;
 use super::app_nav::AppNav;
-use super::common::{Icon, focus_element, reveal_horizontally, use_modal};
+use super::common::{focus_element, reveal_horizontally, use_modal};
 use super::dashboard::DashboardPage;
 use super::deletion::DeletePage;
 use super::events::EventsPage;
 use super::hoyolab::LinkPage;
+use super::icons::{Glyph, Icon};
 use super::notifications::NotificationsPage;
 use super::rewards::RewardsPage;
 use super::security::SecurityPage;
@@ -246,11 +247,11 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
                         if ready {
                             if crate::platform::APP {
                                 button { id: "ahd-settings-trigger", class: "icon-button app-settings", r#type: "button", "aria-label": ui.text("shell.settings"),
-                                    onclick: move |_| set_page(state, Page::Uids), Icon { name: "settings" }
+                                    onclick: move |_| set_page(state, Page::Uids), Glyph { icon: Icon::Settings }
                                 }
                             }
                             button { id: "ahd-menu-trigger", class: "menu", r#type: "button", "aria-label": ui.text("shell.open_menu"),
-                                "aria-controls": "ahd-menu", "aria-expanded": open().to_string(), onclick: move |_| open.set(true), Icon { name: "menu" }
+                                "aria-controls": "ahd-menu", "aria-expanded": open().to_string(), onclick: move |_| open.set(true), Glyph { icon: Icon::Menu }
                             }
                         } else {
                             button { r#type: "button", onclick: move |_| { spawn_action(state, move |generation| async move { logout(state, generation).await; }); }, {ui.text("shell.sign_out")} }
@@ -262,22 +263,22 @@ pub(super) fn Header(mut state: Signal<AppState>) -> Element {
         if ready {
             dialog { id: "ahd-menu", class: "menu-drawer", "aria-label": ui.text("shell.account_menu"),
                 div { class: "drawer-heading", h2 { {ui.text("shell.menu")} }
-                    button { class: "icon-button", r#type: "button", "aria-label": ui.text("shell.close_menu"), onclick: move |_| open.set(false), Icon { name: "close" } }
+                    button { class: "icon-button", r#type: "button", "aria-label": ui.text("shell.close_menu"), onclick: move |_| open.set(false), Glyph { icon: Icon::Close } }
                 }
                 nav { "aria-label": ui.text("shell.account_menu"),
                     for item in menu_items(crate::platform::APP, me.as_ref().is_some_and(|me| me.is_admin)) {
                         match item {
-                            MenuItem::Events => rsx! { button { class: "menu-events", r#type: "button", "aria-current": (state.read().page == Page::Events).then_some("page"), onclick: move |_| { open.set(false); set_page(state, Page::Events); }, Icon { name: "calendar" } {ui.text("calendar.page_title")} } },
-                            MenuItem::HoYoLab => rsx! { a { href: "https://www.hoyolab.com/home", target: "_blank", rel: "noopener noreferrer", Icon { name: "link" } "HoYoLAB" } },
-                            MenuItem::Settings => rsx! { button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Uids); }, Icon { name: "settings" } {ui.text("shell.settings")} } },
-                            MenuItem::OpenInBrowser => rsx! { button { r#type: "button", onclick: move |_| { open.set(false); let page = state.read().page; open_web_version(state, page); }, Icon { name: "external" } {ui.text("shell.open_in_browser")} } },
-                            MenuItem::Administration => rsx! { button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Admin); }, Icon { name: "user" } {ui.text("shell.administration")} } },
-                            MenuItem::Docs => rsx! { button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Docs); }, Icon { name: "docs" } {ui.text("docs.title")} } },
-                            MenuItem::About => rsx! { button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::About); }, Icon { name: "info" } {ui.text("about.title")} } },
+                            MenuItem::Events => rsx! { button { class: "menu-events", r#type: "button", "aria-current": (state.read().page == Page::Events).then_some("page"), onclick: move |_| { open.set(false); set_page(state, Page::Events); }, Glyph { icon: Icon::Calendar } {ui.text("calendar.page_title")} } },
+                            MenuItem::HoYoLab => rsx! { a { href: "https://www.hoyolab.com/home", target: "_blank", rel: "noopener noreferrer", Glyph { icon: Icon::Link } "HoYoLAB" } },
+                            MenuItem::Settings => rsx! { button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Uids); }, Glyph { icon: Icon::Settings } {ui.text("shell.settings")} } },
+                            MenuItem::OpenInBrowser => rsx! { button { r#type: "button", onclick: move |_| { open.set(false); let page = state.read().page; open_web_version(state, page); }, Glyph { icon: Icon::External } {ui.text("shell.open_in_browser")} } },
+                            MenuItem::Administration => rsx! { button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Admin); }, Glyph { icon: Icon::User } {ui.text("shell.administration")} } },
+                            MenuItem::Docs => rsx! { button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::Docs); }, Glyph { icon: Icon::Docs } {ui.text("docs.title")} } },
+                            MenuItem::About => rsx! { button { r#type: "button", onclick: move |_| { open.set(false); set_page(state, Page::About); }, Glyph { icon: Icon::Info } {ui.text("about.title")} } },
                         }
                     }
                     div { class: "menu-logout-group",
-                        button { class: "menu-logout", r#type: "button", onclick: move |_| { open.set(false); spawn_action(state, move |generation| async move { logout(state, generation).await; }); }, Icon { name: "logout" } {ui.text("shell.sign_out")} }
+                        button { class: "menu-logout", r#type: "button", onclick: move |_| { open.set(false); spawn_action(state, move |generation| async move { logout(state, generation).await; }); }, Glyph { icon: Icon::Logout } {ui.text("shell.sign_out")} }
                     }
                 }
                 div { class: "menu-preferences",
@@ -323,7 +324,7 @@ pub(super) fn Status(state: Signal<AppState>) -> Element {
                 if status.kind == "error" {
                     button { class: "icon-button status-dismiss", r#type: "button", "aria-label": ui.text("shell.dismiss_message"),
                         onclick: move |_| clear_status(state),
-                        Icon { name: "close" }
+                        Glyph { icon: Icon::Close }
                     }
                 }
             }

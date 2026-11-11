@@ -21,6 +21,7 @@ mod event_timeline;
 mod events;
 mod game_tabs;
 mod hoyolab;
+mod icons;
 mod notifications;
 mod rewards;
 mod security;

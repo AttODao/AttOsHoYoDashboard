@@ -4,7 +4,7 @@
 //! shows its own version (`dashboard-ui/Cargo.toml`, release tag `vX.Y.Z`), the web build
 //! shows the web version (the server crate in the root `Cargo.toml`, tag `web-vX.Y.Z`).
 
-use super::common::Icon;
+use super::icons::{Glyph, Icon};
 use crate::app::preferences::use_preferences;
 use dioxus::prelude::*;
 
@@ -147,7 +147,7 @@ pub(super) fn AboutPage() -> Element {
                         dd {
                             a { href: license_url(REPOSITORY), target: "_blank", rel: "noopener noreferrer",
                                 "{LICENSE}"
-                                Icon { name: "external" }
+                                Glyph { icon: Icon::External }
                             }
                         }
                     }
@@ -161,7 +161,7 @@ pub(super) fn AboutPage() -> Element {
                                     }
                                     "{part}"
                                 }
-                                Icon { name: "external" }
+                                Glyph { icon: Icon::External }
                             }
                         }
                     }
@@ -181,7 +181,7 @@ pub(super) fn AboutPage() -> Element {
                 p { class: "about-lockfile",
                     a { href: lockfile_url(REPOSITORY, &tag), target: "_blank", rel: "noopener noreferrer",
                         {ui.text("about.open_cargo_lock")}
-                        Icon { name: "external" }
+                        Glyph { icon: Icon::External }
                     }
                 }
             }

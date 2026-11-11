@@ -1,7 +1,8 @@
 use super::cap_history::CapHistory;
 use super::challenges::ChallengeSection;
-use super::common::{Icon, LoadError, Metric, game_name, pending, refresh_problem};
+use super::common::{LoadError, Metric, game_name, pending, refresh_problem};
 use super::game_tabs::{GameTabs, game_index, select_game_index, use_narrow_games};
+use super::icons::{Glyph, Icon};
 use super::rewards::AutomationSwitch;
 use super::swipe_tabs::SwipeableTabs;
 use crate::app::actions::spawn_root;
@@ -278,7 +279,7 @@ fn RefreshButton(state: Signal<AppState>, game: &'static str) -> Element {
                 r#type: "button", class: "icon-button refresh-button", id: "refresh-{game}",
                 "aria-disabled": loading, "aria-busy": loading, "aria-label": label, title: label,
                 onclick: move |_| { if !loading { spawn_root(async move { load_game(state, game).await; }); } },
-                Icon { name: "refresh" }
+                Glyph { icon: Icon::Refresh }
             }
         }
     }
@@ -316,7 +317,7 @@ fn PullRefresh(state: Signal<AppState>, page: Page) -> Element {
     });
     rsx! {
         div { id: "pull-refresh", class: "pull-refresh", "data-refreshing": refreshing(), "aria-hidden": "true",
-            Icon { name: "refresh" }
+            Glyph { icon: Icon::Refresh }
         }
         p { class: "visually-hidden", role: "status",
             if refreshing() { {ui.text("dashboard.refreshing")} }
@@ -705,7 +706,7 @@ fn ExpeditionIcon(source: Option<String>, label: String) -> Element {
             }
         } else {
             span { class: "expedition-icon", role: "img", "aria-label": label.clone(), title: label,
-                Icon { name: "user" }
+                Glyph { icon: Icon::User }
             }
         }
     }

@@ -1,3 +1,4 @@
+use super::icons::{Glyph, Icon};
 use crate::app::actions::spawn_root;
 use crate::app::data::load_page_data;
 use crate::app::preferences::{Preferences, use_preferences};
@@ -66,34 +67,6 @@ pub(super) fn LoadError(state: Signal<AppState>, message: &'static str) -> Eleme
 }
 
 #[component]
-pub(super) fn Icon(name: &'static str) -> Element {
-    let path = match name {
-        "close" => "M6 6l12 12M6 18 18 6",
-        "check" => "M5 12.5l4.5 4.5L19 7.5",
-        "link" => {
-            "M10 13a4 4 0 0 0 6 0l4-4a4 4 0 0 0-6-6l-2 2M14 11a4 4 0 0 0-6 0l-4 4a4 4 0 0 0 6 6l2-2"
-        }
-        "settings" => "M4 7h16M4 17h16M8 4v6M16 14v6",
-        "user" => "M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M4 21v-2a8 8 0 0 1 16 0v2",
-        "logout" => "M10 4H4v16h6M9 12h12m-4-4 4 4-4 4",
-        "docs" => "M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7",
-        "external" => "M14 4h6v6M20 4l-9 9M18 14v6H4V6h6",
-        "eye" => {
-            "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0"
-        }
-        "hide" => {
-            "M3 3l18 18M9.5 5.3A12 12 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-4 4.7M6 6.5A19 19 0 0 0 2 12s3.5 7 10 7a12 12 0 0 0 5-1.1M10 10a3 3 0 0 0 4 4"
-        }
-        "info" => "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M12 11v5M12 8h.01",
-        "refresh" => "M21 12a9 9 0 1 1-2.64-6.36L21 8M21 3v5h-5",
-        // A calendar page with two period bars: the events timeline.
-        "calendar" => "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4M7 14h6M11 17h6",
-        _ => "M4 6h16M4 12h16M4 18h16",
-    };
-    rsx! { svg { view_box: "0 0 24 24", "aria-hidden": "true", "focusable": "false", path { d: path } } }
-}
-
-#[component]
 pub(super) fn PasswordInput(
     id: String,
     mut value: Signal<String>,
@@ -122,7 +95,7 @@ pub(super) fn PasswordInput(
         use_hook(move || mask_on_visibility_change(shown, control_id))
     };
     let input_type = if shown() { "text" } else { "password" };
-    let icon_name = if shown() { "hide" } else { "eye" };
+    let icon = if shown() { Icon::Hide } else { Icon::Eye };
     let eye_label = if shown() {
         ui.text("common.hide_password")
     } else {
@@ -138,7 +111,7 @@ pub(super) fn PasswordInput(
             button { class: "password-eye", r#type: "button", "aria-controls": id,
                 "aria-label": eye_label,
                 "aria-pressed": shown().to_string(), onclick: move |_| shown.toggle(),
-                Icon { name: icon_name }
+                Glyph { icon }
             }
         }
     }

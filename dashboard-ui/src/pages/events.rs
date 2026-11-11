@@ -4,11 +4,12 @@
 //! the cached calendar of each game's selected (or first visible) UID, loaded when the page
 //! opens (`app::data::load_events_data`), never under the busy shell.
 use super::calendar::{Groups, calendar_notice, summary_parts};
-use super::common::{Icon, LoadError, game_name, pending, refresh_problem};
+use super::common::{LoadError, game_name, pending, refresh_problem};
 use super::dashboard::{Freshness, pull_refresh, use_clock, use_clock_provider};
 use super::event_list::EventList;
 use super::event_timeline::{LocalTime, WideTimeline};
 use super::game_tabs::{GameTabs, game_index, select_game_index, use_narrow_games};
+use super::icons::{Glyph, Icon};
 use super::swipe_tabs::SwipeableTabs;
 use crate::app::actions::spawn_root;
 use crate::app::data::load_game_calendar;
@@ -205,7 +206,7 @@ fn CalendarRefresh(state: Signal<AppState>, game: &'static str) -> Element {
                 let busy = state.peek().selected_accounts.get(game).is_some_and(|selection| selection.calendar_loading);
                 if !busy { spawn_root(async move { load_game_calendar(state, game).await; }); }
             },
-            Icon { name: "refresh" }
+            Glyph { icon: Icon::Refresh }
         }
     }
 }
