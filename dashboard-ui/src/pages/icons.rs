@@ -52,6 +52,11 @@ pub(super) enum Icon {
     Star,
     Medal,
     Gift,
+    // Event calendar rows: a wish or warp (a ticket with a star) versus an event
+    // (`Calendar`), and the running and announced phases.
+    Ticket,
+    Running,
+    Upcoming,
     // Status symbols (see `Status`) and time.
     Pending,
     Warning,
@@ -143,6 +148,13 @@ impl Icon {
             Self::Gift => {
                 "M4 11h16v9H4ZM3 7h18v4H3ZM12 7v13M12 7C10.5 3.5 7 3.2 7 5.3 7 6.6 9 7 12 7ZM12 7c1.5-3.5 5-3.8 5-1.7C17 6.6 15 7 12 7Z"
             }
+            Self::Ticket => {
+                "M3 6.5h18v3.5a2 2 0 0 0 0 4v3.5H3V14a2 2 0 0 0 0-4ZM12 8.3l1 2.7 2.7 1-2.7 1-1 2.7-1-2.7-2.7-1 2.7-1Z"
+            }
+            // A play triangle: under way now.
+            Self::Running => "M8 5.5v13l10.5-6.5Z",
+            // Two chevrons pointing ahead: announced, not started.
+            Self::Upcoming => "M6 6l6 6-6 6M13 6l6 6-6 6",
             Self::Pending => "M12 5a7 7 0 1 0 0 14 7 7 0 0 0 0-14Z",
             Self::Warning => "M12 3.5 2.5 20h19ZM12 10v4.5M12 17.3h.01",
             Self::Lock => "M6 11h12v9H6ZM8.5 11V8a3.5 3.5 0 0 1 7 0v3",
@@ -215,6 +227,10 @@ pub(super) enum Status {
     /// Counting down.
     Waiting,
     Loading,
+    /// Under way now (events and banners).
+    Running,
+    /// Announced, not started yet.
+    Upcoming,
 }
 
 impl Status {
@@ -228,6 +244,8 @@ impl Status {
             Self::Unknown => Icon::Unknown,
             Self::Waiting => Icon::Hourglass,
             Self::Loading => Icon::Loading,
+            Self::Running => Icon::Running,
+            Self::Upcoming => Icon::Upcoming,
         }
     }
 
@@ -242,25 +260,35 @@ impl Status {
             Self::Unknown => "unknown",
             Self::Waiting => "waiting",
             Self::Loading => "loading",
+            Self::Running => "running",
+            Self::Upcoming => "upcoming",
         }
     }
 }
 
 /// A status symbol with its word. `hide_text` keeps the word for screen readers (and as
-/// the tooltip) where the context already shows what the symbol refers to.
+/// the tooltip) where the context already shows what the symbol refers to. `label` is
+/// the full sentence when `text` is only its short form (a count or a duration): readers
+/// and the tooltip get the sentence, the screen shows the symbol and the short form.
 #[component]
 pub(super) fn StatusMark(
     status: Status,
     text: String,
     #[props(default)] hide_text: bool,
+    #[props(default)] label: Option<String>,
     #[props(default)] class: &'static str,
 ) -> Element {
+    let title = label.clone().or_else(|| hide_text.then(|| text.clone()));
     rsx! {
         span {
-            class: "status-mark {class}", "data-status": status.name(),
-            title: hide_text.then(|| text.clone()),
+            class: "status-mark {class}", "data-status": status.name(), title,
             Glyph { icon: status.icon() }
-            span { class: hide_text.then_some("visually-hidden"), "{text}" }
+            if let Some(label) = label {
+                span { class: "visually-hidden", "{label}" }
+                span { class: "status-short", "aria-hidden": "true", "{text}" }
+            } else {
+                span { class: hide_text.then_some("visually-hidden"), "{text}" }
+            }
         }
     }
 }
@@ -270,7 +298,7 @@ mod tests {
     use super::*;
     use std::collections::BTreeSet;
 
-    const ALL: [Icon; 47] = [
+    const ALL: [Icon; 50] = [
         Icon::Home,
         Icon::Menu,
         Icon::Close,
@@ -309,6 +337,9 @@ mod tests {
         Icon::Star,
         Icon::Medal,
         Icon::Gift,
+        Icon::Ticket,
+        Icon::Running,
+        Icon::Upcoming,
         Icon::Pending,
         Icon::Warning,
         Icon::Lock,
@@ -354,6 +385,8 @@ mod tests {
             Status::Unknown,
             Status::Waiting,
             Status::Loading,
+            Status::Running,
+            Status::Upcoming,
         ];
         let icons: BTreeSet<_> = all.iter().map(|status| status.icon().path()).collect();
         let names: BTreeSet<_> = all.iter().map(|status| status.name()).collect();
