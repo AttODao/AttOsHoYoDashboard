@@ -1,4 +1,4 @@
-use super::icons::{Glyph, Icon, Status};
+use super::icons::{Glyph, Icon, Status, StatusMark};
 use crate::app::actions::spawn_root;
 use crate::app::data::load_page_data;
 use crate::app::preferences::{Preferences, use_preferences};
@@ -51,12 +51,53 @@ pub(super) fn Card(title: &'static str, children: Element) -> Element {
     }
 }
 
-/// A failed load with the means to try again: re-requests the current page's data.
+/// A value that is a state: its status symbol with the word, in a labelled list.
+#[component]
+pub(super) fn StatusMetric(label: &'static str, status: Status, text: String) -> Element {
+    rsx! { div { class: "metric", dt { "{label}" } dd { StatusMark { status, text } } } }
+}
+
+/// A list, table or form that is still loading, drawn as grey rows in the shape of the
+/// coming content. `label` is the loading sentence: it is announced and stays readable
+/// for assistive technology, the rows are decoration (and stand still under reduced motion).
+#[component]
+pub(super) fn Skeleton(label: &'static str, #[props(default = 3)] rows: usize) -> Element {
+    rsx! {
+        div { class: "skeleton", role: "status",
+            span { class: "visually-hidden", "{label}" }
+            for row in 0..rows { span { key: "{row}", class: "skeleton-row", "aria-hidden": "true" } }
+        }
+    }
+}
+
+/// A longer explanation folded behind its title, so the form stays short. The text stays
+/// in the document: controls may still point at it with `aria-describedby`.
+#[component]
+pub(super) fn HintFold(
+    title: &'static str,
+    #[props(default)] open: bool,
+    children: Element,
+) -> Element {
+    rsx! {
+        details { class: "hint-fold", open,
+            summary {
+                Glyph { icon: Icon::Info }
+                span { "{title}" }
+                Glyph { icon: Icon::Chevron, class: "chevron" }
+            }
+            {children}
+        }
+    }
+}
+
+/// A failed load with the means to try again: re-requests the current page's data. The
+/// failure symbol leads one short line.
 #[component]
 pub(super) fn LoadError(state: Signal<AppState>, message: &'static str) -> Element {
     let ui = use_preferences();
     rsx! {
-        div { class: "warning load-error", role: "alert",
+        div { class: "warning load-error", role: "alert", "data-status": Status::Failed.name(),
+            Glyph { icon: Status::Failed.icon() }
             span { "{message}" }
             button { r#type: "button", onclick: move |_| {
                 let page = state.read().page;

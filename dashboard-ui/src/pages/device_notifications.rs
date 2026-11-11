@@ -1,6 +1,7 @@
 //! This device's notification switch, permission, server registration and UnifiedPush
 //! ("receive instantly") switch. Which notices it shows is chosen per notice next to the
 //! Webhook (`notifications::EventMatrix`).
+use super::icons::{Status, StatusMark};
 use crate::app::{
     actions::{handle_api_error_for, spawn_action},
     device_notifications::{Server, use_device_context},
@@ -45,8 +46,8 @@ pub(super) fn DeviceNotificationsCard(state: Signal<AppState>) -> Element {
             }
             if enabled {
                 match server {
-                    Server::Active => rsx! { p { class: "status", role: "status", {ui.text("notifications.device_server_active")} } },
-                    Server::Registering => rsx! { p { role: "status", {ui.text("notifications.device_server_pending")} } },
+                    Server::Active => rsx! { p { class: "state-note", role: "status", StatusMark { status: Status::Done, text: ui.text("notifications.device_server_active").to_owned() } } },
+                    Server::Registering => rsx! { p { class: "state-note", role: "status", StatusMark { status: Status::Loading, text: ui.text("notifications.device_server_pending").to_owned() } } },
                     Server::Failed => rsx! { p { class: "warning", role: "status", {ui.text("notifications.device_server_failed")} } },
                     Server::Off => rsx! {},
                 }
