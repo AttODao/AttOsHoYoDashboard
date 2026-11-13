@@ -132,7 +132,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 ### Androidアプリ
 
-ホーム画面ウィジェットとして原神／スターレイルの2つの3×3ウィジェットを用意しています（原神は樹脂・宝銭・探索派遣・デイリー任務、スターレイルは開拓力・依頼・デイリー訓練・模擬宇宙を表示）。タップでアプリのダッシュボードをそのゲームのタブで開きます。ダッシュボードの選択アカウントと状態を共有し、30分周期で更新します。先に `build-android` で生成した後、`devenv --profile android shell -- test-android` でモデルのJVMテストを実行できます。
+ホーム画面ウィジェットとして原神／スターレイルの2つの3×3ウィジェットを用意しています（原神は樹脂・宝銭・デイリー任務・探索派遣、スターレイルは開拓力・予備開拓力・依頼・デイリー訓練・模擬宇宙を表示。ダッシュボードと同じアイコン・ゲームのマーク・状態の記号で描きます）。タップでアプリのダッシュボードをそのゲームのタブで開きます。ダッシュボードの選択アカウントと状態を共有し、30分周期で更新します。先に `build-android` で生成した後、`devenv --profile android shell -- test-android` でモデルのJVMテストを実行できます。
 
 `dashboard-ui` はDioxusのmobile機能でAndroidアプリとしてもビルドできます（Cargo feature `mobile`。web版は既定の `web` featureのまま）。画面構成はweb版とほぼ同じですが、次の機能はアプリに含めず、web版でのみ使えます。
 
@@ -159,7 +159,7 @@ AHD_SERVER_URL=https://ahd.example.com devenv --profile android shell -- build-a
 AHD_SERVER_URL=https://ahd.example.com AHD_ANDROID_TARGET=x86_64-linux-android devenv --profile android shell -- build-android
 # 静的検査（clippy、mobile feature、aarch64-linux-android）
 devenv --profile android shell -- check-android
-# ウィジェット用インジケーターの規則とレイアウトの検査（JVM、SDK不要）
+# ウィジェットの表示の規則とリソースの検査（JVM、SDK不要）
 devenv --profile android shell -- test-android-kotlin
 ```
 
@@ -184,7 +184,7 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | --- | --- |
 | `dashboard-ui/src/app/navigation.rs` | 通常パス・History API・認証状態に応じた転送と戻る／進むの対応 |
 | `dashboard-ui/src/app/home_widgets.rs` | 選択アカウント・状態とAndroidホーム画面ウィジェットの同期 |
-| `dashboard-ui/android/kotlin/` | ウィジェットのモデル・パーサー・推定、保存・JNI・更新ジョブとゲーム別provider（表示値の判断は `GenshinWidgetModel.kt`／`StarRailWidgetModel.kt`、描画は `GenshinWidget.kt`／`StarRailWidget.kt`） |
+| `dashboard-ui/android/kotlin/` | ウィジェットのモデル・パーサー・推定、保存・JNI・更新ジョブとゲーム別provider（表示値の判断は `GenshinWidgetModel.kt`／`StarRailWidgetModel.kt`、両ゲーム共通の描画は `AhdWidgetFrame.kt` と `AhdIndicators.kt`） |
 | `dashboard-ui/android/test/` | ウィジェットモデルとセッションCookieの保存形式・移行判断（`AhdSessionFormatTest.kt`）のKotlin JVMテスト |
 | `dashboard-ui/src/app/state.rs` | 画面状態、認証・初期設定ゲートと画面データ取得の起動 |
 | `dashboard-ui/src/app/session.rs` | `/me`による起動・再確認、初期設定ゲートのその場での再読み込み、ログアウト |
@@ -203,7 +203,7 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | `dashboard-ui/src/app/server.rs` | アプリの接続先サーバーの変更：アドレスの検査と `/health` の確認、古いサーバーからの退出（受信箱の登録解除・ログアウト）、サーバーごとの状態（Cookie・プッシュ・受信箱・通知・ウィジェット・予定・画面のデータ）の消去 |
 | `dashboard-ui/src/pages/app_server.rs` | ログイン画面の「接続先サーバー」欄（アプリだけ） |
 | `dashboard-ui/android/res/` | ランチャーと通知のアイコン、アプリ名、DayNightテーマ、開発用サーバー（localhost）へのHTTPを許可するnetwork security config、セッションCookieをバックアップから除外する規則（`xml/ahd_backup_rules.xml`・`xml/ahd_data_extraction_rules.xml`）（`build-android` が生成プロジェクトへ上書き） |
-| `dashboard-ui/android/kotlin/` | `MainActivity.kt` の隣へ `build-android` がコピーするKotlin：ホーム画面ウィジェット用のバー型・丸型インジケーター（`AhdIndicators.kt`、規則は `AhdIndicatorModel.kt`）と、デバッグビルドだけのサンプル画面（`AhdIndicatorSamples.kt`）、UnifiedPushの接続（`AhdPush.kt`：配信アプリへの登録・receiver・前面化用service）と受信側のWeb Push復号（`AhdPushCrypto.kt`、RFC 8291。JVMテストは `android/test/`）。使い方は `dashboard-ui/android/README.md`、JVMの検査は `android/tests/` と `test-android-kotlin` |
+| `dashboard-ui/android/kotlin/` | `MainActivity.kt` の隣へ `build-android` がコピーするKotlin：ホーム画面ウィジェットの共通の描画（見出し・主リソース・案内の `AhdWidgetFrame.kt`、タイルと行の `AhdIndicators.kt`、規則は `AhdIndicatorModel.kt`）と、デバッグビルドだけのサンプル画面（`AhdIndicatorSamples.kt`）、UnifiedPushの接続（`AhdPush.kt`：配信アプリへの登録・receiver・前面化用service）と受信側のWeb Push復号（`AhdPushCrypto.kt`、RFC 8291。JVMテストは `android/test/`）。使い方は `dashboard-ui/android/README.md`、JVMの検査は `android/tests/` と `test-android-kotlin` |
 | `dashboard-ui/android/MainActivity.kt` | AndroidのActivity（`Dioxus.toml` の `android_main_activity`）：ルートでの戻るをバックグラウンド化、設定変更時の文字サイズ反映、破棄時のプロセス終了、通知の権限要求・アラーム・receiver、セッションCookieをKeystoreで暗号化して保存する `AhdSessionStore`（形式と判断は `AhdSessionFormat`）、サーバーの受信箱を読む `AhdInbox` とそのジョブ（receiverとジョブの設定は `android/AndroidManifest.application.xml`、UnifiedPushの配信アプリを見つけるための `<queries>` は `android/AndroidManifest.queries.xml` を生成manifestへ挿入） |
 | `dashboard-ui/src/pages/events.rs` | 「イベント」画面（`/events`）：ゲームごとのパネル（900px以下はゲームタブとスワイプ）、ダッシュボードと同じ見出し（ゲームのマーク＋ゲーム名、時計＋経過時間、web版の更新ボタン。アプリは下に引っ張って更新）、要約のチップ、進捗のUID（人のアイコン＋UID）、読み込み中・取得失敗・更新失敗・表示するUIDなしの表示（状態の記号つき）。カレンダーは各ゲームの表示UID（未選択なら最初の表示UID）を通して画面を開いたときに読み込む |
 | `dashboard-ui/src/pages/calendar.rs` | イベントカレンダーの中身の判断：開催中（祈願／跳躍とイベント）・開催予定・期間不明（開始も終了も不明）への振り分け、開催中・開催予定・期間不明の件数と次の終了までの時間の要約のチップ（状態の記号＋数。文は読み上げ用）、残り時間（砂時計／開催予定の記号＋時間。共通の `Clock` で毎秒更新）、名前・種類のアイコン（祈願／跳躍＝乗車券、イベント＝カレンダー）・イベントの状態の記号（完了・進捗・未完了・未開放）、ピックアップ（公式画像CDNの画像と名前）、取得失敗・古いカレンダーの注記 |
