@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Picker preview only (layout/ahd_widget_*_preview.xml): the 36dp arc filled to 60%, because a
+     static layout cannot set the level of ahd_indicator_arc_36.xml. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="36dp"
+    android:height="36dp"
+    android:viewportWidth="36"
+    android:viewportHeight="36">
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M6.686,29.314A16,16 0 0,1 25.264,3.744"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="4" />
+</vector>

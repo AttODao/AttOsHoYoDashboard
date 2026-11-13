@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Header of the regular widgets (ahd_widget_genshin.xml, ahd_widget_starrail.xml): the game's mark and name (from the theme overlay on the
+     widget root), and at the end the fetch time as clock + time; after a failed refresh the
+     warning symbol and the time in the warning color instead (AhdWidgetFrame.kt shows one
+     pair, none without data). Not read by itself: the widget root carries the description. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:importantForAccessibility="noHideDescendants"
+    android:orientation="horizontal">
+
+    <ImageView
+        style="@style/AhdIcon.Accent"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_marginEnd="6dp"
+        android:src="?attr/ahdMark" />
+
+    <TextView
+        android:id="@+id/ahd_widget_title"
+        style="@style/AhdWidgetTitle" />
+
+    <ImageView
+        android:id="@+id/ahd_widget_fetched_icon"
+        style="@style/AhdDetailIcon.Muted"
+        android:layout_marginStart="6dp"
+        android:src="@drawable/ahd_indicator_icon_clock" />
+
+    <TextView
+        android:id="@+id/ahd_widget_fetched"
+        style="@style/AhdText.Muted"
+        android:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/ahd_widget_fetched_warn_icon"
+        style="@style/AhdDetailIcon.Warn"
+        android:layout_marginStart="6dp"
+        android:src="@drawable/ahd_indicator_icon_warning" />
+
+    <TextView
+        android:id="@+id/ahd_widget_fetched_warn"
+        style="@style/AhdText.Warn"
+        android:visibility="gone" />
+</LinearLayout>

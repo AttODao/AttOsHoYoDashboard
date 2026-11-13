@@ -1,20 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Widget indicator sizes (layout/ahd_indicator_*.xml). Labels, bar values and captions
-         are in sp and follow the system font size (they ellipsize when space runs out). The
-         value inside the arc is in dp: the ring has a fixed size, and a larger font would
-         push the number over the ring. The arc captions sit in the gauge's open bottom. -->
-    <dimen name="ahd_indicator_bar_height">6dp</dimen>
-    <dimen name="ahd_indicator_bar_radius">3dp</dimen>
-    <dimen name="ahd_indicator_label_text">12sp</dimen>
-    <dimen name="ahd_indicator_bar_value_text">14sp</dimen>
-    <dimen name="ahd_indicator_caption_text">11sp</dimen>
-    <dimen name="ahd_indicator_arc_large">88dp</dimen>
-    <dimen name="ahd_indicator_arc_large_icon">36dp</dimen>
-    <dimen name="ahd_indicator_arc_large_value_text">24dp</dimen>
-    <dimen name="ahd_indicator_arc_large_caption_offset">-12dp</dimen>
-    <dimen name="ahd_indicator_arc_small">56dp</dimen>
-    <dimen name="ahd_indicator_arc_small_icon">24dp</dimen>
-    <dimen name="ahd_indicator_arc_small_value_text">15dp</dimen>
-    <dimen name="ahd_indicator_arc_small_caption_offset">-6dp</dimen>
+    <!-- Widget sizes (layout/ahd_widget_*.xml, ahd_indicator_*.xml). The radius is the
+         dashboard card's (dashboard.css radius: 16px).
+
+         Text in sp follows the system font size. The texts of the tiles and rows are in dp:
+         AhdIndicators.kt multiplies them by the font size as far as the widget has room
+         (AhdIndicatorModel.fit). The numbers inside an arc are in dp too, because the arc is
+         a drawing of a fixed size; their layouts let them grow with autoSize where it fits. -->
+    <dimen name="ahd_widget_radius">16dp</dimen>
+    <dimen name="ahd_widget_padding">12dp</dimen>
+    <dimen name="ahd_widget_padding_compact">10dp</dimen>
+    <dimen name="ahd_widget_title_text">14sp</dimen>
+    <dimen name="ahd_widget_title_text_compact">13sp</dimen>
+    <dimen name="ahd_widget_small_text">11sp</dimen>
+    <dimen name="ahd_widget_message_text">13sp</dimen>
+    <dimen name="ahd_widget_main_arc">96dp</dimen>
+    <dimen name="ahd_widget_main_arc_compact">60dp</dimen>
+    <dimen name="ahd_widget_main_value_text">26dp</dimen>
+    <dimen name="ahd_widget_main_value_text_compact">19dp</dimen>
+    <dimen name="ahd_widget_main_max_text">11dp</dimen>
+    <dimen name="ahd_widget_main_max_text_compact">10dp</dimen>
+    <dimen name="ahd_widget_main_time_text">15sp</dimen>
+    <dimen name="ahd_widget_main_time_text_compact">12sp</dimen>
+    <dimen name="ahd_indicator_arc">36dp</dimen>
+    <dimen name="ahd_indicator_arc_compact">22dp</dimen>
+    <dimen name="ahd_indicator_value_text">15dp</dimen>
+    <dimen name="ahd_indicator_value_text_compact">13dp</dimen>
+    <dimen name="ahd_indicator_small_text">11dp</dimen>
+    <dimen name="ahd_indicator_pip">8dp</dimen>
+    <dimen name="ahd_indicator_pip_compact">7dp</dimen>
 </resources>

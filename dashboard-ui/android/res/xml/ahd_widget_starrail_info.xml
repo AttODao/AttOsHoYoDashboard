@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- previewLayout (Android 12+) is a static sample of the widget; older pickers show the app icon.
+     The compact layout has four rows under the arc and needs about 191dp, so the widget cannot
+     be made shorter than 200dp (the Genshin widget, with three rows, keeps 180dp). -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="180dp" android:minHeight="180dp"
     android:targetCellWidth="3" android:targetCellHeight="3"
-    android:minResizeWidth="180dp" android:minResizeHeight="180dp"
+    android:minResizeWidth="180dp" android:minResizeHeight="200dp"
     android:resizeMode="horizontal|vertical" android:updatePeriodMillis="1800000"
     android:initialLayout="@layout/ahd_widget_starrail"
-    android:previewLayout="@layout/ahd_widget_starrail"
+    android:previewLayout="@layout/ahd_widget_starrail_preview"
     android:description="@string/ahd_widget_starrail_description"
     android:widgetCategory="home_screen" />

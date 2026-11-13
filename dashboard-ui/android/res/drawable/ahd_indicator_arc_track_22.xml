@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Track of the 22dp arc (a compact row): 270°, open at the bottom, 2.5dp wide with round ends.
+     White, tinted by the layout (AhdArc.Track). Generated with the fill ahd_indicator_arc_22.xml. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="22dp"
+    android:height="22dp"
+    android:viewportWidth="22"
+    android:viewportHeight="22">
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M4.106,17.894A9.75,9.75 0 1,1 17.894,17.894"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="2.5" />
+</vector>

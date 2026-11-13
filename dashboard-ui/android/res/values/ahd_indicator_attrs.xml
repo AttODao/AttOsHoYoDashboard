@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- What differs between the two game widgets, set by the theme overlays AhdGameGenshin /
+         AhdGameStarRail (ahd_indicator_styles.xml) on the root of every widget layout, so the
+         shared layouts name "the game color" once instead of holding one view per game. -->
+    <attr name="ahdAccent" format="color" />
+    <attr name="ahdMuted" format="color" />
+    <attr name="ahdMark" format="reference" />
+    <attr name="ahdTitle" format="string" />
+</resources>

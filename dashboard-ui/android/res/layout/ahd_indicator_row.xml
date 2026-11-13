@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A row of the compact widgets (AhdIndicators.tile with compact = true, through
+     ahd_indicator_row_<game>.xml): a 22dp box with the icon, inside a small arc for a share;
+     "value/max"; the pips of a count; and at the end the detail of ahd_indicator_tile.xml.
+     The number is never ellipsized; a short name gives way first. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/ahd_indicator_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:baselineAligned="false"
+    android:gravity="center_vertical"
+    android:minHeight="@dimen/ahd_indicator_arc_compact"
+    android:orientation="horizontal">
+
+    <FrameLayout
+        android:layout_width="@dimen/ahd_indicator_arc_compact"
+        android:layout_height="@dimen/ahd_indicator_arc_compact"
+        android:layout_marginEnd="5dp">
+
+        <FrameLayout
+            android:id="@+id/ahd_indicator_ring"
+            android:layout_width="@dimen/ahd_indicator_arc_compact"
+            android:layout_height="@dimen/ahd_indicator_arc_compact"
+            android:visibility="gone">
+            <ImageView
+                style="@style/AhdArc.Track"
+                android:src="@drawable/ahd_indicator_arc_track_22" />
+            <ImageView
+                android:id="@+id/ahd_indicator_fill_accent"
+                style="@style/AhdArc.Accent"
+                android:src="@drawable/ahd_indicator_arc_22" />
+            <ImageView
+                android:id="@+id/ahd_indicator_fill_warn"
+                style="@style/AhdArc.Warn"
+                android:src="@drawable/ahd_indicator_arc_22" />
+            <ImageView
+                android:id="@+id/ahd_indicator_ring_icon"
+                style="@style/AhdIcon.Accent"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_gravity="center" />
+        </FrameLayout>
+        <ImageView
+            android:id="@+id/ahd_indicator_icon"
+            style="@style/AhdIcon.Accent"
+            android:layout_width="15dp"
+            android:layout_height="15dp"
+            android:layout_gravity="center"
+            android:visibility="gone" />
+    </FrameLayout>
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <TextView
+            android:id="@+id/ahd_indicator_value"
+            style="@style/AhdValue"
+            android:textSize="@dimen/ahd_indicator_value_text_compact"
+            android:visibility="gone" />
+        <TextView
+            android:id="@+id/ahd_indicator_value_warn"
+            style="@style/AhdValue.Warn"
+            android:textSize="@dimen/ahd_indicator_value_text_compact"
+            android:visibility="gone" />
+        <TextView
+            android:id="@+id/ahd_indicator_value_none"
+            style="@style/AhdValue.Muted"
+            android:textSize="@dimen/ahd_indicator_value_text_compact"
+            android:visibility="gone" />
+        <TextView
+            android:id="@+id/ahd_indicator_max"
+            style="@style/AhdText.Muted"
+            android:layout_marginStart="1dp"
+            android:ellipsize="none"
+            android:textSize="@dimen/ahd_indicator_small_text"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/ahd_indicator_pips"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:orientation="horizontal"
+        android:visibility="gone">
+        <ImageView
+            android:id="@+id/ahd_indicator_pip_1"
+            style="@style/AhdPip.Compact" />
+        <ImageView
+            android:id="@+id/ahd_indicator_pip_2"
+            style="@style/AhdPip.Compact" />
+        <ImageView
+            android:id="@+id/ahd_indicator_pip_3"
+            style="@style/AhdPip.Compact" />
+        <ImageView
+            android:id="@+id/ahd_indicator_pip_4"
+            style="@style/AhdPip.Compact" />
+        <ImageView
+            android:id="@+id/ahd_indicator_pip_5"
+            style="@style/AhdPip.Compact" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:layout_weight="1"
+        android:gravity="end|center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:id="@+id/ahd_indicator_gift"
+            style="@style/AhdIcon.Muted"
+            android:layout_width="13dp"
+            android:layout_height="13dp"
+            android:layout_marginEnd="3dp"
+            android:src="@drawable/ahd_indicator_icon_gift"
+            android:visibility="gone" />
+        <ImageView
+            android:id="@+id/ahd_indicator_detail_icon_muted"
+            style="@style/AhdDetailIcon.Muted" />
+        <ImageView
+            android:id="@+id/ahd_indicator_detail_icon_warn"
+            style="@style/AhdDetailIcon.Warn" />
+        <ImageView
+            android:id="@+id/ahd_indicator_detail_icon_done"
+            style="@style/AhdDetailIcon.Done" />
+        <TextView
+            android:id="@+id/ahd_indicator_detail_muted"
+            style="@style/AhdText.Muted"
+            android:textSize="@dimen/ahd_indicator_small_text"
+            android:visibility="gone" />
+        <TextView
+            android:id="@+id/ahd_indicator_detail_warn"
+            style="@style/AhdText.Warn"
+            android:textSize="@dimen/ahd_indicator_small_text"
+            android:visibility="gone" />
+        <TextView
+            android:id="@+id/ahd_indicator_detail_done"
+            style="@style/AhdText.Done"
+            android:textSize="@dimen/ahd_indicator_small_text"
+            android:visibility="gone" />
+    </LinearLayout>
+</LinearLayout>

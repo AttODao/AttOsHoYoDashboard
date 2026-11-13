@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Track of the 60dp arc (the main resource, compact): 270°, open at the bottom, 6dp wide with round ends.
+     White, tinted by the layout (AhdArc.Track). Generated with the fill ahd_indicator_arc_60.xml. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="60dp"
+    android:height="60dp"
+    android:viewportWidth="60"
+    android:viewportHeight="60">
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M10.908,49.092A27,27 0 1,1 49.092,49.092"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="6" />
+</vector>

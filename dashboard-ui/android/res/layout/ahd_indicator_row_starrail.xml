@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ahd_indicator_row.xml in the colors of the Star Rail widget (AhdIndicators.tile adds it into a slot of
+     the widget; a layout added from code does not inherit the widget root's theme overlay). -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:theme="@style/AhdGameStarRail">
+
+    <include layout="@layout/ahd_indicator_row" />
+</FrameLayout>

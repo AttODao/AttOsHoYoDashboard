@@ -1,11 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Widget indicators, dark mode (dashboard.css :root). -->
-    <color name="ahd_indicator_genshin">#93F5CE</color>
-    <color name="ahd_indicator_starrail">#D5B7FF</color>
-    <color name="ahd_indicator_near">#FFD585</color>
-    <color name="ahd_indicator_full">#FFD585</color>
+    <!-- Widget parts shared by both games, dark mode (dashboard.css :root). -->
+    <color name="ahd_indicator_warn">#FFD585</color>
+    <color name="ahd_indicator_warn_bg">#3D3120</color>
+    <color name="ahd_indicator_done">#93F5CE</color>
     <color name="ahd_indicator_track">#33F8F7FC</color>
     <color name="ahd_indicator_text">#F8F7FC</color>
-    <color name="ahd_indicator_muted">#B7B2C4</color>
 </resources>

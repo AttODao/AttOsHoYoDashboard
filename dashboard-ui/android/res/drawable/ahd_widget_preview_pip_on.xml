@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Picker preview only: a pip that is on (a static layout cannot set the level of
+     ahd_indicator_pip.xml). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <solid android:color="?attr/ahdAccent" />
+</shape>

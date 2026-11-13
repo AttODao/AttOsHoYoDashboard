@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Time left. Line art from Icon::Hourglass in dashboard-ui/src/pages/icons.rs
+     (same path; tests/AhdIndicatorModelTest.kt compares them), tinted by the layout. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M7 3h10M7 21h10M8 3v3.5c0 2.5 4 3.5 4 5.5s-4 3-4 5.5V21M16 3v3.5c0 2.5-4 3.5-4 5.5s4 3 4 5.5V21"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="2.2" />
+</vector>

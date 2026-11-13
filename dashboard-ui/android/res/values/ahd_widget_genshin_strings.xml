@@ -1,15 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Genshin widget (kotlin/GenshinWidget.kt), Japanese (default). -->
+    <!-- Genshin widget (kotlin/GenshinWidgetModel.kt): the names behind the icons, spoken in the
+         widget's content description. Japanese (default). -->
     <string name="ahd_widget_genshin_resin">天然樹脂</string>
     <string name="ahd_widget_genshin_coin">洞天宝銭</string>
     <string name="ahd_widget_genshin_expeditions">探索派遣</string>
     <string name="ahd_widget_genshin_daily">デイリー任務</string>
-    <string name="ahd_widget_genshin_resin_full">全回復済み</string>
-    <string name="ahd_widget_genshin_coin_full">上限です</string>
-    <string name="ahd_widget_genshin_daily_claimed">報酬受取済み</string>
-    <string name="ahd_widget_genshin_daily_unclaimed">報酬未受取</string>
-    <!-- Compact bar value: "3/4 · 未受取". -->
-    <string name="ahd_widget_genshin_daily_claimed_short">受取済</string>
-    <string name="ahd_widget_genshin_daily_unclaimed_short">未受取</string>
+    <string name="ahd_widget_genshin_extra_reward">追加依頼報酬</string>
 </resources>

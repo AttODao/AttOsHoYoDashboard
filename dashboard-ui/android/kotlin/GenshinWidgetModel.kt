@@ -4,32 +4,17 @@ package dev.dioxus.main
 // (android/test/GenshinWidgetModelTest.kt) cover it.
 
 /** Layout chosen for the widget's size in dp (AppWidgetManager OPTION_APPWIDGET_* values). */
-enum class GenshinWidgetLayout(val layout: String) {
-    /** Resin as the large arc, Realm Currency, expeditions and daily commissions below. */
-    REGULAR("ahd_widget_genshin"),
+enum class GenshinWidgetLayout(val layout: String, val kind: AhdWidgetLayout) {
+    /** Resin as the large arc with its time; Realm Currency, commissions and expeditions as tiles. */
+    REGULAR("ahd_widget_genshin", AhdWidgetLayout.REGULAR),
 
-    /** Four bars, for a widget resized below the regular layout's height or width or large text. */
-    COMPACT("ahd_widget_genshin_compact");
+    /** The same values as one-line rows, for a widget resized below the regular size or large text. */
+    COMPACT("ahd_widget_genshin_compact", AhdWidgetLayout.COMPACT);
 
     companion object {
-        // Three 56dp arcs with their texts side by side, and the 88dp arc above them, at the
-        // default font size. The labels, values and times below the arcs grow with the system
-        // font size, so the minimum grows with it (font size 200% at 3x3 cut the resin time off).
-        const val REGULAR_MIN_WIDTH_DP = 210
-        const val REGULAR_MIN_HEIGHT_DP = 250
-
-        /**
-         * Portrait size: the width is OPTION_APPWIDGET_MIN_WIDTH, the height MAX_HEIGHT. 0 = unknown.
-         * [fontScale] is Configuration.fontScale (values below 1 count as 1).
-         */
-        fun forSize(widthDp: Int, heightDp: Int, fontScale: Float = 1f): GenshinWidgetLayout {
-            val scale = fontScale.coerceAtLeast(1f)
-            return when {
-                widthDp <= 0 || heightDp <= 0 -> REGULAR
-                widthDp >= REGULAR_MIN_WIDTH_DP * scale && heightDp >= REGULAR_MIN_HEIGHT_DP * scale -> REGULAR
-                else -> COMPACT
-            }
-        }
+        /** The shared size rule (AhdWidgetLayout.forSize): both games switch at the same sizes. */
+        fun forSize(widthDp: Int, heightDp: Int, fontScale: Float = 1f): GenshinWidgetLayout =
+            if (AhdWidgetLayout.forSize(widthDp, heightDp, fontScale) == AhdWidgetLayout.REGULAR) REGULAR else COMPACT
     }
 }
 
@@ -42,9 +27,6 @@ data class GenshinExpeditionsView(
     val lastSeconds: Long?,
 ) {
     val allDone: Boolean get() = total > 0 && finished >= total
-
-    /** Every expedition back means rewards waiting: the indicator uses the cap (warning) color. */
-    val level: AhdFillLevel? get() = if (allDone) AhdFillLevel.FULL else null
 }
 
 data class GenshinWidgetModel(
@@ -61,9 +43,9 @@ data class GenshinWidgetModel(
     val coinFull: Boolean get() = coin?.isFull == true
 
     /**
-     * Commissions are not a resource that overflows: done with the reward claimed is the normal
-     * accent; all four done but the reward unclaimed asks for action (warning); otherwise the
-     * share decides (never the cap color, which means "overflowing" elsewhere).
+     * Commissions are not a resource that overflows: done with the reward claimed needs nothing;
+     * all four done but the reward unclaimed asks for action (NEAR_FULL = warning); otherwise
+     * nothing warns (never FULL, which means "overflowing" elsewhere).
      */
     val dailyLevel: AhdFillLevel? get() = daily?.let {
         when {
@@ -72,6 +54,56 @@ data class GenshinWidgetModel(
             it.extraRewardReceived == false -> AhdFillLevel.NEAR_FULL
             else -> AhdFillLevel.NORMAL
         }
+    }
+
+    /**
+     * The extra commission reward as a status symbol: claimed, not claimed yet, not claimed with
+     * all commissions done (act now: warning color, [dailyLevel]), or unknown when the field was
+     * not returned (never shown as "unclaimed").
+     */
+    val rewardMark: AhdMark? get() = daily?.let {
+        when (it.extraRewardReceived) {
+            true -> AhdMark.CLAIMED
+            false -> if (dailyLevel == AhdFillLevel.NEAR_FULL) AhdMark.UNCLAIMED_DUE else AhdMark.UNCLAIMED
+            null -> AhdMark.UNKNOWN
+        }
+    }
+
+    /** What the widget draws: resin, then Realm Currency, commissions and expeditions (the dashboard card's order). */
+    fun content(): AhdWidgetContent = AhdWidgetContent(
+        AhdMain(AhdGlyph.RESIN, "ahd_widget_genshin_resin", resin?.current?.toLong(), resin?.max?.toLong(), resinSeconds),
+        listOf(
+            AhdTile.gauge(AhdGlyph.COIN, "ahd_widget_genshin_coin", coin?.current?.toLong(), coin?.max?.toLong(), coinSeconds),
+            dailyTile(),
+            expeditionsTile(),
+        ),
+        fetchedAtMs, refreshFailed,
+    )
+
+    private fun dailyTile(): AhdTile {
+        val daily = daily ?: return AhdTile.unknown(AhdGlyph.DAILY, "ahd_widget_genshin_daily")
+        return AhdTile(
+            AhdGlyph.DAILY, "ahd_widget_genshin_daily", daily.current.toLong(), daily.max.toLong(),
+            pips = AhdIndicatorModel.pips(daily.current, daily.max),
+            detail = rewardMark?.let { AhdDetail.Reward(it) },
+        )
+    }
+
+    /** Finished/sent with pips, then the time until the next one and until all are back. */
+    private fun expeditionsTile(): AhdTile {
+        val expeditions = expeditions ?: return AhdTile.unknown(AhdGlyph.EXPEDITION, "ahd_widget_genshin_expeditions")
+        val next = expeditions.nextSeconds
+        val last = expeditions.lastSeconds
+        return AhdTile(
+            AhdGlyph.EXPEDITION, "ahd_widget_genshin_expeditions", expeditions.finished.toLong(), expeditions.total.toLong(),
+            pips = AhdIndicatorModel.pips(expeditions.finished, expeditions.total),
+            detail = when {
+                expeditions.total == 0 -> AhdDetail.Label("ahd_widget_expeditions_none")
+                expeditions.allDone -> AhdDetail.Status(AhdMark.DONE)
+                next != null && last != null && last > next -> AhdDetail.Range(next, last)
+                else -> (next ?: last)?.let { AhdDetail.Time(it) }
+            },
+        )
     }
 
     companion object {

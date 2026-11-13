@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Genshin widget panel, light mode (dashboard.css [data-theme=light] .game-panel.genshin). -->
+    <!-- Genshin widget panel, light mode (dashboard.css [data-theme=light] .game-panel.genshin):
+         surface, border, the game color (mint) and the quiet text color. -->
     <color name="ahd_widget_genshin_surface">#E5F4EC</color>
     <color name="ahd_widget_genshin_border">#87AC99</color>
-    <color name="ahd_widget_genshin_title">#006A4E</color>
+    <color name="ahd_widget_genshin_accent">#006A4E</color>
     <color name="ahd_widget_genshin_muted">#476457</color>
 </resources>

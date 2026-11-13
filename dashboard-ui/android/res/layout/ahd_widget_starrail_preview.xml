@@ -1,0 +1,349 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Star Rail widget in the widget picker (previewLayout of xml/ahd_widget_starrail_info.xml,
+     Android 12+): a static sample of the regular layout with made-up values. A preview runs no
+     code, so the parts are written out here instead of going through AhdWidgetFrame.kt (the
+     arcs are the fixed drawables ahd_widget_preview_arc_*, the pips ahd_widget_preview_pip_*);
+     keep it in step with ahd_widget_body.xml and ahd_indicator_tile.xml. Texts are resolved by
+     the launcher in the system language. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/ahd_widget_starrail_background"
+    android:importantForAccessibility="noHideDescendants"
+    android:orientation="vertical"
+    android:padding="@dimen/ahd_widget_padding"
+    android:theme="@style/AhdGameStarRail"
+    tools:ignore="HardcodedText">
+
+    <include layout="@layout/ahd_widget_header" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:paddingTop="6dp">
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="2" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+            <FrameLayout
+                android:layout_width="@dimen/ahd_widget_main_arc"
+                android:layout_height="100dp">
+                <FrameLayout
+                    android:layout_width="@dimen/ahd_widget_main_arc"
+                    android:layout_height="@dimen/ahd_widget_main_arc">
+                    <ImageView
+                        style="@style/AhdArc.Track"
+                        android:src="@drawable/ahd_indicator_arc_track_96" />
+                    <ImageView
+                        style="@style/AhdArc.Accent"
+                        android:src="@drawable/ahd_widget_preview_arc_96"
+                        android:visibility="visible" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:gravity="center"
+                        android:orientation="vertical"
+                        android:paddingBottom="6dp">
+                        <ImageView
+                            style="@style/AhdIcon.Accent"
+                            android:layout_width="18dp"
+                            android:layout_height="18dp"
+                            android:src="@drawable/ahd_indicator_icon_power" />
+                        <TextView
+                            style="@style/AhdArcValue.Accent"
+                            android:text="180"
+                            android:visibility="visible" />
+                    </LinearLayout>
+                </FrameLayout>
+                <TextView
+                    style="@style/AhdArcMax"
+                    android:text="/300"
+                    android:visibility="visible" />
+            </FrameLayout>
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="14dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+                    <ImageView
+                        style="@style/AhdIcon.Muted"
+                        android:layout_width="15dp"
+                        android:layout_height="15dp"
+                        android:src="@drawable/ahd_indicator_icon_hourglass"
+                        android:layout_marginEnd="4dp" />
+                    <TextView
+                        style="@style/AhdMainTime"
+                        android:text="@string/ahd_widget_preview_time" />
+                </LinearLayout>
+                <TextView
+                    style="@style/AhdText.Muted"
+                    android:text="22:40"
+                    android:layout_marginTop="5dp" />
+            </LinearLayout>
+        </LinearLayout>
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="2" />
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="6dp"
+            android:background="@color/ahd_indicator_track" />
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="2" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:baselineAligned="false"
+            android:orientation="horizontal">
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="5"
+                android:orientation="horizontal">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+                        <ImageView
+                            style="@style/AhdIcon.Accent"
+                            android:layout_width="18dp"
+                            android:layout_height="18dp"
+                            android:src="@drawable/ahd_indicator_icon_reserve"
+                            android:layout_gravity="center_vertical"
+                            android:layout_marginEnd="5dp" />
+                        <TextView
+                            style="@style/AhdValue"
+                            android:text="380" />
+                    </LinearLayout>
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+                        <TextView
+                            style="@style/AhdText.Muted"
+                            android:text="@string/ahd_widget_starrail_reserve_short"
+                            android:textSize="@dimen/ahd_indicator_small_text" />
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="6"
+                android:layout_marginStart="8dp"
+                android:orientation="horizontal">
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+                        <ImageView
+                            style="@style/AhdIcon.Accent"
+                            android:layout_width="18dp"
+                            android:layout_height="18dp"
+                            android:src="@drawable/ahd_indicator_icon_expedition"
+                            android:layout_gravity="center_vertical"
+                            android:layout_marginEnd="5dp" />
+                        <TextView
+                            style="@style/AhdValue"
+                            android:text="1" />
+                        <TextView
+                            style="@style/AhdText.Muted"
+                            android:text="/4"
+                            android:layout_marginStart="1dp"
+                            android:textSize="@dimen/ahd_indicator_small_text" />
+                    </LinearLayout>
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:orientation="horizontal">
+                        <ImageView
+                            style="@style/AhdPip"
+                            android:src="@drawable/ahd_widget_preview_pip_on"
+                            android:visibility="visible" />
+                        <ImageView
+                            style="@style/AhdPip"
+                            android:src="@drawable/ahd_widget_preview_pip_off"
+                            android:visibility="visible" />
+                        <ImageView
+                            style="@style/AhdPip"
+                            android:src="@drawable/ahd_widget_preview_pip_off"
+                            android:visibility="visible" />
+                        <ImageView
+                            style="@style/AhdPip"
+                            android:src="@drawable/ahd_widget_preview_pip_off"
+                            android:visibility="visible" />
+                    </LinearLayout>
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+                        <ImageView
+                            style="@style/AhdDetailIcon.Muted"
+                            android:src="@drawable/ahd_indicator_icon_hourglass"
+                            android:visibility="visible" />
+                        <TextView
+                            style="@style/AhdText.Muted"
+                            android:text="@string/ahd_widget_preview_detail"
+                            android:textSize="@dimen/ahd_indicator_small_text" />
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:baselineAligned="false"
+            android:orientation="horizontal">
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="5"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+                <FrameLayout
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_marginEnd="6dp">
+                    <ImageView
+                        style="@style/AhdArc.Track"
+                        android:src="@drawable/ahd_indicator_arc_track_36" />
+                    <ImageView
+                        style="@style/AhdArc.Accent"
+                        android:src="@drawable/ahd_widget_preview_arc_36"
+                        android:visibility="visible" />
+                    <ImageView
+                        style="@style/AhdIcon.Accent"
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:src="@drawable/ahd_indicator_icon_daily"
+                        android:layout_gravity="center" />
+                </FrameLayout>
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+                        <TextView
+                            style="@style/AhdValue"
+                            android:text="300" />
+                        <TextView
+                            style="@style/AhdText.Muted"
+                            android:text="/500"
+                            android:layout_marginStart="1dp"
+                            android:textSize="@dimen/ahd_indicator_small_text" />
+                    </LinearLayout>
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+                        <TextView
+                            style="@style/AhdText.Muted"
+                            android:text="@string/ahd_widget_starrail_daily_short"
+                            android:textSize="@dimen/ahd_indicator_small_text" />
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="6"
+                android:layout_marginStart="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+                <FrameLayout
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_marginEnd="6dp">
+                    <ImageView
+                        style="@style/AhdArc.Track"
+                        android:src="@drawable/ahd_indicator_arc_track_36" />
+                    <ImageView
+                        style="@style/AhdArc.Accent"
+                        android:src="@drawable/ahd_widget_preview_arc_36"
+                        android:visibility="visible" />
+                    <ImageView
+                        style="@style/AhdIcon.Accent"
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:src="@drawable/ahd_indicator_icon_weekly"
+                        android:layout_gravity="center" />
+                </FrameLayout>
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+                        <TextView
+                            style="@style/AhdValue"
+                            android:text="8400" />
+                        <TextView
+                            style="@style/AhdText.Muted"
+                            android:text="/14000"
+                            android:layout_marginStart="1dp"
+                            android:textSize="@dimen/ahd_indicator_small_text" />
+                    </LinearLayout>
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+                        <TextView
+                            style="@style/AhdText.Muted"
+                            android:text="@string/ahd_widget_starrail_weekly_short"
+                            android:textSize="@dimen/ahd_indicator_small_text" />
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+    </LinearLayout>
+</LinearLayout>

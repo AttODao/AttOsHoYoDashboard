@@ -20,16 +20,20 @@ class StarRailWidgetModelTest {
     @Test fun layoutFollowsTheWidgetAndFontSize() {
         // 3x3 on a 1080px phone at density 420 is about 270x343dp; at density 560 about 200x248dp.
         assertEquals(StarRailWidgetLayout.REGULAR, StarRailWidgetLayout.forSize(270, 343, 1.0f))
-        assertEquals(StarRailWidgetLayout.REGULAR, StarRailWidgetLayout.forSize(270, 343, 1.3f))
+        assertEquals(StarRailWidgetLayout.REGULAR, StarRailWidgetLayout.forSize(270, 343, 1.15f))
         assertEquals(StarRailWidgetLayout.REGULAR, StarRailWidgetLayout.forSize(0, 0, 2.0f))
-        // The time beside the arc was ellipsized ("あと9…") in these cases.
         assertEquals(StarRailWidgetLayout.COMPACT, StarRailWidgetLayout.forSize(200, 248, 1.0f))
+        assertEquals(StarRailWidgetLayout.COMPACT, StarRailWidgetLayout.forSize(270, 343, 1.3f))
         assertEquals(StarRailWidgetLayout.COMPACT, StarRailWidgetLayout.forSize(270, 343, 2.0f))
-        assertEquals(StarRailWidgetLayout.COMPACT, StarRailWidgetLayout.forSize(200, 248, 1.3f))
-        // Boundaries: 142dp fixed + 90dp of time per font scale; 148dp + 98dp of text in height.
-        assertEquals(StarRailWidgetLayout.REGULAR, StarRailWidgetLayout.forSize(232, 246, 0.85f))
-        assertEquals(StarRailWidgetLayout.COMPACT, StarRailWidgetLayout.forSize(231, 343, 1.0f))
-        assertEquals(StarRailWidgetLayout.COMPACT, StarRailWidgetLayout.forSize(270, 245, 1.0f))
+        // The same boundaries as the Genshin widget (AhdWidgetLayout): 210x250dp per font scale.
+        assertEquals(StarRailWidgetLayout.REGULAR, StarRailWidgetLayout.forSize(210, 250, 0.85f))
+        assertEquals(StarRailWidgetLayout.COMPACT, StarRailWidgetLayout.forSize(209, 343, 1.0f))
+        assertEquals(StarRailWidgetLayout.COMPACT, StarRailWidgetLayout.forSize(270, 249, 1.0f))
+        for ((width, height, scale) in listOf(Triple(270, 343, 1.0f), Triple(200, 248, 1.3f), Triple(231, 260, 1.1f))) {
+            assertEquals(GenshinWidgetLayout.forSize(width, height, scale).kind, StarRailWidgetLayout.forSize(width, height, scale).kind)
+        }
+        assertEquals("ahd_widget_starrail", StarRailWidgetLayout.REGULAR.layout)
+        assertEquals("ahd_widget_starrail_compact", StarRailWidgetLayout.COMPACT.layout)
     }
 
     @Test fun normalStatusProjectsToTheRenderTime() {
@@ -58,7 +62,7 @@ class StarRailWidgetModelTest {
         assertEquals(2, later.assignmentsDone)
         assertEquals(3600L, later.assignmentsLeftSeconds)
 
-        // After the full time and the last assignment: both warn.
+        // After the full time and the last assignment: power at its cap, every assignment done.
         val done = StarRailWidgetModel.of(ready(normal), time + 6 * 3600_000)
         assertEquals(240, done.power)
         assertTrue(done.powerFull)
@@ -93,5 +97,57 @@ class StarRailWidgetModelTest {
         assertFalse(model.noAssignments)
         assertNull(model.daily)
         assertNull(model.weekly)
+    }
+
+    @Test fun contentShowsPowerThenReserveAssignmentsTrainingAndUniverse() {
+        val content = StarRailWidgetModel.of(ready(normal), time).content()
+        assertEquals(AhdMain(AhdGlyph.POWER, "ahd_widget_starrail_power", 180, 240, 6 * 3600L), content.main)
+        assertEquals(listOf(
+            AhdTile(AhdGlyph.RESERVE, "ahd_widget_starrail_reserve", 1200, detail = AhdDetail.Label("ahd_widget_starrail_reserve_short", spoken = false)),
+            AhdTile(AhdGlyph.EXPEDITION, "ahd_widget_starrail_assignments", 1, 4, pips = AhdPips(1, 4), detail = AhdDetail.Time(7200)),
+            AhdTile(AhdGlyph.DAILY, "ahd_widget_starrail_daily", 400, 500, ring = 6000, detail = AhdDetail.Label("ahd_widget_starrail_daily_short", spoken = false)),
+            AhdTile(AhdGlyph.WEEKLY, "ahd_widget_starrail_weekly", 8000, 14000, ring = 4285, detail = AhdDetail.Label("ahd_widget_starrail_weekly_short", spoken = false)),
+        ), content.tiles)
+        assertEquals(time, content.fetchedAtMs)
+        assertFalse(content.refreshFailed)
+        // "14000/14000" beside its arc: the second column is the wider one.
+        assertTrue(content.wideEndColumn)
+
+        // Every assignment back is done (the check), as on the dashboard; power at its cap warns.
+        val done = StarRailWidgetModel.of(ready(normal), time + 6 * 3600_000).content()
+        assertEquals(AhdFillLevel.FULL, done.main.level)
+        assertEquals(AhdDetail.Status(AhdMark.DONE), done.tiles[1].detail)
+        assertEquals(AhdPips(4, 4), done.tiles[1].pips)
+    }
+
+    @Test fun contentWarnsOnlyForWhatIsWasted() {
+        val content = StarRailWidgetModel.of(ready("""{"current_stamina":250,"max_stamina":240,
+            "current_reserve_stamina":2400,"is_reserve_stamina_full":true,"total_expedition_num":4,"expeditions":[],
+            "current_train_score":500,"max_train_score":500,"current_rogue_score":14000,"max_rogue_score":14000}""", failed = true), time).content()
+        assertEquals(AhdFillLevel.FULL, content.main.level)
+        assertTrue(content.refreshFailed)
+        val (reserve, assignments, daily, weekly) = content.tiles
+        // A full reserve wastes power: warning color and the cap badge.
+        assertTrue(reserve.warn)
+        assertEquals(AhdDetail.AtCap, reserve.detail)
+        assertEquals(AhdDetail.Label("ahd_widget_expeditions_none"), assignments.detail)
+        assertNull(assignments.pips)
+        // Finished training and reached points are done, never a warning.
+        for (score in listOf(daily, weekly)) {
+            assertEquals(AhdDetail.Status(AhdMark.GOAL_REACHED), score.detail)
+            assertFalse(score.warn || score.ringWarn)
+            assertEquals(AhdIndicatorModel.ARC_LEVEL, score.ring)
+        }
+    }
+
+    @Test fun missingValuesBecomeUnknownTiles() {
+        val content = StarRailWidgetModel.of(ready("{}"), time).content()
+        assertNull(content.main.current)
+        assertEquals(listOf(
+            AhdTile.unknown(AhdGlyph.RESERVE, "ahd_widget_starrail_reserve"),
+            AhdTile.unknown(AhdGlyph.EXPEDITION, "ahd_widget_starrail_assignments"),
+            AhdTile.unknown(AhdGlyph.DAILY, "ahd_widget_starrail_daily", ring = true),
+            AhdTile.unknown(AhdGlyph.WEEKLY, "ahd_widget_starrail_weekly", ring = true),
+        ), content.tiles)
     }
 }

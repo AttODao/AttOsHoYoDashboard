@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Drop (Original Resin). Widget indicator icon, tinted by the layout. -->
+<!-- Drop (Original Resin). Line art from Icon::Resin in dashboard-ui/src/pages/icons.rs
+     (same path; tests/AhdIndicatorModelTest.kt compares them), tinted by the layout. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M12,2.5C12,2.5 5.5,9.6 5.5,14.2C5.5,17.9 8.4,21 12,21C15.6,21 18.5,17.9 18.5,14.2C18.5,9.6 12,2.5 12,2.5ZM9.2,14.4C9.2,16.1 10.4,17.5 12,17.8L12,19.2C9.6,18.9 7.8,16.9 7.8,14.4Z" />
+        android:fillColor="#00000000"
+        android:pathData="M12 2.5C12 2.5 5.5 9.6 5.5 14.2a6.5 6.8 0 0 0 13 0C18.5 9.6 12 2.5 12 2.5ZM9 14.4a3.2 3.4 0 0 0 3 3.4"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.8" />
 </vector>

@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- Home-screen widget panels, light mode (dashboard.css [data-theme=light]); dark mode is
-         values-night. Indicator colors are ahd_indicator_colors.xml. -->
-    <color name="ahd_widget_surface">#FFFFFF</color>
-    <color name="ahd_widget_text">#201C29</color>
-    <color name="ahd_widget_muted">#625B70</color>
-    <color name="ahd_widget_warning">#825000</color>
-</resources>

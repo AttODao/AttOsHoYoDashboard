@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Bolt (Trailblaze Power). Widget indicator icon, tinted by the layout. -->
+<!-- Bolt (Trailblaze Power). Line art from Icon::Bolt in dashboard-ui/src/pages/icons.rs
+     (same path; tests/AhdIndicatorModelTest.kt compares them), tinted by the layout. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M13.5,2L5,13.5L11,13.5L10,22L19,10L13,10Z" />
+        android:fillColor="#00000000"
+        android:pathData="M13.5 2 5 13.5h6L10 22l9-12h-6Z"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.8" />
 </vector>

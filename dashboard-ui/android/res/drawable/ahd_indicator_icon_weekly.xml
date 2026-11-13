@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cube (Simulated Universe weekly points). Line art from Icon::Cube in dashboard-ui/src/pages/icons.rs
+     (same path; tests/AhdIndicatorModelTest.kt compares them), tinted by the layout. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M12 2.5 20.5 7.25v9.5L12 21.5 3.5 16.75v-9.5ZM3.5 7.25 12 12l8.5-4.75M12 12v9.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.8" />
+</vector>

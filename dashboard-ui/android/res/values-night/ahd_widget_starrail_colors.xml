@@ -3,5 +3,6 @@
     <!-- Star Rail widget panel, dark mode (dashboard.css .game-panel.starrail). -->
     <color name="ahd_widget_starrail_surface">#27223E</color>
     <color name="ahd_widget_starrail_border">#74638F</color>
+    <color name="ahd_widget_starrail_accent">#D5B7FF</color>
     <color name="ahd_widget_starrail_muted">#CDC3E7</color>
 </resources>
