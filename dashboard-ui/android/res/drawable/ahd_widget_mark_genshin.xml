@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Genshin Impact game mark: a four-pointed gem (the widget header and messages). Swap the mark by replacing this path. Line art from Icon::MarkGenshin in dashboard-ui/src/pages/icons.rs
+     (same path; tests/AhdIndicatorModelTest.kt compares them), tinted by the layout. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M12 2.5C12.8 8.2 15.8 11.2 21.5 12 15.8 12.8 12.8 15.8 12 21.5 11.2 15.8 8.2 12.8 2.5 12 8.2 11.2 11.2 8.2 12 2.5ZM12 9.2 14.8 12 12 14.8 9.2 12Z"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.8" />
+</vector>

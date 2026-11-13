@@ -1,39 +1,17 @@
 package dev.dioxus.main
 
 /** Layout chosen for the Star Rail widget's size in dp and the system font size. */
-enum class StarRailWidgetLayout(val layout: String) {
-    /** Trailblaze Power as the arc with its time, reserve and fetch time beside it, three bars below. */
-    REGULAR("ahd_widget_starrail"),
+enum class StarRailWidgetLayout(val layout: String, val kind: AhdWidgetLayout) {
+    /** Trailblaze Power as the large arc with its time; reserve, assignments, daily training and Simulated Universe as tiles. */
+    REGULAR("ahd_widget_starrail", AhdWidgetLayout.REGULAR),
 
-    /** Four bars (Trailblaze Power with its time as the caption), for narrow widgets or large text. */
-    COMPACT("ahd_widget_starrail_compact");
+    /** The same values as one-line rows, for narrow widgets or large text. */
+    COMPACT("ahd_widget_starrail_compact", AhdWidgetLayout.COMPACT);
 
     companion object {
-        // Regular width: 12dp padding on both sides, the 88dp arc, its 12dp margin and the 18dp
-        // bolt beside it are fixed; the time to full ("23時間59分", 14sp bold) needs about 90dp at
-        // the default font size and grows with it. At 200dp (density 560) or font size 200% it
-        // was ellipsized to "あと9…".
-        const val REGULAR_FIXED_WIDTH_DP = 142
-        const val TIME_WIDTH_DP = 90
-
-        // Regular height: padding and the arc with its caption are fixed (148dp); the header and
-        // the three bars (about 98dp at the default font size) grow with the font size.
-        const val REGULAR_FIXED_HEIGHT_DP = 148
-        const val TEXT_HEIGHT_DP = 98
-
-        /**
-         * Portrait size like GenshinWidgetLayout.forSize (MIN_WIDTH, MAX_HEIGHT; 0 = unknown).
-         * [fontScale] is Configuration.fontScale (values below 1 count as 1).
-         */
-        fun forSize(widthDp: Int, heightDp: Int, fontScale: Float = 1f): StarRailWidgetLayout {
-            val scale = fontScale.coerceAtLeast(1f)
-            return when {
-                widthDp <= 0 || heightDp <= 0 -> REGULAR
-                widthDp >= REGULAR_FIXED_WIDTH_DP + TIME_WIDTH_DP * scale &&
-                    heightDp >= REGULAR_FIXED_HEIGHT_DP + TEXT_HEIGHT_DP * scale -> REGULAR
-                else -> COMPACT
-            }
-        }
+        /** The shared size rule (AhdWidgetLayout.forSize): both games switch at the same sizes. */
+        fun forSize(widthDp: Int, heightDp: Int, fontScale: Float = 1f): StarRailWidgetLayout =
+            if (AhdWidgetLayout.forSize(widthDp, heightDp, fontScale) == AhdWidgetLayout.REGULAR) REGULAR else COMPACT
     }
 }
 
@@ -42,9 +20,9 @@ enum class StarRailWidgetLayout(val layout: String) {
  * render time, plus the warning rules. Android-free so `test-android` checks it on the JVM
  * (android/test/StarRailWidgetModelTest.kt); StarRailWidget.kt binds it to RemoteViews.
  *
- * Warning color means "act before something is wasted": Trailblaze Power at its cap, a full
- * reserve, and every dispatched assignment done (rewards waiting). Finished daily training and
- * Simulated Universe points need nothing more, so they keep the game color.
+ * Warning color means "act before something is wasted": Trailblaze Power near or at its cap and
+ * a full reserve. Every dispatched assignment done, finished daily training and reached
+ * Simulated Universe points are "done" (the check), as on the dashboard.
  */
 data class StarRailWidgetModel(
     val power: Int?,
@@ -68,6 +46,47 @@ data class StarRailWidgetModel(
     val powerFull: Boolean get() = power != null && powerMax != null && powerMax > 0 && power >= powerMax
     val assignmentsReady: Boolean get() = assignmentsTotal != null && assignmentsTotal > 0 && assignmentsDone == assignmentsTotal
     val noAssignments: Boolean get() = assignmentsTotal == 0
+
+    /** What the widget draws: Trailblaze Power, then the reserve, assignments, daily training and Simulated Universe. */
+    fun content(): AhdWidgetContent = AhdWidgetContent(
+        AhdMain(AhdGlyph.POWER, "ahd_widget_starrail_power", power?.toLong(), powerMax?.toLong(), powerFullInSeconds),
+        listOf(
+            reserveTile(),
+            assignmentsTile(),
+            // The check-circle and the cube are not self-explanatory at widget size: short names.
+            AhdTile.score(AhdGlyph.DAILY, "ahd_widget_starrail_daily", daily?.toLong(), dailyMax?.toLong(), "ahd_widget_starrail_daily_short"),
+            AhdTile.score(AhdGlyph.WEEKLY, "ahd_widget_starrail_weekly", weekly?.toLong(), weeklyMax?.toLong(), "ahd_widget_starrail_weekly_short"),
+        ),
+        fetchedAtMs, refreshFailed,
+        // "14000/14000" beside its arc needs the wider second column.
+        wideEndColumn = true,
+    )
+
+    /** The reserve has no maximum in the status: the number, and the cap badge when the game says it is full. */
+    private fun reserveTile(): AhdTile {
+        val reserve = reserve ?: return AhdTile.unknown(AhdGlyph.RESERVE, "ahd_widget_starrail_reserve")
+        return AhdTile(
+            AhdGlyph.RESERVE, "ahd_widget_starrail_reserve", reserve.toLong(),
+            warn = reserveFull,
+            detail = if (reserveFull) AhdDetail.AtCap else AhdDetail.Label("ahd_widget_starrail_reserve_short", spoken = false),
+        )
+    }
+
+    /** Done/dispatched with pips, then the time until all are done. */
+    private fun assignmentsTile(): AhdTile {
+        val total = assignmentsTotal
+        val done = assignmentsDone
+        if (total == null || done == null) return AhdTile.unknown(AhdGlyph.EXPEDITION, "ahd_widget_starrail_assignments")
+        return AhdTile(
+            AhdGlyph.EXPEDITION, "ahd_widget_starrail_assignments", done.toLong(), total.toLong(),
+            pips = AhdIndicatorModel.pips(done, total),
+            detail = when {
+                noAssignments -> AhdDetail.Label("ahd_widget_expeditions_none")
+                assignmentsReady -> AhdDetail.Status(AhdMark.DONE)
+                else -> assignmentsLeftSeconds?.let { AhdDetail.Time(it) }
+            },
+        )
+    }
 
     companion object {
         fun of(state: WidgetState.Ready, nowMs: Long): StarRailWidgetModel {

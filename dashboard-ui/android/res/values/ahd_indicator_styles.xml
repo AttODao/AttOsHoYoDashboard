@@ -1,28 +1,227 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Widget indicator text (layout/ahd_indicator_*.xml). -->
-    <style name="AhdIndicatorValue">
+    <!-- Shared widget styles (layout/ahd_widget_*.xml, ahd_indicator_*.xml). Colors stay
+         resources (values / values-night) so they follow dark mode when the launcher
+         re-inflates a widget. The game's colors, mark and name are theme attributes
+         (ahd_indicator_attrs.xml): every layout root, also of a tile added from code, carries
+         one of the two overlays below. A view whose color depends on the state exists once
+         per color and the code shows one of them (AhdIndicators.kt). -->
+    <style name="AhdGameGenshin">
+        <item name="ahdAccent">@color/ahd_widget_genshin_accent</item>
+        <item name="ahdMuted">@color/ahd_widget_genshin_muted</item>
+        <item name="ahdMark">@drawable/ahd_widget_mark_genshin</item>
+        <item name="ahdTitle">@string/ahd_widget_genshin_label</item>
+    </style>
+    <style name="AhdGameStarRail">
+        <item name="ahdAccent">@color/ahd_widget_starrail_accent</item>
+        <item name="ahdMuted">@color/ahd_widget_starrail_muted</item>
+        <item name="ahdMark">@drawable/ahd_widget_mark_starrail</item>
+        <item name="ahdTitle">@string/ahd_widget_starrail_label</item>
+    </style>
+
+    <!-- Line-art icons (drawable/ahd_indicator_icon_*, ahd_widget_mark_*): white strokes tinted
+         here. src_in keeps translucent tints translucent (the default src_atop would not). -->
+    <style name="AhdIcon">
+        <item name="android:importantForAccessibility">no</item>
+        <item name="android:scaleType">fitCenter</item>
+        <item name="android:tintMode">src_in</item>
+    </style>
+    <style name="AhdIcon.Accent"><item name="android:tint">?attr/ahdAccent</item></style>
+    <style name="AhdIcon.Muted"><item name="android:tint">?attr/ahdMuted</item></style>
+    <style name="AhdIcon.Warn"><item name="android:tint">@color/ahd_indicator_warn</item></style>
+    <style name="AhdIcon.Done"><item name="android:tint">@color/ahd_indicator_done</item></style>
+
+    <!-- An arc: the track and one fill per color, each filling the arc's FrameLayout. The
+         layout names the drawable of its size (ahd_indicator_arc_<dp> / _track_<dp>). -->
+    <style name="AhdArc" parent="AhdIcon">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">match_parent</item>
+        <item name="android:scaleType">fitXY</item>
+        <item name="android:visibility">gone</item>
+    </style>
+    <style name="AhdArc.Track">
+        <item name="android:tint">@color/ahd_indicator_track</item>
+        <item name="android:visibility">visible</item>
+    </style>
+    <style name="AhdArc.Accent"><item name="android:tint">?attr/ahdAccent</item></style>
+    <style name="AhdArc.Warn"><item name="android:tint">@color/ahd_indicator_warn</item></style>
+
+    <!-- One line of text; numbers keep a fixed width. -->
+    <style name="AhdText">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:includeFontPadding">false</item>
         <item name="android:maxLines">1</item>
         <item name="android:fontFeatureSettings">tnum</item>
-        <item name="android:textStyle">bold</item>
         <item name="android:textColor">@color/ahd_indicator_text</item>
+        <item name="android:textSize">@dimen/ahd_widget_small_text</item>
     </style>
-    <style name="AhdIndicatorValue.Full">
-        <item name="android:textColor">@color/ahd_indicator_full</item>
+    <style name="AhdText.Muted">
+        <item name="android:ellipsize">end</item>
+        <item name="android:textColor">?attr/ahdMuted</item>
+    </style>
+    <style name="AhdText.Warn">
+        <item name="android:ellipsize">end</item>
+        <item name="android:textColor">@color/ahd_indicator_warn</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+    <style name="AhdText.Done">
+        <item name="android:ellipsize">end</item>
+        <item name="android:textColor">@color/ahd_indicator_done</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- A number: never ellipsized. -->
+    <style name="AhdValue" parent="AhdText">
+        <item name="android:textStyle">bold</item>
+        <item name="android:textSize">@dimen/ahd_indicator_value_text</item>
+    </style>
+    <style name="AhdValue.Accent"><item name="android:textColor">?attr/ahdAccent</item></style>
+    <style name="AhdValue.Warn"><item name="android:textColor">@color/ahd_indicator_warn</item></style>
+    <style name="AhdValue.Muted"><item name="android:textColor">?attr/ahdMuted</item></style>
+
+    <!-- The number inside the main arc: a box of a fixed size in which autoSize (API 26+)
+         shrinks a number that is too long; older versions draw the text size as it is. -->
+    <style name="AhdArcValue" parent="AhdValue">
+        <item name="android:layout_width">64dp</item>
+        <item name="android:layout_height">32dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:textSize">@dimen/ahd_widget_main_value_text</item>
+        <item name="android:autoSizeTextType">uniform</item>
+        <item name="android:autoSizeMinTextSize">12dp</item>
+        <item name="android:autoSizeMaxTextSize">@dimen/ahd_widget_main_value_text</item>
+        <item name="android:autoSizeStepGranularity">1dp</item>
         <item name="android:visibility">gone</item>
     </style>
-    <style name="AhdIndicatorCaption">
+    <style name="AhdArcValue.Accent"><item name="android:textColor">?attr/ahdAccent</item></style>
+    <style name="AhdArcValue.Warn"><item name="android:textColor">@color/ahd_indicator_warn</item></style>
+    <style name="AhdArcValue.Muted"><item name="android:textColor">?attr/ahdMuted</item></style>
+    <style name="AhdArcValueCompact" parent="AhdArcValue">
+        <item name="android:layout_width">44dp</item>
+        <item name="android:layout_height">24dp</item>
+        <item name="android:textSize">@dimen/ahd_widget_main_value_text_compact</item>
+        <item name="android:autoSizeMinTextSize">10dp</item>
+        <item name="android:autoSizeMaxTextSize">@dimen/ahd_widget_main_value_text_compact</item>
+    </style>
+    <style name="AhdArcValueCompact.Accent"><item name="android:textColor">?attr/ahdAccent</item></style>
+    <style name="AhdArcValueCompact.Warn"><item name="android:textColor">@color/ahd_indicator_warn</item></style>
+    <style name="AhdArcValueCompact.Muted"><item name="android:textColor">?attr/ahdMuted</item></style>
+
+    <!-- "/max" in the open bottom of the main arc: grows with the font size up to its box. -->
+    <style name="AhdArcMax" parent="AhdText">
+        <item name="android:layout_width">60dp</item>
+        <item name="android:layout_height">16dp</item>
+        <item name="android:layout_gravity">bottom|center_horizontal</item>
+        <item name="android:gravity">center</item>
+        <item name="android:textColor">?attr/ahdMuted</item>
+        <item name="android:textSize">@dimen/ahd_widget_main_max_text</item>
+        <item name="android:autoSizeTextType">uniform</item>
+        <item name="android:autoSizeMinTextSize">8dp</item>
+        <item name="android:autoSizeMaxTextSize">11sp</item>
+        <item name="android:autoSizeStepGranularity">0.5dp</item>
+        <item name="android:visibility">gone</item>
+    </style>
+    <style name="AhdArcMax.Compact">
+        <item name="android:layout_width">36dp</item>
+        <item name="android:layout_height">13dp</item>
+        <item name="android:textSize">@dimen/ahd_widget_main_max_text_compact</item>
+        <item name="android:autoSizeMaxTextSize">10sp</item>
+    </style>
+
+    <!-- The time left beside the main arc: one line that shrinks instead of being cut. The
+         smallest size is in dp, so a large font size can still shrink far enough. -->
+    <style name="AhdMainTime" parent="AhdValue">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_height">20sp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:textSize">@dimen/ahd_widget_main_time_text</item>
+        <item name="android:autoSizeTextType">uniform</item>
+        <item name="android:autoSizeMinTextSize">8dp</item>
+        <item name="android:autoSizeMaxTextSize">@dimen/ahd_widget_main_time_text</item>
+        <item name="android:autoSizeStepGranularity">0.5dp</item>
+    </style>
+    <style name="AhdMainTime.Compact">
+        <item name="android:layout_height">16sp</item>
+        <item name="android:textSize">@dimen/ahd_widget_main_time_text_compact</item>
+        <item name="android:autoSizeMaxTextSize">@dimen/ahd_widget_main_time_text_compact</item>
+    </style>
+
+    <!-- The clock time under it in the compact layout, where the arc leaves little width. -->
+    <style name="AhdMainClock" parent="AhdText">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_height">15sp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:textColor">?attr/ahdMuted</item>
+        <item name="android:autoSizeTextType">uniform</item>
+        <item name="android:autoSizeMinTextSize">8dp</item>
+        <item name="android:autoSizeMaxTextSize">@dimen/ahd_widget_small_text</item>
+        <item name="android:autoSizeStepGranularity">0.5dp</item>
+    </style>
+
+    <!-- The cap badge: the warning symbol (and words) on the warning background. -->
+    <style name="AhdBadge">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:includeFontPadding">false</item>
-        <item name="android:maxLines">1</item>
-        <item name="android:ellipsize">end</item>
-        <item name="android:fontFeatureSettings">tnum</item>
-        <item name="android:textColor">@color/ahd_indicator_muted</item>
-        <item name="android:textSize">@dimen/ahd_indicator_caption_text</item>
+        <item name="android:background">@drawable/ahd_indicator_badge</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:paddingStart">6dp</item>
+        <item name="android:paddingTop">4dp</item>
+        <item name="android:paddingEnd">6dp</item>
+        <item name="android:paddingBottom">4dp</item>
+    </style>
+    <style name="AhdBadgeIcon" parent="AhdIcon.Warn">
+        <item name="android:layout_width">13dp</item>
+        <item name="android:layout_height">13dp</item>
+        <item name="android:src">@drawable/ahd_indicator_icon_warning</item>
+    </style>
+
+    <!-- A pip: drawable/ahd_indicator_pip, level 1 is filled. -->
+    <style name="AhdPip">
+        <item name="android:layout_width">@dimen/ahd_indicator_pip</item>
+        <item name="android:layout_height">@dimen/ahd_indicator_pip</item>
+        <item name="android:layout_marginEnd">3dp</item>
+        <item name="android:importantForAccessibility">no</item>
+        <item name="android:src">@drawable/ahd_indicator_pip</item>
         <item name="android:visibility">gone</item>
+    </style>
+    <style name="AhdPip.Compact">
+        <item name="android:layout_width">@dimen/ahd_indicator_pip_compact</item>
+        <item name="android:layout_height">@dimen/ahd_indicator_pip_compact</item>
+        <item name="android:layout_marginEnd">2dp</item>
+    </style>
+
+    <!-- The small symbol of a detail (12dp) and of the fetch time. -->
+    <style name="AhdDetailIcon" parent="AhdIcon">
+        <item name="android:layout_width">12dp</item>
+        <item name="android:layout_height">12dp</item>
+        <item name="android:layout_marginEnd">3dp</item>
+        <item name="android:visibility">gone</item>
+    </style>
+    <style name="AhdDetailIcon.Muted"><item name="android:tint">?attr/ahdMuted</item></style>
+    <style name="AhdDetailIcon.Warn"><item name="android:tint">@color/ahd_indicator_warn</item></style>
+    <style name="AhdDetailIcon.Done"><item name="android:tint">@color/ahd_indicator_done</item></style>
+
+    <!-- Widget header: the game's name beside its mark; shrinks instead of being cut. -->
+    <style name="AhdWidgetTitle" parent="AhdText">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_height">19sp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:text">?attr/ahdTitle</item>
+        <item name="android:textColor">?attr/ahdAccent</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textSize">@dimen/ahd_widget_title_text</item>
+        <item name="android:autoSizeTextType">uniform</item>
+        <item name="android:autoSizeMinTextSize">9dp</item>
+        <item name="android:autoSizeMaxTextSize">@dimen/ahd_widget_title_text</item>
+        <item name="android:autoSizeStepGranularity">0.5dp</item>
+    </style>
+    <style name="AhdWidgetTitle.Compact">
+        <item name="android:layout_height">18sp</item>
+        <item name="android:textSize">@dimen/ahd_widget_title_text_compact</item>
+        <item name="android:autoSizeMaxTextSize">@dimen/ahd_widget_title_text_compact</item>
     </style>
 </resources>

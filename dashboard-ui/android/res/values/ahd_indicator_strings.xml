@@ -1,10 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Widget indicators (AhdIndicators.kt). Japanese is the default like the app; English in values-en. -->
+    <!-- Widget parts shared by both games (AhdIndicators.kt). Japanese is the default like the
+         app; English in values-en. The words are the dashboard's (locales/ja.json). -->
     <string name="ahd_indicator_hours_minutes">%1$d時間%2$02d分</string>
     <!-- Under an hour: "10分" instead of "0時間10分". -->
     <string name="ahd_indicator_minutes">%1$d分</string>
     <string name="ahd_indicator_no_value">データなし</string>
     <string name="ahd_indicator_near_full">まもなく上限</string>
     <string name="ahd_indicator_full">上限</string>
+    <!-- Words of the status symbols (shown beside the check, or only spoken). -->
+    <string name="ahd_indicator_done">完了</string>
+    <string name="ahd_indicator_goal_reached">達成</string>
+    <string name="ahd_indicator_claimed">受け取り済み</string>
+    <string name="ahd_indicator_unclaimed">未受け取り</string>
 </resources>

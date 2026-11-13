@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Check (daily commissions / training). Widget indicator icon, tinted by the layout. -->
+<!-- Check in a circle (daily commissions / training). Line art from Icon::Daily in dashboard-ui/src/pages/icons.rs
+     (same path; tests/AhdIndicatorModelTest.kt compares them), tinted by the layout. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M12,3A9,9 0,1 0,12 21A9,9 0,1 0,12 3ZM10.5,16.2L6.8,12.5L8.2,11.1L10.5,13.4L15.8,8.1L17.2,9.5Z" />
+        android:fillColor="#00000000"
+        android:pathData="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM7.8 12.4l2.9 2.9 5.5-5.6"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.8" />
 </vector>

@@ -17,8 +17,6 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
-import java.text.DateFormat
-import java.util.Date
 
 object AhdWidgets {
     const val JOB_ID = 0x41484432
@@ -172,22 +170,21 @@ abstract class AhdGameWidget(val game: WidgetGame) : AppWidgetProvider() {
             manager.updateAppWidget(id, views)
         }
     }
-    open fun render(context: Context, state: WidgetState, nowMs: Long): RemoteViews = placeholder(context, state)
+    open fun render(context: Context, state: WidgetState, nowMs: Long): RemoteViews = placeholder(context)
     /** Size-aware variant: [options] holds the AppWidgetManager.OPTION_APPWIDGET_* sizes in dp. */
     open fun render(context: Context, state: WidgetState, nowMs: Long, options: Bundle): RemoteViews = render(context, state, nowMs)
     protected fun rootId(context: Context): Int = context.resources.getIdentifier("ahd_widget_root", "id", context.packageName)
-    protected fun placeholder(context: Context, state: WidgetState): RemoteViews {
+    /** A broken resource must not crash the app process from a broadcast receiver: draw the fallback instead. */
+    protected fun guarded(context: Context, draw: () -> RemoteViews): RemoteViews = try { draw() } catch (error: Exception) {
+        Log.w("AHD", "${game.key} widget render failed", error)
+        placeholder(context)
+    }
+    /** The widget's own layout with only "could not load" in it, without going through the game's drawing code. */
+    protected fun placeholder(context: Context): RemoteViews {
         fun id(name: String, type: String) = context.resources.getIdentifier(name, type, context.packageName)
-        fun text(name: String, fallback: String): String = id(name, "string").let { if (it == 0) fallback else context.getString(it) }
         val views = RemoteViews(context.packageName, id("ahd_widget_${game.key}", "layout"))
-        views.setTextViewText(id("ahd_widget_title", "id"), text("ahd_widget_${game.key}_label", if (game == WidgetGame.GENSHIN) "Genshin Impact" else "Honkai: Star Rail"))
-        val status = when (state) {
-            WidgetState.SignedOut -> text("ahd_widget_sign_in", "Open AHD and sign in")
-            WidgetState.NoAccount -> text("ahd_widget_no_account", "Open AHD and link a game account")
-            WidgetState.Unavailable -> text("ahd_widget_unavailable", "Could not load the status. Open AHD to retry.")
-            is WidgetState.Ready -> String.format(text("ahd_widget_updated_at", "Updated %1\$s"), DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(state.snapshot.fetchedAtMs)))
-        }
-        views.setTextViewText(id("ahd_widget_status", "id"), status)
+        val text = id("ahd_widget_unavailable", "string")
+        views.setTextViewText(id("ahd_widget_status", "id"), if (text == 0) "Could not load the status. Open AHD to retry." else context.getString(text))
         return views
     }
     // Opens the dashboard on this game's tab (Rust: app/navigation.rs target_game).

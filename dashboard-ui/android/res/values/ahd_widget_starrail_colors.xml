@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Star Rail widget panel, light mode (dashboard.css [data-theme=light] .game-panel.starrail);
-         dark mode is values-night. Accent, warning and text colors are the indicator colors. -->
+         dark mode is values-night. -->
     <color name="ahd_widget_starrail_surface">#EEE8FA</color>
     <color name="ahd_widget_starrail_border">#AB95C6</color>
+    <color name="ahd_widget_starrail_accent">#674198</color>
     <color name="ahd_widget_starrail_muted">#62546F</color>
 </resources>

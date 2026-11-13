@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Coin (Realm Currency). Widget indicator icon, tinted by the layout. -->
+<!-- Coin (Realm Currency). Line art from Icon::Coin in dashboard-ui/src/pages/icons.rs
+     (same path; tests/AhdIndicatorModelTest.kt compares them), tinted by the layout. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M12,3A9,9 0,1 0,12 21A9,9 0,1 0,12 3ZM12,5A7,7 0,1 1,12 19A7,7 0,1 1,12 5ZM12,7.5L9.5,12L12,16.5L14.5,12Z" />
+        android:fillColor="#00000000"
+        android:pathData="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM12 7.5 9.5 12l2.5 4.5 2.5-4.5Z"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.8" />
 </vector>

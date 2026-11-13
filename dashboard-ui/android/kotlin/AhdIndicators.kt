@@ -1,185 +1,179 @@
 package dev.dioxus.main
 
 import android.content.Context
+import android.util.TypedValue
+import android.view.Gravity
 import android.view.View
 import android.widget.RemoteViews
 
-// Home-screen widget indicators as RemoteViews, for any AppWidgetProvider of the app:
-//   views.removeAllViews(slotId)
-//   views.addView(slotId, AhdIndicators.bar(context, AhdBarSpec(label, 120, 200, AhdIndicatorTheme.GENSHIN)))
-// Usage and the full option list: dashboard-ui/android/README.md ("Widget indicators").
+// The parts both home-screen widgets are built from, as RemoteViews: the tile of a secondary
+// value (AhdIndicators.tile) and the lookups and small helpers AhdWidgetFrame.kt shares with it.
+// What a tile shows is decided without Android in AhdIndicatorModel.kt (AhdTile).
 //
-// Drawing: RemoteViews only inflate framework views (no custom View with onDraw), and
-// ProgressBar colors can only be set from code since API 31 (setColorStateList), while the
-// app supports API 24. Both indicators therefore use level drawables in plain ImageViews:
-// the bar is a <clip> drawable and the arc a <rotate>d ring <shape android:useLevel="true">,
-// whose filled share is ImageView.setImageLevel (remotable since API 1). A Bitmap drawn on
-// a Canvas was the alternative; it was not used because its colors would be fixed when it
-// is drawn (the launcher re-inflates the layout on a dark-mode switch, but a bitmap keeps the
-// old colors until the next widget update), it is sized in pixels for one density, and every
-// update would send the bitmap to the launcher (RemoteViews bitmap memory is limited).
-// Colors come from res/values(-night)/ahd_indicator_colors.xml through android:tint in the
-// layouts (tintMode src_in, so the translucent track color stays translucent over the white
-// shapes), so they follow dark mode; each layout holds one fill view per color (game accent,
-// near full, full) and the code only picks the visible one. This file must not use `R.`
-// (the res overlay is added after dx's first Gradle run): resources are looked up by name.
+// Drawing: RemoteViews only inflate framework views (no custom View with onDraw). An arc is a
+// ring drawable in a plain ImageView whose sweep is ImageView.setImageLevel (remotable since
+// API 1; ProgressBar colors can only be set from code since API 31, the app supports API 24).
+// Colors come from res/values(-night) through android:tint and android:textColor in the
+// layouts, so they follow dark mode when the launcher re-inflates a widget (a color set from
+// code, or a bitmap, would keep the old mode until the next update). The game's colors are
+// theme attributes set on each layout root (values/ahd_indicator_styles.xml AhdGame…); a part
+// whose color depends on the state exists once per color in the layout ("…_accent", "…_warn",
+// …) and the code only shows one (AhdViews.pick). This file must not use `R.` (the res overlay
+// is added after dx's first Gradle run): resources are looked up by name.
 
-/**
- * Horizontal bar: label and value text ("120/200") on one line, the bar below and an optional
- * caption (e.g. "3h 12m") under it. [current] null means "no value": an empty track and "—".
- */
-data class AhdBarSpec(
-    val label: String,
-    val current: Long?,
-    val max: Long?,
-    val theme: AhdIndicatorTheme,
-    /** Replaces the default "current/max" text. */
-    val valueText: String? = null,
-    val caption: String? = null,
-    /** Overrides the computed level, e.g. FULL when every expedition is done. */
-    val level: AhdFillLevel? = null,
-    val nearFullPercent: Int = AhdIndicatorModel.NEAR_FULL_PERCENT,
-    /** ARGB fill color instead of the theme/warning resources (fixed: it does not follow dark mode). */
-    val fillColor: Int? = null,
-    /** Spoken text for the whole indicator; defaults to "label value caption". */
-    val contentDescription: String? = null,
-)
+/** Name lookups (no `R.`); a missing resource is a packaging error, so fail loudly. */
+internal class AhdRes(val context: Context) {
+    private fun find(name: String, type: String): Int =
+        context.resources.getIdentifier(name, type, context.packageName).also {
+            check(it != 0) { "Missing $type resource $name (dashboard-ui/android/res)" }
+        }
+    fun id(name: String) = find(name, "id")
+    fun layout(name: String) = find(name, "layout")
+    fun drawable(name: String) = find(name, "drawable")
+    /** A dimension in dp, whatever unit it is written in at the default font size. */
+    fun dp(name: String): Float = context.resources.getDimension(find(name, "dimen")) / context.resources.displayMetrics.density
+    fun text(name: String, vararg args: Any): String = context.getString(find(name, "string"), *args)
+}
 
-/**
- * Arc (270° gauge): an icon or the value in the center and an optional caption below
- * (e.g. the time to full). The icon replaces the center value when [icon] is set.
- */
-data class AhdArcSpec(
-    val current: Long?,
-    val max: Long?,
-    val theme: AhdIndicatorTheme,
-    val size: AhdArcSize = AhdArcSize.LARGE,
-    /** Drawable resource id (AhdIndicators.icon(context, "ahd_indicator_icon_resin")); 0 shows the value. */
-    val icon: Int = 0,
-    /** Replaces the default center text (the current value). */
-    val centerText: String? = null,
-    val caption: String? = null,
-    val level: AhdFillLevel? = null,
-    val nearFullPercent: Int = AhdIndicatorModel.NEAR_FULL_PERCENT,
-    val fillColor: Int? = null,
-    /** Spoken text; set it when the center is an icon (it has no text of its own). */
-    val contentDescription: String? = null,
-)
+/** A RemoteViews with the few operations the widgets need, by view name. */
+internal class AhdViews(val res: AhdRes, layout: String) {
+    val views = RemoteViews(res.context.packageName, res.layout(layout))
 
-object AhdIndicators {
-    /** The bar as a RemoteViews to add into a widget layout container. */
-    @JvmStatic fun bar(context: Context, spec: AhdBarSpec): RemoteViews {
-        val res = Resources(context)
-        val views = RemoteViews(context.packageName, res.layout("ahd_indicator_bar"))
-        val level = spec.level ?: AhdIndicatorModel.fillLevel(spec.current, spec.max, spec.nearFullPercent)
-        val value = spec.valueText ?: AhdIndicatorModel.countText(spec.current, spec.max)
-        views.setTextViewText(res.id("ahd_indicator_label"), spec.label)
-        bindValue(views, res, value, level)
-        bindFill(views, res, spec.theme, level, AhdIndicatorModel.level(spec.current, spec.max, AhdIndicatorModel.MAX_LEVEL), spec.fillColor)
-        bindCaption(views, res, spec.caption)
-        views.setContentDescription(res.id("ahd_indicator_root"),
-            spec.contentDescription ?: listOfNotNull(spec.label, spoken(context, value, level), spec.caption).joinToString(" "))
-        return views
+    fun show(name: String, visible: Boolean) = views.setViewVisibility(res.id(name), if (visible) View.VISIBLE else View.GONE)
+
+    /** Shows [value] in the view [name], or hides the view when there is no text. */
+    fun text(name: String, value: String?) {
+        if (!value.isNullOrEmpty()) views.setTextViewText(res.id(name), value)
+        show(name, !value.isNullOrEmpty())
     }
 
-    /** The arc as a RemoteViews to add into a widget layout container. */
-    @JvmStatic fun arc(context: Context, spec: AhdArcSpec): RemoteViews {
-        val res = Resources(context)
-        val views = RemoteViews(context.packageName, res.layout(spec.size.layout))
-        val level = spec.level ?: AhdIndicatorModel.fillLevel(spec.current, spec.max, spec.nearFullPercent)
-        val value = spec.centerText ?: spec.current?.toString() ?: AhdIndicatorModel.NO_VALUE
-        val icon = res.id("ahd_indicator_icon")
-        if (spec.icon != 0) {
-            views.setImageViewResource(icon, spec.icon)
-            views.setViewVisibility(icon, View.VISIBLE)
-            views.setViewVisibility(res.id("ahd_indicator_value"), View.GONE)
-            views.setViewVisibility(res.id("ahd_indicator_value_full"), View.GONE)
-        } else {
-            views.setViewVisibility(icon, View.GONE)
-            bindValue(views, res, value, level)
+    fun image(name: String, glyph: AhdGlyph) = views.setImageViewResource(res.id(name), res.drawable(glyph.drawable))
+
+    fun level(name: String, level: Int) = views.setInt(res.id(name), "setImageLevel", level)
+
+    /** Draws the text of [name] at the dp size [dimen] times [scale] (AhdIndicatorModel.fit). */
+    fun textSize(name: String, dimen: String, scale: Float) =
+        views.setTextViewTextSize(res.id(name), TypedValue.COMPLEX_UNIT_DIP, res.dp(dimen) * scale)
+
+    /**
+     * The view exists once per color as "[base]_<key>" for every key in [keys]: shows the
+     * [chosen] one, hides the rest (all of them for null) and returns the shown view's name.
+     */
+    fun pick(base: String, keys: List<String>, chosen: String?): String? {
+        for (key in keys) show("${base}_$key", key == chosen)
+        return chosen?.let { "${base}_$it" }
+    }
+
+    /** An arc's fill, once per color as "[base]_<key>": [chosen] at [level] (0..ARC_LEVEL), none when empty. */
+    fun fill(base: String, keys: List<String>, chosen: String?, level: Int) {
+        pick(base, keys, chosen?.takeIf { level > 0 })?.let { level(it, level) }
+    }
+}
+
+object AhdIndicators {
+    /** The colors an arc's fill and the main number exist in. */
+    internal val FILLS = listOf("accent", "warn")
+    private val TONES = AhdTone.values().map { it.key }
+    private val VALUES = listOf("ahd_indicator_value", "ahd_indicator_value_warn", "ahd_indicator_value_none")
+
+    /**
+     * The tile of a secondary value as a RemoteViews to add into a slot of the widget:
+     * layout/ahd_indicator_tile.xml, or the one-line layout/ahd_indicator_row.xml for [compact],
+     * in the colors of [theme]. Its texts are drawn at [textScale]; [range] says whether a
+     * tile showing two times has room for both (AhdIndicatorModel.fit, showsRange).
+     */
+    @JvmStatic fun tile(context: Context, tile: AhdTile, theme: AhdIndicatorTheme, compact: Boolean, textScale: Float, range: Boolean): RemoteViews {
+        val ui = AhdViews(AhdRes(context), "ahd_indicator_${if (compact) "row" else "tile"}_${theme.key}")
+
+        // A share has its icon inside the arc, anything else the plain icon.
+        val ring = tile.ring
+        ui.show("ahd_indicator_ring", ring != null)
+        ui.show("ahd_indicator_icon", ring == null)
+        ui.image(if (ring != null) "ahd_indicator_ring_icon" else "ahd_indicator_icon", tile.icon)
+        ui.fill("ahd_indicator_fill", FILLS, if (tile.ringWarn) "warn" else "accent", ring ?: 0)
+        // An arc and the two lines beside it are centered in the row of tiles; a count starts at the top.
+        if (!compact && ring != null) ui.views.setInt(ui.res.id("ahd_indicator_root"), "setGravity", Gravity.CENTER_VERTICAL)
+
+        // "value" is the normal text color, "value_warn" and "value_none" its twins.
+        val value = when {
+            tile.current == null -> "ahd_indicator_value_none"
+            tile.warn -> "ahd_indicator_value_warn"
+            else -> "ahd_indicator_value"
         }
-        // The track is the whole 270° gauge; drawables have no level attribute in XML.
-        views.setImageViewLevel(res.id("ahd_indicator_track"), AhdIndicatorModel.ARC_LEVEL)
-        bindFill(views, res, spec.theme, level, AhdIndicatorModel.level(spec.current, spec.max, AhdIndicatorModel.ARC_LEVEL), spec.fillColor)
-        bindCaption(views, res, spec.caption)
-        val spokenValue = spoken(context, AhdIndicatorModel.countText(spec.current, spec.max), level)
-        views.setContentDescription(res.id("ahd_indicator_root"),
-            spec.contentDescription ?: listOfNotNull(spokenValue, spec.caption).joinToString(" "))
-        return views
+        val valueText = if (compact) "ahd_indicator_value_text_compact" else "ahd_indicator_value_text"
+        for (name in VALUES) {
+            ui.text(name, if (name == value) tile.current?.toString() ?: AhdIndicatorModel.NO_VALUE else null)
+            ui.textSize(name, valueText, textScale)
+        }
+        ui.text("ahd_indicator_max", if (tile.current != null && tile.max != null) "/${tile.max}" else null)
+        ui.textSize("ahd_indicator_max", "ahd_indicator_small_text", textScale)
+
+        ui.show("ahd_indicator_pips", tile.pips != null)
+        for (index in 1..AhdIndicatorModel.MAX_PIPS) {
+            val name = "ahd_indicator_pip_$index"
+            val pips = tile.pips
+            ui.show(name, pips != null && index <= pips.total)
+            if (pips != null && index <= pips.total) ui.level(name, if (index <= pips.filled) 1 else 0)
+        }
+
+        val detail = shown(context, tile.detail, range)
+        ui.show("ahd_indicator_gift", detail.gift)
+        ui.pick("ahd_indicator_detail_icon", TONES, detail.glyph?.let { detail.tone.key })?.let { ui.image(it, detail.glyph!!) }
+        for (tone in TONES) {
+            ui.text("ahd_indicator_detail_$tone", detail.text.takeIf { tone == detail.tone.key })
+            ui.textSize("ahd_indicator_detail_$tone", "ahd_indicator_small_text", textScale)
+        }
+        return ui.views
+    }
+
+    /** A detail as what the tile draws: an optional symbol, an optional text and their color. */
+    private class Shown(val glyph: AhdGlyph?, val text: String?, val tone: AhdTone, val gift: Boolean = false)
+
+    private fun shown(context: Context, detail: AhdDetail?, range: Boolean): Shown {
+        val res = AhdRes(context)
+        return when (detail) {
+            null -> Shown(null, null, AhdTone.MUTED)
+            is AhdDetail.Time ->
+                if (detail.near) Shown(AhdGlyph.WARNING, hoursMinutes(context, detail.seconds), AhdTone.WARN)
+                else Shown(AhdGlyph.HOURGLASS, hoursMinutes(context, detail.seconds), AhdTone.MUTED)
+            // Without room for two durations: the time until all are back (both are spoken).
+            is AhdDetail.Range -> Shown(
+                AhdGlyph.HOURGLASS,
+                if (range) res.text("ahd_widget_range", hoursMinutes(context, detail.first), hoursMinutes(context, detail.last))
+                else hoursMinutes(context, detail.last),
+                AhdTone.MUTED,
+            )
+            AhdDetail.AtCap -> Shown(AhdGlyph.WARNING, res.text("ahd_indicator_full"), AhdTone.WARN)
+            is AhdDetail.Status -> Shown(detail.mark.glyph, res.text(detail.mark.word), detail.mark.tone)
+            is AhdDetail.Reward -> Shown(detail.mark.glyph, null, detail.mark.tone, gift = true)
+            is AhdDetail.Label -> Shown(null, res.text(detail.text), AhdTone.MUTED)
+        }
+    }
+
+    /** What a screen reader hears for [tile]: the full name, the value and the detail in words. */
+    @JvmStatic fun spoken(context: Context, tile: AhdTile): String {
+        val res = AhdRes(context)
+        val detail = when (val detail = tile.detail) {
+            null -> null
+            is AhdDetail.Time -> listOfNotNull(
+                res.text("ahd_indicator_near_full").takeIf { detail.near },
+                res.text("ahd_widget_full_in", hoursMinutes(context, detail.seconds)),
+            ).joinToString(" ")
+            is AhdDetail.Range -> res.text("ahd_widget_range_spoken", hoursMinutes(context, detail.first), hoursMinutes(context, detail.last))
+            AhdDetail.AtCap -> res.text("ahd_indicator_full")
+            is AhdDetail.Status -> res.text(detail.mark.word)
+            is AhdDetail.Reward -> "${res.text("ahd_widget_genshin_extra_reward")} ${res.text(detail.mark.word)}"
+            is AhdDetail.Label -> res.text(detail.text).takeIf { detail.spoken }
+        }
+        val value = tile.current?.let { AhdIndicatorModel.countText(it, tile.max) }
+        return listOfNotNull(res.text(tile.name), value, detail).joinToString(" ")
     }
 
     /** "3h 12m" / "3時間12分" ("12m" / "12分" under an hour) in the context's locale, rounded up like the dashboard. */
     @JvmStatic fun hoursMinutes(context: Context, seconds: Long): String {
         val (hours, minutes) = AhdIndicatorModel.hoursMinutes(seconds)
-        val format = Resources(context).string(AhdIndicatorModel.durationString(hours))
-        return if (hours == 0L) context.getString(format, minutes) else context.getString(format, hours, minutes)
-    }
-
-    /** A bundled indicator icon (ahd_indicator_icon_resin, _power, _coin, _expedition, _daily) or 0. */
-    @JvmStatic fun icon(context: Context, name: String): Int = Resources(context).drawable(name)
-
-    private fun bindValue(views: RemoteViews, res: Resources, value: String, level: AhdFillLevel) {
-        // The value turns to the "full" color at the cap, like the dashboard's number.
-        val full = level == AhdFillLevel.FULL
-        val shown = res.id(if (full) "ahd_indicator_value_full" else "ahd_indicator_value")
-        val hidden = res.id(if (full) "ahd_indicator_value" else "ahd_indicator_value_full")
-        views.setTextViewText(shown, value)
-        views.setViewVisibility(shown, View.VISIBLE)
-        views.setViewVisibility(hidden, View.GONE)
-    }
-
-    private fun bindFill(views: RemoteViews, res: Resources, theme: AhdIndicatorTheme, level: AhdFillLevel, drawableLevel: Int, color: Int?) {
-        val visible = when (level) {
-            AhdFillLevel.UNKNOWN -> null
-            AhdFillLevel.NORMAL -> "ahd_indicator_fill_${theme.key}"
-            AhdFillLevel.NEAR_FULL -> "ahd_indicator_fill_near"
-            AhdFillLevel.FULL -> "ahd_indicator_fill_full"
-        }?.takeIf { drawableLevel > 0 }
-        for (name in FILLS) {
-            val id = res.id(name)
-            if (name == visible) {
-                views.setImageViewLevel(id, drawableLevel)
-                if (color != null) views.setInt(id, "setColorFilter", color)
-                views.setViewVisibility(id, View.VISIBLE)
-            } else {
-                views.setViewVisibility(id, View.GONE)
-            }
-        }
-    }
-
-    private fun bindCaption(views: RemoteViews, res: Resources, caption: String?) {
-        val id = res.id("ahd_indicator_caption")
-        if (caption.isNullOrEmpty()) {
-            views.setViewVisibility(id, View.GONE)
-        } else {
-            views.setTextViewText(id, caption)
-            views.setViewVisibility(id, View.VISIBLE)
-        }
-    }
-
-    private fun spoken(context: Context, value: String, level: AhdFillLevel): String {
-        val res = Resources(context)
-        return when (level) {
-            AhdFillLevel.UNKNOWN -> context.getString(res.string("ahd_indicator_no_value"))
-            AhdFillLevel.FULL -> "$value ${context.getString(res.string("ahd_indicator_full"))}"
-            AhdFillLevel.NEAR_FULL -> "$value ${context.getString(res.string("ahd_indicator_near_full"))}"
-            AhdFillLevel.NORMAL -> value
-        }
-    }
-
-    private val FILLS = listOf("ahd_indicator_fill_genshin", "ahd_indicator_fill_starrail", "ahd_indicator_fill_near", "ahd_indicator_fill_full")
-
-    private fun RemoteViews.setImageViewLevel(id: Int, level: Int) = setInt(id, "setImageLevel", level)
-
-    /** Name lookups (no `R.`); a missing resource is a packaging error, so fail loudly. */
-    private class Resources(private val context: Context) {
-        private fun find(name: String, type: String): Int =
-            context.resources.getIdentifier(name, type, context.packageName).also {
-                check(it != 0) { "Missing $type resource $name (dashboard-ui/android/res)" }
-            }
-        fun id(name: String) = find(name, "id")
-        fun layout(name: String) = find(name, "layout")
-        fun string(name: String) = find(name, "string")
-        fun drawable(name: String) = context.resources.getIdentifier(name, "drawable", context.packageName)
+        val res = AhdRes(context)
+        val format = AhdIndicatorModel.durationString(hours)
+        return if (hours == 0L) res.text(format, minutes) else res.text(format, hours, minutes)
     }
 }

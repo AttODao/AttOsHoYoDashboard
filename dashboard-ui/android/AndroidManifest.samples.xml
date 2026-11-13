@@ -1,4 +1,4 @@
-        <!-- Debug builds only: widget indicator samples (dashboard-ui/android/kotlin/AhdIndicatorSamples.kt).
+        <!-- Debug builds only: home-screen widget samples (dashboard-ui/android/kotlin/AhdIndicatorSamples.kt).
              Exported without an intent filter so `adb shell am start -n` can open it. -->
         <activity android:name="dev.dioxus.main.AhdIndicatorSamplesActivity" android:exported="true"
-            android:label="AHD widget indicators" />
+            android:label="AHD widget samples" />

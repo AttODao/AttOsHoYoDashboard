@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Body of both regular widgets (included by ahd_widget_genshin.xml / ahd_widget_starrail.xml):
+     the message box (shown until the first update, then for signed out, no account, no status)
+     or the content. Content: the main resource as a 96dp arc with its icon and number inside
+     and "/max" in the open bottom; beside it the cap badge, hourglass + time left and the
+     clock time (or the unknown symbol + "no data"); a hairline; then the tiles in two columns
+     (ahd_widget_tiles.xml, or ahd_widget_tiles_wide.xml for Star Rail). The spare height of a
+     widget larger than the minimum goes into the gaps. Parts whose color depends on the state
+     exist once per color (game, warning, no value); AhdWidgetFrame.kt shows one. No texts
+     here except the first message: the launcher would resolve them in the system locale, the
+     code sets them in the app's language. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_weight="1"
+    android:importantForAccessibility="noHideDescendants">
+
+    <LinearLayout
+        android:id="@+id/ahd_widget_message_box"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <ImageView
+            android:id="@+id/ahd_widget_message_icon"
+            style="@style/AhdIcon.Muted"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_marginBottom="8dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/ahd_widget_status"
+            style="@style/AhdText"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:maxLines="4"
+            android:text="@string/ahd_widget_loading"
+            android:textSize="@dimen/ahd_widget_message_text" />
+
+        <TextView
+            android:id="@+id/ahd_widget_hint"
+            style="@style/AhdText.Muted"
+            android:layout_marginTop="6dp"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/ahd_widget_content"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:paddingTop="6dp"
+        android:visibility="gone">
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="2" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <FrameLayout
+                android:layout_width="@dimen/ahd_widget_main_arc"
+                android:layout_height="100dp">
+
+                <FrameLayout
+                    android:layout_width="@dimen/ahd_widget_main_arc"
+                    android:layout_height="@dimen/ahd_widget_main_arc">
+
+                    <ImageView
+                        style="@style/AhdArc.Track"
+                        android:src="@drawable/ahd_indicator_arc_track_96" />
+                    <ImageView
+                        android:id="@+id/ahd_widget_main_fill_accent"
+                        style="@style/AhdArc.Accent"
+                        android:src="@drawable/ahd_indicator_arc_96" />
+                    <ImageView
+                        android:id="@+id/ahd_widget_main_fill_warn"
+                        style="@style/AhdArc.Warn"
+                        android:src="@drawable/ahd_indicator_arc_96" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:gravity="center"
+                        android:orientation="vertical"
+                        android:paddingBottom="6dp">
+
+                        <ImageView
+                            android:id="@+id/ahd_widget_main_icon"
+                            style="@style/AhdIcon.Accent"
+                            android:layout_width="18dp"
+                            android:layout_height="18dp" />
+                        <TextView
+                            android:id="@+id/ahd_widget_main_value_accent"
+                            style="@style/AhdArcValue.Accent" />
+                        <TextView
+                            android:id="@+id/ahd_widget_main_value_warn"
+                            style="@style/AhdArcValue.Warn" />
+                        <TextView
+                            android:id="@+id/ahd_widget_main_value_none"
+                            style="@style/AhdArcValue.Muted" />
+                    </LinearLayout>
+                </FrameLayout>
+
+                <TextView
+                    android:id="@+id/ahd_widget_main_max"
+                    style="@style/AhdArcMax" />
+            </FrameLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="14dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:id="@+id/ahd_widget_main_badge"
+                    style="@style/AhdBadge"
+                    android:visibility="gone">
+                    <ImageView style="@style/AhdBadgeIcon" />
+                    <TextView
+                        android:id="@+id/ahd_widget_main_badge_text"
+                        style="@style/AhdText.Warn"
+                        android:layout_marginStart="3dp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/ahd_widget_main_time_row"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+                    <ImageView
+                        style="@style/AhdIcon.Muted"
+                        android:layout_width="15dp"
+                        android:layout_height="15dp"
+                        android:layout_marginEnd="4dp"
+                        android:src="@drawable/ahd_indicator_icon_hourglass" />
+                    <TextView
+                        android:id="@+id/ahd_widget_main_time"
+                        style="@style/AhdMainTime" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/ahd_widget_main_clock"
+                    style="@style/AhdText.Muted"
+                    android:layout_marginTop="5dp"
+                    android:visibility="gone" />
+
+                <LinearLayout
+                    android:id="@+id/ahd_widget_main_unknown"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+                    <ImageView
+                        style="@style/AhdIcon.Muted"
+                        android:layout_width="14dp"
+                        android:layout_height="14dp"
+                        android:layout_marginEnd="3dp"
+                        android:src="@drawable/ahd_indicator_icon_unknown" />
+                    <TextView
+                        android:id="@+id/ahd_widget_main_time_none"
+                        style="@style/AhdText.Muted" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="2" />
+
+        <!-- Hairline between the main resource and the tiles (dashboard .tiles border-top). -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="6dp"
+            android:background="@color/ahd_indicator_track" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="2" />
+
+        <include layout="@layout/ahd_widget_tiles" />
+
+        <include layout="@layout/ahd_widget_tiles_wide" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+    </LinearLayout>
+</FrameLayout>

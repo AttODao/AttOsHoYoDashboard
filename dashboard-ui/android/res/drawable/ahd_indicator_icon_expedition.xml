@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Flag (expeditions / assignments). Widget indicator icon, tinted by the layout. -->
+<!-- Flag (expeditions / assignments). Line art from Icon::Flag in dashboard-ui/src/pages/icons.rs
+     (same path; tests/AhdIndicatorModelTest.kt compares them), tinted by the layout. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M6,3L8,3L8,4L18.5,4L16,8L18.5,12L8,12L8,21L6,21Z" />
+        android:fillColor="#00000000"
+        android:pathData="M6 21V3M6 4h12.5L16 8l2.5 4H6"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.8" />
 </vector>

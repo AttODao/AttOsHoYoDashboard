@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fill of the 22dp arc (a compact row), 2.5dp wide. The drawable level is the sweep:
+     7500 is the whole 270° (AhdIndicatorModel.ARC_LEVEL). The ring starts at the lower left
+     (a ring's sweep follows the level; the radii are ratios of the width). Its ends are round
+     like the track's: one dot on the start and one that the same level turns to the end.
+     White, tinted by the layout (AhdArc.Accent / AhdArc.Warn). -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <rotate
+            android:fromDegrees="135"
+            android:pivotX="50%"
+            android:pivotY="50%"
+            android:toDegrees="135">
+            <shape
+                android:innerRadiusRatio="2.588"
+                android:shape="ring"
+                android:thicknessRatio="8.8"
+                android:useLevel="true">
+                <solid android:color="#FFFFFFFF" />
+            </shape>
+        </rotate>
+    </item>
+    <item>
+        <vector
+            android:width="22dp"
+            android:height="22dp"
+            android:viewportWidth="22"
+            android:viewportHeight="22">
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M2.856,17.894a1.25,1.25 0 1,0 2.5,0a1.25,1.25 0 1,0 -2.5,0Z" />
+        </vector>
+    </item>
+    <item>
+        <rotate
+            android:fromDegrees="0"
+            android:pivotX="50%"
+            android:pivotY="50%"
+            android:toDegrees="360">
+            <vector
+                android:width="22dp"
+                android:height="22dp"
+                android:viewportWidth="22"
+                android:viewportHeight="22">
+                <path
+                    android:fillColor="#FFFFFFFF"
+                    android:pathData="M2.856,17.894a1.25,1.25 0 1,0 2.5,0a1.25,1.25 0 1,0 -2.5,0Z" />
+            </vector>
+        </rotate>
+    </item>
+</layer-list>
