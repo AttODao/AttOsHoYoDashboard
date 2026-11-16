@@ -1,29 +1,36 @@
 //! The per-game tab bar shared by the dashboard and the events page. Both pages keep the
 //! chosen game in `AppState::dashboard_game`, so switching games on one page carries over to
 //! the other. Narrow screens (<=900px) show one game panel at a time; wider screens show
-//! every panel and hide the tab bar (`dashboard.css`, `.game-tabs`).
+//! every panel and hide the tab bar (`dashboard.css`, `.game-tabs`). Which games have a
+//! panel at all is `AppState::shown_games`: with only one game in use there is one panel,
+//! no tab bar and no swipe.
 use super::common::{focus_element, game_name};
 use super::icons::{Glyph, Icon};
 use crate::app::preferences::use_preferences;
 use crate::app::state::{AppState, DASHBOARD_GAMES};
 use dioxus::prelude::*;
 
-/// The tab bar: each tab is the game's mark and name. Tabs are `{prefix}-tab-{game}` and control `{prefix}-panel-{game}`.
+/// The tab bar: each tab is the game's mark and name. Tabs are `{prefix}-tab-{game}` and
+/// control `{prefix}-panel-{game}`. Nothing while a single game is shown.
 #[component]
 pub(super) fn GameTabs(state: Signal<AppState>, prefix: &'static str) -> Element {
     let ui = use_preferences();
-    let active = use_memo(move || state.read().dashboard_game);
+    let shown = use_memo(move || state.read().shown_games());
     let select = move |game: &'static str| {
         let mut state = state;
         state.write().dashboard_game = game;
     };
+    if !shown().tabs() {
+        return rsx! {};
+    }
+    let active = shown().active;
     rsx! {
         div { class: "game-tabs tabs", role: "tablist", "aria-label": ui.text("dashboard.games"),
             for game in DASHBOARD_GAMES {
                 button {
                     r#type: "button", role: "tab", id: "{prefix}-tab-{game}",
-                    "aria-controls": "{prefix}-panel-{game}", "aria-selected": active() == game,
-                    tabindex: if active() == game { "0" } else { "-1" },
+                    "aria-controls": "{prefix}-panel-{game}", "aria-selected": active == game,
+                    tabindex: if active == game { "0" } else { "-1" },
                     onclick: move |_| select(game),
                     onkeydown: move |event: KeyboardEvent| {
                         if let Some(next) = next_game_tab(game, &event.key()) {
@@ -40,9 +47,11 @@ pub(super) fn GameTabs(state: Signal<AppState>, prefix: &'static str) -> Element
     }
 }
 
-/// Switches the shown game after a swipe on the panels (`SwipeableTabs::on_change`).
+/// Switches the shown game after a swipe on the panels (`SwipeableTabs::on_change`); a
+/// single shown game has no tabs to switch to.
 pub(super) fn select_game_index(mut state: Signal<AppState>, index: usize) {
-    if let Some(&game) = DASHBOARD_GAMES.get(index) {
+    let target = state.peek().shown_games().tab_at(index);
+    if let Some(game) = target {
         state.write().dashboard_game = game;
     }
 }
@@ -107,14 +116,6 @@ fn next_game_tab(game: &str, key: &Key) -> Option<&'static str> {
     }
 }
 
-/// The tab position of `game` for `SwipeableTabs`; unknown games count as the first tab.
-pub(super) fn game_index(game: &str) -> usize {
-    DASHBOARD_GAMES
-        .iter()
-        .position(|candidate| *candidate == game)
-        .unwrap_or(0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,15 +127,5 @@ mod tests {
         assert_eq!(next_game_tab("starrail", &Key::Home), Some("genshin"));
         assert_eq!(next_game_tab("genshin", &Key::End), Some("starrail"));
         assert_eq!(next_game_tab("genshin", &Key::Enter), None);
-    }
-
-    #[test]
-    fn swipe_index_follows_the_tab_order() {
-        assert_eq!(game_index("genshin"), 0);
-        assert_eq!(game_index("starrail"), 1);
-        assert_eq!(game_index("zzz"), 0);
-        for (index, game) in DASHBOARD_GAMES.iter().enumerate() {
-            assert_eq!(game_index(game), index);
-        }
     }
 }

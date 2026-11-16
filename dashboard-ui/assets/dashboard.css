@@ -122,6 +122,9 @@ input[type=file]{width:100%;min-width:0;min-height:48px;background:var(--elevate
 .inline-unit{display:inline-block}
 /* Events page: one panel per game (tabs at <=900px) with the dashboard's card heading (mark, name, clock + age, refresh) and the summary chips (status symbol + count or time left). Wide browser windows draw the timeline as a fixed-layout table (one column per day, bars placed with colspan, no inline styles); <=600px and the app read it downwards. Rows lead with their type icon; countdowns and event status are status marks. */
 .events-grid{display:grid;gap:24px}
+/* One game in use: its card alone, at most as wide as the one-card tablet layout and aligned with the heading (stretched
+   across 1280px the resource bar and the UID picker lose their measure). The events panels keep the full width. */
+.dashboard-grid.single-game{grid-template-columns:minmax(0,880px)}
 .events-panel .card-heading{margin-bottom:12px}
 .event-chips{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:0 0 20px;padding:0}
 .event-chip{display:inline-flex;align-items:center;min-height:36px;padding:4px 12px;border:1px solid var(--decorative);border-radius:999px}

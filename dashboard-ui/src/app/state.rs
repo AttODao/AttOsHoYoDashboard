@@ -237,6 +237,11 @@ impl AppState {
         select_game_account(current, self.account_rows(), game)
     }
 
+    /// The games the dashboard and the events page show, and the one in front.
+    pub(super) fn shown_games(&self) -> ShownGames {
+        shown_games(self.accounts.as_deref(), self.dashboard_game)
+    }
+
     pub(super) fn select_game_account(&mut self, game: &'static str, id: Option<Uuid>) {
         if !DASHBOARD_GAMES.contains(&game) {
             return;
@@ -535,6 +540,72 @@ pub(super) fn select_game_account(
     }
 }
 
+/// The dashboard games the dashboard and the events page show (one panel each) and the
+/// one in front (the selected tab on narrow screens).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct ShownGames {
+    /// The one game with a visible UID while the other has none. `None` shows every game
+    /// with the game tabs: both games are in use, neither is (each panel then points to
+    /// the UID settings), or the UID list has not loaded yet.
+    only: Option<&'static str>,
+    /// The game in front: the only shown game, otherwise the chosen tab.
+    pub(super) active: &'static str,
+}
+
+impl ShownGames {
+    /// The shown games in tab order.
+    pub(super) fn games(self) -> Vec<&'static str> {
+        match self.only {
+            Some(game) => vec![game],
+            None => DASHBOARD_GAMES.to_vec(),
+        }
+    }
+
+    /// Whether the game tabs (and the swipe between panels) exist: more than one panel.
+    pub(super) fn tabs(self) -> bool {
+        self.only.is_none()
+    }
+
+    /// The pager position of `game` among the shown games; unknown games count as the first.
+    pub(super) fn index(self, game: &str) -> usize {
+        self.games()
+            .iter()
+            .position(|candidate| *candidate == game)
+            .unwrap_or(0)
+    }
+
+    /// The game a tab change (a swipe) selects; nothing while a single game is shown.
+    pub(super) fn tab_at(self, index: usize) -> Option<&'static str> {
+        if self.tabs() {
+            self.games().get(index).copied()
+        } else {
+            None
+        }
+    }
+}
+
+/// Which games to show. A game is in use when it has a visible UID (the same UIDs the
+/// panels can select, `select_game_account`). While the UID list is unknown (loading, or
+/// its first load failed) every game stays shown, so no panel disappears after the load.
+/// `chosen` (`AppState::dashboard_game`, also set by widget taps) is kept as it is: with a
+/// single game in use it only stops deciding the front panel, and it applies again once
+/// both games are in use.
+pub(super) fn shown_games(accounts: Option<&[GameAccount]>, chosen: &'static str) -> ShownGames {
+    let only = accounts.and_then(|accounts| {
+        let mut used = DASHBOARD_GAMES
+            .into_iter()
+            .filter(|game| select_game_account(None, accounts, game).is_some());
+        match (used.next(), used.next()) {
+            (Some(game), None) => Some(game),
+            _ => None,
+        }
+    });
+    ShownGames {
+        only,
+        active: only.unwrap_or(chosen),
+    }
+}
+
 pub(super) fn visible_detected_accounts(accounts: &[GameAccount]) -> Vec<GameAccount> {
     accounts
         .iter()
@@ -636,6 +707,73 @@ mod tests {
             detected,
             last_detected_at: "2026-01-01T00:00:00Z".to_owned(),
         }
+    }
+
+    #[test]
+    fn a_single_game_in_use_is_shown_alone_whatever_tab_was_chosen() {
+        let of = |game: &str, n: u128| GameAccount {
+            game_kind: game.to_owned(),
+            ..account(uuid(n), true, true, &format!("8000000{n}"))
+        };
+        let hidden = |game: &str, n: u128| GameAccount {
+            visible: false,
+            ..of(game, n)
+        };
+        // Unknown list (loading, or its first load failed): both games with the tabs.
+        let unknown = shown_games(None, "starrail");
+        assert!(unknown.tabs());
+        assert_eq!(unknown.games(), DASHBOARD_GAMES.to_vec());
+        assert_eq!(unknown.active, "starrail");
+        // No game in use: both empty panels stay, pointing to the UID settings.
+        for accounts in [vec![], vec![hidden("genshin", 1), hidden("starrail", 2)]] {
+            let none = shown_games(Some(&accounts), "genshin");
+            assert!(none.tabs());
+            assert_eq!(none.games(), DASHBOARD_GAMES.to_vec());
+        }
+        // Both in use: unchanged, the chosen tab is in front and swipes select by index.
+        let both = [of("genshin", 1), of("starrail", 2)];
+        for chosen in DASHBOARD_GAMES {
+            let shown = shown_games(Some(&both), chosen);
+            assert!(shown.tabs());
+            assert_eq!(shown.active, chosen);
+            assert_eq!(shown.games(), DASHBOARD_GAMES.to_vec());
+            assert_eq!(
+                shown.index(chosen),
+                DASHBOARD_GAMES.iter().position(|g| *g == chosen).unwrap()
+            );
+        }
+        assert_eq!(
+            shown_games(Some(&both), "genshin").tab_at(1),
+            Some("starrail")
+        );
+        assert_eq!(shown_games(Some(&both), "genshin").tab_at(2), None);
+        // Either game alone, also when the chosen tab (stored, or a widget tap) is the
+        // other one; a hidden or undetected UID of the other game does not count.
+        for (game, other) in [("genshin", "starrail"), ("starrail", "genshin")] {
+            let undetected = GameAccount {
+                detected: false,
+                ..of(other, 3)
+            };
+            let accounts = [of(game, 1), hidden(other, 2), undetected, of(game, 4)];
+            for chosen in DASHBOARD_GAMES {
+                let shown = shown_games(Some(&accounts), chosen);
+                assert!(!shown.tabs());
+                assert_eq!(shown.games(), vec![game]);
+                assert_eq!(shown.active, game);
+                assert_eq!(shown.index(game), 0);
+                // The pager is off: no swipe target changes the stored tab.
+                assert_eq!(shown.tab_at(0), None);
+            }
+        }
+        // The state method reads the loaded list and the stored tab, which it keeps.
+        let mut state = AppState::new(Page::Dashboard);
+        state.dashboard_game = "genshin";
+        assert!(state.shown_games().tabs());
+        state.accounts = Some(vec![of("starrail", 2)]);
+        assert_eq!(state.shown_games().active, "starrail");
+        assert_eq!(state.dashboard_game, "genshin");
+        state.accounts = Some(both.to_vec());
+        assert_eq!(state.shown_games().active, "genshin");
     }
 
     #[test]

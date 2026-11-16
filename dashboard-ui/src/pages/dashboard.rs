@@ -4,7 +4,7 @@ use super::common::{
     LoadError, LoadingLine, Metric, WarningLine, game_name, pending, refresh_problem,
 };
 use super::expeditions::ExpeditionList;
-use super::game_tabs::{GameTabs, game_index, select_game_index, use_narrow_games};
+use super::game_tabs::{GameTabs, select_game_index, use_narrow_games};
 use super::icons::{Glyph, Icon, Status, StatusMark};
 use super::rewards::AutomationSwitch;
 use super::status_tiles::{GenshinTiles, StarRailTiles};
@@ -26,8 +26,10 @@ use uuid::Uuid;
 #[component]
 pub(super) fn DashboardPage(state: Signal<AppState>) -> Element {
     let ui = use_preferences();
-    let active = use_memo(move || state.read().dashboard_game);
+    let shown = use_memo(move || state.read().shown_games());
     let mobile = use_narrow_games();
+    // One game in use: its card alone, without tabs or swipe, at every width.
+    let tabbed = mobile() && shown().tabs();
     use_clock_provider();
     rsx! {
         div { class: "page-stack dashboard",
@@ -42,11 +44,12 @@ pub(super) fn DashboardPage(state: Signal<AppState>) -> Element {
             GameTabs { state, prefix: "game" }
             // Narrow screens show one game at a time: swiping the panels switches tabs like a tap.
             SwipeableTabs {
-                id: "game-panels", class: "dashboard-grid",
-                count: DASHBOARD_GAMES.len(), index: game_index(active()), enabled: mobile(),
+                id: "game-panels",
+                class: if shown().tabs() { "dashboard-grid" } else { "dashboard-grid single-game" },
+                count: shown().games().len(), index: shown().index(shown().active), enabled: tabbed,
                 on_change: move |index: usize| select_game_index(state, index),
-                for game in DASHBOARD_GAMES {
-                    GamePanel { key: "{game}", state, game, active: active() == game, mobile: mobile() }
+                for (page, game) in shown().games().into_iter().enumerate() {
+                    GamePanel { key: "{game}", state, game, page, active: shown().active == game, tabbed }
                 }
             }
         }
@@ -145,16 +148,25 @@ fn claim_tone(signed: Option<bool>) -> &'static str {
 /// time at cap over 7 days, the icon tiles, expeditions, the endgame tiles, the login
 /// bonus, and the one collapsed details block last. Events and banners are not tied to
 /// a UID and live on the events page (`events.rs`).
+///
+/// `tabbed`: the panel belongs to the game tabs (narrow screens with both games); otherwise
+/// it is a region named by its title. `page` is its position for the pager.
 #[component]
-fn GamePanel(state: Signal<AppState>, game: &'static str, active: bool, mobile: bool) -> Element {
+fn GamePanel(
+    state: Signal<AppState>,
+    game: &'static str,
+    page: usize,
+    active: bool,
+    tabbed: bool,
+) -> Element {
     let ui = use_preferences();
     rsx! {
         section {
             class: "panel game-panel {game}", id: "game-panel-{game}",
-            role: if mobile { "tabpanel" } else { "region" },
-            "aria-labelledby": if mobile { format!("game-tab-{game}") } else { format!("game-title-{game}") },
-            "data-selected": active, hidden: mobile && !active, "data-swipe-page": game_index(game),
-            tabindex: if mobile { "0" } else { "-1" },
+            role: if tabbed { "tabpanel" } else { "region" },
+            "aria-labelledby": if tabbed { format!("game-tab-{game}") } else { format!("game-title-{game}") },
+            "data-selected": active, hidden: tabbed && !active, "data-swipe-page": page,
+            tabindex: if tabbed { "0" } else { "-1" },
             // The age of the shown status sits beside the control that renews it.
             div { class: "game-heading card-heading",
                 h2 { class: "game-title", id: "game-title-{game}",
