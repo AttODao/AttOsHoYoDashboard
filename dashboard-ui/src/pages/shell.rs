@@ -13,7 +13,8 @@ use super::rewards::RewardsPage;
 use super::security::SecurityPage;
 use super::swipe_tabs::SwipeableTabs;
 use super::transfer::TransferPage;
-use crate::app::actions::spawn_action;
+use crate::app::actions::{spawn_action, spawn_root};
+use crate::app::data::load_page_data;
 use crate::app::navigation::open_web_version;
 use crate::app::preferences::{Preferences, use_preferences};
 use crate::app::session::logout;
@@ -119,6 +120,22 @@ fn settings_tabs(app: bool) -> Vec<(Page, &'static str, &'static str, &'static s
         .collect()
 }
 
+/// The settings panels rendered inside the pager: the selected tab, and while the pager
+/// moves (`previews`) its neighbours as inert previews. Each entry is the tab
+/// position, the page and its element key.
+fn settings_panels(app: bool, page: Page, previews: bool) -> Vec<(usize, Page, &'static str)> {
+    let tabs = settings_tabs(app);
+    let Some(index) = tabs.iter().position(|(p, ..)| *p == page) else {
+        return Vec::new();
+    };
+    let reach = usize::from(previews);
+    tabs.iter()
+        .enumerate()
+        .filter(|(position, _)| position.abs_diff(index) <= reach)
+        .map(|(position, (page, key, ..))| (position, *page, *key))
+        .collect()
+}
+
 #[component]
 pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
     let ui = use_preferences();
@@ -131,6 +148,36 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
     // On a fresh load the stylesheet and fonts can arrive after the first render and change
     // the tab widths, so the reveal is repeated briefly.
     let selected = use_memo(move || state.read().page);
+    // The neighbours of the selected settings tab are rendered (as inert previews) only while
+    // the pager moves, and loaded from the first drag of a settings visit on, through the
+    // same reads a visit does, at most once per visit and never under the busy shell.
+    let mut previews = use_signal(|| false);
+    let mut loaded = use_signal(Vec::<Page>::new);
+    use_effect(move || {
+        let page = selected();
+        if !SETTINGS.iter().any(|(p, ..)| *p == page) {
+            if *previews.peek() {
+                previews.set(false);
+            }
+            if !loaded.peek().is_empty() {
+                loaded.write().clear();
+            }
+            return;
+        }
+        if !previews() {
+            return;
+        }
+        // The selected tab loads through its visit (`set_page`).
+        if !loaded.peek().contains(&page) {
+            loaded.write().push(page);
+        }
+        for (_, neighbour, _) in settings_panels(crate::platform::APP, page, true) {
+            if !loaded.peek().contains(&neighbour) {
+                loaded.write().push(neighbour);
+                spawn_root(async move { load_page_data(state, neighbour).await });
+            }
+        }
+    });
     use_effect(move || {
         let page = selected();
         if let Some((_, key, ..)) = SETTINGS.iter().find(|(p, ..)| *p == page) {
@@ -176,27 +223,25 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
                         }
                     }
                 }
-                // Swipes switch tabs like a tap: the URL, the selected tab and its data load
-                // follow `set_page`; the scrolling app tab bar keeps the new tab in view.
-                SwipeableTabs { id: "settings-swipe", count: tabs.len(), index: tab_index,
+                // Swipes switch tabs like a tap once the panels arrive: the URL, the selected
+                // tab and its data load follow `set_page`; the scrolling app tab bar keeps the
+                // new tab in view. Until then the neighbour is only a preview beside it.
+                // While an action holds the busy shell, `set_page` refuses tab changes: no drag
+                // starts then, so a completed swipe can never be left unselected.
+                SwipeableTabs { id: "settings-swipe", count: tabs.len(), index: tab_index, enabled: !state.read().busy,
+                    on_drag: move |active: bool| {
+                        if *previews.peek() != active {
+                            previews.set(active);
+                        }
+                    },
                     on_change: move |next: usize| {
                         if let Some((target, key, ..)) = settings_tabs(crate::platform::APP).get(next) {
                             set_page(state, *target);
                             reveal_horizontally(&format!("settings-tab-{key}"));
                         }
                     },
-                    section { class: "settings-section", id: "settings-panel", role: "tabpanel",
-                        "aria-labelledby": format!("settings-tab-{}", SETTINGS.iter().find(|(p, ..)| *p == page).map(|(_, key, ..)| *key).unwrap_or("uids")),
-                        match page {
-                            Page::Uids => rsx! { UidsPage { state } },
-                            Page::Rewards => rsx! { RewardsPage { state } },
-                            Page::Link => rsx! { LinkPage { state } },
-                            Page::Security => rsx! { SecurityPage { state } },
-                            Page::Notifications => rsx! { NotificationsPage { state } },
-                            Page::Transfer if !crate::platform::APP => rsx! { TransferPage { state } },
-                            Page::Delete if !crate::platform::APP => rsx! { DeletePage { state } },
-                            _ => rsx! {},
-                        }
+                    for (position, target, key) in settings_panels(crate::platform::APP, page, previews()) {
+                        SettingsPanel { key: "{key}", state, page: target, tab: key, position, selected: target == page }
                     }
                 }
             } else {
@@ -209,6 +254,42 @@ pub(in crate::app) fn Shell(state: Signal<AppState>) -> Element {
                 } else {
                     DashboardPage { state }
                 }
+            }
+        }
+    }
+}
+
+/// One settings tab's content. The selected one is the `tabpanel` the tab bar controls;
+/// the others are previews the pager drags in: inert (nothing focusable), hidden from
+/// assistive technology and without the panel's ID. Keyed by tab, so a completed swipe keeps
+/// the previewed page (and its loaded state) as the new selected panel.
+#[component]
+fn SettingsPanel(
+    state: Signal<AppState>,
+    page: Page,
+    tab: &'static str,
+    position: usize,
+    selected: bool,
+) -> Element {
+    let preview = (!selected).then_some("true");
+    rsx! {
+        section { class: "settings-section",
+            id: selected.then_some("settings-panel"),
+            role: selected.then_some("tabpanel"),
+            "aria-labelledby": selected.then(|| format!("settings-tab-{tab}")),
+            "data-swipe-page": position,
+            "data-swipe-preview": preview,
+            inert: preview,
+            "aria-hidden": preview,
+            match page {
+                Page::Uids => rsx! { UidsPage { state } },
+                Page::Rewards => rsx! { RewardsPage { state } },
+                Page::Link => rsx! { LinkPage { state } },
+                Page::Security => rsx! { SecurityPage { state } },
+                Page::Notifications => rsx! { NotificationsPage { state } },
+                Page::Transfer if !crate::platform::APP => rsx! { TransferPage { state } },
+                Page::Delete if !crate::platform::APP => rsx! { DeletePage { state } },
+                _ => rsx! {},
             }
         }
     }
@@ -411,6 +492,34 @@ mod tests {
         let icons: std::collections::BTreeSet<_> =
             SETTINGS.iter().map(|(.., icon)| icon.path()).collect();
         assert_eq!(icons.len(), SETTINGS.len());
+    }
+
+    #[test]
+    fn settings_previews_are_the_neighbours_while_dragging() {
+        let pages = |page, previews, app| -> Vec<(usize, Page)> {
+            settings_panels(app, page, previews)
+                .into_iter()
+                .map(|(position, page, _)| (position, page))
+                .collect()
+        };
+        assert!(pages(Page::Rewards, false, false) == vec![(1, Page::Rewards)]);
+        assert!(
+            pages(Page::Rewards, true, false)
+                == vec![(0, Page::Uids), (1, Page::Rewards), (2, Page::Link)]
+        );
+        assert!(pages(Page::Uids, true, false) == vec![(0, Page::Uids), (1, Page::Rewards)]);
+        assert!(pages(Page::Delete, true, false) == vec![(5, Page::Transfer), (6, Page::Delete)]);
+        // The app ends at the notifications tab and never previews web-only pages.
+        assert!(
+            pages(Page::Notifications, true, true)
+                == vec![(3, Page::Security), (4, Page::Notifications)]
+        );
+        assert!(pages(Page::Dashboard, true, false).is_empty());
+        let keys: Vec<_> = settings_panels(false, Page::Link, true)
+            .into_iter()
+            .map(|(.., key)| key)
+            .collect();
+        assert_eq!(keys, ["bonus", "link", "security"]);
     }
 
     /// Swipes walk the same tab order as the tab bar but stop at either end

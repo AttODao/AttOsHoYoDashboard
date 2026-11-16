@@ -101,7 +101,7 @@ fn EventsPanel(state: Signal<AppState>, game: &'static str, active: bool, narrow
             class: "panel game-panel events-panel {game}", id: "events-panel-{game}",
             role: if narrow { "tabpanel" } else { "region" },
             "aria-labelledby": if narrow { format!("events-tab-{game}") } else { format!("events-title-{game}") },
-            "data-selected": active, hidden: narrow && !active,
+            "data-selected": active, hidden: narrow && !active, "data-swipe-page": game_index(game),
             tabindex: if narrow { "0" } else { "-1" },
             div { class: "game-heading card-heading",
                 h2 { class: "game-title", id: "events-title-{game}",

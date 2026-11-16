@@ -119,7 +119,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 - 下部バーの分（64px + セーフエリア + 32px）だけ、本文の下の余白を広げた。
 - アプリをバックグラウンドから戻したとき、前回の取得から60秒以上たっていれば状態を再取得する（web版の60秒ごとの更新に加えた動作）。
 - web版のカード右上にある更新ボタン（丸矢印）は出さない。代わりに、ページが最上部までスクロールされた状態で下に引っ張って離すと（減衰後72px以上）、UID一覧・両ゲームの状態・ボーナス設定を読み直す（`load_dashboard_data`、pull-to-refresh）。引っ張っている間は画面上部に丸矢印のインジケータが指に付いて回り、しきい値を超えるとシアンになり、読み込み中は回転し続ける。スクリーンリーダーには「更新中…」を `role="status"` で伝える。開いているダイアログ、入力欄・選択欄から始めたタッチ、横方向が主のスワイプでは反応しない。ダッシュボードではWebViewのオーバースクロール効果を止める（`overscroll-behavior-y:none`）。リスナーは `mobile/dom.rs` の `PullToRefresh` が持ち、ダッシュボードを離れると外す。
-- ゲームタブ（900px以下）はパネルの上で左右にスワイプしても切り替わる（左で次、右で前、端では止まる）。web版と同じ `SwipeableTabs` を使い、アプリではタッチを `mobile/swipe.rs` が集める。横方向が主のスワイプでは上の pull-to-refresh が外れ、縦方向が主の引っ張りではスワイプにならないので、2つは同時に動かない。
+- ゲームタブ（900px以下）はパネルの上で左右にドラッグすると、web版と同じページャーで切り替わる（現在のパネルが指に付いて動き、隣のゲームのパネルが横に並ぶ。左で次、右で前、端では抵抗が付いて戻る）。web版と同じ `SwipeableTabs` を使い、アプリではタッチの収集とパネルの移動を `mobile/swipe.rs` のスクリプトが行う（5.12）。横のドラッグに確定すると上の pull-to-refresh は取り消され、縦方向が主の引っ張りではページャーは動かないので、2つは同時に動かない。
 - 各ゲームカードの「高難度コンテンツ」欄（`pages/challenges.rs`）はweb版と同じ部品・同じCSSで、アプリ専用のレイアウトはない。pull-to-refreshは両ゲームの状態の後にこの要約も読み直す（サーバーのキャッシュTTLは `CHALLENGE_CACHE_TTL_MINUTES`）。ホーム画面ウィジェットと端末通知には入れていない。エンドポイントのない古いサーバーにつないだ場合（404）は、エラーを出さずに欄ごと表示しない。
 - イベントと祈願／跳躍のカレンダーはダッシュボードから「イベント」画面へ移した（下の「イベント」）。ダッシュボードのpull-to-refreshはカレンダーを読まない。
 - 全体レビューでweb版と共通に変えた点（アプリ専用のレイアウトはない）：見出しの「ログインボーナスを今すぐ受け取る」の下に、ゲームごとの本日の受け取り状態（「本日分 原神 未受け取り · 崩壊：スターレイル 受け取り済み」）を出す。状態の取得の経過時間はカードの下ではなくゲーム名の下に置く（アプリには更新ボタンがないので、見出しは名前と経過時間だけ）。読み込みは状態→ボーナス設定→7日間の記録→高難度コンテンツの順で、ボタンと受け取り状態がHoYoLABを待つ読み込みの後ろに並ばない。順番待ちの状態・高難度コンテンツは「読み込み中…」と表示する。表示UIDの選択肢は「UID … · 地域」の順。
@@ -141,7 +141,7 @@ adb install -r target/dx/attos-dashboard-ui/debug/android/app/app/build/outputs/
 - 見出し横の「ダッシュボードへ」ボタンは、下部バーと重複するので隠す。
 - タブから「削除」がなくなる（3節）。文字が大きいときは、ページを横に広げずにタブ列の中だけでスクロールする（スクロールバーは非表示）。
 - アイコンと記号（web版と共通の部品で、アプリだけの分岐はない。`DESIGN.md` の設定・管理者設定の項）：タブにアイコン＋ラベル、状態は記号＋文字（`StatusMark`）、一覧の読み込み中はスケルトン、読み込み失敗は×の円＋文＋「再試行」、長い説明（ログインボーナスの日付の注記・Cookieの取得方法）は開閉1行。
-- 幅によらず：web版と同じく、本文を左右にスワイプするとタブが切り替わる（`SwipeableTabs`、左で次・右で前、端では止まる）。タブ列が横スクロールしているときは、スワイプで選んだタブが見えるようにタブ列だけを横にスクロールする（`mobile::dom::reveal_horizontally`）。
+- 幅によらず：web版と同じく、本文を左右にドラッグするとページャーでタブが切り替わる（隣のタブの中身がプレビューとして横に並び、指を離してスワイプが完了したときにタブが変わる。5.12）。タブ列が横スクロールしているときは、スワイプで選んだタブが見えるようにタブ列だけを横にスクロールする（`mobile::dom::reveal_horizontally`）。
 
 ### 設定：報酬
 
@@ -427,6 +427,15 @@ ntfyはバッテリーの最適化から除外していないと、数時間後�
 - 更新の確認（5.5節・5.6節）は、接続先とは関係なく、ビルド時の `AHD_UPDATE_*`（既定は `git.attodao.cc` の `AttODao/AttOsHoYoDashboard`）のForgejoリリースを使い続ける。別のサーバーを選んでも、そのサーバーからAPKを取得することはない。
 - サーバーの変更はログイン画面だけで行う（ログイン中は表示しない）。
 
+### 5.12 タブのページャー（スワイプ中の表示）
+
+- ゲームタブ（ダッシュボードとイベント、900px以下）と設定タブで、横にドラッグしている間、現在のパネルが指に付いて動き、隣のタブのパネルが16pxの間をあけて横に並ぶ。離すと隣へ進むか元に戻り、タブは指を離してスワイプが完了したときに変わる（パネルはその後隣へ動き終わる）。web版と同じ `SwipeableTabs`・同じ判定（`app/swipe.rs`）・同じCSS（`dashboard.css`）で、アプリ専用のレイアウトはない。
+- アプリのWebViewでは `mobile/swipe.rs` のスクリプトがタッチを集め、`requestAnimationFrame` ごとにパネルの `transform` を書く。毎フレームのRustへの往復はなく、Rustへ送るのは「ドラッグの開始・終了」「離した（判定の問い合わせ）」「完了したスワイプの移動先」だけ。方向の確定・端での抵抗・画面端の除外の式は `app::swipe::POLICY` の定数でスクリプトに写し、離したときに進むか戻るか・落ち着く位置と時間はRustの `app::swipe::settle` が決める。リスナーは `window.__ahdSwipes[id]` ごとに持つ。`touchmove` だけは能動リスナーで、横のドラッグに確定した後の移動を `preventDefault` する（WebViewのChromiumが捨てた横スクロールの慣性で、スワイプ直後のタップを捨てないため。web版と同じ）。
+- pull-to-refreshとの関係：横のドラッグに確定すると領域に `data-swipe-drag` が付き、pull-to-refreshのスクリプトはそれを見て引っ張りを取り消す。縦方向の引っ張りはページャーの方向確定で「スクロール」になるので、パネルは動かない。
+- 設定タブの隣の中身は、ドラッグ中だけプレビューとして描く（`inert`・`aria-hidden`、IDなし）。完了すると、そのプレビューがそのまま選択中のパネルになり、タブ列は `reveal_horizontally` で選んだタブを見せる。戻るボタンとダイアログの扱いは変わらない（ダイアログが開いている間はドラッグが始まらない）。
+- 端末の「アニメーションを削除」（`prefers-reduced-motion: reduce`）では、ドラッグ中は指に付いたまま、離すと即座に落ち着く。
+- web版との違いは、判定の式の一部をスクリプトに写していることだけ。完了後の印の解除は、どちらも動き終わりと、タブが変わった後の再描画（`use_effect`）の両方を待って行う。
+
 ## 6. web版との共通化と分岐
 
 ### 共通のまま使うもの
@@ -457,7 +466,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | 現在時刻 | `js_sys::Date::now` | `SystemTime` | `platform::now_ms` |
 | 時刻の表示と経過時間 | `js_sys::Date` | chrono（`mobile/time.rs`） | `app/display.rs` の各関数 |
 | DOM（フォーカス、checked、`<dialog>`、`matchMedia`、History、`hidden`） | web-sys | `document::eval`（`mobile/dom.rs`） | `pages/common.rs`、`app/navigation.rs`、`pages/dashboard.rs`、`app.rs` |
-| タブの横スワイプのタッチ収集 | web-sys（`pages/swipe_tabs.rs`） | `document::eval`（`mobile/swipe.rs`） | `pages/swipe_tabs.rs` の `SwipeableTabs`、判定は `app/swipe.rs` |
+| タブのページャー（タッチ収集とパネルの移動） | web-sys（`pages/swipe_tabs.rs`。判定の関数を直接呼ぶ） | `document::eval`（`mobile/swipe.rs`。毎フレームの式は `app::swipe::POLICY` の定数で写し、離したときだけRustの `settle` に問い合わせる） | `pages/swipe_tabs.rs` の `SwipeableTabs`、判定は `app/swipe.rs` |
 | 言語とテーマの保存 | `localStorage` | `files/preferences.json` | `app/preferences.rs` |
 | 保存がない場合の言語の取得元 | `navigator.languages` | アプリ別言語→システムのロケール（`mobile/locale.rs`、Kotlin `AhdLocale.deviceLocales`） | `Preferences::load`、`Language::for_locales` |
 | 外部URL | （なし） | `webbrowser` | `platform::open_external` |
@@ -481,7 +490,7 @@ web版と同じ処理をアプリ用に置き換えた箇所：
 | `dashboard-ui/src/mobile/time.rs` | 端末時刻での表示（完全な日時の `compact_datetime` と、カード用の短い形に使う「今日から何日後か・時刻・月日」の `local_moment`） |
 | `dashboard-ui/src/mobile/locale.rs` | 端末のロケール一覧の取得とウィジェットへの言語変更の通知（JNI、5.10節） |
 | `dashboard-ui/src/mobile/dom.rs` | `document::eval` によるDOM操作（pull-to-refreshのタッチ処理を含む） |
-| `dashboard-ui/src/mobile/swipe.rs` | タブの横スワイプのタッチ収集（`document::eval`）。判定は共通の `app/swipe.rs` |
+| `dashboard-ui/src/mobile/swipe.rs` | タブのページャーのタッチ収集とパネルの移動（`document::eval`）。判定は共通の `app/swipe.rs` |
 | `dashboard-ui/src/mobile/reminders.rs` | 通知時刻の予測、設定と予定の保存形式、通知文（テストあり） |
 | `dashboard-ui/src/mobile/notify.rs` | Kotlinの通知処理（受信箱・UnifiedPushを含む）を呼ぶJNIブリッジ |
 | `dashboard-ui/src/mobile/push.rs` | UnifiedPushの状態から表示する1行の決定（I/Oなし、テストあり） |

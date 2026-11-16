@@ -138,7 +138,8 @@ impl Drop for Modal {
 /// Pull-to-refresh on the page's top edge: a single-finger drag down while the page
 /// is scrolled to the top moves `#pull-refresh` (CSS variables `--pull`/`--pull-turn`,
 /// `data-pulling`/`data-armed`), and releasing past the threshold calls `on_pull`.
-/// Open dialogs, touches on form controls and mostly horizontal swipes never pull.
+/// Open dialogs, touches on form controls and mostly horizontal swipes never pull, and a
+/// tab pager drag (`.swipe-tabs[data-swipe-drag]`, `mobile::swipe`) cancels a pull.
 /// Dropping it removes the listeners. Each instance keeps its own listeners (the dashboard
 /// and the events page both pull): the next page mounts before the previous one is
 /// dropped, so a shared handle would let the old page remove the new page's listeners.
@@ -170,6 +171,8 @@ const start = (ev) => {
 };
 const move = (ev) => {
   if (startY === null || ev.touches.length !== 1) return;
+  // A tab pager drag (mobile/swipe.rs) owns this touch: drop the pull.
+  if (document.querySelector(".swipe-tabs[data-swipe-drag]")) { startY = null; active = false; pull = 0; reset(); return; }
   const dx = ev.touches[0].clientX - startX, dy = ev.touches[0].clientY - startY;
   if (!active) {
     if (dy < -8 || Math.abs(dx) > Math.abs(dy) + 4) { startY = null; return; }
