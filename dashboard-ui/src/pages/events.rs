@@ -8,22 +8,24 @@ use super::common::{LoadError, LoadingLine, WarningLine, game_name, pending, ref
 use super::dashboard::{Freshness, pull_refresh, use_clock, use_clock_provider};
 use super::event_list::EventList;
 use super::event_timeline::{LocalTime, WideTimeline};
-use super::game_tabs::{GameTabs, game_index, select_game_index, use_narrow_games};
+use super::game_tabs::{GameTabs, select_game_index, use_narrow_games};
 use super::icons::{Glyph, Icon, Status};
 use super::swipe_tabs::SwipeableTabs;
 use crate::app::actions::spawn_root;
 use crate::app::data::load_game_calendar;
 use crate::app::display::seconds_since;
 use crate::app::preferences::use_preferences;
-use crate::app::state::{AppState, DASHBOARD_GAMES, Page, set_page};
+use crate::app::state::{AppState, Page, set_page};
 use crate::models::GameCalendar;
 use dioxus::prelude::*;
 
 #[component]
 pub(super) fn EventsPage(state: Signal<AppState>) -> Element {
     let ui = use_preferences();
-    let active = use_memo(move || state.read().dashboard_game);
+    let shown = use_memo(move || state.read().shown_games());
     let narrow = use_narrow_games();
+    // One game in use: its panel alone, without tabs or swipe, at every width.
+    let tabbed = narrow() && shown().tabs();
     use_clock_provider();
     rsx! {
         div { class: "page-stack events",
@@ -39,10 +41,10 @@ pub(super) fn EventsPage(state: Signal<AppState>) -> Element {
             // Like the dashboard: one game at a time on narrow screens, swiped like a tab tap.
             SwipeableTabs {
                 id: "events-panels", class: "events-grid",
-                count: DASHBOARD_GAMES.len(), index: game_index(active()), enabled: narrow(),
+                count: shown().games().len(), index: shown().index(shown().active), enabled: tabbed,
                 on_change: move |index: usize| select_game_index(state, index),
-                for game in DASHBOARD_GAMES {
-                    EventsPanel { key: "{game}", state, game, active: active() == game, narrow: narrow() }
+                for (page, game) in shown().games().into_iter().enumerate() {
+                    EventsPanel { key: "{game}", state, game, page, active: shown().active == game, tabbed }
                 }
             }
         }
@@ -51,9 +53,15 @@ pub(super) fn EventsPage(state: Signal<AppState>) -> Element {
 
 /// One game: its mark and title, the age of the calendar (clock and "12 min ago") and
 /// (web) its refresh control, then the timeline. Without a visible UID there is nothing to
-/// read the calendar through.
+/// read the calendar through. `tabbed` and `page` as in the dashboard's `GamePanel`.
 #[component]
-fn EventsPanel(state: Signal<AppState>, game: &'static str, active: bool, narrow: bool) -> Element {
+fn EventsPanel(
+    state: Signal<AppState>,
+    game: &'static str,
+    page: usize,
+    active: bool,
+    tabbed: bool,
+) -> Element {
     let ui = use_preferences();
     let snapshot = state.read();
     let accounts_loaded = snapshot.accounts.is_some();
@@ -99,10 +107,10 @@ fn EventsPanel(state: Signal<AppState>, game: &'static str, active: bool, narrow
     rsx! {
         section {
             class: "panel game-panel events-panel {game}", id: "events-panel-{game}",
-            role: if narrow { "tabpanel" } else { "region" },
-            "aria-labelledby": if narrow { format!("events-tab-{game}") } else { format!("events-title-{game}") },
-            "data-selected": active, hidden: narrow && !active, "data-swipe-page": game_index(game),
-            tabindex: if narrow { "0" } else { "-1" },
+            role: if tabbed { "tabpanel" } else { "region" },
+            "aria-labelledby": if tabbed { format!("events-tab-{game}") } else { format!("events-title-{game}") },
+            "data-selected": active, hidden: tabbed && !active, "data-swipe-page": page,
+            tabindex: if tabbed { "0" } else { "-1" },
             div { class: "game-heading card-heading",
                 h2 { class: "game-title", id: "events-title-{game}",
                     if let Some(mark) = Icon::game_mark(game) { Glyph { icon: mark, class: "game-mark" } }

@@ -26,7 +26,7 @@ const appLoginChallenge='E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
 const user={id:uid(1),username:'synthetic-admin',is_admin:true,active:true,must_change_password:true};
 const other={...user,id:uid(9),username:'synthetic-other',is_admin:false,active:false,must_change_password:false};
 let runPlan=['queued','running','success'];
-let verified=false,cookieSaved=false,notificationSaves=[],statusMode=null,challengeMode=null,calendarMode=null,historyMode=null,runProgress=[],passkeyDeletes=0,passkeys=[],credentialId,failLogout=false,allowLogin,allowSettings,expirePasswordSession=false,sessionExpired=false;
+let verified=false,cookieSaved=false,notificationSaves=[],statusMode=null,accountsGame=null,challengeMode=null,calendarMode=null,historyMode=null,runProgress=[],passkeyDeletes=0,passkeys=[],credentialId,failLogout=false,allowLogin,allowSettings,expirePasswordSession=false,sessionExpired=false;
 const createdUsers=[];
 const secondAdmin={...user,id:uid(14),username:'synthetic-second-admin',must_change_password:false};
 let failCreate=false,adminDeletes=0,loginFailureStatus=0,failPatch=false,passkeyHold=null,passkeyFail=false,releasePasskeys=()=>{},adminPatchHold=null,releaseAdminPatch=()=>{};
@@ -150,7 +150,8 @@ const server=http.createServer(async(req,res)=>{
     if(req.method==='PATCH'){if(adminPatchHold)await adminPatchHold;assert.deepEqual(body,{active:true});other.active=true;res.writeHead(204);return res.end();}
     assert.equal(req.method,'DELETE');assert.ok(body.confirmation===other.username);assert.ok(body.current_password==='synthetic-password-123');adminDeletes++;res.writeHead(202);return res.end();
    }
-   if(p==='/api/v1/game-accounts')return json(res,accounts);
+   // accountsGame: only that game keeps visible UIDs (the other game's UIDs are hidden).
+   if(p==='/api/v1/game-accounts')return json(res,accountsGame?accounts.map(a=>a.game_kind===accountsGame?a:{...a,visible:false}):accounts);
    const visibility=accounts.find(a=>p===`/api/v1/game-accounts/${a.id}`);
    if(visibility){assert.equal(req.method,'PATCH');assert.deepEqual(Object.keys(body),['visible']);if(failPatch)return json(res,{error:'unavailable'},503);visibility.visible=body.visible;res.writeHead(204);return res.end();}
    const challengeAccount=accounts.find(a=>p===`/api/v1/game-accounts/${a.id}/challenges`);
@@ -1289,6 +1290,71 @@ try{
  const beforeDashboard=calendarReads();
  await page.locator('a.wordmark').click();await dashboard();await page.locator('.resource strong').first().waitFor();
  assert.equal(calendarReads(),beforeDashboard,'the dashboard does not read calendars');
+ // Only one game in use (the other game's UIDs are all hidden): that game's card alone on the
+ // dashboard and the events page at every width, without game tabs or swipe, as a region
+ // named by its title. The stored tab points at the hidden game and does not bring it back.
+ stage='single game';
+ await page.setViewportSize({width:360,height:800});await page.locator('#game-tab-starrail').click();await starrail.waitFor();
+ const singleTouch=await context.newCDPSession(page);await singleTouch.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
+ const gameUids={genshin:[5,6],starrail:[7,8]};
+ const gameReads=game=>gameUids[game].reduce((sum,n)=>sum+[...counts.entries()].filter(([key])=>key.startsWith('/api/v1/game-accounts/'+uid(n)+'/')).reduce((total,[,count])=>total+count,0),0);
+ const singleGame=async(prefix,area,game,other,width)=>{
+  stage=`single game: ${prefix} ${game} ${width}px`;
+  await page.setViewportSize({width,height:800});await page.evaluate(()=>scrollTo(0,0));
+  const panel=page.locator(`#${prefix}-panel-${game}`);await panel.waitFor();
+  const look=()=>page.evaluate(({prefix,area,game,other})=>{
+   const a=document.getElementById(area),panel=document.getElementById(`${prefix}-panel-${game}`),t=getComputedStyle(panel).transform,main=document.querySelector('main.container');
+   return {panels:a.querySelectorAll(':scope>section').length,other:Boolean(document.getElementById(`${prefix}-panel-${other}`)),tablists:document.querySelectorAll('[role=tablist]').length,tabs:document.querySelectorAll(`[id^="${prefix}-tab-"]`).length,
+    role:panel.getAttribute('role'),labelledby:panel.getAttribute('aria-labelledby'),label:document.getElementById(panel.getAttribute('aria-labelledby'))?.textContent.trim(),hidden:panel.hidden,tabindex:panel.getAttribute('tabindex'),selected:panel.dataset.selected,
+    enabled:a.dataset.swipeEnabled,count:a.dataset.swipeCount,drag:a.dataset.swipeDrag??null,marks:a.querySelectorAll('[data-swipe-role]').length,shift:t==='none'?0:new DOMMatrixReadOnly(t).m41,
+    width:panel.getBoundingClientRect().width,area:a.getBoundingClientRect().width,fits:main.scrollWidth<=main.clientWidth,scrollX};
+  },{prefix,area,game,other});
+  const before=await look();
+  const name={genshin:'Genshin Impact',starrail:'Honkai: Star Rail'}[game];
+  assert.deepEqual({panels:before.panels,other:before.other,tablists:before.tablists,tabs:before.tabs},{panels:1,other:false,tablists:0,tabs:0},`one ${game} panel without game tabs: ${JSON.stringify(before)}`);
+  assert.deepEqual([before.role,before.labelledby,before.label,before.hidden,before.tabindex,before.selected],['region',`${prefix}-title-${game}`,name,false,'-1','true'],`the panel is a region named by its title: ${JSON.stringify(before)}`);
+  assert.deepEqual([before.enabled,before.count],['false','1'],'no pager with one panel');
+  // The dashboard card stops at 880px on wide screens; the events panel keeps the full width.
+  assert.ok(before.fits&&Math.abs(before.width-(prefix==='game'?Math.min(before.area,880):before.area))<1,`the card width: ${JSON.stringify(before)}`);
+  // A horizontal touch drag moves nothing and switches nothing.
+  const title=await page.locator(`#${prefix}-title-${game}`).boundingBox(),url=page.url();
+  await hold(singleTouch,{x:Math.round(width/2),y:Math.round(title.y+title.height/2)},-160);await page.waitForTimeout(80);
+  const mid=await look();
+  assert.ok(mid.drag===null&&mid.marks===0&&mid.shift===0&&mid.scrollX===0,`a horizontal drag does not move the only panel: ${JSON.stringify(mid)}`);
+  await lift(singleTouch);await page.waitForTimeout(150);
+  const after=await look();
+  assert.ok(after.panels===1&&!after.other&&after.tablists===0&&after.shift===0&&!after.hidden&&page.url()===url,`the swipe switched nothing: ${JSON.stringify(after)}`);
+  assert.deepEqual(errors,[],`no browser errors with ${game} alone (${prefix}, ${width}px)`);
+  if(width===360||width===1280)for(const theme of ['dark','light']){
+   await page.evaluate(theme=>{document.documentElement.dataset.singleShotTheme=document.documentElement.dataset.theme;document.documentElement.dataset.theme=theme;},theme);
+   await page.screenshot({path:path.join(root,`target/ui-single-${game}-${prefix==='game'?'dashboard':'events'}-${width}-${theme}.png`),fullPage:true});
+   await page.evaluate(()=>{document.documentElement.dataset.theme=document.documentElement.dataset.singleShotTheme;delete document.documentElement.dataset.singleShotTheme;});
+  }
+ };
+ for(const [game,other] of [['genshin','starrail'],['starrail','genshin']]){
+  accountsGame=game;const hiddenReads=gameReads(other);
+  // Opening a page reloads the UID list.
+  await menu('Events');await page.waitForURL(origin+'/events');
+  await page.waitForFunction(other=>!document.getElementById(`events-panel-${other}`),other);
+  for(const width of [360,412,768,1280])await singleGame('events','events-panels',game,other,width);
+  await page.locator('a.wordmark').click();await dashboard();
+  await page.waitForFunction(other=>!document.getElementById(`game-panel-${other}`),other);
+  await page.locator(`#game-panel-${game} .resource strong`).first().waitFor();
+  for(const width of [1280,768,412,360])await singleGame('game','game-panels',game,other,width);
+  assert.equal(gameReads(other),hiddenReads,`nothing loads for the hidden ${other}`);
+ }
+ await singleTouch.send('Emulation.setTouchEmulationEnabled',{enabled:false});await singleTouch.detach();
+ // Both games in use again: the tabs return with the stored tab (the hidden game's) in front.
+ stage='single game: both again';
+ accountsGame=null;await menu('Events');await page.waitForURL(origin+'/events');
+ await page.locator('#events-tab-starrail[aria-selected=true]').waitFor();
+ assert.equal(await page.locator('#events-panels').getAttribute('data-swipe-count'),'2');
+ await page.locator('a.wordmark').click();await dashboard();
+ await page.locator('#game-tab-starrail[aria-selected=true]').waitFor();await starrail.waitFor();assert.ok(await genshin.isHidden());
+ assert.equal(await starrail.getAttribute('role'),'tabpanel');
+ await page.locator('#game-tab-genshin').click();await genshin.waitFor();
+ await page.setViewportSize({width:1280,height:900});await starrail.waitFor();
+ assert.deepEqual(errors,[],'switching between one and two games raises no browser errors');
  stage='settings';
  await settings('link');
  const syncsBefore=counts.get('/api/v1/me/hoyolab/sync')||0;
