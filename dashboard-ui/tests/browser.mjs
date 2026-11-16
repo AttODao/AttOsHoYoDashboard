@@ -279,6 +279,9 @@ try{
  page.on('console',message=>{if(message.type()==='error'&&/Content Security Policy|unsafe-eval|inline style/i.test(message.text()))errors.push('CSP violation');});
  const button=name=>page.getByRole('button',{name,exact:true});
  const idle=()=>page.waitForFunction(()=>document.querySelector('fieldset.app-shell')?.disabled===false);
+ const tabSelection=bar=>page.evaluate(bar=>{const probe=document.createElement('span');probe.style.color='var(--cyan)';document.body.append(probe);const cyan=getComputedStyle(probe).color;probe.remove();const tabs=[...document.querySelectorAll(bar+' [role=tab]')];const ids=test=>tabs.filter(test).map(tab=>tab.id);return {selected:ids(tab=>tab.getAttribute('aria-selected')==='true'),looks:ids(tab=>{const style=getComputedStyle(tab);return style.color===cyan||style.borderBottomColor===cyan;}),hovered:ids(tab=>tab.matches(':hover'))};},bar);
+ // Exactly one tab carries aria-selected and exactly that one looks selected.
+ const oneTabLooksSelected=async(bar,id,message)=>{const looks=await tabSelection(bar);assert.deepEqual({selected:looks.selected,looks:looks.looks},{selected:[id],looks:[id]},`${message}: ${JSON.stringify(looks)}`);return looks;};
  const dashboard=async()=>{await page.getByRole('heading',{name:'Dashboard',exact:true}).waitFor();await idle();await page.waitForURL(origin+'/dashboard');};
  const openMenu=async()=>{await page.locator('#ahd-menu-trigger').click();await page.locator('#ahd-menu[open]').waitFor();await page.waitForFunction(()=>Math.abs(document.getElementById('ahd-menu').getBoundingClientRect().right-innerWidth)<1);await page.locator('#ahd-menu').evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});};
  const menu=async name=>{await openMenu();const dialog=await page.locator('#ahd-menu').elementHandle();await page.locator('#ahd-menu').getByRole('button',{name,exact:true}).click();await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});await dialog.evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});await dialog.dispose();await idle();};
@@ -923,6 +926,21 @@ try{
  await drag({x:300,y},{x:140,y});assert.equal(await selectedGame(),'game-tab-starrail','the last tab stays at the end');
  // A tap on the tab bar still works after swipes.
  await page.locator('#game-tab-genshin').click();await genshin.waitFor();
+ // After a touch tap the tapped tab keeps :hover; a swipe that selects the other tab must not
+ // leave two tabs looking selected (the shared button hover border is not the selected underline).
+ const touchTap=async(session,locator)=>{await locator.scrollIntoViewIfNeeded();const box=await locator.boundingBox();const point={x:box.x+box.width/2,y:box.y+box.height/2};await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});return point;};
+ const tapped=await touchTap(touch,page.locator('#game-tab-starrail'));await starrail.waitFor();
+ await oneTabLooksSelected('.game-tabs','game-tab-starrail','a tapped game tab is the only one that looks selected');
+ y=await titleAt('starrail');await drag({x:100,y},{x:260,y});await genshin.waitFor();
+ // A phone keeps :hover on the tapped tab; restore it if the emulation dropped it when the panel changed.
+ if(!(await tabSelection('.game-tabs')).hovered.includes('game-tab-starrail'))await page.mouse.move(tapped.x,tapped.y);
+ assert.deepEqual((await tabSelection('.game-tabs')).hovered,['game-tab-starrail'],'the tapped game tab still hovers');
+ await oneTabLooksSelected('.game-tabs','game-tab-genshin','after tap then swipe one game tab looks selected');
+ y=await titleAt('genshin');await drag({x:300,y},{x:140,y});await starrail.waitFor();
+ await oneTabLooksSelected('.game-tabs','game-tab-starrail','swiping back onto the hovered game tab');
+ await page.locator('#game-tab-starrail').focus();await page.keyboard.press('ArrowLeft');await genshin.waitFor();
+ await oneTabLooksSelected('.game-tabs','game-tab-genshin','arrow keys after a swipe');
+ assert.deepEqual(errors,[],'tapping and swiping game tabs raises no browser errors');
  // Edge starts (system back gesture), slanted vertical drags and mouse drags never switch.
  y=await titleAt('genshin');
  await drag({x:10,y},{x:200,y});assert.equal(await selectedGame(),'game-tab-genshin','edge swipe is ignored');
@@ -1370,6 +1388,22 @@ try{
  await swipeTo(120,'transfer','/settings/transfer');await tabInView('transfer');
  await page.reload();await page.locator('#settings-tab-transfer[aria-selected=true]').waitFor();await idle();await tabInView('transfer');
  await swipeTo(120,'notifications','/settings/notifications');
+ await touchTap(settingsTouch,page.locator('#settings-tab-security'));await page.locator('#settings-tab-security[aria-selected=true]').waitFor();await idle();
+ await oneTabLooksSelected('.settings-tabs','settings-tab-security','a tapped settings tab is the only one that looks selected');
+ await swipeTo(-120,'notifications','/settings/notifications');
+ if(!(await tabSelection('.settings-tabs')).hovered.includes('settings-tab-security')){const box=await page.locator('#settings-tab-security').boundingBox();await page.mouse.move(box.x+box.width/2,box.y+box.height/2);}
+ assert.deepEqual((await tabSelection('.settings-tabs')).hovered,['settings-tab-security'],'the tapped settings tab still hovers');
+ await oneTabLooksSelected('.settings-tabs','settings-tab-notifications','after tap then swipe one settings tab looks selected');
+ // Touch screens (hover:none, as under the touch emulation) show the tapped, no longer selected tab like the other unselected ones.
+ assert.ok(await page.evaluate(()=>matchMedia('(hover:none)').matches),'touch emulation reports a touch screen without hover');
+ assert.deepEqual(...await page.evaluate(()=>['security','uids'].map(key=>{const style=getComputedStyle(document.getElementById('settings-tab-'+key));return [style.color,style.borderBottomColor];})),'the tapped tab keeps no hover look on a touch screen');
+ await swipeTo(-120,'transfer','/settings/transfer');await swipeTo(120,'notifications','/settings/notifications');
+ await oneTabLooksSelected('.settings-tabs','settings-tab-notifications','after repeated swipes one settings tab looks selected');
+ await swipeTo(120,'security','/settings/security');
+ await oneTabLooksSelected('.settings-tabs','settings-tab-security','swiping back onto the hovered settings tab');
+ await page.locator('#settings-tab-security').focus();await page.keyboard.press('ArrowRight');await page.locator('#settings-tab-notifications[aria-selected=true]').waitFor();await idle();
+ await oneTabLooksSelected('.settings-tabs','settings-tab-notifications','arrow keys after a swipe');
+ assert.deepEqual(errors,[],'tapping and swiping settings tabs raises no browser errors');
  await settingsTouch.send('Emulation.setTouchEmulationEnabled',{enabled:false});await settingsTouch.detach();
  await page.setViewportSize({width:1280,height:900});
  await page.locator('#settings-tab-security').click();await idle();
