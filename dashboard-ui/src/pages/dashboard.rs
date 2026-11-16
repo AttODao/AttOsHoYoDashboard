@@ -153,7 +153,7 @@ fn GamePanel(state: Signal<AppState>, game: &'static str, active: bool, mobile: 
             class: "panel game-panel {game}", id: "game-panel-{game}",
             role: if mobile { "tabpanel" } else { "region" },
             "aria-labelledby": if mobile { format!("game-tab-{game}") } else { format!("game-title-{game}") },
-            "data-selected": active, hidden: mobile && !active,
+            "data-selected": active, hidden: mobile && !active, "data-swipe-page": game_index(game),
             tabindex: if mobile { "0" } else { "-1" },
             // The age of the shown status sits beside the control that renews it.
             div { class: "game-heading card-heading",

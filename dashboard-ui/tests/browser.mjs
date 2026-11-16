@@ -913,6 +913,8 @@ try{
   await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:from.x,y:from.y}]});
   for(let i=1;i<=steps;i++){await page.waitForTimeout(16);await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:from.x+(to.x-from.x)*i/steps,y:from.y+(to.y-from.y)*i/steps}]});}
   await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.waitForTimeout(100);
+  // The pager settles from the released position (a real transition in --normal-motion).
+  await page.waitForFunction(()=>document.getElementById('game-panels')?.dataset.swipeDrag===undefined);
  };
  const titleAt=async game=>{const box=await page.locator(`#game-title-${game}`).boundingBox();return box.y+box.height/2;};
  const selectedGame=()=>page.locator('.game-tabs [aria-selected=true]').getAttribute('id');
@@ -941,6 +943,67 @@ try{
  await page.locator('#game-tab-starrail').focus();await page.keyboard.press('ArrowLeft');await genshin.waitFor();
  await oneTabLooksSelected('.game-tabs','game-tab-genshin','arrow keys after a swipe');
  assert.deepEqual(errors,[],'tapping and swiping game tabs raises no browser errors');
+ // Pager: while the finger is down the selected panel follows it and the neighbour sits beside
+ // it with its real content (inert, hidden from assistive technology); the tab bar and URL
+ // change only once the swipe completes. Releases settle from the released position.
+ const pagerWrites=[];page.on('request',request=>{if(request.url().includes('/api/v1/')&&request.method()!=='GET')pagerWrites.push(request.method()+' '+new URL(request.url()).pathname);});
+ const hold=async(session,from,dx,dy=0,steps=6)=>{await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[from]});for(let i=1;i<=steps;i++){await page.waitForTimeout(16);await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:from.x+dx*i/steps,y:from.y+dy*i/steps}]});}};
+ const lift=(session,type='touchEnd')=>session.send('Input.dispatchTouchEvent',{type,touchPoints:[]});
+ const pagerState=area=>page.evaluate(area=>{
+  const a=document.getElementById(area),shift=e=>{const t=getComputedStyle(e).transform;return t==='none'?0:new DOMMatrixReadOnly(t).m41;};
+  const lead=a.querySelector(':scope>[data-swipe-role=lead]'),peek=a.querySelector(':scope>[data-swipe-role=peek]'),ids=[...document.querySelectorAll('[id]')].map(e=>e.id);
+  const focusable=e=>{const control=e.querySelector('button,a[href],input,select,textarea,[tabindex]');if(!control)return false;control.focus();const focused=document.activeElement===control;if(focused)control.blur();return focused;};
+  return {drag:a.dataset.swipeDrag??null,width:a.clientWidth,scrollY,duplicateIds:ids.filter((id,i)=>ids.indexOf(id)!==i),
+   lead:lead&&{page:lead.dataset.swipePage,x:shift(lead),left:lead.getBoundingClientRect().left,top:lead.getBoundingClientRect().top},
+   peek:peek&&{page:peek.dataset.swipePage,id:peek.id,x:shift(peek),left:peek.getBoundingClientRect().left,visible:getComputedStyle(peek).display!=='none'&&peek.getBoundingClientRect().height>0,inert:peek.inert,hidden:peek.getAttribute('aria-hidden'),text:peek.innerText.trim().length,focusable:focusable(peek)}};
+ },area);
+ const dragging=(area,x)=>page.waitForFunction(({area,x})=>{const lead=document.querySelector(`#${area}>[data-swipe-role=lead]`);if(!lead)return false;const t=getComputedStyle(lead).transform;return t!=='none'&&Math.abs(new DOMMatrixReadOnly(t).m41-x)<1.5;},{area,x});
+ const pagerAtRest=area=>page.waitForFunction(area=>{const a=document.getElementById(area);return a.dataset.swipeDrag===undefined&&!a.querySelector('[data-swipe-role]')&&[...a.children].every(e=>!e.style.transform&&!e.style.transition&&!e.style.length);},area);
+ const shoot=async name=>{for(const theme of ['dark','light']){await page.evaluate(theme=>{document.documentElement.dataset.pagerShotTheme=document.documentElement.dataset.theme;document.documentElement.dataset.theme=theme;},theme);await page.screenshot({path:path.join(root,`target/ui-pager-${name}-${theme}.png`)});await page.evaluate(()=>{document.documentElement.dataset.theme=document.documentElement.dataset.pagerShotTheme;delete document.documentElement.dataset.pagerShotTheme;});}};
+ for(const width of [360,412]){
+  await page.setViewportSize({width,height:800});await genshin.waitFor();await page.evaluate(()=>scrollTo(0,0));
+  const url=page.url(),from={x:Math.round(width/2),y:await titleAt('genshin')},before=await genshin.boundingBox();
+  await hold(touch,from,-120);await dragging('game-panels',-120);
+  let mid=await pagerState('game-panels');
+  assert.equal(mid.drag,'','the pager marks the drag');
+  assert.ok(mid.peek&&mid.peek.page==='1'&&mid.peek.visible&&mid.peek.text>0,`mid-drag the next game is visible with content: ${JSON.stringify(mid)}`);
+  assert.ok(Math.abs(mid.peek.left-mid.lead.left-(mid.width+16))<1.5,`the neighbour sits beside the panel: ${JSON.stringify(mid)}`);
+  assert.ok(mid.peek.inert&&mid.peek.hidden==='true'&&!mid.peek.focusable,'the neighbour is an inert preview');
+  assert.ok(Math.abs(mid.lead.top-before.y)<1&&mid.scrollY===0,'the drag does not shift the page vertically');
+  assert.deepEqual(mid.duplicateIds,[],'no duplicate ids mid-drag');
+  assert.equal(await selectedGame(),'game-tab-genshin','the tab bar does not react mid-drag');assert.equal(page.url(),url);
+  if(width===360)await shoot('games-360');
+  await lift(touch);await page.locator('#game-tab-starrail[aria-selected=true]').waitFor();await pagerAtRest('game-panels');
+  await starrail.waitFor();assert.ok(await genshin.isHidden());assert.equal(await starrail.evaluate(e=>e.inert||e.hasAttribute('aria-hidden')),false,'the new panel is interactive');
+  await oneTabLooksSelected('.game-tabs','game-tab-starrail','a completed pager swipe leaves one tab looking selected');
+  // The last tab resists and returns; a short slow drag and a cancelled touch snap back.
+  const end={x:Math.round(width/2),y:await titleAt('starrail')};
+  await hold(touch,end,-200);await page.waitForFunction(()=>document.querySelector('#game-panels>[data-swipe-role=lead]'));await page.waitForTimeout(50);
+  mid=await pagerState('game-panels');
+  assert.ok(mid.lead.x<0&&mid.lead.x>-56&&!mid.peek,`the last tab resists without a neighbour: ${JSON.stringify(mid)}`);
+  await lift(touch);await pagerAtRest('game-panels');assert.equal(await selectedGame(),'game-tab-starrail','the last tab stays');
+  await hold(touch,end,30,0,8);await dragging('game-panels',30);
+  mid=await pagerState('game-panels');assert.ok(mid.peek&&mid.peek.page==='0'&&mid.peek.visible,'a short drag shows the previous game');
+  await lift(touch);await pagerAtRest('game-panels');assert.equal(await selectedGame(),'game-tab-starrail','a short drag snaps back');
+  await hold(touch,end,120);await dragging('game-panels',120);await lift(touch,'touchCancel');await pagerAtRest('game-panels');
+  assert.equal(await selectedGame(),'game-tab-starrail','a cancelled touch snaps back');assert.ok(await genshin.isHidden());
+  // A tab tapped right after a completed swipe (while the panels still move) is not
+  // swallowed and wins over the swipe.
+  await hold(touch,end,120);await dragging('game-panels',120);await lift(touch);
+  await touchTap(touch,page.locator('#game-tab-starrail'));await pagerAtRest('game-panels');
+  await page.locator('#game-tab-starrail[aria-selected=true]').waitFor({timeout:3000});await starrail.waitFor();assert.ok(await genshin.isHidden(),'the tapped tab wins over the settling swipe');
+  await oneTabLooksSelected('.game-tabs','game-tab-starrail','a tab tapped during the settle');
+  // A vertical drag scrolls natively and never moves the pager.
+  await hold(touch,{x:Math.round(width/2),y:600},6,-200,8);
+  assert.equal(await page.locator('#game-panels').evaluate(a=>a.dataset.swipeDrag??null),null,'a vertical drag never moves the pager');
+  await lift(touch);await page.evaluate(()=>scrollTo(0,0));
+  await hold(touch,{x:Math.round(width/2),y:await titleAt('starrail')},120);await lift(touch);
+  await page.locator('#game-tab-genshin[aria-selected=true]').waitFor();await pagerAtRest('game-panels');
+  await oneTabLooksSelected('.game-tabs','game-tab-genshin','swiping back with the pager');
+ }
+ await page.setViewportSize({width:390,height:844});await genshin.waitFor();
+ assert.deepEqual(pagerWrites,[],'pager drags send no writes');
+ assert.deepEqual(errors,[],'pager drags on game tabs raise no browser errors');
  // Edge starts (system back gesture), slanted vertical drags and mouse drags never switch.
  y=await titleAt('genshin');
  await drag({x:10,y},{x:200,y});assert.equal(await selectedGame(),'game-tab-genshin','edge swipe is ignored');
@@ -961,6 +1024,7 @@ try{
  await genshin.evaluate(panel=>{const strip=document.createElement('div');strip.id='swipe-probe';strip.style.cssText='overflow-x:auto;white-space:nowrap;height:48px';strip.textContent='x'.repeat(400);panel.prepend(strip);});
  const probe=await page.locator('#swipe-probe').boundingBox();
  await drag({x:300,y:probe.y+24},{x:120,y:probe.y+24});assert.equal(await selectedGame(),'game-tab-genshin','a swipe inside a horizontal scroller is ignored');
+ assert.ok(await page.locator('#swipe-probe').evaluate(e=>e.scrollLeft>0),'a horizontal scroller still pans inside the pager (touch-action)');
  await page.locator('#swipe-probe').evaluate(e=>e.remove());
  // Wide screens show both games and do not swipe.
  await page.setViewportSize({width:1280,height:900});await page.waitForFunction(()=>document.getElementById('game-panels')?.dataset.swipeEnabled==='false');
@@ -1367,7 +1431,7 @@ try{
  const tabInView=key=>page.waitForFunction(key=>{const tab=document.getElementById('settings-tab-'+key).getBoundingClientRect(),bar=document.querySelector('.settings-tabs').getBoundingClientRect();return tab.left>=bar.left-1&&tab.right<=bar.right+1;},key,{timeout:3000}).catch(async error=>{console.error('tab not in view',key,await page.evaluate(key=>{const t=document.getElementById('settings-tab-'+key).getBoundingClientRect(),b=document.querySelector('.settings-tabs');const r=b.getBoundingClientRect();return JSON.stringify({t:[t.left,t.right],b:[r.left,r.right],scroll:b.scrollLeft,sw:b.scrollWidth,cw:b.clientWidth,url:location.pathname});},key));throw error;});
  const settingsTouch=await context.newCDPSession(page);await settingsTouch.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1});
  const plainPoint=()=>page.evaluate(()=>{const panel=document.getElementById('settings-panel'),r=panel.getBoundingClientRect(),x=innerWidth/2;for(let y=Math.max(r.top,0)+8;y<Math.min(r.bottom,innerHeight)-8;y+=8){const e=document.elementFromPoint(x,y);if(e&&panel.contains(e)&&!e.closest('input,select,textarea,button,a,label,[role=slider],[data-swipe-ignore],.table-wrap'))return {x,y};}return null;});
- const settingsDrag=async(start,dx,dy=0)=>{await settingsTouch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[start]});for(let i=1;i<=4;i++)await settingsTouch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:start.x+dx*i/4,y:start.y+dy*i/4}]});await settingsTouch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});};
+ const settingsDrag=async(start,dx,dy=0)=>{await settingsTouch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[start]});for(let i=1;i<=4;i++)await settingsTouch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:start.x+dx*i/4,y:start.y+dy*i/4}]});await settingsTouch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.waitForFunction(()=>document.getElementById('settings-swipe')?.dataset.swipeDrag===undefined);};
  const swipeTo=async(dx,key,url)=>{const start=await plainPoint();assert.ok(start,'the settings panel has a plain area to swipe on');await settingsDrag(start,dx);await page.locator('#settings-tab-'+key+'[aria-selected=true]').waitFor();await idle();assert.equal(new URL(page.url()).pathname,url);assert.equal(await page.locator('#settings-panel').getAttribute('aria-labelledby'),'settings-tab-'+key);};
  const staysOn=async key=>{await page.waitForTimeout(300);assert.equal(await page.locator('#settings-tab-'+key).getAttribute('aria-selected'),'true');};
  const rewardWrites=()=>[...counts].filter(([p])=>p.startsWith('/api/v1/reward-settings/')).reduce((n,[,c])=>n+c,0);
@@ -1404,6 +1468,55 @@ try{
  await page.locator('#settings-tab-security').focus();await page.keyboard.press('ArrowRight');await page.locator('#settings-tab-notifications[aria-selected=true]').waitFor();await idle();
  await oneTabLooksSelected('.settings-tabs','settings-tab-notifications','arrow keys after a swipe');
  assert.deepEqual(errors,[],'tapping and swiping settings tabs raises no browser errors');
+ // Pager on the settings tabs: the neighbour tab is rendered as an inert preview (no id, no
+ // focus, hidden from assistive technology) only while the pager moves, its data is read
+ // once per settings visit, and the selected tab, URL and #settings-panel change only once
+ // the swipe completes.
+ pagerWrites.length=0;
+ for(const width of [360,412]){
+  await page.setViewportSize({width,height:800});
+  await page.locator('.page-intro button').first().click();await dashboard();await menu('Settings');await page.locator('#settings-tab-uids[aria-selected=true]').waitFor();await idle();
+  await page.locator('#settings-tab-bonus').click();await page.locator('#settings-tab-bonus[aria-selected=true]').waitFor();await idle();
+  assert.equal(await page.locator('#settings-swipe>[data-swipe-preview]').count(),0,'no previews before the first drag');
+  const linkReads=counts.get('/api/v1/me/hoyolab')||0,passkeys=counts.get('/api/v1/me/passkeys')||0;
+  const start=await plainPoint();assert.ok(start,'the settings panel has a plain area to drag');
+  await hold(settingsTouch,start,-120);await dragging('settings-swipe',-120);
+  await page.waitForFunction(()=>document.querySelector('#settings-swipe>[data-swipe-role=peek]'));
+  let mid=await pagerState('settings-swipe');
+  assert.ok(mid.peek&&mid.peek.page==='2'&&mid.peek.visible&&mid.peek.text>0,`mid-drag the next settings tab is visible with content: ${JSON.stringify(mid)}`);
+  assert.ok(mid.peek.inert&&mid.peek.hidden==='true'&&!mid.peek.focusable&&mid.peek.id==='','the settings neighbour is an inert preview without the panel id');
+  assert.ok(Math.abs(mid.peek.left-mid.lead.left-(mid.width+16))<1.5,'the settings neighbour sits beside the panel');
+  assert.deepEqual(mid.duplicateIds,[],'previews add no duplicate ids');
+  assert.equal(await page.locator('#settings-panel').count(),1);assert.equal(await page.locator('#settings-panel').getAttribute('aria-labelledby'),'settings-tab-bonus');
+  assert.equal(new URL(page.url()).pathname,'/settings/bonus','the URL does not change mid-drag');
+  assert.equal(await page.locator('#settings-tab-bonus').getAttribute('aria-selected'),'true','the settings tab bar does not react mid-drag');
+  if(width===360)await shoot('settings-360');
+  await lift(settingsTouch);await page.locator('#settings-tab-link[aria-selected=true]').waitFor();await pagerAtRest('settings-swipe');await idle();
+  assert.equal(new URL(page.url()).pathname,'/settings/link');
+  assert.deepEqual(await page.locator('#settings-panel').evaluate(e=>[e.dataset.swipePage,e.getAttribute('role'),e.getAttribute('aria-labelledby'),e.inert,e.hasAttribute('aria-hidden')]),['2','tabpanel','settings-tab-link',false,false],'the previewed tab became the selected panel');
+  await oneTabLooksSelected('.settings-tabs','settings-tab-link','a completed settings pager swipe leaves one tab looking selected');
+  await page.waitForFunction(()=>!document.querySelector('#settings-swipe>[data-swipe-preview]'));
+  // The previewed tab was read once before the swipe and once by the visit itself.
+  assert.equal((counts.get('/api/v1/me/hoyolab')||0)-linkReads,2,'the link preview and the visit each read the link once');
+  // Short drags and cancelled touches snap back with nothing changed; the security preview
+  // shown by both reads its data once per settings visit.
+  const again=await plainPoint();
+  await hold(settingsTouch,again,-30,0,8);await dragging('settings-swipe',-30);
+  await page.waitForFunction(()=>document.querySelector('#settings-swipe>[data-swipe-role=peek][data-swipe-page="3"]')?.innerText.trim().length>0);
+  await lift(settingsTouch);await pagerAtRest('settings-swipe');
+  await hold(settingsTouch,again,-120);await dragging('settings-swipe',-120);await lift(settingsTouch,'touchCancel');await pagerAtRest('settings-swipe');
+  await page.waitForFunction(()=>!document.querySelector('#settings-swipe>[data-swipe-preview]'));await page.waitForTimeout(200);
+  assert.equal((counts.get('/api/v1/me/passkeys')||0)-passkeys,1,'the security preview reads the passkeys once');
+  assert.equal(new URL(page.url()).pathname,'/settings/link','short and cancelled drags keep the tab');await oneTabLooksSelected('.settings-tabs','settings-tab-link','after snapping back');
+  // The first tab resists without a neighbour.
+  await page.locator('#settings-tab-uids').click();await page.locator('#settings-tab-uids[aria-selected=true]').waitFor();await idle();
+  await hold(settingsTouch,await plainPoint(),120);await page.waitForFunction(()=>document.querySelector('#settings-swipe>[data-swipe-role=lead]'));await page.waitForTimeout(50);
+  mid=await pagerState('settings-swipe');assert.ok(mid.lead.x>0&&mid.lead.x<56&&!mid.peek,`the first settings tab resists: ${JSON.stringify(mid)}`);
+  await lift(settingsTouch);await pagerAtRest('settings-swipe');await staysOn('uids');
+ }
+ await page.setViewportSize({width:375,height:812});
+ assert.deepEqual(pagerWrites,[],'settings pager drags send no writes');
+ assert.deepEqual(errors,[],'pager drags on settings tabs raise no browser errors');
  await settingsTouch.send('Emulation.setTouchEmulationEnabled',{enabled:false});await settingsTouch.detach();
  await page.setViewportSize({width:1280,height:900});
  await page.locator('#settings-tab-security').click();await idle();
