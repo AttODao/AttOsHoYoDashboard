@@ -8,18 +8,23 @@ use super::{
 use crate::dashboard::{
     config::Tuning,
     db::entities::{
-        audit, deletion_request, hoyolab_account, notification_cursor, notification_log,
-        notification_setting, reward_run, reward_setting, user,
+        audit, deletion_request, game_account, game_status_cache, hoyolab_account,
+        notification_cursor, notification_log, notification_setting, reward_run, reward_setting,
+        user,
     },
     error::Result,
-    games::service::Games,
+    games::service::{GameStatus, Games},
     rewards::schedule::ScheduleZone,
 };
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::{
     ColumnTrait, Condition, EntityTrait, QueryFilter, QueryOrder, Set, sea_query::OnConflict,
 };
-use std::sync::Arc;
+use serde_json::Value;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 use uuid::Uuid;
 
 /// How often the notifier ticks and the resource-notification game-status refresh TTL.
@@ -38,6 +43,59 @@ impl Default for NotifierSchedule {
     }
 }
 
+/// The first retry after a confirming fetch that did not settle its projection; each
+/// further unsettled attempt doubles it, up to `status_interval`.
+fn confirm_retry() -> Duration {
+    Duration::minutes(1)
+}
+
+/// Unsettled confirming fetches of one game account, kept in memory (a restart forgets
+/// them, which costs at most one early fetch).
+#[derive(Clone, Copy, Debug)]
+struct Retry {
+    attempts: u32,
+    not_before: DateTime<Utc>,
+}
+
+/// A game status as HoYoLAB reported it at `fetched_at`; `stale` when the latest
+/// attempt to refresh it failed or was not allowed.
+struct Snapshot {
+    payload: Value,
+    fetched_at: DateTime<Utc>,
+    stale: bool,
+}
+
+impl Snapshot {
+    fn from_cache(row: &game_status_cache::Model) -> Option<Self> {
+        let fetched_at = row.fetched_at?;
+        Some(Self {
+            payload: row.payload.clone()?,
+            fetched_at,
+            stale: row.error_at.is_some_and(|at| at > fetched_at),
+        })
+    }
+
+    fn from_status(status: GameStatus) -> Option<Self> {
+        let fetched_at = status.fetched_at?;
+        Some(Self {
+            payload: status.payload?,
+            fetched_at,
+            // A cache reused within the status TTL (which may exceed `status_interval`)
+            // is not stale by itself, but a later failed attempt still makes it so.
+            stale: status.stale || status.error_at.is_some_and(|at| at > fetched_at),
+        })
+    }
+}
+
+fn game_of<'a>(account: &'a game_account::Model, summary: &'a Value) -> Game<'a> {
+    Game {
+        account: account.id,
+        kind: &account.game_kind,
+        uid: &account.game_uid,
+        summary,
+    }
+}
+
 /// Owns one scan + per-user status pass; shared between the background job and tests.
 pub(in crate::dashboard) struct Notifier<G: crate::dashboard::hoyolab::gateway::Gateway> {
     notifications: Arc<Notifications>,
@@ -45,6 +103,7 @@ pub(in crate::dashboard) struct Notifier<G: crate::dashboard::hoyolab::gateway::
     schedule: NotifierSchedule,
     zone: ScheduleZone,
     tuning: Tuning,
+    retries: Mutex<HashMap<Uuid, Retry>>,
 }
 
 impl<G: crate::dashboard::hoyolab::gateway::Gateway> Notifier<G> {
@@ -61,6 +120,7 @@ impl<G: crate::dashboard::hoyolab::gateway::Gateway> Notifier<G> {
             schedule,
             zone,
             tuning,
+            retries: Mutex::new(HashMap::new()),
         }
     }
 
@@ -280,7 +340,13 @@ impl<G: crate::dashboard::hoyolab::gateway::Gateway> Notifier<G> {
         Ok(())
     }
 
-    /// Refreshes stale game status for every ready user, then evaluates conditions.
+    /// Refreshes game status for every ready user, then evaluates conditions.
+    ///
+    /// A status is refreshed every `status_interval` after the last attempt, and early
+    /// (confirming, past the status TTL) once the cached snapshot's own projection says a
+    /// resource notice would start to hold. Only a snapshot whose latest refresh
+    /// succeeded and whose projection has not passed since is evaluated, at its fetch
+    /// time: a projection or a stale snapshot neither fires a notice nor re-arms one.
     async fn scan_games(&self, now: DateTime<Utc>) -> Result<()> {
         let settings = notification_setting::Entity::find()
             .all(&self.notifications.db)
@@ -299,13 +365,10 @@ impl<G: crate::dashboard::hoyolab::gateway::Gateway> Notifier<G> {
                 .one(&self.notifications.db)
                 .await?;
             let Some(link) = link else { continue };
-            let games = crate::dashboard::db::entities::game_account::Entity::find()
-                .filter(
-                    crate::dashboard::db::entities::game_account::Column::HoyolabAccountId
-                        .eq(link.id),
-                )
-                .filter(crate::dashboard::db::entities::game_account::Column::Visible.eq(true))
-                .filter(crate::dashboard::db::entities::game_account::Column::Detected.eq(true))
+            let games = game_account::Entity::find()
+                .filter(game_account::Column::HoyolabAccountId.eq(link.id))
+                .filter(game_account::Column::Visible.eq(true))
+                .filter(game_account::Column::Detected.eq(true))
                 .all(&self.notifications.db)
                 .await?;
             let rules = Rules {
@@ -315,35 +378,68 @@ impl<G: crate::dashboard::hoyolab::gateway::Gateway> Notifier<G> {
                 zone: self.zone,
             };
             for account in games {
-                let cache = crate::dashboard::db::entities::game_status_cache::Entity::find_by_id(
-                    account.id,
-                )
-                .one(&self.notifications.db)
-                .await?;
-                let needs_refresh = cache
+                let cache = game_status_cache::Entity::find_by_id(account.id)
+                    .one(&self.notifications.db)
+                    .await?;
+                let known = cache.as_ref().and_then(Snapshot::from_cache);
+                // Fetch stamps come from the service's clock; in production the tick's
+                // `now` is the same clock (tests start their ticks from it).
+                let last_attempt = cache
                     .as_ref()
-                    .and_then(|row| row.fetched_at)
-                    .is_none_or(|at| now - at >= self.schedule.status_interval);
-                let payload = if needs_refresh {
-                    match self
+                    .and_then(|row| row.fetched_at.max(row.error_at));
+                let regular =
+                    last_attempt.is_none_or(|at| now - at >= self.schedule.status_interval);
+                // The snapshot's own projection has passed since it was fetched: it is
+                // outdated until a confirming fetch replaces it.
+                let outdated = known
+                    .as_ref()
+                    .and_then(|known| {
+                        conditions::next_check(
+                            &game_of(&account, &known.payload),
+                            rules.warn_hours,
+                            known.fetched_at,
+                        )
+                    })
+                    .is_some_and(|at| at <= now);
+                if !outdated {
+                    // Resolved some other way (a dashboard or regular fetch, a spend):
+                    // the next projection starts with the first retry again.
+                    self.forget_retry(account.id);
+                }
+                let confirm = outdated && self.may_confirm(account.id, now);
+
+                let snapshot = if confirm {
+                    let fresh = self
                         .games
+                        .confirm_for_owner(setting.user_id, account.id)
+                        .await
+                        .ok()
+                        .and_then(Snapshot::from_status);
+                    self.confirmed(&account, now, fresh.as_ref(), rules.warn_hours);
+                    fresh
+                } else if regular {
+                    self.games
                         .status_for_owner(setting.user_id, account.id)
                         .await
-                    {
-                        Ok(status) => status.payload,
-                        Err(_) => cache.as_ref().and_then(|row| row.payload.clone()),
-                    }
+                        .ok()
+                        .and_then(Snapshot::from_status)
+                } else if outdated {
+                    // Waiting for the next confirming fetch (backoff).
+                    None
                 } else {
-                    cache.and_then(|row| row.payload)
+                    known
                 };
-                let Some(payload) = payload else { continue };
-                let game = Game {
-                    account: account.id,
-                    kind: &account.game_kind,
-                    uid: &account.game_uid,
-                    summary: &payload,
+                let Some(snapshot) = snapshot.filter(|snapshot| !snapshot.stale) else {
+                    continue;
                 };
-                for outcome in conditions::evaluate(&game, rules, now, &channel.language) {
+                let outcomes = conditions::evaluate(
+                    &game_of(&account, &snapshot.payload),
+                    rules,
+                    snapshot.fetched_at,
+                    now,
+                    &channel.language,
+                );
+                for outcome in outcomes {
                     match outcome {
                         Outcome::Fire(notice) => {
                             self.deliver(Some(setting.user_id), &channel, &notice)
@@ -356,6 +452,61 @@ impl<G: crate::dashboard::hoyolab::gateway::Gateway> Notifier<G> {
         }
         let _ = self.tuning;
         Ok(())
+    }
+
+    fn forget_retry(&self, account: Uuid) {
+        self.retries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&account);
+    }
+
+    fn may_confirm(&self, account: Uuid, now: DateTime<Utc>) -> bool {
+        self.retries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&account)
+            .is_none_or(|retry| retry.not_before <= now)
+    }
+
+    /// A confirming fetch settles when it succeeded and its own projection has nothing
+    /// due within the first retry; otherwise (failed, stale, or "not yet" again) the next
+    /// confirming fetch waits, doubling each time up to `status_interval`.
+    fn confirmed(
+        &self,
+        account: &game_account::Model,
+        now: DateTime<Utc>,
+        fresh: Option<&Snapshot>,
+        warn_hours: i64,
+    ) {
+        let settled = fresh.filter(|fresh| !fresh.stale).is_some_and(|fresh| {
+            conditions::next_check(
+                &game_of(account, &fresh.payload),
+                warn_hours,
+                fresh.fetched_at,
+            )
+            .is_none_or(|at| at > fresh.fetched_at + confirm_retry())
+        });
+        let mut retries = self
+            .retries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if settled {
+            retries.remove(&account.id);
+            return;
+        }
+        let attempts = retries.get(&account.id).map_or(0, |retry| retry.attempts) + 1;
+        let wait = confirm_retry()
+            .checked_mul(1_i32 << (attempts - 1).min(16))
+            .unwrap_or(self.schedule.status_interval)
+            .min(self.schedule.status_interval);
+        retries.insert(
+            account.id,
+            Retry {
+                attempts,
+                not_before: now + wait,
+            },
+        );
     }
 
     async fn clear(&self, user: Uuid, key: &str) -> Result<()> {

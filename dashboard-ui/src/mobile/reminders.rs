@@ -1,4 +1,8 @@
 //! Platform-free prediction, persistence and localization of device reminders.
+//!
+//! The resin / Trailblaze Power cap is not predicted here: the server confirms it with a
+//! fresh fetch and sends `resource_full` to the app inbox (`notifications/worker.rs`), so
+//! spending in the game cannot leave a stale device alarm behind.
 use crate::{i18n::Language, models::GameStatus};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -27,7 +31,6 @@ pub(crate) fn forgets_schedule(is_signed_out: bool, status_key: Option<&str>) ->
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Kind {
-    ResourceFull,
     RealmCurrencyFull,
     ExpeditionsDone,
     TransformerReady,
@@ -35,7 +38,6 @@ pub(crate) enum Kind {
 impl Kind {
     pub(crate) fn code(self) -> &'static str {
         match self {
-            Self::ResourceFull => "resource_full",
             Self::RealmCurrencyFull => "realm_currency_full",
             Self::ExpeditionsDone => "expeditions_done",
             Self::TransformerReady => "transformer_ready",
@@ -46,7 +48,6 @@ impl Kind {
 #[serde(default)]
 pub(crate) struct Settings {
     pub(crate) enabled: bool,
-    pub(crate) resource_full: bool,
     pub(crate) realm_currency_full: bool,
     pub(crate) expeditions_done: bool,
     pub(crate) transformer_ready: bool,
@@ -55,7 +56,6 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             enabled: false,
-            resource_full: true,
             realm_currency_full: true,
             expeditions_done: true,
             transformer_ready: true,
@@ -75,7 +75,6 @@ impl Settings {
     }
     pub(crate) fn kind(&self, kind: Kind) -> bool {
         match kind {
-            Kind::ResourceFull => self.resource_full,
             Kind::RealmCurrencyFull => self.realm_currency_full,
             Kind::ExpeditionsDone => self.expeditions_done,
             Kind::TransformerReady => self.transformer_ready,
@@ -83,17 +82,14 @@ impl Settings {
     }
     /// The settings page has one "this device" choice per notice: the account's app inbox
     /// choice also decides the predicted reminder of the same notice, and the realm currency
-    /// (no server notice) has its own device-only choice.
+    /// (no server notice) has its own device-only choice. The resource cap has no predicted
+    /// reminder, so its choice only selects the server notice.
     pub(crate) fn follow_choices(
         &mut self,
         app_events: &std::collections::BTreeMap<String, bool>,
         realm_currency: bool,
     ) {
-        for kind in [
-            Kind::ResourceFull,
-            Kind::ExpeditionsDone,
-            Kind::TransformerReady,
-        ] {
+        for kind in [Kind::ExpeditionsDone, Kind::TransformerReady] {
             let on = app_events.get(kind.code()).copied().unwrap_or(false);
             self.set_kind(kind, on);
         }
@@ -101,7 +97,6 @@ impl Settings {
     }
     pub(crate) fn set_kind(&mut self, kind: Kind, on: bool) {
         match kind {
-            Kind::ResourceFull => self.resource_full = on,
             Kind::RealmCurrencyFull => self.realm_currency_full = on,
             Kind::ExpeditionsDone => self.expeditions_done = on,
             Kind::TransformerReady => self.transformer_ready = on,
@@ -121,7 +116,8 @@ fn timestamp(value: Option<&str>) -> Option<i64> {
         .ok()
         .map(|t| t.timestamp_millis())
 }
-/// Every predictable event, independent of settings and clock.
+/// Every predictable event, independent of settings and clock. The resin / Trailblaze
+/// Power cap is left to the server (see the module comment).
 pub(crate) fn reminders_for(account: Uuid, status: &GameStatus) -> Vec<Reminder> {
     let mut result = Vec::new();
     if !status.visible || !matches!(status.game_kind.as_str(), "genshin" | "starrail") {
@@ -144,9 +140,6 @@ pub(crate) fn reminders_for(account: Uuid, status: &GameStatus) -> Vec<Reminder>
     let below =
         |current: Option<i64>, max: Option<i64>| current.zip(max).is_some_and(|(c, m)| c < m);
     if status.game_kind == "genshin" {
-        if below(data.current_resin, data.max_resin) {
-            add(Kind::ResourceFull, timestamp(data.resin_full_at.as_deref()));
-        }
         if below(data.current_home_coin, data.max_home_coin) {
             add(
                 Kind::RealmCurrencyFull,
@@ -159,11 +152,6 @@ pub(crate) fn reminders_for(account: Uuid, status: &GameStatus) -> Vec<Reminder>
                 timestamp(data.transformer_ready_at.as_deref()),
             );
         }
-    } else if below(data.current_stamina, data.max_stamina) {
-        add(
-            Kind::ResourceFull,
-            timestamp(data.stamina_full_at.as_deref()),
-        );
     }
     let seconds = data
         .expeditions
@@ -189,7 +177,20 @@ pub(crate) fn reminders_for(account: Uuid, status: &GameStatus) -> Vec<Reminder>
 #[serde(default)]
 pub(crate) struct Schedule {
     pub(crate) owner: Option<Uuid>,
+    #[serde(deserialize_with = "known_reminders")]
     pub(crate) reminders: Vec<Reminder>,
+}
+/// Reads a stored schedule entry by entry: entries of a kind this version no longer
+/// predicts (the resource cap of versions up to 2.2.2) are dropped, the rest are kept.
+fn known_reminders<'de, D>(deserializer: D) -> Result<Vec<Reminder>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let entries = Vec::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(entries
+        .into_iter()
+        .filter_map(|entry| serde_json::from_value(entry).ok())
+        .collect())
 }
 impl Schedule {
     pub(crate) fn from_json(text: Option<&str>) -> Self {
@@ -249,19 +250,10 @@ pub(crate) fn render(reminders: &[&Reminder], language: Language) -> Vec<Outgoin
         .iter()
         .map(|r| {
             let title = match r.kind {
-                Kind::ResourceFull | Kind::RealmCurrencyFull => {
-                    let key = if r.kind == Kind::RealmCurrencyFull {
-                        "dashboard.realm_currency"
-                    } else if r.game == "starrail" {
-                        "dashboard.trailblaze_power"
-                    } else {
-                        "dashboard.resin"
-                    };
-                    language.format(
-                        "notifications.device_full_title",
-                        &[("resource", language.text(key))],
-                    )
-                }
+                Kind::RealmCurrencyFull => language.format(
+                    "notifications.device_full_title",
+                    &[("resource", language.text("dashboard.realm_currency"))],
+                ),
                 Kind::ExpeditionsDone => language
                     .text("notifications.device_expeditions_title")
                     .to_owned(),
@@ -329,29 +321,82 @@ mod tests {
         reminders_for(Uuid::nil(), &status(game, data))
     }
     #[test]
-    fn resources_require_below_cap_and_valid_timestamp() {
-        for (game, current, max, at) in [
-            ("genshin", "current_resin", "max_resin", "resin_full_at"),
-            (
-                "starrail",
-                "current_stamina",
-                "max_stamina",
-                "stamina_full_at",
-            ),
-            (
-                "genshin",
-                "current_home_coin",
-                "max_home_coin",
-                "home_coin_full_at",
-            ),
-        ] {
-            assert_eq!(predictions(game, json!({current:1,max:2,at:DATE})).len(), 1);
-            for c in [2, 3] {
-                assert!(predictions(game, json!({current:c,max:2,at:DATE})).is_empty());
-            }
-            assert!(predictions(game, json!({current:1,max:2,at:"bad"})).is_empty());
-            assert!(predictions(game, json!({max:2,at:DATE})).is_empty());
+    fn realm_currency_requires_below_cap_and_valid_timestamp() {
+        let (current, max, at) = ("current_home_coin", "max_home_coin", "home_coin_full_at");
+        let reminders = predictions("genshin", json!({current:1,max:2,at:DATE}));
+        assert_eq!(
+            reminders.iter().map(|r| r.kind).collect::<Vec<_>>(),
+            [Kind::RealmCurrencyFull]
+        );
+        for c in [2, 3] {
+            assert!(predictions("genshin", json!({current:c,max:2,at:DATE})).is_empty());
         }
+        assert!(predictions("genshin", json!({current:1,max:2,at:"bad"})).is_empty());
+        assert!(predictions("genshin", json!({max:2,at:DATE})).is_empty());
+    }
+    #[test]
+    fn the_resource_cap_is_never_predicted_on_the_device() {
+        // Below the cap with a projected time: the server confirms and sends it instead.
+        assert!(
+            predictions(
+                "genshin",
+                json!({"current_resin":1,"max_resin":2,"resin_full_at":DATE})
+            )
+            .is_empty()
+        );
+        assert!(
+            predictions(
+                "starrail",
+                json!({"current_stamina":1,"max_stamina":2,"stamina_full_at":DATE})
+            )
+            .is_empty()
+        );
+        // The other kinds of the same status are unchanged.
+        let all = predictions(
+            "genshin",
+            json!({"current_resin":1,"max_resin":2,"resin_full_at":DATE,
+                "current_home_coin":1,"max_home_coin":2,"home_coin_full_at":DATE,
+                "transformer_obtained":true,"transformer_ready":false,"transformer_ready_at":DATE,
+                "expeditions":[{"remained_time":60}]}),
+        );
+        assert_eq!(
+            all.iter().map(|r| r.kind).collect::<Vec<_>>(),
+            [
+                Kind::RealmCurrencyFull,
+                Kind::TransformerReady,
+                Kind::ExpeditionsDone
+            ]
+        );
+    }
+    #[test]
+    fn an_old_schedule_drops_its_resource_cap_entries_and_keeps_the_rest() {
+        let owner = Uuid::from_u128(1);
+        let account = Uuid::from_u128(2);
+        let stored = json!({"owner": owner, "reminders": [
+            {"account": account, "game": "genshin", "uid": "123", "kind": "resource_full", "at_ms": 10},
+            {"account": account, "game": "genshin", "uid": "123", "kind": "realm_currency_full", "at_ms": 20},
+            {"account": account, "game": "starrail", "uid": "456", "kind": "resource_full", "at_ms": 30},
+            {"account": account, "game": "starrail", "uid": "456", "kind": "expeditions_done", "at_ms": 40},
+        ]})
+        .to_string();
+        let schedule = Schedule::from_json(Some(&stored));
+        assert_eq!(schedule.owner, Some(owner));
+        assert_eq!(
+            schedule
+                .reminders
+                .iter()
+                .map(|r| (r.kind, r.at_ms))
+                .collect::<Vec<_>>(),
+            [(Kind::RealmCurrencyFull, 20), (Kind::ExpeditionsDone, 40)]
+        );
+        // The old device choice for the cap is ignored; the others are read as before.
+        let settings = Settings::from_json(Some(
+            r#"{"enabled":true,"resource_full":true,"realm_currency_full":false}"#,
+        ));
+        assert!(settings.enabled);
+        assert!(!settings.realm_currency_full);
+        assert!(settings.expeditions_done);
+        assert!(!settings.to_json().contains("resource_full"));
     }
     #[test]
     fn transformer_requires_obtained_and_not_ready() {
@@ -399,7 +444,7 @@ mod tests {
     fn invisible_missing_and_unknown_statuses_are_ignored() {
         let mut s = status(
             "genshin",
-            json!({"current_resin":1,"max_resin":2,"resin_full_at":DATE}),
+            json!({"current_home_coin":1,"max_home_coin":2,"home_coin_full_at":DATE}),
         );
         s.visible = false;
         assert!(reminders_for(Uuid::nil(), &s).is_empty());
@@ -409,7 +454,7 @@ mod tests {
         assert!(
             predictions(
                 "other",
-                json!({"current_resin":1,"max_resin":2,"resin_full_at":DATE})
+                json!({"current_home_coin":1,"max_home_coin":2,"home_coin_full_at":DATE})
             )
             .is_empty()
         );
@@ -421,7 +466,7 @@ mod tests {
         let b = Uuid::from_u128(3);
         let s = status(
             "genshin",
-            json!({"current_resin":1,"max_resin":2,"resin_full_at":DATE}),
+            json!({"current_home_coin":1,"max_home_coin":2,"home_coin_full_at":DATE}),
         );
         let mut schedule = Schedule::default();
         schedule.update_account(owner, a, &s);
@@ -454,7 +499,7 @@ mod tests {
                     account: Uuid::nil(),
                     game: "genshin".into(),
                     uid: "123".into(),
-                    kind: Kind::ResourceFull,
+                    kind: Kind::RealmCurrencyFull,
                     at_ms,
                 })
                 .collect(),
@@ -484,13 +529,14 @@ mod tests {
             ..Settings::default()
         };
         let chosen = std::collections::BTreeMap::from([
-            ("resource_full".to_owned(), false),
+            ("resource_full".to_owned(), true),
             ("expeditions_done".to_owned(), true),
             ("signed_in".to_owned(), true),
         ]);
         settings.follow_choices(&chosen, false);
         assert!(settings.enabled);
-        assert!(!settings.kind(Kind::ResourceFull));
+        // The cap's choice only goes to the server: no device setting follows it.
+        assert!(!settings.to_json().contains("resource_full"));
         assert!(!settings.kind(Kind::RealmCurrencyFull));
         assert!(settings.kind(Kind::ExpeditionsDone));
         // A notice missing from the choices is off, like on the server.
@@ -506,7 +552,6 @@ mod tests {
         }
         assert!(!settings.enabled);
         let kinds = [
-            Kind::ResourceFull,
             Kind::RealmCurrencyFull,
             Kind::ExpeditionsDone,
             Kind::TransformerReady,
@@ -528,10 +573,10 @@ mod tests {
         assert!(schedule.upcoming(&settings, 20 + GRACE_MS).is_empty());
         let ids: std::collections::BTreeSet<_> =
             schedule.reminders.iter().map(notification_id).collect();
-        assert_eq!(ids.len(), 4);
+        assert_eq!(ids.len(), 3);
         assert!(ids.iter().all(|id| *id >= 2));
         assert_eq!(TEST_NOTIFICATION_ID, 1);
-        assert_eq!(notification_id(upcoming[0]), 2_116_401_159);
+        assert_eq!(notification_id(upcoming[0]), 1_097_112_438);
         for kind in kinds {
             assert!(settings.kind(kind));
             settings.set_kind(kind, false);
@@ -547,21 +592,24 @@ mod tests {
         assert_eq!(Settings::from_json(Some(&settings.to_json())), settings);
     }
     #[test]
-    fn english_render_uses_game_resource_names() {
-        for (game, kind, resource) in [
-            ("genshin", Kind::ResourceFull, "Resin"),
-            ("starrail", Kind::ResourceFull, "Trailblaze Power"),
-            ("genshin", Kind::RealmCurrencyFull, "Realm currency"),
+    fn english_render_names_each_kind() {
+        for (kind, title) in [
+            (Kind::RealmCurrencyFull, "Realm currency is full"),
+            (Kind::ExpeditionsDone, "All expeditions are complete"),
+            (
+                Kind::TransformerReady,
+                "The Parametric Transformer is ready",
+            ),
         ] {
             let r = Reminder {
                 account: Uuid::nil(),
-                game: game.into(),
+                game: "genshin".into(),
                 uid: "123".into(),
                 kind,
                 at_ms: 1,
             };
             let out = render(&[&r], Language::English);
-            assert_eq!(out[0].title, format!("{resource} is full"));
+            assert_eq!(out[0].title, title);
             assert_eq!(out[0].tag, format!("{}:{}", Uuid::nil(), kind.code()));
             assert!(out[0].body.contains("123"));
         }

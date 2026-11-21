@@ -27,28 +27,66 @@ use crate::dashboard::{
 };
 use attoshoyodashboard::{
     game::GameKind,
-    hoyolab::{RecordAccount, Result as UpstreamResult},
+    hoyolab::{Error as UpstreamError, RecordAccount, Result as UpstreamResult},
     models::account::Account,
 };
 use chrono::{DateTime, Duration, FixedOffset, Utc};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
 use serde_json::{Value, json};
-use std::{collections::BTreeSet, sync::Arc};
+use std::{
+    collections::{BTreeSet, HashMap, VecDeque},
+    sync::{Arc, Mutex},
+};
 use uuid::Uuid;
 
-/// Every status in these tests is cached and fresh: any upstream call is a bug.
-#[derive(Clone)]
-struct NoUpstream;
+/// Note replies per game UID in call order; a UID without a scripted reply must never be
+/// fetched (most statuses in these tests are cached and fresh).
+#[derive(Clone, Default)]
+struct Upstream {
+    notes: Arc<Mutex<HashMap<String, VecDeque<UpstreamResult<Value>>>>>,
+    calls: Arc<Mutex<HashMap<String, usize>>>,
+}
 
-impl Gateway for NoUpstream {
+impl Upstream {
+    fn reply(&self, uid: &str, reply: UpstreamResult<Value>) {
+        self.notes
+            .lock()
+            .unwrap()
+            .entry(uid.to_owned())
+            .or_default()
+            .push_back(reply);
+    }
+
+    fn calls(&self, uid: &str) -> usize {
+        self.calls.lock().unwrap().get(uid).copied().unwrap_or(0)
+    }
+}
+
+impl Gateway for Upstream {
     async fn identity(&self, _: &Credentials) -> UpstreamResult<(String, String)> {
         panic!("identity must not be called by notifier tests")
     }
     async fn roles(&self, _: &Credentials) -> UpstreamResult<Vec<Account>> {
         panic!("roles must not be called by notifier tests")
     }
-    async fn note(&self, _: &Credentials, _: GameKind, _: &RecordAccount) -> UpstreamResult<Value> {
-        panic!("note must not be called with a fresh status cache")
+    async fn note(
+        &self,
+        _: &Credentials,
+        _: GameKind,
+        record: &RecordAccount,
+    ) -> UpstreamResult<Value> {
+        *self
+            .calls
+            .lock()
+            .unwrap()
+            .entry(record.uid.clone())
+            .or_default() += 1;
+        self.notes
+            .lock()
+            .unwrap()
+            .get_mut(&record.uid)
+            .and_then(VecDeque::pop_front)
+            .unwrap_or_else(|| panic!("unexpected note call for UID {}", record.uid))
     }
     async fn challenge(
         &self,
@@ -95,10 +133,14 @@ fn sunday_evening() -> DateTime<Utc> {
 struct Fixture {
     fixture: TestDatabase,
     notifications: Arc<Notifications>,
-    notifier: Notifier<NoUpstream>,
+    notifier: Notifier<Upstream>,
 }
 
 async fn fixture() -> Fixture {
+    fixture_with(Upstream::default()).await
+}
+
+async fn fixture_with(upstream: Upstream) -> Fixture {
     let fixture = TestDatabase::new().await;
     let key = key();
     let notifications = Arc::new(Notifications::new(
@@ -109,7 +151,7 @@ async fn fixture() -> Fixture {
     let games = Arc::new(Games::new(Arc::new(CookieStore::for_test(
         fixture.db.clone(),
         key,
-        NoUpstream,
+        upstream,
     ))));
     let notifier = Notifier::new(
         notifications.clone(),
@@ -242,7 +284,8 @@ async fn game(
         fetched_at: Set(Some(fetched_at)),
         updated_at: Set(fetched_at),
         payload: Set(Some(payload)),
-        payload_version: Set(1),
+        // The current summary version, so a failed refresh keeps the payload.
+        payload_version: Set(3),
         error_code: Set(None),
         error_at: Set(None),
     }
@@ -691,4 +734,241 @@ async fn devices_are_owner_scoped_limited_and_expire_when_unseen() {
         .unwrap();
     assert!(inbox(db, owner.user.id).await.is_empty());
     assert!(!notifications.has_app_device(owner.user.id).await.unwrap());
+}
+
+/// One user per case, one tick at a time: a passed projection only triggers a confirming
+/// fetch, and only what that fetch reports is sent.
+#[tokio::test]
+async fn resource_caps_are_sent_only_when_a_confirming_fetch_reports_them() {
+    let upstream = Upstream::default();
+    let Fixture {
+        fixture,
+        notifications,
+        notifier,
+    } = fixture_with(upstream.clone()).await;
+    let db = &fixture.db;
+    // The service stamps fetches with the real clock, so the ticks start from it.
+    let now = Utc::now();
+    // Younger than the regular interval for every tick below.
+    let fetched = now - Duration::minutes(5);
+    let snapshot = |current: i64, full_at: DateTime<Utc>| {
+        json!({
+            "current_resin": current, "max_resin": 200,
+            "resin_full_at": full_at.to_rfc3339(),
+            "transformer_ready": true,
+        })
+    };
+    let note = |current: i64, seconds: i64| {
+        Ok(json!({
+            "current_resin": current, "max_resin": 200,
+            "resin_recovery_time": seconds.to_string(),
+        }))
+    };
+    let mut users = HashMap::new();
+    let mut accounts = HashMap::new();
+    for (name, uid, payload) in [
+        // Spent after the snapshot: the confirming fetch shows it.
+        (
+            "spent",
+            "800000001",
+            snapshot(150, now - Duration::minutes(1)),
+        ),
+        // Reached the cap as projected.
+        (
+            "capped",
+            "800000002",
+            snapshot(190, now - Duration::minutes(1)),
+        ),
+        // The projected cap is hours away: nothing to confirm yet.
+        (
+            "future",
+            "800000003",
+            snapshot(100, now + Duration::hours(10)),
+        ),
+        // The confirming fetch keeps failing, then succeeds.
+        (
+            "failing",
+            "800000004",
+            snapshot(190, now - Duration::minutes(1)),
+        ),
+        // Needs the user's action: never fetched, never evaluated.
+        (
+            "blocked",
+            "800000005",
+            snapshot(190, now - Duration::minutes(1)),
+        ),
+        // The confirming fetch answers "30 seconds more"; the next tick confirms it.
+        (
+            "almost",
+            "800000006",
+            snapshot(190, now - Duration::minutes(1)),
+        ),
+    ] {
+        let owner = ready_identity(db, name).await;
+        settings(db, owner.user.id, every_event()).await;
+        notifications.register_app_device(&owner).await.unwrap();
+        let verified = link(db, owner.user.id, "verified").await;
+        let id = game(db, verified.id, "genshin", uid, fetched, payload).await;
+        users.insert(name, owner.user.id);
+        accounts.insert(name, id);
+        if name == "blocked" {
+            reward_setting::ActiveModel {
+                id: Set(Uuid::new_v4()),
+                hoyolab_account_id: Set(verified.id),
+                game_kind: Set("genshin".to_owned()),
+                enabled: Set(true),
+                local_time: Set("06:00".to_owned()),
+                auth_status: Set("action_required".to_owned()),
+                next_run_at: Set(None),
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
+    }
+    upstream.reply("800000001", note(20, 80_000));
+    upstream.reply("800000002", note(200, 0));
+    for _ in 0..3 {
+        upstream.reply("800000004", Err(UpstreamError::Network));
+    }
+    upstream.reply("800000004", note(200, 0));
+    upstream.reply("800000006", note(199, 30));
+    upstream.reply("800000006", note(200, 0));
+    // An earlier warning for the failing account must survive its stale ticks.
+    let failing_near = format!("{}:resource_near_cap", accounts["failing"]);
+    notification_log::ActiveModel {
+        scope: Set(users["failing"]),
+        event_key: Set(failing_near.clone()),
+        sent_at: Set(now - Duration::hours(1)),
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    scanned_until(db, now).await;
+
+    // Minutes 0..=6: failures back off for 1, 2, then 4 minutes.
+    for minute in 0..=6 {
+        notifier
+            .tick(now + Duration::minutes(minute), None)
+            .await
+            .unwrap();
+    }
+    assert!(inbox(db, users["spent"]).await.is_empty());
+    assert!(delivered_keys(db, users["spent"]).await.is_empty());
+    let capped = inbox(db, users["capped"]).await;
+    assert_eq!(
+        capped
+            .iter()
+            .map(|row| row.kind.as_str())
+            .collect::<Vec<_>>(),
+        ["resource_full"],
+        "the cap once, and not the old snapshot's transformer the fetch did not report"
+    );
+    assert_eq!(
+        capped[0].body,
+        "原神 UID 800000002: 200/200。これ以上は回復しません。"
+    );
+    // A snapshot whose latest refresh succeeded is still evaluated as fetched.
+    assert_eq!(
+        inbox_kinds(db, users["future"]).await,
+        BTreeSet::from(["transformer_ready".to_owned()])
+    );
+    assert!(inbox(db, users["failing"]).await.is_empty());
+    assert_eq!(
+        delivered_keys(db, users["failing"]).await,
+        BTreeSet::from([failing_near.clone()]),
+        "a stale snapshot neither fires nor re-arms"
+    );
+    assert!(inbox(db, users["blocked"]).await.is_empty());
+    // "Not yet" is a real answer: it warns, and the cap follows one tick later.
+    assert_eq!(
+        inbox(db, users["almost"])
+            .await
+            .iter()
+            .map(|row| row.kind.as_str())
+            .collect::<Vec<_>>(),
+        ["resource_near_cap", "resource_full"]
+    );
+    assert_eq!(upstream.calls("800000006"), 2);
+    assert_eq!(upstream.calls("800000001"), 1);
+    assert_eq!(upstream.calls("800000002"), 1);
+    assert_eq!(upstream.calls("800000003"), 0);
+    assert_eq!(upstream.calls("800000004"), 3, "minutes 0, 1 and 3");
+    assert_eq!(upstream.calls("800000005"), 0);
+
+    // Minute 7: the backoff has passed and the fetch confirms the cap.
+    notifier
+        .tick(now + Duration::minutes(7), None)
+        .await
+        .unwrap();
+    assert_eq!(upstream.calls("800000004"), 4);
+    assert_eq!(
+        inbox_kinds(db, users["failing"]).await,
+        BTreeSet::from(["resource_full".to_owned()])
+    );
+    // Later ticks before the regular interval ask nobody again and repeat nothing.
+    notifier
+        .tick(now + Duration::minutes(8), None)
+        .await
+        .unwrap();
+    assert_eq!(inbox(db, users["capped"]).await.len(), 1);
+    assert_eq!(inbox(db, users["failing"]).await.len(), 1);
+    for (uid, calls) in [
+        ("800000001", 1),
+        ("800000002", 1),
+        ("800000003", 0),
+        ("800000004", 4),
+        ("800000005", 0),
+        ("800000006", 2),
+    ] {
+        assert_eq!(upstream.calls(uid), calls, "{uid}");
+    }
+}
+
+/// A regular refresh that fails waits a full status interval before the next attempt,
+/// and the old snapshot is not evaluated meanwhile.
+#[tokio::test]
+async fn failed_regular_refreshes_wait_for_the_status_interval() {
+    let upstream = Upstream::default();
+    let Fixture {
+        fixture,
+        notifications,
+        notifier,
+    } = fixture_with(upstream.clone()).await;
+    let db = &fixture.db;
+    let now = Utc::now();
+    let owner = ready_identity(db, "owner").await;
+    settings(db, owner.user.id, every_event()).await;
+    notifications.register_app_device(&owner).await.unwrap();
+    let verified = link(db, owner.user.id, "verified").await;
+    // Older than the interval, and full when it was fetched.
+    game(
+        db,
+        verified.id,
+        "genshin",
+        "800000001",
+        now - Duration::minutes(20),
+        json!({"current_resin": 200, "max_resin": 200}),
+    )
+    .await;
+    upstream.reply("800000001", Err(UpstreamError::Network));
+    upstream.reply(
+        "800000001",
+        Ok(json!({"current_resin": 120, "max_resin": 200, "resin_recovery_time": "40000"})),
+    );
+    scanned_until(db, now).await;
+    for minute in 0..15 {
+        notifier
+            .tick(now + Duration::minutes(minute), None)
+            .await
+            .unwrap();
+    }
+    assert_eq!(upstream.calls("800000001"), 1);
+    assert!(inbox(db, owner.user.id).await.is_empty());
+    notifier
+        .tick(now + Duration::minutes(16), None)
+        .await
+        .unwrap();
+    assert_eq!(upstream.calls("800000001"), 2);
+    assert!(inbox(db, owner.user.id).await.is_empty());
 }

@@ -246,9 +246,18 @@ object AhdNotifications {
         val remaining = JSONArray()
         for (i in 0 until entries.length()) { val entry = entries.getJSONObject(i); if (entry.getInt("id") != id) remaining.put(entry) }
         prefs(context).edit().putString("entries", remaining.toString()).apply()
-        if (tag.isEmpty()) post(context, id, title, body) else postTagged(context, tag, title, body, "/dashboard", "local")
+        if (!retired(tag)) postTagged(context, tag, title, body, "/dashboard", "local")
         Unit
     }
+    // The resin / Trailblaze Power cap is only the server's notice (it confirms the cap with
+    // a fresh fetch); app versions up to 2.2.2 predicted it on the device.
+    private const val SERVER_ONLY_SUFFIX = ":resource_full"
+    /**
+     * A reminder an older version scheduled that this version no longer shows: the predicted
+     * resource cap, and untagged entries (versions up to 1.4.x, whose kind is unknown). The
+     * schedule the app pushes next replaces the rest.
+     */
+    private fun retired(tag: String): Boolean = tag.isEmpty() || tag.endsWith(SERVER_ONLY_SUFFIX)
     // A predicted (local) and a server notice for the same condition share the tag
     // "<game account>:<kind>"; the second one within this window is not shown again.
     private const val SAME_TAG_WINDOW_MS = 2 * 60 * 60 * 1000L
@@ -265,7 +274,11 @@ object AhdNotifications {
             if (recent.getJSONObject(key).optLong("at", 0L) <= now - SAME_TAG_WINDOW_MS) recent.remove(key)
         }
         val previous = recent.optJSONObject(tag)
-        if (previous != null && previous.optString("source") != source) true else {
+        // A server-only kind has no second source: an older version's prediction neither
+        // shows nor hides its server notice.
+        val serverOnly = tag.endsWith(SERVER_ONLY_SUFFIX)
+        if (serverOnly && source != "server") true // dropped on purpose; deliver() already skips these
+        else if (!serverOnly && previous != null && previous.optString("source") != source) true else {
             val posted = post(context, TAGGED_ID, title, body, tag, target)
             if (posted) recent.put(tag, JSONObject().put("at", now).put("source", source))
             prefs(context).edit().putString("recent", recent.toString()).apply()
@@ -306,10 +319,19 @@ object AhdNotifications {
         prefs(context).edit().putString("channel", channelName).apply()
         post(context, entry.getInt("id"), entry.getString("title"), entry.getString("body"))
     }
+    // After a reboot or an update: cancels and forgets the retired reminders of older
+    // versions, then re-arms (or delivers, when overdue) the others.
     @JvmStatic fun restore(context: Context): Unit = guarded(Unit) {
-        val entries = JSONArray(prefs(context).getString("entries", "[]"))
-        val now = System.currentTimeMillis()
+        val stored = JSONArray(prefs(context).getString("entries", "[]"))
         val alarms = context.getSystemService(AlarmManager::class.java)
+        val entries = JSONArray()
+        for (i in 0 until stored.length()) {
+            val entry = stored.getJSONObject(i)
+            if (retired(entry.optString("tag", ""))) alarmIntent(context, entry, true)?.let { alarms.cancel(it); it.cancel() }
+            else entries.put(entry)
+        }
+        if (entries.length() != stored.length()) prefs(context).edit().putString("entries", entries.toString()).apply()
+        val now = System.currentTimeMillis()
         for (i in 0 until entries.length()) {
             val entry = entries.getJSONObject(i)
             if (entry.getLong("at") > now) alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, entry.getLong("at"), alarmIntent(context, entry)!!)

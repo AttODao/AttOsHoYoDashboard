@@ -370,6 +370,58 @@ async fn fresh_cache_is_reused_without_fetch_or_credential_leakage() {
 }
 
 #[tokio::test]
+async fn confirming_refresh_skips_the_ttl_but_keeps_the_other_guards() {
+    let fixture = TestDatabase::new().await;
+    let actor = ready_identity(&fixture.db, "owner").await;
+    let key = key();
+    let link = verified_link(&fixture.db, &key, actor.user.id, "123").await;
+    let fresh = game(&fixture.db, link.id, "genshin", "800000001", true, true).await;
+    let blocked = game(&fixture.db, link.id, "starrail", "900000001", true, true).await;
+    let old = json!({"current_resin": 42});
+    for id in [fresh.id, blocked.id] {
+        cache(&fixture.db, id, Some(Utc::now()), Some(old.clone()), 3).await;
+    }
+    reward_setting::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        hoyolab_account_id: Set(link.id),
+        game_kind: Set("starrail".into()),
+        enabled: Set(true),
+        local_time: Set("06:00".into()),
+        auth_status: Set("action_required".into()),
+        next_run_at: Set(None),
+    }
+    .insert(&fixture.db)
+    .await
+    .unwrap();
+    let gateway = MockGateway::new([Ok(json!({"current_resin": 200, "max_resin": 200}))]);
+    let games = service(fixture.db.clone(), key, gateway.clone());
+
+    // The regular background refresh reuses the fresh cache.
+    let cached = games
+        .status_for_owner(actor.user.id, fresh.id)
+        .await
+        .unwrap();
+    assert_eq!(gateway.calls(), 0);
+    assert_eq!(cached.payload, Some(old));
+    // Confirming asks upstream anyway and stores the answer.
+    let confirmed = games
+        .confirm_for_owner(actor.user.id, fresh.id)
+        .await
+        .unwrap();
+    assert_eq!(gateway.calls(), 1);
+    assert!(!confirmed.stale);
+    assert_eq!(confirmed.payload.as_ref().unwrap()["current_resin"], 200);
+    // A game that needs the user's action is still never fetched.
+    let held = games
+        .confirm_for_owner(actor.user.id, blocked.id)
+        .await
+        .unwrap();
+    assert_eq!(gateway.calls(), 1);
+    assert!(held.stale);
+    assert_eq!(held.error_code.as_deref(), Some("action_required"));
+}
+
+#[tokio::test]
 async fn fresh_legacy_summary_is_refetched_to_populate_starrail_expedition_icons() {
     let fixture = TestDatabase::new().await;
     let actor = ready_identity(&fixture.db, "owner").await;
@@ -632,6 +684,13 @@ async fn game_privacy_error_backs_off_note_fetches_without_touching_reward_setti
     assert_eq!(status.error_code.as_deref(), Some("upstream:10102"));
     let status = games.status(&actor, account.id).await.unwrap();
     assert_eq!(status.error_code.as_deref(), Some("upstream:10102"));
+    assert!(status.stale);
+    assert_eq!(gateway.calls(), 1);
+    // A confirming refresh keeps the same backoff.
+    let status = games
+        .confirm_for_owner(actor.user.id, account.id)
+        .await
+        .unwrap();
     assert!(status.stale);
     assert_eq!(gateway.calls(), 1);
     let stored = reward_setting::Entity::find_by_id(setting.id)
