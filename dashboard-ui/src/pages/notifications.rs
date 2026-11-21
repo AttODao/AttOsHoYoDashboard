@@ -151,7 +151,8 @@ fn PersonalChannelCard(
         daily: daily(),
         weekly: weekly(),
     };
-    // Saved device choices also steer this device's predicted reminders.
+    // Saved device choices also steer this device's predicted reminders (expeditions,
+    // transformer, realm currency); the resource cap is only the server's notice.
     let follow_device = move |_chosen: &PersonalForm| {
         #[cfg(feature = "mobile")]
         {
@@ -297,7 +298,8 @@ fn PersonalChannelCard(
 
 /// App only: one row per notice with this device's and the Webhook's choice side by side.
 /// The device column is the account's app inbox choice (`app_events`); the realm currency
-/// row has no server notice, so it is only this device's predicted reminder.
+/// row has no server notice, so it is only this device's predicted reminder, and the
+/// resource cap row is only the server notice (the device does not predict it).
 #[component]
 fn EventMatrix(
     events: Signal<BTreeMap<String, bool>>,
