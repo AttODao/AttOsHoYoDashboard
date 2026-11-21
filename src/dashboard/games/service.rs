@@ -59,6 +59,13 @@ pub(super) enum Requester<'a> {
     Owner(Uuid),
 }
 
+/// Whether a status refresh may answer from a cache younger than the status TTL.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Reuse {
+    WithinTtl,
+    Never,
+}
+
 impl Requester<'_> {
     pub(super) fn owner(self) -> Uuid {
         match self {
@@ -122,7 +129,8 @@ impl<G: Gateway> Games<G> {
         actor: &Identity,
         id: Uuid,
     ) -> Result<GameStatus> {
-        self.status_as(Requester::Session(actor), id).await
+        self.status_as(Requester::Session(actor), id, Reuse::WithinTtl)
+            .await
     }
 
     /// The same refresh for background work (notifications), authorized by the owner's
@@ -132,10 +140,24 @@ impl<G: Gateway> Games<G> {
         owner: Uuid,
         id: Uuid,
     ) -> Result<GameStatus> {
-        self.status_as(Requester::Owner(owner), id).await
+        self.status_as(Requester::Owner(owner), id, Reuse::WithinTtl)
+            .await
     }
 
-    async fn status_as(&self, who: Requester<'_>, id: Uuid) -> Result<GameStatus> {
+    /// Background refresh that confirms a projection (the notifier's resource cap): it
+    /// asks HoYoLAB even when the cache is younger than the status TTL, but keeps every
+    /// other guard (operation lock, verified link, `action_required`, private-record
+    /// backoff).
+    pub(in crate::dashboard) async fn confirm_for_owner(
+        &self,
+        owner: Uuid,
+        id: Uuid,
+    ) -> Result<GameStatus> {
+        self.status_as(Requester::Owner(owner), id, Reuse::Never)
+            .await
+    }
+
+    async fn status_as(&self, who: Requester<'_>, id: Uuid, reuse: Reuse) -> Result<GameStatus> {
         let _operation = self.store.operations.acquire(who.owner()).await;
         let now = Utc::now();
         let (link, cookie) = match who {
@@ -174,10 +196,9 @@ impl<G: Gateway> Games<G> {
             let payload = cache.payload.clone();
             return Ok(status_from_cache(account, Some(cache), payload, true));
         }
-        if let Some(cache) = cache
-            .as_ref()
-            .filter(|cache| fresh(cache, now, self.store.tuning.status_ttl))
-        {
+        if let Some(cache) = cache.as_ref().filter(|cache| {
+            reuse == Reuse::WithinTtl && fresh(cache, now, self.store.tuning.status_ttl)
+        }) {
             return Ok(status_from_cache(
                 account,
                 Some(cache),
