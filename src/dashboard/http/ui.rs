@@ -42,6 +42,7 @@ pub(super) fn routes(app: &App) -> Router<App> {
         )
         .route("/settings/games", get(index))
         .route("/settings/bonus", get(index))
+        .route("/settings/codes", get(index))
         .route("/settings/link", get(index))
         .route("/settings/security", get(index))
         .route("/settings/notifications", get(index))

@@ -190,6 +190,9 @@ async fn catalogue_and_history_show_results_and_available_codes() {
 
     let catalogue = serde_json::to_value(service.catalogue(&actor).await.unwrap()).unwrap();
     assert_eq!(catalogue["enabled"], true);
+    // No fetch has run yet: none failed, and the first one is due now.
+    assert_eq!(catalogue["consecutive_failures"], 0);
+    assert!(catalogue["next_fetch_at"].is_string());
     assert_eq!(catalogue["codes"].as_array().unwrap().len(), 5);
     let rail = catalogue["codes"]
         .as_array()
@@ -418,4 +421,44 @@ async fn history_keeps_redemptions_after_pruning_and_shows_entered_codes() {
     );
     // Entered codes never join the shared catalogue.
     assert_eq!(redemption_code::Entity::find().count(db).await.unwrap(), 2);
+}
+
+#[tokio::test]
+async fn catalogue_reports_failing_and_stopped_sources() {
+    let fixture = TestDatabase::new().await;
+    let db = &fixture.db;
+    let service = CodeSettings::new(db.clone());
+    let actor = ready_user(db, "source-reader").await;
+    let attempt = Utc::now() - Duration::minutes(30);
+    // The migration seeds the single source row; record three failed fetches on it.
+    let mut failing: redemption_code_source::ActiveModel =
+        redemption_code_source::Entity::find_by_id(1_i16)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap()
+            .into();
+    failing.enabled = Set(true);
+    failing.interval_minutes = Set(180);
+    failing.last_attempt_at = Set(Some(attempt));
+    failing.last_success_at = Set(Some(attempt - Duration::hours(12)));
+    failing.consecutive_failures = Set(3);
+    failing.last_error = Set(Some("timeout".to_owned()));
+    let source = failing.update(db).await.unwrap();
+    let catalogue = serde_json::to_value(service.catalogue(&actor).await.unwrap()).unwrap();
+    assert_eq!(catalogue["consecutive_failures"], 3);
+    // After the third failure the worker retries an hour after the attempt, sooner than
+    // the three-hour interval.
+    let next: DateTime<Utc> = catalogue["next_fetch_at"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!((next - (attempt + Duration::hours(1))).num_seconds().abs() <= 1);
+    let mut stopped: redemption_code_source::ActiveModel = source.into();
+    stopped.enabled = Set(false);
+    stopped.update(db).await.unwrap();
+    let catalogue = serde_json::to_value(service.catalogue(&actor).await.unwrap()).unwrap();
+    assert_eq!(catalogue["enabled"], false);
+    assert_eq!(catalogue["next_fetch_at"], serde_json::Value::Null);
 }

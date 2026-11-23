@@ -200,8 +200,8 @@ pub(in crate::dashboard) async fn view(
     })
 }
 
-/// Queues `raw` for every detected UID of `game_kind`, private to the owner (it never
-/// enters the shared catalogue). A code HoYoLAB already rejected for everyone takes that
+/// Queues `raw` for every detected UID of `game_kind` (or only for `only`, one of
+/// them), private to the owner (it never enters the shared catalogue). A code HoYoLAB already rejected for everyone takes that
 /// state without a request; one the UID already has keeps its state (a `rank_too_low`
 /// whose day has passed is pending again). The caller starts the owner's run.
 pub(in crate::dashboard) async fn enter_code(
@@ -209,6 +209,7 @@ pub(in crate::dashboard) async fn enter_code(
     actor: &Identity,
     game_kind: &str,
     raw: &str,
+    only: Option<Uuid>,
 ) -> Result<Vec<EnteredCode>> {
     if !GAMES.contains(&game_kind) {
         return Err(Error::Invalid("game_kind must be genshin or starrail"));
@@ -217,7 +218,10 @@ pub(in crate::dashboard) async fn enter_code(
     let now = Utc::now();
     let tx = db.begin().await?;
     let link = session_owner(&tx, actor).await?;
-    let accounts = detected(&tx, link.id, Some(game_kind)).await?;
+    let mut accounts = detected(&tx, link.id, Some(game_kind)).await?;
+    if let Some(only) = only {
+        accounts.retain(|account| account.id == only);
+    }
     if accounts.is_empty() {
         return Err(Error::NotFound);
     }

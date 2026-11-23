@@ -122,9 +122,13 @@ async fn redeem_now(
 struct CodeInput {
     game_kind: String,
     code: String,
+    /// One detected UID of that game; absent means every one of them.
+    #[serde(default)]
+    game_account_id: Option<Uuid>,
 }
 
-/// Enters a private code for every detected UID of a game and starts a run. Session only.
+/// Enters a private code for every detected UID of a game (or one of them) and starts a
+/// run. Session only.
 async fn enter_code(
     State(app): State<App>,
     Extension(actor): Extension<Arc<Identity>>,
@@ -133,8 +137,14 @@ async fn enter_code(
     let runs = runs(&app)?;
     app.code_throttle
         .admit(actor.user.id, Operation::EnterCode, Instant::now())?;
-    let entered =
-        manual::enter_code(&app.accounts.db, &actor, &input.game_kind, &input.code).await?;
+    let entered = manual::enter_code(
+        &app.accounts.db,
+        &actor,
+        &input.game_kind,
+        &input.code,
+        input.game_account_id,
+    )
+    .await?;
     runs.trigger(actor.user.id);
     Ok((
         StatusCode::ACCEPTED,

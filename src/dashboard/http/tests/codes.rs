@@ -44,10 +44,13 @@ async fn users_read_codes_and_change_modes_only_over_their_session() {
 
     let response = call(&app, request("GET", "/api/v1/codes", Some(&session), None)).await;
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        body(response).await,
-        json!({"enabled": true, "last_success_at": null, "codes": []})
-    );
+    let catalogue = body(response).await;
+    assert_eq!(catalogue["enabled"], true);
+    assert_eq!(catalogue["last_success_at"], Value::Null);
+    assert_eq!(catalogue["codes"], json!([]));
+    assert_eq!(catalogue["consecutive_failures"], 0);
+    // Never fetched yet: the next fetch is due now.
+    assert!(catalogue["next_fetch_at"].is_string());
     error(
         call(&app, request("GET", "/api/v1/codes", None, None)).await,
         StatusCode::UNAUTHORIZED,
@@ -406,6 +409,39 @@ async fn redemption_requests_need_a_session_redemption_credentials_and_respect_b
         genshin.to_string()
     );
     assert_eq!(entered["entries"][0]["code"], "GENSHINGIFT");
+    // One chosen UID of the game; a UID that is not one of the owner's is not found.
+    let response = call(
+        &app,
+        request(
+            "POST",
+            "/api/v1/code-redemption/codes",
+            Some(&user_session),
+            Some(json!({"game_kind": "genshin", "code": "CHOSENUID", "game_account_id": genshin})),
+        ),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let entered = body(response).await;
+    assert_eq!(entered["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        entered["entries"][0]["game_account_id"],
+        genshin.to_string()
+    );
+    error(
+        call(
+            &app,
+            request(
+                "POST",
+                "/api/v1/code-redemption/codes",
+                Some(&user_session),
+                Some(json!({"game_kind": "genshin", "code": "CHOSENUID", "game_account_id": uuid::Uuid::from_u128(9)})),
+            ),
+        )
+        .await,
+        StatusCode::NOT_FOUND,
+        "not_found",
+    )
+    .await;
     assert_eq!(entered["entries"][0]["state"], "pending");
     // Unknown fields are refused before any budget is spent.
     let response = call(
@@ -485,8 +521,8 @@ async fn redemption_requests_need_a_session_redemption_credentials_and_respect_b
         "rate_limited",
     )
     .await;
-    // Entering codes: ten per ten minutes (one was used above).
-    for index in 0..9 {
+    // Entering codes: ten per ten minutes (three were used above).
+    for index in 0..7 {
         let response = call(
             &app,
             request(

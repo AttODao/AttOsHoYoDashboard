@@ -5,7 +5,10 @@
 //! code automatically). `auto` needs a verified link whose Cookie carries the redemption
 //! credentials (`cookie_token_v2`); a Cookie update without them turns `auto` into
 //! `notify`, and Cookie removal turns every mode `off`.
-use super::ledger::{CATALOGUE, MANUAL};
+use super::{
+    ledger::{CATALOGUE, MANUAL},
+    worker::next_fetch,
+};
 use crate::dashboard::{
     auth::{
         accounts::{lock_user, require_ready},
@@ -240,6 +243,10 @@ pub(in crate::dashboard) struct CatalogueView {
     /// The administrator's server-wide switch; off means no fetches and no announcements.
     enabled: bool,
     last_success_at: Option<DateTime<Utc>>,
+    /// Failed fetches since the last success; the settings tab warns while it is above 0.
+    consecutive_failures: i32,
+    /// When the next fetch is due; null while the feature is stopped.
+    next_fetch_at: Option<DateTime<Utc>>,
     codes: Vec<CodeView>,
 }
 
@@ -404,8 +411,15 @@ impl CodeSettings {
             .all(&tx)
             .await?;
         tx.commit().await?;
+        let now = Utc::now();
         Ok(CatalogueView {
             enabled: source.as_ref().is_none_or(|row| row.enabled),
+            consecutive_failures: source.as_ref().map_or(0, |row| row.consecutive_failures),
+            // A missing row means a fetch that never ran: due now, like the worker reads it.
+            next_fetch_at: source
+                .as_ref()
+                .map_or(Some(now), |row| next_fetch(row, now))
+                .map(|at| at.max(now)),
             last_success_at: source.and_then(|row| row.last_success_at),
             codes: codes.into_iter().map(CodeView::from_row).collect(),
         })

@@ -47,20 +47,20 @@ async fn entered_codes_are_validated_private_and_queued_for_each_uid_of_the_game
     let actor = ready_user(db, "enterer").await;
     // No link yet, then a link without redemption credentials.
     assert!(matches!(
-        enter_code(db, &actor, "genshin", "GENSHINGIFT").await,
+        enter_code(db, &actor, "genshin", "GENSHINGIFT", None).await,
         Err(Error::InitialSetupRequired)
     ));
     let plain_owner = ready_user(db, "plain").await;
     let plain = link(db, plain_owner.user.id, "100000009", "verified").await;
     game(db, plain, "genshin", "800000009").await;
     assert!(matches!(
-        enter_code(db, &plain_owner, "genshin", "GENSHINGIFT").await,
+        enter_code(db, &plain_owner, "genshin", "GENSHINGIFT", None).await,
         Err(Error::Invalid(NEEDS_REDEMPTION_COOKIE))
     ));
     let owner_link = redeem_link(db, actor.user.id, "100000001").await;
     let first = game(db, owner_link, "genshin", "800000001").await;
     let second = game(db, owner_link, "genshin", "800000002").await;
-    game(db, owner_link, "starrail", "900000001").await;
+    let rail = game(db, owner_link, "starrail", "900000001").await;
     for (game_kind, code) in [
         ("nap", "GENSHINGIFT"),
         ("genshin", "abc"),
@@ -70,14 +70,42 @@ async fn entered_codes_are_validated_private_and_queued_for_each_uid_of_the_game
     ] {
         assert!(
             matches!(
-                enter_code(db, &actor, game_kind, code).await,
+                enter_code(db, &actor, game_kind, code, None).await,
                 Err(Error::Invalid(_))
             ),
             "{game_kind} {code}"
         );
     }
     // Lower case is normalized as catalogue rows are; every Genshin UID gets it.
-    let entered = enter_code(db, &actor, "genshin", "  genshingift ")
+    // One chosen UID gets it alone; a UID of another game or of nobody is not found.
+    let one = enter_code(db, &actor, "genshin", "ONLYSECOND", Some(second))
+        .await
+        .unwrap();
+    assert_eq!(
+        one.iter()
+            .map(|entry| (entry.game_account_id, entry.state.as_str()))
+            .collect::<Vec<_>>(),
+        [(second, "pending")]
+    );
+    assert!(
+        redemption_ledger::Entity::find_by_id((first, "ONLYSECOND".to_owned()))
+            .one(db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    for other in [rail, Uuid::from_u128(77)] {
+        assert!(matches!(
+            enter_code(db, &actor, "genshin", "ONLYSECOND", Some(other)).await,
+            Err(Error::NotFound)
+        ));
+    }
+    redemption_ledger::Entity::delete_many()
+        .filter(redemption_ledger::Column::Code.eq("ONLYSECOND"))
+        .exec(db)
+        .await
+        .unwrap();
+    let entered = enter_code(db, &actor, "genshin", "  genshingift ", None)
         .await
         .unwrap();
     let states: Vec<_> = entered
@@ -108,7 +136,7 @@ async fn entered_codes_are_validated_private_and_queued_for_each_uid_of_the_game
         "never added to the shared catalogue"
     );
     // Entering it again changes nothing; a dead code is settled without a request.
-    enter_code(db, &actor, "genshin", "GENSHINGIFT")
+    enter_code(db, &actor, "genshin", "GENSHINGIFT", None)
         .await
         .unwrap();
     assert_eq!(
@@ -124,7 +152,7 @@ async fn entered_codes_are_validated_private_and_queued_for_each_uid_of_the_game
     .insert(db)
     .await
     .unwrap();
-    let dead = enter_code(db, &actor, "starrail", "DEADRAIL")
+    let dead = enter_code(db, &actor, "starrail", "DEADRAIL", None)
         .await
         .unwrap();
     assert_eq!(dead[0].state, "expired");
@@ -147,7 +175,7 @@ async fn entered_codes_are_validated_private_and_queued_for_each_uid_of_the_game
         .exec(db)
         .await
         .unwrap();
-    let again = enter_code(db, &actor, "genshin", "GENSHINGIFT")
+    let again = enter_code(db, &actor, "genshin", "GENSHINGIFT", None)
         .await
         .unwrap();
     assert_eq!(again[0].state, "pending");
@@ -156,7 +184,7 @@ async fn entered_codes_are_validated_private_and_queued_for_each_uid_of_the_game
     let rail_link = redeem_link(db, rail_only.user.id, "100000002").await;
     game(db, rail_link, "starrail", "900000002").await;
     assert!(matches!(
-        enter_code(db, &rail_only, "genshin", "GENSHINGIFT").await,
+        enter_code(db, &rail_only, "genshin", "GENSHINGIFT", None).await,
         Err(Error::NotFound)
     ));
     redemption_code_source::Entity::update_many()
@@ -165,7 +193,7 @@ async fn entered_codes_are_validated_private_and_queued_for_each_uid_of_the_game
         .await
         .unwrap();
     assert!(matches!(
-        enter_code(db, &actor, "genshin", "OTHERGIFT").await,
+        enter_code(db, &actor, "genshin", "OTHERGIFT", None).await,
         Err(Error::Unavailable(_))
     ));
     assert!(matches!(
@@ -193,7 +221,7 @@ async fn the_view_reports_state_without_secrets_and_redeem_now_ends_a_pause() {
     );
     let owner_link = redeem_link(db, actor.user.id, "100000001").await;
     let account = game(db, owner_link, "genshin", "800000001").await;
-    enter_code(db, &actor, "genshin", "GENSHINGIFT")
+    enter_code(db, &actor, "genshin", "GENSHINGIFT", None)
         .await
         .unwrap();
     redemption_ledger::Entity::update_many()

@@ -8287,6 +8287,8 @@
         "required": [
           "enabled",
           "last_success_at",
+          "consecutive_failures",
+          "next_fetch_at",
           "codes"
         ],
         "properties": {
@@ -8300,6 +8302,19 @@
               "null"
             ],
             "format": "date-time"
+          },
+          "consecutive_failures": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Failed fetches since the last success; the Codes tab warns while it is above 0."
+          },
+          "next_fetch_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the next fetch is due; null while the feature is stopped."
           },
           "codes": {
             "type": "array",
@@ -8715,6 +8730,11 @@
             "type": "string",
             "description": "4–32 ASCII letters or digits after trimming; upper-cased.",
             "maxLength": 64
+          },
+          "game_account_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Optional: only this detected UID of the game (404 when it is not one); absent means every detected UID of the game."
           }
         }
       }
