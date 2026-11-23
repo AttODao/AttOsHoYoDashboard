@@ -2,6 +2,7 @@
 mod api_tokens;
 mod app_login;
 mod auth;
+mod codes;
 mod dashboard;
 mod hoyolab;
 mod middleware;
@@ -50,6 +51,7 @@ fn config(secure_cookie: bool) -> Config {
         cookie_key: Some(Arc::new(
             crate::dashboard::hoyolab::credentials::CookieKey::from_hex(&"11".repeat(32)).unwrap(),
         )),
+        codes_source: reqwest::Url::parse(crate::dashboard::config::DEFAULT_CODES_SOURCE).unwrap(),
     }
 }
 
@@ -61,19 +63,26 @@ fn app(accounts: Accounts) -> App {
         store.operations = operations.clone();
         Arc::new(store)
     });
+    let notifications = Arc::new(
+        crate::dashboard::notifications::channel::Notifications::new(
+            accounts.db.clone(),
+            config.cookie_key.clone(),
+            &config.origin,
+        ),
+    );
+    let codes = Arc::new(crate::dashboard::codes::worker::CodeWorker::new(
+        accounts.db.clone(),
+        crate::dashboard::codes::source::Source::new(config.codes_source.clone()),
+        notifications.clone(),
+    ));
     Arc::new(HttpState {
         cookies,
         operations,
+        codes,
         app_logins: super::AppLogins::new(),
         passkeys: Passkeys::new(&config.rp_id, &config.origin, config.cookie_key.as_deref())
             .unwrap(),
-        notifications: Arc::new(
-            crate::dashboard::notifications::channel::Notifications::new(
-                accounts.db.clone(),
-                config.cookie_key.clone(),
-                &config.origin,
-            ),
-        ),
+        notifications,
         notifier_rewards_games: None,
         accounts,
         heartbeat: super::runtime::Heartbeat::new(),

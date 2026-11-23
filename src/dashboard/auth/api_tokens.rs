@@ -26,7 +26,7 @@ const NAME_LIMIT: usize = 100;
 const TOUCH_INTERVAL: Duration = Duration::minutes(5);
 
 /// Dashboard data reads that a token of either scope may perform.
-const READ_ROUTES: [&str; 10] = [
+const READ_ROUTES: [&str; 13] = [
     "/api/v1/me",
     "/api/v1/server-settings",
     "/api/v1/me/hoyolab",
@@ -37,6 +37,9 @@ const READ_ROUTES: [&str; 10] = [
     "/api/v1/game-accounts/{id}/resource-history",
     "/api/v1/reward-settings",
     "/api/v1/reward-runs",
+    "/api/v1/codes",
+    "/api/v1/code-settings",
+    "/api/v1/code-history",
 ];
 const RUN_ROUTE: &str = "/api/v1/reward-settings/{id}/run";
 

@@ -5,7 +5,8 @@ use crate::dashboard::{
         sessions::{Identity, Sessions},
     },
     db::entities::{
-        game_account, hoyolab_account, notification_setting, reward_run, reward_setting, user,
+        game_account, hoyolab_account, notification_setting, redemption_code_setting, reward_run,
+        reward_setting, user,
     },
     error::Error,
     hoyolab::{
@@ -337,6 +338,7 @@ async fn imports_reject_bad_files_skip_unlinked_entries_and_need_a_live_session(
             "skipped": [
                 {"section": "rewards", "game_kind": "genshin", "reason": "not_linked"},
                 {"section": "game_accounts", "game_kind": "genshin", "game_uid": "800000001", "reason": "not_linked"},
+                {"section": "codes", "game_kind": "genshin", "game_uid": "800000001", "reason": "not_linked"},
             ],
             "webhook": {"in_file": true, "configured": false},
         })
@@ -398,4 +400,92 @@ async fn imports_reject_bad_files_skip_unlinked_entries_and_need_a_live_session(
     ] {
         assert!(matches!(result, Some(Error::Unauthorized)), "{result:?}");
     }
+}
+
+#[tokio::test]
+async fn code_modes_export_and_import_per_uid_and_auto_is_skipped() {
+    let fixture = TestDatabase::new().await;
+    let db = &fixture.db;
+    let actor = ready_identity(db, "codes-user").await;
+    let link = verified_link(db, actor.user.id, "323456789").await;
+    let genshin = game(db, link, "genshin", "800000001", true).await;
+    let starrail = game(db, link, "starrail", "900000001", true).await;
+    let service = transfer(db);
+    let exported = service.export(&actor).await.unwrap();
+    assert_eq!(
+        exported["codes"],
+        json!([
+            {"game_kind": "genshin", "game_uid": "800000001", "mode": "off"},
+            {"game_kind": "starrail", "game_uid": "900000001", "mode": "off"},
+        ])
+    );
+
+    let mut file = exported.clone();
+    file["codes"] = json!([
+        {"game_kind": "genshin", "game_uid": "800000001", "mode": "notify"},
+        {"game_kind": "starrail", "game_uid": "900000001", "mode": "auto"},
+        {"game_kind": "starrail", "game_uid": "900000002", "mode": "notify"},
+    ]);
+    let expected = json!({
+        "changes": [
+            {"section": "codes", "game_kind": "genshin", "game_uid": "800000001", "setting": "mode", "from": "off", "to": "notify"},
+        ],
+        "skipped": [
+            {"section": "codes", "game_kind": "starrail", "game_uid": "900000001", "reason": "mode_unavailable"},
+            {"section": "codes", "game_kind": "starrail", "game_uid": "900000002", "reason": "uid_not_found"},
+        ],
+        "webhook": {"in_file": false, "configured": false},
+    });
+    assert_eq!(
+        planned(service.preview(&actor, &file).await.unwrap()),
+        expected
+    );
+    assert!(
+        redemption_code_setting::Entity::find()
+            .all(db)
+            .await
+            .unwrap()
+            .is_empty(),
+        "preview wrote"
+    );
+    assert_eq!(
+        planned(service.import(&actor, &file).await.unwrap()),
+        expected
+    );
+    let stored = redemption_code_setting::Entity::find_by_id(genshin)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.mode, "notify");
+    assert!(stored.enabled_at.is_some());
+    assert!(
+        redemption_code_setting::Entity::find_by_id(starrail)
+            .one(db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let again = service.export(&actor).await.unwrap();
+    assert_eq!(again["codes"][0]["mode"], "notify");
+    assert_eq!(
+        planned(service.import(&actor, &again).await.unwrap())["changes"],
+        json!([])
+    );
+
+    // A file from before redemption codes leaves every mode alone.
+    let mut old = again.clone();
+    old.as_object_mut().unwrap().remove("codes");
+    let report = planned(service.import(&actor, &old).await.unwrap());
+    assert_eq!(report["changes"], json!([]));
+    assert_eq!(report["skipped"], json!([]));
+    assert_eq!(
+        redemption_code_setting::Entity::find_by_id(genshin)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap()
+            .mode,
+        "notify"
+    );
 }

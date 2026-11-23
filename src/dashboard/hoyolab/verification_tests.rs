@@ -9,7 +9,9 @@ use crate::dashboard::{
         password::token_hash,
         sessions::{Credential, Identity, Sessions},
     },
-    db::entities::{game_account, hoyolab_account, reward_guard, reward_setting},
+    db::entities::{
+        game_account, hoyolab_account, redemption_code_setting, reward_guard, reward_setting,
+    },
     error::Error,
     test_support::TestDatabase,
 };
@@ -381,7 +383,7 @@ async fn disabling_during_identity_get_prevents_link_promotion() {
 }
 
 #[tokio::test]
-async fn removing_a_verified_cookie_keeps_the_uid_binding_and_turns_claiming_off() {
+async fn removing_a_verified_cookie_keeps_the_uid_binding_and_turns_claiming_and_codes_off() {
     let fixture = TestDatabase::new().await;
     let (_, actor) = fixture.ready_admin().await;
     let gateway = Mock::new("42");
@@ -401,6 +403,29 @@ async fn removing_a_verified_cookie_keeps_the_uid_binding_and_turns_claiming_off
         setting.next_run_at = Set(Some(Utc::now()));
         setting.update(&store.db).await.unwrap();
     }
+    let uid = game_account::ActiveModel {
+        id: Set(uuid::Uuid::new_v4()),
+        hoyolab_account_id: Set(verified.id),
+        game_kind: Set("genshin".to_owned()),
+        game_uid: Set("800000042".to_owned()),
+        region: Set("os_asia".to_owned()),
+        visible: Set(true),
+        detected: Set(true),
+        last_detected_at: Set(Utc::now()),
+    }
+    .insert(&store.db)
+    .await
+    .unwrap()
+    .id;
+    redemption_code_setting::ActiveModel {
+        game_account_id: Set(uid),
+        mode: Set("notify".to_owned()),
+        enabled_at: Set(Some(Utc::now())),
+        updated_at: Set(Utc::now()),
+    }
+    .insert(&store.db)
+    .await
+    .unwrap();
 
     store.remove_cookie(&actor).await.unwrap();
     let removed = row(&store, actor.user.id).await;
@@ -431,6 +456,14 @@ async fn removing_a_verified_cookie_keeps_the_uid_binding_and_turns_claiming_off
         assert!(!setting.enabled);
         assert!(setting.next_run_at.is_none());
     }
+    // Redemption-code modes turn off with automatic claiming; the UID row stays.
+    let code_mode = redemption_code_setting::Entity::find_by_id(uid)
+        .one(&store.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(code_mode.mode, "off");
+    assert_eq!(code_mode.enabled_at, None);
     assert!(matches!(
         store.remove_cookie(&actor).await,
         Err(Error::NotFound)

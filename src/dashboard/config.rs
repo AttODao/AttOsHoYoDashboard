@@ -129,6 +129,33 @@ pub(super) struct Config {
     pub metrics_token: Option<String>,
     pub cookie_key: Option<Arc<CookieKey>>,
     pub ui_dir: PathBuf,
+    /// Base URL of the redemption-code source (`GET <base>/codes?game=…`).
+    pub codes_source: Url,
+}
+
+/// The public code list Hoyo Buddy publishes; a third party, so its answers are untrusted.
+pub(super) const DEFAULT_CODES_SOURCE: &str = "https://hoyo-codes.seria.moe/";
+
+/// HTTPS without credentials, query or fragment; plain HTTP only on a loopback host so a
+/// local mock can stand in. The path always ends in `/` so `codes` joins below it.
+fn codes_source(raw: &str) -> Result<Url> {
+    const MESSAGE: &str = "CODES_SOURCE_URL must be an HTTPS URL without credentials, query or fragment (HTTP only on localhost)";
+    let mut url = Url::parse(raw.trim()).map_err(|_| Error::Invalid(MESSAGE))?;
+    let loopback = matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
+    if !(url.scheme() == "https" || url.scheme() == "http" && loopback)
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(Error::Invalid(MESSAGE));
+    }
+    if !url.path().ends_with('/') {
+        let path = format!("{}/", url.path());
+        url.set_path(&path);
+    }
+    Ok(url)
 }
 
 fn setting(
@@ -262,6 +289,11 @@ impl Config {
                 "DASHBOARD_UI_DIR must be a nonempty directory path",
             ));
         }
+        let codes_source = codes_source(&setting(
+            &mut read,
+            "CODES_SOURCE_URL",
+            DEFAULT_CODES_SOURCE,
+        )?)?;
         let cookie_key = match read("HOYOLAB_COOKIE_KEY") {
             Ok(value) => Some(Arc::new(CookieKey::from_hex(&value)?)),
             Err(env::VarError::NotPresent) => None,
@@ -279,6 +311,7 @@ impl Config {
             metrics_token,
             cookie_key,
             ui_dir: ui_dir.into(),
+            codes_source,
         })
     }
 }

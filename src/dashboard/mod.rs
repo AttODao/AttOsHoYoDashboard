@@ -1,6 +1,7 @@
 //! Non-GUI dashboard application: command, domain, persistence, and HTTP boundaries.
 mod auth;
 mod cli;
+mod codes;
 mod config;
 mod db;
 mod error;

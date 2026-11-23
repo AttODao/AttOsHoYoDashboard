@@ -2,6 +2,7 @@
 mod api_tokens;
 mod app_login;
 mod auth;
+mod codes;
 mod games;
 mod hoyolab;
 mod metrics;
@@ -26,6 +27,7 @@ use super::{
         passkeys::Passkeys,
         sessions::Identity,
     },
+    codes::{source::Source, worker::CodeWorker},
     config::Config,
     error::{Error, Result},
     hoyolab::store::CookieStore,
@@ -48,6 +50,8 @@ struct HttpState {
     notifications: Arc<crate::dashboard::notifications::channel::Notifications>,
     notifier_rewards_games: Option<Arc<crate::dashboard::games::service::Games>>,
     operations: super::hoyolab::operations::Operations,
+    /// The redemption-code fetch; its counters feed `/metrics`.
+    codes: Arc<CodeWorker>,
     heartbeat: runtime::Heartbeat,
     config: Config,
 }
@@ -75,6 +79,11 @@ pub(super) async fn serve(accounts: Accounts, config: Config) -> Result<()> {
             cookies.clone(),
         ))
     });
+    let codes = Arc::new(CodeWorker::new(
+        db.clone(),
+        Source::new(config.codes_source.clone()),
+        notifications.clone(),
+    ));
     let app = Arc::new(HttpState {
         accounts,
         passkeys,
@@ -83,6 +92,7 @@ pub(super) async fn serve(accounts: Accounts, config: Config) -> Result<()> {
         notifications,
         notifier_rewards_games,
         operations,
+        codes,
         heartbeat: runtime::Heartbeat::new(),
         config,
     });
@@ -125,6 +135,7 @@ fn router(app: App) -> Router {
         .merge(hoyolab::protected_routes())
         .merge(games::protected_routes())
         .merge(rewards::protected_routes())
+        .merge(codes::protected_routes())
         .merge(passkeys::protected_routes())
         .merge(app_login::protected_routes())
         .merge(notifications::protected_routes())

@@ -41,6 +41,10 @@
     {
       "name": "rewards",
       "description": "Reward settings, manual runs, and history."
+    },
+    {
+      "name": "codes",
+      "description": "Redemption codes: the shared catalogue, per-UID modes and history, administrator controls."
     }
   ],
   "paths": {
@@ -4794,6 +4798,435 @@
         },
         "description": "Session cookie only. Rewards and UID visibility need a verified HoYoLAB account; entries that do not match it are skipped and reported. A file with problems is rejected with 400 (`invalid_input`) and an `errors` list; nothing is written. Bodies are limited to 16 KiB."
       }
+    },
+    "/api/v1/codes": {
+      "get": {
+        "tags": [
+          "codes"
+        ],
+        "operationId": "listRedemptionCodes",
+        "summary": "List the shared redemption-code catalogue.",
+        "description": "Codes fetched from the third-party list (`CODES_SOURCE_URL`) for Genshin Impact and Honkai: Star Rail, newest first per game, with the official redemption page. `listed` is false once the source stopped listing a code; such codes are deleted 90 days later. Never calls HoYoLAB.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedemptionCatalogue"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          },
+          {
+            "ahdApiToken": []
+          }
+        ]
+      }
+    },
+    "/api/v1/code-settings": {
+      "get": {
+        "tags": [
+          "codes"
+        ],
+        "operationId": "listRedemptionCodeSettings",
+        "summary": "List the redemption-code mode of each detected game UID of the verified HoYoLAB link.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RedemptionCodeSetting"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          },
+          {
+            "ahdApiToken": []
+          }
+        ]
+      }
+    },
+    "/api/v1/code-settings/{id}": {
+      "patch": {
+        "tags": [
+          "codes"
+        ],
+        "operationId": "updateRedemptionCodeSetting",
+        "summary": "Set one game UID's redemption-code mode.",
+        "description": "`{id}` is the game account id. `auto` is a valid mode but is rejected with 400 until automatic redemption is available. Session only: API tokens get 403.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedemptionCodeSettingInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/code-history": {
+      "get": {
+        "tags": [
+          "codes"
+        ],
+        "operationId": "listRedemptionCodeHistory",
+        "summary": "List each detected game UID's result per code of its game.",
+        "description": "A listed code without a result is `available`; unlisted codes appear only with a result.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RedemptionCodeHistoryEntry"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          },
+          {
+            "ahdApiToken": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/codes": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "getAdminRedemptionCodes",
+        "summary": "Get the redemption-code switch, fetch interval and source status.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRedemptionCodes"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": []
+      },
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "updateAdminRedemptionCodes",
+        "summary": "Stop or start the redemption-code feature and set the fetch interval.",
+        "description": "Applies within a minute without a restart. Stopped: no fetches and no announcements; user modes stay stored.",
+        "responses": {
+          "204": {
+            "description": "No content."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminRedemptionCodesInput"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -6945,7 +7378,7 @@
       },
       "EventList": {
         "type": "string",
-        "description": "Known kinds — personal: reward_failed, reward_claimed, cookie_invalid, signed_in, sign_in_failed, resource_near_cap, resource_full, expeditions_done, transformer_ready, daily_unfinished, weekly_unfinished. Admin: user_attention, worker_stalled, deletion_stuck, sign_in_failed, signed_in."
+        "description": "Known kinds — personal: reward_failed, reward_claimed, cookie_invalid, signed_in, sign_in_failed, resource_near_cap, resource_full, expeditions_done, transformer_ready, daily_unfinished, weekly_unfinished, code_available. Admin: user_attention, worker_stalled, deletion_stuck, sign_in_failed, signed_in."
       },
       "ApiTokenView": {
         "type": "object",
@@ -7233,6 +7666,32 @@
                 "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
               }
             }
+          },
+          "codes": {
+            "type": "array",
+            "maxItems": 64,
+            "description": "Redemption-code mode per game UID. Optional (files without it change no mode); exports always include it. UIDs missing on the importing account are skipped, and `auto` is skipped as `mode_unavailable` while automatic redemption is not available.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "game_kind",
+                "game_uid",
+                "mode"
+              ],
+              "properties": {
+                "game_kind": {
+                  "$ref": "#/components/schemas/GameKind"
+                },
+                "game_uid": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,19}$"
+                },
+                "mode": {
+                  "$ref": "#/components/schemas/RedemptionCodeMode"
+                }
+              }
+            }
           }
         }
       },
@@ -7289,7 +7748,8 @@
                   "enum": [
                     "rewards",
                     "game_accounts",
-                    "notifications"
+                    "notifications",
+                    "codes"
                   ]
                 },
                 "game_kind": {
@@ -7300,7 +7760,7 @@
                 },
                 "setting": {
                   "type": "string",
-                  "description": "`enabled`, `local_time`, `visible`, `webhook_format`, `language`, `events.<kind>`, `app_events.<kind>`, `resin_warn_hours`, `daily_reminder_time` or `weekly_reminder_time`."
+                  "description": "`enabled`, `local_time`, `visible`, `webhook_format`, `language`, `events.<kind>`, `app_events.<kind>`, `resin_warn_hours`, `daily_reminder_time`, `weekly_reminder_time` or `mode` (section `codes`)."
                 },
                 "from": {},
                 "to": {}
@@ -7321,7 +7781,8 @@
                   "type": "string",
                   "enum": [
                     "rewards",
-                    "game_accounts"
+                    "game_accounts",
+                    "codes"
                   ]
                 },
                 "game_kind": {
@@ -7336,7 +7797,8 @@
                     "not_linked",
                     "game_not_found",
                     "uid_not_found",
-                    "reward_not_ready"
+                    "reward_not_ready",
+                    "mode_unavailable"
                   ]
                 }
               }
@@ -7491,6 +7953,352 @@
               "null"
             ],
             "description": "Sanitized error class of the run's last attempt (for example network, http:429, upstream:-5003)."
+          }
+        }
+      },
+      "RedemptionCodeMode": {
+        "type": "string",
+        "enum": [
+          "off",
+          "notify",
+          "auto"
+        ],
+        "description": "`off` (default), `notify` (one summary notice per fetch run for codes first seen after the mode left `off`) or `auto` (automatic redemption; not available yet, rejected)."
+      },
+      "RedemptionCode": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "game_kind",
+          "code",
+          "rewards",
+          "first_seen_at",
+          "last_seen_at",
+          "listed",
+          "redeem_url"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "game_kind": {
+            "$ref": "#/components/schemas/GameKind"
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Z0-9]{4,32}$"
+          },
+          "rewards": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "Reward text from the source, stripped of markup; may be empty. `*` means times."
+          },
+          "first_seen_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "listed": {
+            "type": "boolean"
+          },
+          "redeem_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "description": "Official redemption page: `https://genshin.hoyoverse.com/en/gift?code=<code>` or `https://hsr.hoyoverse.com/gift?code=<code>`."
+          }
+        }
+      },
+      "RedemptionCatalogue": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "enabled",
+          "last_success_at",
+          "codes"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "The administrator's server-wide switch."
+          },
+          "last_success_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "codes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RedemptionCode"
+            }
+          }
+        }
+      },
+      "RedemptionCodeSetting": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "game_account_id",
+          "game_kind",
+          "game_uid",
+          "region",
+          "mode",
+          "enabled_at"
+        ],
+        "properties": {
+          "game_account_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "game_kind": {
+            "$ref": "#/components/schemas/GameKind"
+          },
+          "game_uid": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/RedemptionCodeMode"
+          },
+          "enabled_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the mode last left `off`; null while `off`."
+          }
+        }
+      },
+      "RedemptionCodeSettingInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/RedemptionCodeMode"
+          }
+        }
+      },
+      "RedemptionCodeHistoryEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "game_account_id",
+          "game_kind",
+          "game_uid",
+          "code_id",
+          "code",
+          "listed",
+          "state",
+          "updated_at",
+          "redeem_url"
+        ],
+        "properties": {
+          "game_account_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "game_kind": {
+            "$ref": "#/components/schemas/GameKind"
+          },
+          "game_uid": {
+            "type": "string"
+          },
+          "code_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "listed": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "announced",
+              "pending",
+              "redeemed",
+              "already_used",
+              "expired",
+              "invalid",
+              "rank_too_low",
+              "cookie_invalid",
+              "captcha_required",
+              "unknown"
+            ],
+            "description": "`available` (listed, no result yet; never stored), `announced` (sent in a notify-only summary) or an automatic redemption outcome."
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the result was written; null for `available`."
+          },
+          "redeem_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          }
+        }
+      },
+      "AdminRedemptionCodes": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "enabled",
+          "interval_minutes",
+          "interval_minutes_min",
+          "interval_minutes_max",
+          "source_host",
+          "last_attempt_at",
+          "last_success_at",
+          "consecutive_failures",
+          "last_error",
+          "next_fetch_at",
+          "catalogue"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "interval_minutes": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 1440
+          },
+          "interval_minutes_min": {
+            "type": "integer"
+          },
+          "interval_minutes_max": {
+            "type": "integer"
+          },
+          "source_host": {
+            "type": "string"
+          },
+          "last_attempt_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_success_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "consecutive_failures": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "timeout",
+              "connect",
+              "http_status",
+              "redirect",
+              "too_large",
+              "invalid_payload",
+              "storage",
+              null
+            ],
+            "description": "Class of the latest failed run; never an upstream body."
+          },
+          "next_fetch_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Null while the feature is stopped."
+          },
+          "catalogue": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "genshin",
+              "starrail"
+            ],
+            "properties": {
+              "genshin": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "listed",
+                  "unlisted"
+                ],
+                "properties": {
+                  "listed": {
+                    "type": "integer"
+                  },
+                  "unlisted": {
+                    "type": "integer"
+                  }
+                }
+              },
+              "starrail": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "listed",
+                  "unlisted"
+                ],
+                "properties": {
+                  "listed": {
+                    "type": "integer"
+                  },
+                  "unlisted": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "AdminRedemptionCodesInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "enabled",
+          "interval_minutes"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "interval_minutes": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 1440
           }
         }
       }

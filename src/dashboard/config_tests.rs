@@ -234,3 +234,43 @@ fn tuning_defaults_and_bounds() {
         assert!(load(&[pair]).is_err(), "{} accepted", pair.0);
     }
 }
+
+#[test]
+fn code_source_defaults_to_the_public_list_and_accepts_only_safe_urls() {
+    assert_eq!(
+        load(&[]).unwrap().codes_source.as_str(),
+        "https://hoyo-codes.seria.moe/"
+    );
+    // The path gains a trailing slash so `codes` joins below it.
+    assert_eq!(
+        load(&[("CODES_SOURCE_URL", "https://codes.example.test/api")])
+            .unwrap()
+            .codes_source
+            .as_str(),
+        "https://codes.example.test/api/"
+    );
+    for local in [
+        "http://127.0.0.1:1078",
+        "http://localhost:1078/",
+        "http://[::1]:9/",
+    ] {
+        assert!(load(&[("CODES_SOURCE_URL", local)]).is_ok(), "{local}");
+    }
+    for bad in [
+        "",
+        "not a url",
+        "http://codes.example.test/",
+        "ftp://codes.example.test/",
+        "https://user:pass@codes.example.test/",
+        "https://codes.example.test/?game=genshin",
+        "https://codes.example.test/#top",
+    ] {
+        let error = load(&[("CODES_SOURCE_URL", bad)])
+            .err()
+            .expect("unsafe code source URL");
+        assert!(
+            error.to_string().starts_with("CODES_SOURCE_URL must be"),
+            "{bad}"
+        );
+    }
+}

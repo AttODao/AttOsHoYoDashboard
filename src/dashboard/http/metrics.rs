@@ -48,6 +48,7 @@ const ENDED_STATES: [&str; 6] = [
     "stopped",
 ];
 const APP_DEVICES: &str = "SELECT CASE WHEN push_subscription IS NULL THEN 'poll' ELSE 'push' END AS label, count(*) AS n FROM app_devices GROUP BY 1";
+const CODES: &str = "SELECT game_kind || ':' || CASE WHEN listed THEN 'listed' ELSE 'unlisted' END AS label, count(*) AS n FROM redemption_codes GROUP BY 1";
 const ENDED_24H: &str = "SELECT state AS label, count(*) AS n FROM reward_runs WHERE ended_at >= now() - interval '24 hours' GROUP BY 1";
 
 pub(super) async fn metrics(
@@ -136,6 +137,7 @@ pub(super) async fn metrics(
             "ahd_app_push_requests_total{{outcome=\"{outcome}\"}} {count}"
         );
     }
+    codes(&app, &mut out).await?;
     Ok((
         [(
             header::CONTENT_TYPE,
@@ -143,4 +145,59 @@ pub(super) async fn metrics(
         )],
         out,
     ))
+}
+
+/// Redemption-code catalogue size, fetch outcomes, rejected rows and announcements.
+async fn codes(app: &App, out: &mut String) -> Result<()> {
+    let rows = app
+        .accounts
+        .db
+        .query_all_raw(Statement::from_string(DbBackend::Postgres, CODES))
+        .await?;
+    let mut sizes = std::collections::BTreeMap::new();
+    for row in rows {
+        let label: String = row.try_get("", "label")?;
+        let count: i64 = row.try_get("", "n")?;
+        sizes.insert(label, count);
+    }
+    let _ = writeln!(
+        out,
+        "# HELP ahd_codes_catalogue Redemption codes in the shared catalogue, by game and whether the source still lists them.\n# TYPE ahd_codes_catalogue gauge"
+    );
+    let stats = &app.codes.stats;
+    for game in crate::dashboard::codes::catalog::GAMES {
+        for state in ["listed", "unlisted"] {
+            let count = sizes.get(&format!("{game}:{state}")).copied().unwrap_or(0);
+            let _ = writeln!(
+                out,
+                "ahd_codes_catalogue{{game=\"{game}\",state=\"{state}\"}} {count}"
+            );
+        }
+    }
+    let _ = writeln!(
+        out,
+        "# HELP ahd_codes_fetches_total Code source fetches since start, by game and outcome (ok or an error class).\n# TYPE ahd_codes_fetches_total counter"
+    );
+    for (game, outcome, count) in stats.fetches() {
+        let _ = writeln!(
+            out,
+            "ahd_codes_fetches_total{{game=\"{game}\",outcome=\"{outcome}\"}} {count}"
+        );
+    }
+    let _ = writeln!(
+        out,
+        "# HELP ahd_codes_rejected_rows_total Code source rows rejected by validation since start, by game.\n# TYPE ahd_codes_rejected_rows_total counter"
+    );
+    for (game, count) in stats.rejected() {
+        let _ = writeln!(
+            out,
+            "ahd_codes_rejected_rows_total{{game=\"{game}\"}} {count}"
+        );
+    }
+    let _ = writeln!(
+        out,
+        "# HELP ahd_codes_announcements_total New-code summaries sent to users since start.\n# TYPE ahd_codes_announcements_total counter\nahd_codes_announcements_total {}",
+        stats.announcements()
+    );
+    Ok(())
 }
