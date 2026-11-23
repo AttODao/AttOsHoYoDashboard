@@ -18,6 +18,7 @@ fn nav_target(page: Page) -> Option<NavTarget> {
         Page::Events => Some(NavTarget::Events),
         Page::Uids
         | Page::Rewards
+        | Page::Codes
         | Page::Link
         | Page::Security
         | Page::Notifications
@@ -123,6 +124,7 @@ mod tests {
         for page in [
             Page::Uids,
             Page::Rewards,
+            Page::Codes,
             Page::Link,
             Page::Security,
             Page::Notifications,

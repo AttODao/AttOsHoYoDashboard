@@ -37,6 +37,7 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
         .or_else(|| onboarding.as_ref().map(|o| o.verification_available));
     let disabled = !cookie_action_allowed(password_ok, available);
     let stored = hoyolab.as_ref().is_some_and(|h| h.id.is_some());
+    let redemption_ready = hoyolab.as_ref().is_none_or(|h| h.redemption_credentials);
     let complete = hoyolab.as_ref().is_some_and(|h| h.setup_complete);
     let raw_status = hoyolab
         .as_ref()
@@ -111,12 +112,14 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
             }
             form { class: "form-stack", novalidate: true, onsubmit: move |event| { event.prevent_default(); submit(()); },
                 Field { id: "hoyolab-cookie", label: preferences.text("hoyolab.cookie"),
-                    // Open until a Cookie is stored; afterwards the steps fold away.
-                    HintFold { title: preferences.text("hoyolab.cookie_help_title"), open: !stored,
+                    // Open until a Cookie is stored, and while the stored one lacks the
+                    // redemption items; otherwise the steps fold away.
+                    HintFold { title: preferences.text("hoyolab.cookie_help_title"), open: !stored || !redemption_ready,
                         ol { id: "hoyolab-cookie-help", class: "field-hint cookie-steps",
                             li { {preferences.text("hoyolab.cookie_step_login")} " " a { href: HOYOLAB_HOME, target: "_blank", rel: "noopener noreferrer", "www.hoyolab.com" } }
                             li { {preferences.text("hoyolab.cookie_step_devtools")} }
                             li { {preferences.text("hoyolab.cookie_step_copy")} }
+                            li { id: "hoyolab-cookie-redemption", {preferences.text("hoyolab.cookie_step_redemption")} }
                             li { {preferences.text("hoyolab.cookie_step_verify")} }
                         }
                     }

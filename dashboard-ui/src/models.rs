@@ -91,6 +91,14 @@ pub struct CookieStatus {
     #[serde(default)]
     pub verified_at: Option<String>,
     pub verification_available: bool,
+    /// The stored Cookie carries `cookie_token_v2` for code redemption (older servers omit
+    /// it, which reads as carrying it so no hint shows).
+    #[serde(default = "carries_redemption")]
+    pub redemption_credentials: bool,
+}
+
+fn carries_redemption() -> bool {
+    true
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -477,6 +485,97 @@ pub struct PasskeyChallenge {
 #[derive(Clone, PartialEq, Deserialize)]
 pub struct AppLoginCode {
     pub code: String,
+}
+
+/// `GET /codes`: the shared code list and the state of its source.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct CodeCatalogue {
+    /// The administrator's server-wide switch.
+    pub enabled: bool,
+    pub last_success_at: Option<String>,
+    /// Failed fetches since the last success (older servers omit it: no warning).
+    #[serde(default)]
+    pub consecutive_failures: i32,
+    #[serde(default)]
+    pub next_fetch_at: Option<String>,
+    pub codes: Vec<CatalogueCode>,
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct CatalogueCode {
+    pub id: Uuid,
+    pub game_kind: String,
+    pub code: String,
+    /// The source's free English text; may be empty.
+    pub rewards: String,
+    pub first_seen_at: String,
+}
+
+/// `GET /code-settings`: one detected UID and its mode (`off`, `notify`, `auto`).
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct CodeSetting {
+    pub game_account_id: Uuid,
+    pub game_kind: String,
+    pub game_uid: String,
+    pub region: String,
+    pub mode: String,
+}
+
+/// `GET /code-history`: one code on one UID with its latest state.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct CodeHistoryEntry {
+    pub game_account_id: Uuid,
+    pub game_kind: String,
+    pub game_uid: String,
+    pub code_id: Option<Uuid>,
+    pub code: String,
+    /// `catalogue` or `manual` (entered by the owner).
+    #[serde(default)]
+    pub source: String,
+    pub state: String,
+    pub updated_at: Option<String>,
+    #[serde(default)]
+    pub next_attempt_at: Option<String>,
+    pub redeem_url: Option<String>,
+}
+
+/// `GET /code-redemption`: what redemption can do for the owner right now.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct CodeRedemption {
+    /// The server can redeem and the administrator's switch is on.
+    pub available: bool,
+    /// The Cookie carries `cookie_token_v2`.
+    pub redemption_credentials: bool,
+    /// `cookie_invalid` or `captcha_required` while redemption is paused.
+    pub action_required: Option<String>,
+    pub action_at: Option<String>,
+    pub pending: u64,
+}
+
+/// `GET /admin/codes`.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct AdminCodes {
+    pub enabled: bool,
+    pub interval_minutes: i32,
+    pub source_host: String,
+    pub last_attempt_at: Option<String>,
+    pub last_success_at: Option<String>,
+    pub consecutive_failures: i32,
+    pub last_error: Option<String>,
+    pub next_fetch_at: Option<String>,
+    pub catalogue: std::collections::BTreeMap<String, AdminCodeCount>,
+    pub redemption: AdminRedemptionCounts,
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct AdminCodeCount {
+    pub listed: u64,
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct AdminRedemptionCounts {
+    pub auto_users: u64,
+    pub action_required_users: u64,
 }
 
 #[cfg(test)]

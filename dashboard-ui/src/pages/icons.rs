@@ -32,6 +32,9 @@ pub(super) enum Icon {
     Trash,
     Ban,
     Transfer,
+    // A voucher with a tear line: redemption codes (settings tab, admin section, notice
+    // kind, dashboard hint).
+    Code,
     // One mark per game. Headings, tabs and chips all name these, so a mark changes by
     // replacing one path. Neither is traced from an official logo.
     MarkGenshin,
@@ -118,6 +121,9 @@ impl Icon {
             Self::Ban => "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM5.7 5.7l12.6 12.6",
             // One arrow up and one down: settings saved to and read from a file.
             Self::Transfer => "M7 20V5M3.5 8.5 7 5l3.5 3.5M17 4v15M13.5 15.5 17 19l3.5-3.5",
+            Self::Code => {
+                "M3 6h18v12H3ZM15.5 6v2.5M15.5 10.75v2.5M15.5 15.5V18M6.5 10h5.5M6.5 14h3.5"
+            }
             // A four-pointed gem.
             Self::MarkGenshin => {
                 "M12 2.5C12.8 8.2 15.8 11.2 21.5 12 15.8 12.8 12.8 15.8 12 21.5 11.2 15.8 8.2 12.8 2.5 12 8.2 11.2 11.2 8.2 12 2.5ZM12 9.2 14.8 12 12 14.8 9.2 12Z"
@@ -324,7 +330,7 @@ mod tests {
     use super::*;
     use std::collections::BTreeSet;
 
-    const ALL: [Icon; 57] = [
+    const ALL: [Icon; 58] = [
         Icon::Home,
         Icon::Menu,
         Icon::Close,
@@ -348,6 +354,7 @@ mod tests {
         Icon::Trash,
         Icon::Ban,
         Icon::Transfer,
+        Icon::Code,
         Icon::MarkGenshin,
         Icon::MarkStarRail,
         Icon::Resin,

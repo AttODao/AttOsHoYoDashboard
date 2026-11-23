@@ -54,6 +54,7 @@ fn page_path(page: Page) -> &'static str {
         Page::Events => "/events",
         Page::Uids => "/settings/games",
         Page::Rewards => "/settings/bonus",
+        Page::Codes => "/settings/codes",
         Page::Link => "/settings/link",
         Page::Security => "/settings/security",
         Page::Notifications => "/settings/notifications",
@@ -70,6 +71,7 @@ fn page_from_path(path: &str) -> Page {
         "/events" => Page::Events,
         "/settings" | "/settings/games" => Page::Uids,
         "/settings/bonus" => Page::Rewards,
+        "/settings/codes" => Page::Codes,
         "/settings/link" => Page::Link,
         "/settings/security" => Page::Security,
         "/settings/notifications" => Page::Notifications,
@@ -247,6 +249,7 @@ mod tests {
         assert!(notification_target("dashboard") == Page::Dashboard);
         assert!(notification_target("/dashboard") == Page::Dashboard);
         assert!(notification_target("/settings/bonus") == Page::Rewards);
+        assert!(notification_target("/settings/codes") == Page::Codes);
         assert!(notification_target("/settings/link") == Page::Link);
         assert!(notification_target("/settings/security") == Page::Security);
         assert!(notification_target("/settings/notifications") == Page::Notifications);
@@ -353,6 +356,7 @@ mod tests {
             Page::Events,
             Page::Uids,
             Page::Rewards,
+            Page::Codes,
             Page::Link,
             Page::Security,
             Page::Notifications,

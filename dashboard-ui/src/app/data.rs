@@ -26,7 +26,7 @@ pub(super) async fn load_page_data(state: Signal<AppState>, page: Page) {
     }
     if matches!(
         page,
-        Page::Dashboard | Page::Events | Page::Uids | Page::Rewards
+        Page::Dashboard | Page::Events | Page::Uids | Page::Rewards | Page::Codes
     ) && !state.read().ready()
     {
         return;
@@ -37,6 +37,7 @@ pub(super) async fn load_page_data(state: Signal<AppState>, page: Page) {
         Page::Link => load_hoyolab(state).await,
         Page::Uids => load_accounts(state).await,
         Page::Rewards => load_rewards(state).await,
+        Page::Codes => super::codes::load_codes(state).await,
         Page::Security => {
             load_passkeys(state).await;
             load_sessions(state).await;
@@ -49,6 +50,7 @@ pub(super) async fn load_page_data(state: Signal<AppState>, page: Page) {
         Page::Admin if !crate::platform::APP => {
             load_admin_users(state).await;
             load_admin_audit(state, false).await;
+            super::codes::load_admin_codes(state).await;
             load_admin_notifications(state).await;
         }
         Page::Admin | Page::Transfer | Page::Delete | Page::Docs | Page::About => {}
@@ -75,6 +77,11 @@ pub(super) async fn load_dashboard_data(state: Signal<AppState>, include_account
     // The login bonus (a stored read behind the claim control) comes before the
     // per-game history and endgame reads, which may wait on HoYoLAB.
     load_rewards(state).await;
+    if !current_ready_page_generation(state, generation, Page::Dashboard) {
+        return;
+    }
+    // The redemption-code hint beside the bonus chips: stored reads only.
+    super::codes::load_code_hint(state).await;
     if !current_ready_page_generation(state, generation, Page::Dashboard) {
         return;
     }
@@ -112,7 +119,7 @@ pub(super) async fn reload_page(state: Signal<AppState>, page: Page) {
 /// Resources refreshed by overlapping loads (page entry, polling and the
 /// refresh after an action). Game status has its own per-game request guard.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Resource {
+pub(super) enum Resource {
     Hoyolab,
     Accounts,
     Rewards,
@@ -125,9 +132,14 @@ enum Resource {
     AdminUsers,
     Notifications,
     AdminNotifications,
+    CodeSettings,
+    CodeCatalogue,
+    CodeHistory,
+    CodeRedemption,
+    AdminCodes,
 }
 
-const RESOURCES: usize = Resource::AdminNotifications as usize + 1;
+const RESOURCES: usize = Resource::AdminCodes as usize + 1;
 
 /// Latest request issued per resource. Actions keep the session generation, so
 /// an older in-flight GET may finish after a newer refresh; only the reply to the
@@ -162,7 +174,7 @@ static REQUESTS: RequestSequence = RequestSequence::new();
 // Session-scoped GET: a reply for an older session (or a lost gate), or one
 // superseded by a newer request for the same resource, is dropped and a 401
 // signs out; otherwise the caller gets the value or a message key.
-async fn fetch_current<T: DeserializeOwned>(
+pub(super) async fn fetch_current<T: DeserializeOwned>(
     state: Signal<AppState>,
     resource: Resource,
     path: &str,

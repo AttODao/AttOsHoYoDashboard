@@ -60,6 +60,15 @@ pub(crate) fn set_checked(id: &str, checked: bool) {
     ));
 }
 
+/// Writes a stored value back into a `select` (see `pages::common::reset_value`).
+pub(crate) fn set_value(id: &str, value: &str) {
+    let _ = document::eval(&format!(
+        "const e = document.getElementById({}); if (e) e.value = {};",
+        quoted(id),
+        quoted(value)
+    ));
+}
+
 /// An open native `<dialog>`: Escape, backdrop clicks, `close` and (while `back_closes`)
 /// Android's Back key report through `onclose`; dropping it closes the dialog and restores
 /// scroll and focus.

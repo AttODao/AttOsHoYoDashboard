@@ -1,3 +1,4 @@
+use super::admin_codes::AdminCodesCard;
 use super::common::{
     ConfirmDialog, Field, LoadError, ModalDialog, PasswordInput, Skeleton, game_name,
 };
@@ -188,6 +189,7 @@ fn AdminCard(state: Signal<AppState>) -> Element {
                 }
             }
             AuditCard { state }
+            AdminCodesCard { state }
             AdminChannelCard { state }
             if result.read().as_ref().is_some_and(|value| value.generation == generation) {
                 CredentialDialog { state, result }
