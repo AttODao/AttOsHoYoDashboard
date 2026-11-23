@@ -53,7 +53,7 @@ The default `DASHBOARD_UI_DIR` is `target/dx/attos-dashboard-ui/release/web/publ
 
 ## Settings transfer
 
-- Users download their own settings (`ahd-settings` version 1 JSON: reward schedules, game UID visibility, notification choices) from Settings → Settings transfer in the web UI and import them on another instance. The file never contains HoYoLAB Cookies, the Webhook URL, passwords, passkeys, sessions or API tokens; after a move the user links HoYoLAB again and re-enters the Webhook URL. It is not a server backup: back up PostgreSQL and the cookie key for that.
+- Users download their own settings (`ahd-settings` version 1 JSON: reward schedules, game UID visibility, per-UID redemption-code modes, notification choices) from Settings → Settings transfer in the web UI and import them on another instance. The file never contains HoYoLAB Cookies, the Webhook URL, passwords, passkeys, sessions or API tokens; after a move the user links HoYoLAB again and re-enters the Webhook URL. It is not a server backup: back up PostgreSQL and the cookie key for that.
 - Import is session-only, previews every change, applies in one transaction, and skips UIDs or rewards the importing account does not have (they are never created). Rewards and UID visibility need a verified HoYoLAB link first, so import after linking.
 
 ## Redemption codes

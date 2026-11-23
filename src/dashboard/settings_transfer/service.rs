@@ -1,12 +1,15 @@
 //! Export and import of one user's own settings. Every read and write re-checks the
 //! session (never an API token) and the user's readiness; an import is planned and applied
 //! in one transaction, so its report always describes what was written.
-use super::document::{self, Document, FieldError, GameEntry, NotificationEntry, RewardEntry};
+use super::document::{
+    self, CodeEntry, Document, FieldError, GameEntry, NotificationEntry, RewardEntry,
+};
 use crate::dashboard::{
     auth::{
         accounts::{lock_user, require_ready},
         sessions::{Identity, Sessions},
     },
+    codes::settings::{self as code_settings, AUTO_REDEEM_AVAILABLE},
     db::entities::{game_account, hoyolab_account, notification_setting, reward_setting},
     error::{Error, Result},
     hoyolab::operations::Operations,
@@ -37,7 +40,7 @@ pub(in crate::dashboard) struct SettingsTransfer {
 /// One setting an import changes.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub(in crate::dashboard) struct Change {
-    /// `rewards`, `game_accounts` or `notifications`.
+    /// `rewards`, `game_accounts`, `notifications` or `codes`.
     section: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     game_kind: Option<String>,
@@ -58,7 +61,8 @@ pub(in crate::dashboard) struct Skipped {
     game_uid: Option<String>,
     /// `not_linked` (no verified HoYoLAB account), `game_not_found` (no reward for that
     /// game), `uid_not_found` (no such UID on this account; it is never created) or
-    /// `reward_not_ready` (the reward needs HoYoLAB action before it can be turned on).
+    /// `reward_not_ready` (the reward needs HoYoLAB action before it can be turned on) or
+    /// `mode_unavailable` (a code mode this server cannot run yet: `auto`).
     reason: &'static str,
 }
 
@@ -100,6 +104,11 @@ enum Write {
         visible: bool,
     },
     Notifications(PersonalPreferences),
+    /// Every row of one game UID on the link, as with visibility.
+    CodeMode {
+        accounts: Vec<Uuid>,
+        mode: String,
+    },
 }
 
 impl SettingsTransfer {
@@ -152,11 +161,32 @@ impl SettingsTransfer {
             ),
             None => (Vec::new(), Vec::new()),
         };
+        let ids: Vec<Uuid> = game_accounts.iter().map(|row| row.id).collect();
+        let modes = code_settings::modes_in(&tx, &ids, false).await?;
         let stored = notification_setting::Entity::find_by_id(user)
             .one(&tx)
             .await?;
         tx.commit().await?;
         let preferences = PersonalPreferences::from_row(stored.as_ref());
+        // One entry per detected game UID (as the code settings show them); a UID in
+        // several regions shares one mode.
+        let mut codes: Vec<CodeEntry> = Vec::new();
+        for row in game_accounts.iter().filter(|row| row.detected) {
+            if codes
+                .iter()
+                .any(|entry| entry.game_kind == row.game_kind && entry.game_uid == row.game_uid)
+            {
+                continue;
+            }
+            codes.push(CodeEntry {
+                game_kind: row.game_kind.clone(),
+                game_uid: row.game_uid.clone(),
+                mode: modes
+                    .get(&row.id)
+                    .cloned()
+                    .unwrap_or_else(|| "off".to_owned()),
+            });
+        }
         let document = Document {
             rewards: rewards
                 .into_iter()
@@ -184,6 +214,7 @@ impl SettingsTransfer {
                 daily_reminder_time: preferences.daily_reminder_time,
                 weekly_reminder_time: preferences.weekly_reminder_time,
             },
+            codes,
         };
         Ok(document::render(&document, Utc::now()))
     }
@@ -256,6 +287,9 @@ impl SettingsTransfer {
                     }
                 }
                 Write::Notifications(preferences) => preferences.store(&tx, user).await?,
+                Write::CodeMode { accounts, mode } => {
+                    code_settings::set_mode_in(&tx, &accounts, &mode, now).await?;
+                }
             }
         }
         tx.commit().await?;
@@ -372,6 +406,60 @@ impl SettingsTransfer {
                     });
                 }
             }
+        }
+        let ids: Vec<Uuid> = games.iter().map(|row| row.id).collect();
+        let modes = code_settings::modes_in(tx, &ids, lock).await?;
+        for entry in &document.codes {
+            // Like `PATCH /code-settings/{id}`, only detected UIDs take a mode.
+            let rows: Vec<_> = games
+                .iter()
+                .filter(|row| {
+                    row.detected
+                        && row.game_kind == entry.game_kind
+                        && row.game_uid == entry.game_uid
+                })
+                .collect();
+            let reason = if rows.is_empty() {
+                Some(if link.is_none() {
+                    "not_linked"
+                } else {
+                    "uid_not_found"
+                })
+            } else if entry.mode == "auto" && !AUTO_REDEEM_AVAILABLE {
+                Some("mode_unavailable")
+            } else {
+                None
+            };
+            if let Some(reason) = reason {
+                skipped.push(Skipped {
+                    section: "codes",
+                    game_kind: entry.game_kind.clone(),
+                    game_uid: Some(entry.game_uid.clone()),
+                    reason,
+                });
+                continue;
+            }
+            let mode_of = |row: &game_account::Model| {
+                modes
+                    .get(&row.id)
+                    .cloned()
+                    .unwrap_or_else(|| "off".to_owned())
+            };
+            let Some(differing) = rows.iter().find(|row| mode_of(row) != entry.mode) else {
+                continue;
+            };
+            changes.push(Change {
+                section: "codes",
+                game_kind: Some(entry.game_kind.clone()),
+                game_uid: Some(entry.game_uid.clone()),
+                setting: "mode".to_owned(),
+                from: json!(mode_of(differing)),
+                to: json!(entry.mode),
+            });
+            writes.push(Write::CodeMode {
+                accounts: rows.iter().map(|row| row.id).collect(),
+                mode: entry.mode.clone(),
+            });
         }
         let query = notification_setting::Entity::find_by_id(user);
         let stored = if lock {

@@ -1,7 +1,10 @@
 //! The `ahd-settings` file: its version 1 layout and strict, per-field validation.
+//! Version 1 grows only by optional sections (`codes`), so every earlier version 1 file
+//! still imports unchanged.
 //! Secrets (Cookies, the Webhook URL, passwords, passkeys, sessions, API tokens) have no
 //! place in the format; only a flag says whether a Webhook was configured.
 use crate::dashboard::{
+    codes::settings::MODES as CODE_MODES,
     notifications::{
         LANGUAGES, PERSONAL_EVENTS, RESIN_WARN_HOURS, WEBHOOK_FORMATS, channel::valid_clock,
     },
@@ -43,6 +46,14 @@ pub(super) struct GameEntry {
     pub(super) visible: bool,
 }
 
+/// A game UID's redemption-code mode (`off`, `notify` or `auto`).
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct CodeEntry {
+    pub(super) game_kind: String,
+    pub(super) game_uid: String,
+    pub(super) mode: String,
+}
+
 /// Notification choices from a file. Event maps hold only the kinds the file lists;
 /// kinds it leaves out keep their current choice.
 #[derive(Clone, Debug, PartialEq)]
@@ -62,6 +73,9 @@ pub(super) struct Document {
     pub(super) rewards: Vec<RewardEntry>,
     pub(super) game_accounts: Vec<GameEntry>,
     pub(super) notifications: NotificationEntry,
+    /// Redemption-code modes. Optional in a file (files from before the feature have
+    /// none, and then no mode changes); an export always writes it.
+    pub(super) codes: Vec<CodeEntry>,
 }
 
 /// Collects problems while walking the document.
@@ -206,6 +220,7 @@ pub(super) fn parse(value: &Value) -> Result<Document, Vec<FieldError>> {
             "rewards",
             "game_accounts",
             "notifications",
+            "codes",
         ],
         "",
     );
@@ -218,11 +233,16 @@ pub(super) fn parse(value: &Value) -> Result<Document, Vec<FieldError>> {
     let rewards = rewards(&mut problems, root.get("rewards"));
     let game_accounts = game_accounts(&mut problems, root.get("game_accounts"));
     let notifications = notifications(&mut problems, root.get("notifications"));
+    let codes = match root.get("codes") {
+        None => Vec::new(),
+        value => codes(&mut problems, value),
+    };
     match (problems.0.is_empty(), notifications) {
         (true, Some(notifications)) => Ok(Document {
             rewards,
             game_accounts,
             notifications,
+            codes,
         }),
         _ => Err(problems.0),
     }
@@ -294,6 +314,42 @@ fn game_accounts(problems: &mut Problems, value: Option<&Value>) -> Vec<GameEntr
                 game_kind,
                 game_uid,
                 visible,
+            });
+        }
+    }
+    entries
+}
+
+fn codes(problems: &mut Problems, value: Option<&Value>) -> Vec<CodeEntry> {
+    let Some(items) = problems.array(value, "codes") else {
+        return Vec::new();
+    };
+    if items.len() > MAX_GAME_ACCOUNTS {
+        problems.add("codes", "too_many");
+        return Vec::new();
+    }
+    let mut seen = BTreeSet::new();
+    let mut entries = Vec::new();
+    for (index, item) in items.iter().enumerate() {
+        let path = format!("codes[{index}]");
+        let Some(map) = problems.object(Some(item), &path) else {
+            continue;
+        };
+        problems.only(map, &["game_kind", "game_uid", "mode"], &path);
+        let kind = problems.string(map, "game_kind", &path, |kind| GAMES.contains(&kind));
+        let uid = problems.string(map, "game_uid", &path, game_uid);
+        let mode = problems.string(map, "mode", &path, |mode| CODE_MODES.contains(&mode));
+        if let (Some(kind), Some(uid)) = (&kind, &uid)
+            && !seen.insert((kind.clone(), uid.clone()))
+        {
+            problems.add(join(&path, "game_uid"), "duplicate");
+            continue;
+        }
+        if let (Some(game_kind), Some(game_uid), Some(mode)) = (kind, uid, mode) {
+            entries.push(CodeEntry {
+                game_kind,
+                game_uid,
+                mode,
             });
         }
     }
@@ -406,5 +462,10 @@ pub(super) fn render(document: &Document, exported_at: chrono::DateTime<chrono::
             "daily_reminder_time": notifications.daily_reminder_time,
             "weekly_reminder_time": notifications.weekly_reminder_time,
         },
+        "codes": document.codes.iter().map(|entry| json!({
+            "game_kind": entry.game_kind,
+            "game_uid": entry.game_uid,
+            "mode": entry.mode,
+        })).collect::<Vec<_>>(),
     })
 }

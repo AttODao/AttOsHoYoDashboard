@@ -96,6 +96,29 @@ pub(in crate::dashboard) async fn set_mode_in(
     Ok(())
 }
 
+/// The stored modes of `accounts` (`off` when none is stored).
+pub(in crate::dashboard) async fn modes_in(
+    db: &impl ConnectionTrait,
+    accounts: &[Uuid],
+    lock: bool,
+) -> Result<BTreeMap<Uuid, String>> {
+    let query = redemption_code_setting::Entity::find()
+        .filter(redemption_code_setting::Column::GameAccountId.is_in(accounts.to_vec()));
+    let rows = if lock {
+        sea_orm::QuerySelect::lock_exclusive(query).all(db).await?
+    } else {
+        query.all(db).await?
+    };
+    let mut modes: BTreeMap<Uuid, String> = accounts
+        .iter()
+        .map(|account| (*account, "off".to_owned()))
+        .collect();
+    for row in rows {
+        modes.insert(row.game_account_id, row.mode);
+    }
+    Ok(modes)
+}
+
 /// Cookie removal turns every UID of the link off, as it turns automatic claiming off;
 /// results stay as history.
 pub(in crate::dashboard) async fn turn_off_link(

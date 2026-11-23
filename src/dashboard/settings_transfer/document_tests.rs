@@ -179,3 +179,51 @@ fn sections_are_required_and_sizes_are_bounded() {
     );
     assert_eq!(errors(&value).len(), 50);
 }
+
+#[test]
+fn code_modes_are_optional_and_strictly_checked() {
+    // Files written before redemption codes existed carry no `codes` and still import.
+    assert!(parse(&file()).unwrap().codes.is_empty());
+    let mut value = file();
+    value["codes"] = json!([
+        {"game_kind": "genshin", "game_uid": "800000001", "mode": "notify"},
+        {"game_kind": "starrail", "game_uid": "800000002", "mode": "auto"},
+    ]);
+    let document = parse(&value).unwrap();
+    assert_eq!(document.codes.len(), 2);
+    assert_eq!(document.codes[0].mode, "notify");
+    // `auto` is a valid value in the file; whether it can be applied is the import's call.
+    assert_eq!(document.codes[1].mode, "auto");
+    let rendered = render(&document, chrono::Utc::now());
+    assert_eq!(rendered["codes"], value["codes"]);
+    assert_eq!(parse(&rendered).unwrap(), document);
+
+    value["codes"] = json!([
+        {"game_kind": "zzz", "game_uid": "800000001", "mode": "notify"},
+        {"game_kind": "genshin", "game_uid": "800000001", "mode": "always"},
+        {"game_kind": "genshin", "game_uid": "800000001", "mode": "off"},
+        {"game_kind": "genshin", "game_uid": "800000001", "mode": "off"},
+        {"game_kind": "genshin", "game_uid": "800000003", "mode": "off", "cookie": "x"},
+        {"game_kind": "genshin", "game_uid": "800000004"},
+        "800000005",
+    ]);
+    assert_eq!(
+        errors(&value),
+        vec![
+            error("codes[0].game_kind", "invalid"),
+            error("codes[1].mode", "invalid"),
+            error("codes[2].game_uid", "duplicate"),
+            error("codes[3].game_uid", "duplicate"),
+            error("codes[4].cookie", "unknown"),
+            error("codes[5].mode", "missing"),
+            error("codes[6]", "type"),
+        ]
+    );
+    value["codes"] = json!({});
+    assert_eq!(errors(&value), vec![error("codes", "type")]);
+    value["codes"] = json!(vec![
+        json!({"game_kind": "genshin", "game_uid": "1", "mode": "off"});
+        65
+    ]);
+    assert_eq!(errors(&value), vec![error("codes", "too_many")]);
+}
