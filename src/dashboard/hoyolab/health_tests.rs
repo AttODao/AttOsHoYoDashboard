@@ -71,6 +71,7 @@ async fn link(db: &TestDatabase, owner: Uuid, status: &str, uid: &str) -> hoyola
         created_at: Set(Utc::now()),
         updated_at: Set(Utc::now()),
         verified_at: Set(Some(Utc::now() - Duration::days(3))),
+        ..Default::default()
     }
     .insert(&db.db)
     .await

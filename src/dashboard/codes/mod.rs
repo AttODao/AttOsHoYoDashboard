@@ -1,9 +1,13 @@
 //! Redemption codes: the shared catalogue fetched from a third-party list, per-UID modes,
-//! per-UID results, notify-only announcements and the administrator controls. Nothing here
-//! talks to HoYoLAB.
+//! notify-only announcements, automatic and requested redemption on HoYoLAB (through
+//! `hoyolab::gateway::RedeemGateway`) with its ledger, and the administrator controls.
 pub(in crate::dashboard) mod admin;
 mod announce;
 pub(in crate::dashboard) mod catalog;
+pub(in crate::dashboard) mod ledger;
+pub(in crate::dashboard) mod manual;
+mod plan;
+pub(in crate::dashboard) mod redeem;
 pub(in crate::dashboard) mod settings;
 pub(in crate::dashboard) mod source;
 #[cfg(test)]

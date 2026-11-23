@@ -13,8 +13,8 @@ use crate::dashboard::{
 };
 use chrono::{DateTime, Utc};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    Set, TransactionTrait, sea_query::OnConflict,
+    ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait, PaginatorTrait,
+    QueryFilter, Set, Statement, TransactionTrait, sea_query::OnConflict,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -30,6 +30,49 @@ pub(in crate::dashboard) struct AdminInput {
 pub(in crate::dashboard) struct CatalogueCount {
     listed: u64,
     unlisted: u64,
+}
+
+/// Who uses redemption, for the administrator; counts only.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
+pub(in crate::dashboard) struct RedemptionCounts {
+    /// Users with at least one detected UID in `auto`.
+    pub(in crate::dashboard) auto_users: i64,
+    /// UIDs in `auto`.
+    pub(in crate::dashboard) auto_uids: i64,
+    /// Users whose redemption waits for their action (CAPTCHA or Cookie).
+    pub(in crate::dashboard) action_required_users: i64,
+    /// Ledger rows of unknown outcome (never sent again automatically).
+    pub(in crate::dashboard) unknown: i64,
+}
+
+/// Fixed counting SQL; no user data leaves it.
+const REDEMPTION_COUNTS: &str = "SELECT \
+    (SELECT count(DISTINCT h.owner_user_id) FROM redemption_code_settings s \
+       JOIN game_accounts g ON g.id = s.game_account_id AND g.detected \
+       JOIN hoyolab_accounts h ON h.id = g.hoyolab_account_id WHERE s.mode = 'auto') AS auto_users, \
+    (SELECT count(*) FROM redemption_code_settings s \
+       JOIN game_accounts g ON g.id = s.game_account_id AND g.detected WHERE s.mode = 'auto') AS auto_uids, \
+    (SELECT count(*) FROM hoyolab_accounts WHERE redemption_action IS NOT NULL) AS action_required_users, \
+    (SELECT count(*) FROM redemption_ledger WHERE state = 'unknown') AS unknown";
+
+pub(in crate::dashboard) async fn redemption_counts(
+    db: &impl ConnectionTrait,
+) -> Result<RedemptionCounts> {
+    let Some(row) = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            REDEMPTION_COUNTS,
+        ))
+        .await?
+    else {
+        return Ok(RedemptionCounts::default());
+    };
+    Ok(RedemptionCounts {
+        auto_users: row.try_get("", "auto_users")?,
+        auto_uids: row.try_get("", "auto_uids")?,
+        action_required_users: row.try_get("", "action_required_users")?,
+        unknown: row.try_get("", "unknown")?,
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -49,6 +92,7 @@ pub(in crate::dashboard) struct AdminView {
     /// When the next run is due; null while the feature is stopped.
     next_fetch_at: Option<DateTime<Utc>>,
     catalogue: BTreeMap<&'static str, CatalogueCount>,
+    redemption: RedemptionCounts,
 }
 
 async fn administrator(db: &impl ConnectionTrait, actor: &Identity) -> Result<()> {
@@ -96,6 +140,7 @@ pub(in crate::dashboard) async fn view(
         consecutive_failures: state.consecutive_failures,
         last_error: state.last_error,
         catalogue,
+        redemption: redemption_counts(db).await?,
     })
 }
 

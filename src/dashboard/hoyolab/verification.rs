@@ -30,14 +30,19 @@ impl<G: Gateway> CookieStore<G> {
             row.sealed_credentials()?,
         )?;
         tx.commit().await?;
-        self.accept_verified(actor, &cookie, row.hoyolab_uid.as_deref())
+        // The same Cookie again: a redemption pause stays until the owner acts.
+        self.accept_verified(actor, &cookie, row.hoyolab_uid.as_deref(), false)
             .await
     }
+
+    /// `submitted` is true when `cookie` is a newly submitted Cookie (which ends a
+    /// redemption pause), false when the stored Cookie is verified again.
     pub(super) async fn accept_verified(
         &self,
         actor: &Identity,
         cookie: &Credentials,
         expected: Option<&str>,
+        submitted: bool,
     ) -> Result<()> {
         // Account identity protocol is currently a v2 ltoken candidate only.
         if !cookie.as_str().starts_with("ltoken_v2=") {
@@ -87,6 +92,10 @@ impl<G: Gateway> CookieStore<G> {
         row.auth_status = Set("verified".into());
         row.updated_at = Set(Utc::now());
         row.verified_at = Set(Some(Utc::now()));
+        // The Cookie decides whether codes can be redeemed; a pause for the owner's action
+        // ends only with a newly submitted Cookie.
+        let redeemable = cookie.redemption().is_some();
+        row.redemption_credentials = Set(redeemable);
         let row = row.update(&tx).await.map_err(|e| {
             if matches!(e.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) {
                 Error::Forbidden
@@ -95,6 +104,12 @@ impl<G: Gateway> CookieStore<G> {
             }
         })?;
         apply_roles(&tx, row.id, &roles).await?;
+        if submitted {
+            crate::dashboard::codes::ledger::reopen_in(&tx, row.id, Utc::now()).await?;
+        }
+        if !redeemable {
+            crate::dashboard::codes::settings::auto_to_notify_in(&tx, row.id).await?;
+        }
         for kind in ["genshin", "starrail"] {
             let setting = reward_setting::Entity::find()
                 .filter(reward_setting::Column::HoyolabAccountId.eq(row.id))

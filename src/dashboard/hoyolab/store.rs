@@ -213,7 +213,7 @@ impl<G: Gateway> CookieStore<G> {
                 .and_then(|row| row.hoyolab_uid.clone())
                 .ok_or(Error::Internal)?;
             tx.commit().await?;
-            return self.accept_verified(actor, &cookie, Some(&uid)).await;
+            return self.accept_verified(actor, &cookie, Some(&uid), true).await;
         }
         let encrypted = self.key.seal(fresh.user.id, None, &cookie)?;
         let now = Utc::now();
@@ -227,6 +227,9 @@ impl<G: Gateway> CookieStore<G> {
             row.credential_version = Set(next);
             row.auth_status = Set("pending_verification".to_owned());
             row.updated_at = Set(now);
+            row.redemption_credentials = Set(cookie.redemption().is_some());
+            row.redemption_action = Set(None);
+            row.redemption_action_at = Set(None);
             row.update(&tx).await?;
         } else {
             hoyolab_account::ActiveModel {
@@ -239,6 +242,9 @@ impl<G: Gateway> CookieStore<G> {
                 created_at: Set(now),
                 updated_at: Set(now),
                 verified_at: Set(None),
+                redemption_credentials: Set(cookie.redemption().is_some()),
+                redemption_action: Set(None),
+                redemption_action_at: Set(None),
             }
             .insert(&tx)
             .await?;
@@ -255,9 +261,9 @@ impl<G: Gateway> CookieStore<G> {
     }
 
     /// Forget the stored Cookie. A verified link keeps its UID binding, game
-    /// visibility, history and send guards so the same account can be restored;
-    /// automatic claiming and every UID's redemption-code mode turn off. An unverified
-    /// link is deleted outright.
+    /// visibility, history, send guards and redemption ledger so the same account can be
+    /// restored without resending anything; automatic claiming and every UID's
+    /// redemption-code mode turn off. An unverified link is deleted outright.
     pub(in crate::dashboard) async fn remove_cookie(&self, actor: &Identity) -> Result<()> {
         // Serialize with reward attempts so none is mid-flight with the old Cookie.
         let _operation = self.operations.acquire(actor.user.id).await;
@@ -286,6 +292,9 @@ impl<G: Gateway> CookieStore<G> {
             row.credential_version = Set(next);
             row.auth_status = Set("removed".to_owned());
             row.updated_at = Set(Utc::now());
+            row.redemption_credentials = Set(false);
+            row.redemption_action = Set(None);
+            row.redemption_action_at = Set(None);
             row.update(&tx).await?;
             reward_setting::Entity::update_many()
                 .col_expr(reward_setting::Column::Enabled, Expr::value(false))

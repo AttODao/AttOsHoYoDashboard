@@ -171,3 +171,34 @@ fn derived_subkeys_are_purpose_separated_and_match_hmac_sha256() {
     assert_ne!(a, test_key(8).derive(b"purpose-a").unwrap());
     assert_ne!(a.as_slice(), key.0.as_slice());
 }
+
+#[test]
+fn redemption_credentials_are_sealed_with_the_same_binding_and_old_blobs_still_open() {
+    let key = test_key(7);
+    let owner = Uuid::new_v4();
+    let cookie = Credentials::parse(
+        "ltoken_v2=fake-v2; ltuid_v2=42; ltmid_v2=mid_1; cookie_token_v2=fake-cookie-token; account_id_v2=42",
+    )
+    .unwrap();
+    let blob = key.seal(owner, Some("42"), &cookie).unwrap();
+    let opened = key.open(owner, Some("42"), &blob).unwrap();
+    assert_eq!(
+        opened.as_str(),
+        "ltoken_v2=fake-v2; ltuid_v2=42; ltmid_v2=mid_1"
+    );
+    assert_eq!(
+        opened.redemption(),
+        Some("cookie_token_v2=fake-cookie-token; account_id_v2=42; account_mid_v2=mid_1")
+    );
+    // The owner/UID binding covers the redemption credentials too.
+    assert!(key.open(Uuid::new_v4(), Some("42"), &blob).is_err());
+    assert!(key.open(owner, Some("43"), &blob).is_err());
+    assert!(key.open(owner, None, &blob).is_err());
+    // A blob sealed before redemption credentials existed opens without them.
+    let plain = Credentials::parse("ltoken_v2=fake-v2; ltuid_v2=42; ltmid_v2=mid_1").unwrap();
+    let old = key.seal(owner, Some("42"), &plain).unwrap();
+    assert_eq!(
+        key.open(owner, Some("42"), &old).unwrap().redemption(),
+        None
+    );
+}

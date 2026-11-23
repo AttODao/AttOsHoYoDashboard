@@ -36,7 +36,7 @@ pub(super) fn target(kind: &str) -> &'static str {
         "signed_in" | "sign_in_failed" => "/settings/security",
         "test" => "/settings/notifications",
         // The "Codes" settings tab; until the app has it, the app opens the dashboard.
-        "code_available" => "/settings/codes",
+        "code_available" | "code_redeemed" | "code_action_required" => "/settings/codes",
         _ => "/dashboard",
     }
 }
@@ -241,6 +241,8 @@ mod tests {
         assert_eq!(target("sign_in_failed"), "/settings/security");
         assert_eq!(target("test"), "/settings/notifications");
         assert_eq!(target("code_available"), "/settings/codes");
+        assert_eq!(target("code_redeemed"), "/settings/codes");
+        assert_eq!(target("code_action_required"), "/settings/codes");
         for kind in [
             "resource_near_cap",
             "resource_full",

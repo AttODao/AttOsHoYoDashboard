@@ -378,6 +378,7 @@ async fn admin_listing_reports_link_health_without_identifiers() {
         created_at: Set(now),
         updated_at: Set(now),
         verified_at: Set(None),
+        ..Default::default()
     }
     .insert(&db.db)
     .await

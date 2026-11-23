@@ -1,7 +1,7 @@
 //! Redemption-code routes: session and token reachability, administrator controls, metrics.
 use super::*;
 use crate::dashboard::{
-    codes::test_support::{game, link, ready_user},
+    codes::test_support::{game, link, ready_user, redeem_link},
     test_support::TestDatabase,
 };
 
@@ -147,6 +147,7 @@ async fn users_read_codes_and_change_modes_only_over_their_session() {
             "/api/v1/codes",
             "/api/v1/code-settings",
             "/api/v1/code-history",
+            "/api/v1/code-redemption",
         ] {
             let response = call(&app, bearer("GET", path, &token, None)).await;
             assert_eq!(response.status(), StatusCode::OK, "{scope} {path}");
@@ -309,5 +310,255 @@ async fn administrators_stop_the_feature_and_set_the_interval() {
         "ahd_codes_announcements_total 0",
     ] {
         assert!(text.lines().any(|candidate| candidate == line), "{line}");
+    }
+}
+
+#[tokio::test]
+async fn redemption_requests_need_a_session_redemption_credentials_and_respect_budgets() {
+    let db = TestDatabase::new().await;
+    let (accounts, admin) = db.ready_admin().await;
+    let app = app(accounts);
+    let session = cookie(&app, admin.user.id).await;
+    let enter = |code: &str| Some(json!({"game_kind": "genshin", "code": code}));
+
+    let response = call(
+        &app,
+        request("GET", "/api/v1/code-redemption", Some(&session), None),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        body(response).await,
+        json!({"available": true, "redemption_credentials": false, "action_required": null,
+               "action_at": null, "running": false, "pending": 0})
+    );
+    // A link whose Cookie lacks cookie_token_v2 can neither enter codes nor take `auto`.
+    let plain = link(&app.accounts.db, admin.user.id, "100000001", "verified").await;
+    let uid = game(&app.accounts.db, plain, "genshin", "800000001").await;
+    let status = body(
+        call(
+            &app,
+            request("GET", "/api/v1/me/hoyolab", Some(&session), None),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(status["redemption_credentials"], false);
+    error(
+        call(
+            &app,
+            request(
+                "POST",
+                "/api/v1/code-redemption/codes",
+                Some(&session),
+                enter("GENSHINGIFT"),
+            ),
+        )
+        .await,
+        StatusCode::BAD_REQUEST,
+        "invalid_input",
+    )
+    .await;
+
+    // The same owner with a Cookie that carries cookie_token_v2.
+    let user = ready_user(&app.accounts.db, "redeeming-user").await;
+    let user_session = cookie(&app, user.user.id).await;
+    let owner_link = redeem_link(&app.accounts.db, user.user.id, "100000002").await;
+    let genshin = game(&app.accounts.db, owner_link, "genshin", "800000002").await;
+    let status = body(
+        call(
+            &app,
+            request("GET", "/api/v1/me/hoyolab", Some(&user_session), None),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(status["redemption_credentials"], true);
+    assert!(
+        !status.to_string().contains("syntheticcookietoken"),
+        "only a boolean leaves the server"
+    );
+    let response = call(
+        &app,
+        request(
+            "PATCH",
+            &format!("/api/v1/code-settings/{genshin}"),
+            Some(&user_session),
+            Some(json!({"mode": "auto"})),
+        ),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    let response = call(
+        &app,
+        request(
+            "POST",
+            "/api/v1/code-redemption/codes",
+            Some(&user_session),
+            enter("genshingift"),
+        ),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let entered = body(response).await;
+    assert_eq!(
+        entered["entries"][0]["game_account_id"],
+        genshin.to_string()
+    );
+    assert_eq!(entered["entries"][0]["code"], "GENSHINGIFT");
+    assert_eq!(entered["entries"][0]["state"], "pending");
+    // Unknown fields are refused before any budget is spent.
+    let response = call(
+        &app,
+        request(
+            "POST",
+            "/api/v1/code-redemption/codes",
+            Some(&user_session),
+            Some(json!({"game_kind": "genshin", "code": "GENSHINGIFT", "uid": "1"})),
+        ),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Tokens read the state but never send anything, whatever their scope.
+    for scope in ["read", "run"] {
+        let token = token(&app, &user_session, scope).await;
+        let response = call(&app, bearer("GET", "/api/v1/code-redemption", &token, None)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        for (path, input) in [
+            ("/api/v1/code-redemption/run", json!({})),
+            (
+                "/api/v1/code-redemption/codes",
+                json!({"game_kind": "genshin", "code": "TOKENGIFT"}),
+            ),
+        ] {
+            error(
+                call(&app, bearer("POST", path, &token, Some(input))).await,
+                StatusCode::FORBIDDEN,
+                "forbidden",
+            )
+            .await;
+        }
+    }
+    // Unsafe methods need the Origin.
+    let mut missing_origin = request(
+        "POST",
+        "/api/v1/code-redemption/run",
+        Some(&user_session),
+        Some(json!({})),
+    );
+    missing_origin.headers_mut().remove(header::ORIGIN);
+    error(
+        call(&app, missing_origin).await,
+        StatusCode::FORBIDDEN,
+        "forbidden",
+    )
+    .await;
+
+    // Redeem now: three per ten minutes, then 429.
+    for _ in 0..3 {
+        let response = call(
+            &app,
+            request(
+                "POST",
+                "/api/v1/code-redemption/run",
+                Some(&user_session),
+                Some(json!({})),
+            ),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(body(response).await, json!({"started": true}));
+    }
+    error(
+        call(
+            &app,
+            request(
+                "POST",
+                "/api/v1/code-redemption/run",
+                Some(&user_session),
+                Some(json!({})),
+            ),
+        )
+        .await,
+        StatusCode::TOO_MANY_REQUESTS,
+        "rate_limited",
+    )
+    .await;
+    // Entering codes: ten per ten minutes (one was used above).
+    for index in 0..9 {
+        let response = call(
+            &app,
+            request(
+                "POST",
+                "/api/v1/code-redemption/codes",
+                Some(&user_session),
+                enter(&format!("BUDGET{index:02}")),
+            ),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::ACCEPTED, "{index}");
+    }
+    error(
+        call(
+            &app,
+            request(
+                "POST",
+                "/api/v1/code-redemption/codes",
+                Some(&user_session),
+                enter("ONEMORE"),
+            ),
+        )
+        .await,
+        StatusCode::TOO_MANY_REQUESTS,
+        "rate_limited",
+    )
+    .await;
+    let _ = uid;
+
+    // The administrator sees counts only.
+    let view = body(
+        call(
+            &app,
+            request("GET", "/api/v1/admin/codes", Some(&session), None),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(view["redemption"]["auto_users"], 1);
+    assert_eq!(view["redemption"]["auto_uids"], 1);
+    assert_eq!(view["redemption"]["action_required_users"], 0);
+    let text = String::from_utf8(
+        to_bytes(
+            call(
+                &app,
+                Request::builder()
+                    .uri("/metrics")
+                    .header(header::AUTHORIZATION, "Bearer synthetic-metrics-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .into_body(),
+            1_048_576,
+        )
+        .await
+        .unwrap()
+        .to_vec(),
+    )
+    .unwrap();
+    for line in [
+        "ahd_code_auto_users 1",
+        "ahd_code_action_required_users 0",
+        "ahd_code_redemptions_total{game=\"starrail\",outcome=\"captcha_required\"} 0",
+    ] {
+        assert!(text.lines().any(|candidate| candidate == line), "{line}");
+    }
+    for state in crate::dashboard::codes::ledger::STATES {
+        assert!(
+            text.lines().any(|candidate| candidate
+                .starts_with(&format!("ahd_code_ledger{{state=\"{state}\"}} "))),
+            "{state}"
+        );
     }
 }

@@ -49,6 +49,7 @@ async fn owner_with_setting(db: &DatabaseConnection) -> (Uuid, Uuid) {
         created_at: Set(now),
         updated_at: Set(now),
         verified_at: Set(None),
+        ..Default::default()
     }
     .insert(db)
     .await

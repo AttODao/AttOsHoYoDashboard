@@ -255,6 +255,7 @@ async fn metrics_require_the_configured_bearer_token() {
         created_at: Set(Utc::now()),
         updated_at: Set(Utc::now()),
         verified_at: Set(None),
+        ..Default::default()
     }
     .insert(&owner)
     .await

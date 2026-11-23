@@ -28,6 +28,7 @@ async fn insert_owned_tree(db: &DatabaseConnection, owner: Uuid, uid: &str) -> (
         created_at: Set(now),
         updated_at: Set(now),
         verified_at: Set(None),
+        ..Default::default()
     }
     .insert(db)
     .await
@@ -256,6 +257,7 @@ async fn finish_deletion_cascades_owned_data_releases_uid_and_cleans_audit_refer
         created_at: Set(Utc::now()),
         updated_at: Set(Utc::now()),
         verified_at: Set(None),
+        ..Default::default()
     }
     .insert(&test.db)
     .await

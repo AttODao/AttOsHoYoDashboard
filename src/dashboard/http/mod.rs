@@ -27,7 +27,12 @@ use super::{
         passkeys::Passkeys,
         sessions::Identity,
     },
-    codes::{source::Source, worker::CodeWorker},
+    codes::{
+        manual::Throttle,
+        redeem::{Redeemer, RedemptionRuns},
+        source::Source,
+        worker::CodeWorker,
+    },
     config::Config,
     error::{Error, Result},
     hoyolab::store::CookieStore,
@@ -52,6 +57,10 @@ struct HttpState {
     operations: super::hoyolab::operations::Operations,
     /// The redemption-code fetch; its counters feed `/metrics`.
     codes: Arc<CodeWorker>,
+    /// Code redemption; absent without Cookie storage.
+    redemption: Option<Arc<dyn RedemptionRuns>>,
+    /// Per-user budgets for entering codes and "redeem now".
+    code_throttle: Throttle,
     heartbeat: runtime::Heartbeat,
     config: Config,
 }
@@ -84,6 +93,9 @@ pub(super) async fn serve(accounts: Accounts, config: Config) -> Result<()> {
         Source::new(config.codes_source.clone()),
         notifications.clone(),
     ));
+    let redemption = cookies.as_ref().map(|cookies| {
+        Arc::new(Redeemer::new(cookies.clone(), notifications.clone())) as Arc<dyn RedemptionRuns>
+    });
     let app = Arc::new(HttpState {
         accounts,
         passkeys,
@@ -93,6 +105,8 @@ pub(super) async fn serve(accounts: Accounts, config: Config) -> Result<()> {
         notifier_rewards_games,
         operations,
         codes,
+        redemption,
+        code_throttle: Throttle::default(),
         heartbeat: runtime::Heartbeat::new(),
         config,
     });
@@ -103,6 +117,11 @@ pub(super) async fn serve(accounts: Accounts, config: Config) -> Result<()> {
         return Err(Error::Unavailable(
             "build the Dioxus UI before starting the server",
         ));
+    }
+    // Before any request can start a run: rows an earlier process left `sending` may have
+    // been sent, so they become `unknown` and are never sent again.
+    if let Some(runs) = app.redemption.clone() {
+        runs.recover().await?;
     }
     let router = router(app.clone());
     let listener = tokio::net::TcpListener::bind(app.config.listen)

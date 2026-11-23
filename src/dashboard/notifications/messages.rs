@@ -85,6 +85,10 @@ pub(super) fn render(notice: &Notice, language: &str) -> (String, String) {
         ),
         ("code_available", false) => ("新しい交換コードが{count}件あります", "{codes}"),
         ("code_available", true) => ("{count} new redemption code(s)", "{codes}"),
+        ("code_redeemed", false) => ("交換コードを{count}件引き換えました", "{codes}"),
+        ("code_redeemed", true) => ("Redeemed {count} code(s)", "{codes}"),
+        ("code_action_required", false) => ("交換コードの自動引き換えを止めました", "{reason}"),
+        ("code_action_required", true) => ("Code redemption paused", "{reason}"),
         ("user_attention", false) => ("ユーザーの対応が必要です", "{username}: {reason}"),
         ("user_attention", true) => ("A user needs attention", "{username}: {reason}"),
         ("worker_stalled", false) => (
@@ -155,6 +159,18 @@ pub(super) fn word(key: &str, language: &str) -> &'static str {
         ("reward_attention", true) => "a login bonus result needs checking",
         ("codes_more", false) => "ほか{count}件",
         ("codes_more", true) => "and {count} more",
+        ("code_action_cookie_invalid", false) => {
+            "HoYoLABのCookie（cookie_token_v2）が使えません。HoYoLAB連携からCookieを登録し直すと再開します。"
+        }
+        ("code_action_cookie_invalid", true) => {
+            "The HoYoLAB Cookie (cookie_token_v2) no longer works. Register the Cookie again under HoYoLAB link to resume."
+        }
+        ("code_action_captcha_required", false) => {
+            "HoYoLABが認証（CAPTCHA）を求めました。公式ページで引き換えるか、時間をおいてから「今すぐ引き換え」で再開してください。"
+        }
+        ("code_action_captcha_required", true) => {
+            "HoYoLAB asked for a CAPTCHA. Redeem on the official page, or resume later with Redeem now."
+        }
         (_, false) => "",
         (_, true) => "",
     }

@@ -271,6 +271,7 @@ fn stored(owner: Uuid, uid: Option<&str>) -> hoyolab_account::ActiveModel {
         created_at: Set(now),
         updated_at: Set(now),
         verified_at: Set(None),
+        ..Default::default()
     }
 }
 

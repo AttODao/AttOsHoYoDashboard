@@ -1,17 +1,19 @@
 //! Per-UID code modes, the catalogue and per-UID history as users read them, and the mode
 //! rules other features share (Cookie removal, settings transfer).
 //!
-//! Modes: `off` (default), `notify` (announce new codes) and `auto` (redeem automatically).
-//! `auto` is a valid stored value, but until automatic redemption exists it is refused
-//! (`AUTO_REDEEM_AVAILABLE`); switching that on is the one change that enables it.
+//! Modes: `off` (default), `notify` (announce new codes) and `auto` (redeem every listed
+//! code automatically). `auto` needs a verified link whose Cookie carries the redemption
+//! credentials (`cookie_token_v2`); a Cookie update without them turns `auto` into
+//! `notify`, and Cookie removal turns every mode `off`.
+use super::ledger::{CATALOGUE, MANUAL};
 use crate::dashboard::{
     auth::{
         accounts::{lock_user, require_ready},
         sessions::{Identity, Sessions, reauthenticate},
     },
     db::entities::{
-        game_account, hoyolab_account, redemption_code, redemption_code_result,
-        redemption_code_setting, redemption_code_source,
+        game_account, hoyolab_account, redemption_code, redemption_code_rejection,
+        redemption_code_result, redemption_code_setting, redemption_code_source, redemption_ledger,
     },
     error::{Error, Result},
 };
@@ -26,9 +28,9 @@ use uuid::Uuid;
 
 /// Every mode a UID may store.
 pub(in crate::dashboard) const MODES: [&str; 3] = ["off", "notify", "auto"];
-/// Whether `auto` may be chosen. False until automatic redemption is implemented: the API
-/// and settings import refuse it, so no UID silently waits for redemptions that never run.
-pub(in crate::dashboard) const AUTO_REDEEM_AVAILABLE: bool = false;
+/// Why `auto` is refused for a link without redemption credentials.
+pub(in crate::dashboard) const NEEDS_REDEMPTION_COOKIE: &str =
+    "automatic redemption needs a HoYoLAB Cookie that includes cookie_token_v2";
 /// The official redemption page for a code; codes are `[A-Z0-9]`, so no escaping is needed.
 pub(in crate::dashboard) fn redeem_url(game_kind: &str, code: &str) -> Option<String> {
     match game_kind {
@@ -38,22 +40,27 @@ pub(in crate::dashboard) fn redeem_url(game_kind: &str, code: &str) -> Option<St
     }
 }
 
-/// Rejects unknown modes and, while it is unavailable, `auto`.
+/// Rejects unknown modes.
 pub(in crate::dashboard) fn validate_mode(mode: &str) -> Result<()> {
     if !MODES.contains(&mode) {
         return Err(Error::Invalid("mode must be off, notify or auto"));
     }
-    if mode == "auto" && !AUTO_REDEEM_AVAILABLE {
-        return Err(Error::Invalid(
-            "automatic redemption is not available yet; use notify",
-        ));
-    }
     Ok(())
+}
+
+/// Whether a link may run `auto`: verified, with a sealed Cookie that carries the
+/// redemption credentials.
+pub(in crate::dashboard) fn can_redeem(link: &hoyolab_account::Model) -> bool {
+    link.auth_status == "verified"
+        && link.hoyolab_uid.is_some()
+        && link.encrypted_credentials.is_some()
+        && link.redemption_credentials
 }
 
 /// Stores `mode` for `accounts` inside the caller's transaction. `enabled_at` starts when
 /// a UID leaves `off` and is kept while it stays on, so switching between `notify` and
-/// `auto` never re-announces or skips codes. Refuses what `validate_mode` refuses.
+/// `auto` never re-announces or skips codes. Refuses what `validate_mode` refuses, and
+/// `auto` for a UID whose link cannot redeem (`can_redeem`).
 pub(in crate::dashboard) async fn set_mode_in(
     tx: &DatabaseTransaction,
     accounts: &[Uuid],
@@ -61,6 +68,25 @@ pub(in crate::dashboard) async fn set_mode_in(
     now: DateTime<Utc>,
 ) -> Result<()> {
     validate_mode(mode)?;
+    if mode == "auto" {
+        let links: BTreeSet<Uuid> = game_account::Entity::find()
+            .filter(game_account::Column::Id.is_in(accounts.to_vec()))
+            .all(tx)
+            .await?
+            .into_iter()
+            .map(|row| row.hoyolab_account_id)
+            .collect();
+        let ready = hoyolab_account::Entity::find()
+            .filter(hoyolab_account::Column::Id.is_in(links.clone()))
+            .all(tx)
+            .await?
+            .iter()
+            .filter(|link| can_redeem(link))
+            .count();
+        if links.is_empty() || ready != links.len() {
+            return Err(Error::Invalid(NEEDS_REDEMPTION_COOKIE));
+        }
+    }
     let stored: BTreeMap<Uuid, redemption_code_setting::Model> =
         redemption_code_setting::Entity::find()
             .filter(redemption_code_setting::Column::GameAccountId.is_in(accounts.to_vec()))
@@ -119,8 +145,41 @@ pub(in crate::dashboard) async fn modes_in(
     Ok(modes)
 }
 
+/// A Cookie update without redemption credentials turns the link's `auto` UIDs into
+/// `notify` (keeping `enabled_at`), so they keep hearing about new codes.
+pub(in crate::dashboard) async fn auto_to_notify_in(
+    tx: &DatabaseTransaction,
+    link: Uuid,
+) -> Result<()> {
+    let accounts: Vec<Uuid> = game_account::Entity::find()
+        .filter(game_account::Column::HoyolabAccountId.eq(link))
+        .all(tx)
+        .await?
+        .into_iter()
+        .map(|row| row.id)
+        .collect();
+    if accounts.is_empty() {
+        return Ok(());
+    }
+    redemption_code_setting::Entity::update_many()
+        .col_expr(
+            redemption_code_setting::Column::Mode,
+            sea_orm::sea_query::Expr::value("notify"),
+        )
+        .col_expr(
+            redemption_code_setting::Column::UpdatedAt,
+            sea_orm::sea_query::Expr::value(Utc::now()),
+        )
+        .filter(redemption_code_setting::Column::GameAccountId.is_in(accounts))
+        .filter(redemption_code_setting::Column::Mode.eq("auto"))
+        .exec(tx)
+        .await?;
+    Ok(())
+}
+
 /// Cookie removal turns every UID of the link off, as it turns automatic claiming off;
-/// results stay as history.
+/// results and the redemption ledger stay, so nothing is sent again after the Cookie is
+/// registered again.
 pub(in crate::dashboard) async fn turn_off_link(
     tx: &DatabaseTransaction,
     link: Uuid,
@@ -189,15 +248,22 @@ pub(in crate::dashboard) struct HistoryEntry {
     game_account_id: Uuid,
     game_kind: String,
     game_uid: String,
-    code_id: Uuid,
+    /// The catalogue row; null for a code the catalogue no longer (or never) had, such as
+    /// a code the owner entered.
+    code_id: Option<Uuid>,
     code: String,
     listed: bool,
-    /// The stored result (`announced`, or a redemption outcome: `pending`, `redeemed`,
-    /// `already_used`, `expired`, `invalid`, `rank_too_low`, `cookie_invalid`,
-    /// `captcha_required`, `unknown`), or `available` for a listed code with no result yet.
+    /// `catalogue`, or `manual` for a code the owner entered (private to them).
+    source: &'static str,
+    /// The redemption state (`pending`, `sending`, `redeemed`, `already_used`,
+    /// `expired`, `invalid`, `rank_too_low`, `cookie_invalid`, `captcha_required`,
+    /// `unknown`); else `expired`/`invalid` when HoYoLAB rejected the code for everyone;
+    /// else `announced`; else `available` for a listed code.
     state: String,
-    /// When the result was last written; null for `available`.
+    /// When the state was last written; null for `available` and global rejections.
     updated_at: Option<DateTime<Utc>>,
+    /// When a waiting code (cooldown, rank too low) may be sent again.
+    next_attempt_at: Option<DateTime<Utc>>,
     redeem_url: Option<String>,
 }
 
@@ -214,6 +280,10 @@ impl CodeView {
             listed: row.listed,
         }
     }
+}
+
+fn source_name(source: &str) -> &'static str {
+    if source == MANUAL { MANUAL } else { CATALOGUE }
 }
 
 /// The owner's verified link, as reward settings require.
@@ -361,33 +431,78 @@ impl CodeSettings {
             .await?;
         let results: BTreeMap<(Uuid, Uuid), redemption_code_result::Model> =
             redemption_code_result::Entity::find()
-                .filter(redemption_code_result::Column::GameAccountId.is_in(ids))
+                .filter(redemption_code_result::Column::GameAccountId.is_in(ids.clone()))
                 .all(&tx)
                 .await?
                 .into_iter()
                 .map(|row| ((row.game_account_id, row.code_id), row))
                 .collect();
+        let ledger = redemption_ledger::Entity::find()
+            .filter(redemption_ledger::Column::GameAccountId.is_in(ids))
+            .order_by_desc(redemption_ledger::Column::UpdatedAt)
+            .order_by_asc(redemption_ledger::Column::Code)
+            .all(&tx)
+            .await?;
+        let rejected: BTreeMap<(String, String), String> =
+            redemption_code_rejection::Entity::find()
+                .all(&tx)
+                .await?
+                .into_iter()
+                .map(|row| ((row.game_kind, row.code), row.reason))
+                .collect();
         tx.commit().await?;
+        let sent: BTreeMap<(Uuid, &str), &redemption_ledger::Model> = ledger
+            .iter()
+            .map(|row| ((row.game_account_id, row.code.as_str()), row))
+            .collect();
         let mut entries = Vec::new();
         for account in &accounts {
+            let mut shown = BTreeSet::new();
             for code in codes
                 .iter()
                 .filter(|code| code.game_kind == account.game_kind)
             {
+                let row = sent.get(&(account.id, code.code.as_str()));
                 let result = results.get(&(account.id, code.id));
-                if result.is_none() && !code.listed {
-                    continue;
-                }
+                let dead = rejected.get(&(code.game_kind.clone(), code.code.clone()));
+                let (state, updated_at) = match (row, dead, result) {
+                    (Some(row), _, _) => (row.state.clone(), Some(row.updated_at)),
+                    (None, Some(reason), _) => (reason.clone(), None),
+                    (None, None, Some(result)) => (result.state.clone(), Some(result.updated_at)),
+                    (None, None, None) if code.listed => ("available".to_owned(), None),
+                    (None, None, None) => continue,
+                };
+                shown.insert(code.code.as_str());
                 entries.push(HistoryEntry {
                     game_account_id: account.id,
                     game_kind: account.game_kind.clone(),
                     game_uid: account.game_uid.clone(),
-                    code_id: code.id,
+                    code_id: Some(code.id),
                     code: code.code.clone(),
                     listed: code.listed,
-                    state: result.map_or_else(|| "available".to_owned(), |row| row.state.clone()),
-                    updated_at: result.map(|row| row.updated_at),
+                    source: row.map_or(CATALOGUE, |row| source_name(&row.source)),
+                    state,
+                    updated_at,
+                    next_attempt_at: row.and_then(|row| row.next_attempt_at),
                     redeem_url: redeem_url(&code.game_kind, &code.code),
+                });
+            }
+            // Entered codes and codes the catalogue has since pruned: the ledger keeps them.
+            for row in ledger.iter().filter(|row| {
+                row.game_account_id == account.id && !shown.contains(row.code.as_str())
+            }) {
+                entries.push(HistoryEntry {
+                    game_account_id: account.id,
+                    game_kind: account.game_kind.clone(),
+                    game_uid: account.game_uid.clone(),
+                    code_id: None,
+                    code: row.code.clone(),
+                    listed: false,
+                    source: source_name(&row.source),
+                    state: row.state.clone(),
+                    updated_at: Some(row.updated_at),
+                    next_attempt_at: row.next_attempt_at,
+                    redeem_url: redeem_url(&account.game_kind, &row.code),
                 });
             }
         }

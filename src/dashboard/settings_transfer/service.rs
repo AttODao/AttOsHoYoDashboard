@@ -9,7 +9,7 @@ use crate::dashboard::{
         accounts::{lock_user, require_ready},
         sessions::{Identity, Sessions},
     },
-    codes::settings::{self as code_settings, AUTO_REDEEM_AVAILABLE},
+    codes::settings::{self as code_settings, can_redeem},
     db::entities::{game_account, hoyolab_account, notification_setting, reward_setting},
     error::{Error, Result},
     hoyolab::operations::Operations,
@@ -62,7 +62,8 @@ pub(in crate::dashboard) struct Skipped {
     /// `not_linked` (no verified HoYoLAB account), `game_not_found` (no reward for that
     /// game), `uid_not_found` (no such UID on this account; it is never created) or
     /// `reward_not_ready` (the reward needs HoYoLAB action before it can be turned on) or
-    /// `mode_unavailable` (a code mode this server cannot run yet: `auto`).
+    /// `redemption_cookie_missing` (`auto` code mode, but the registered Cookie has no
+    /// `cookie_token_v2`).
     reason: &'static str,
 }
 
@@ -425,8 +426,8 @@ impl SettingsTransfer {
                 } else {
                     "uid_not_found"
                 })
-            } else if entry.mode == "auto" && !AUTO_REDEEM_AVAILABLE {
-                Some("mode_unavailable")
+            } else if entry.mode == "auto" && !link.as_ref().is_some_and(can_redeem) {
+                Some("redemption_cookie_missing")
             } else {
                 None
             };
