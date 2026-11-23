@@ -24,12 +24,14 @@ use std::{
     time::Duration,
 };
 
-const HOSTS: [&str; 5] = [
+const HOSTS: [&str; 7] = [
     "api-os-takumi.mihoyo.com",
     "api-account-os.hoyolab.com",
     "sg-public-api.hoyolab.com",
     "sg-hk4e-api.hoyolab.com",
     "bbs-api-os.hoyolab.com",
+    "public-operation-hk4e.hoyoverse.com",
+    "public-operation-hkrpg.hoyoverse.com",
 ];
 const MAX_HEADER_BYTES: usize = 16 * 1024;
 const MAX_BODY_BYTES: usize = 8 * 1024;

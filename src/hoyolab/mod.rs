@@ -6,5 +6,8 @@ mod error;
 pub mod game;
 pub mod models;
 
-pub use client::{HoyolabClient, RecordAccount};
+pub use client::{
+    HoyolabClient, RecordAccount,
+    redemption::{RedemptionClient, RedemptionReply, RedemptionRequest},
+};
 pub use error::{Error, Result};

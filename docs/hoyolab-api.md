@@ -11,6 +11,7 @@ HoYoLABには、この用途の一般公開された安定版API仕様書があ�
 | Cookie、共通ヘッダー、DS署名 | [認証と共通リクエスト](hoyolab/authentication.md) |
 | HoYoLABに連携済みのゲームUID・サーバーを得る | [ゲームアカウント一覧](hoyolab/account-roles.md) |
 | 当日の状態確認、実際のログインボーナス受け取り | [ログインボーナス](hoyolab/daily-checkin.md) |
+| 交換コード（ギフトコード）の引き換えの要求と応答（未確認） | [交換コードの引き換え](hoyolab/code-redemption.md) |
 | 原神・スターレイルのゲームレコード全エンドポイントと`data`形式 | [ゲームレコード API](hoyolab-game-record/README.md) |
 | 既存の読み取り専用テストの動かし方 | [疎通テスト](hoyolab/test-client.md) |
 

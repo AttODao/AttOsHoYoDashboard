@@ -1,4 +1,5 @@
 mod identity;
+pub mod redemption;
 
 use rand::distr::{Alphabetic, SampleString};
 use reqwest::{
@@ -42,12 +43,7 @@ pub struct RecordAccount {
 impl HoyolabClient {
     /// Uses one process-wide connection pool; the cookie travels per request, never in the pool.
     pub fn new(cookie: &str) -> Result<Self> {
-        static SHARED: OnceLock<Option<Client>> = OnceLock::new();
-        let http = SHARED
-            .get_or_init(|| build_client(UA).ok())
-            .clone()
-            .ok_or(Error::ClientConfiguration)?;
-        Self::with_http(http, cookie)
+        Self::with_http(shared_http()?, cookie)
     }
 
     pub fn with_user_agent(cookie: &str, user_agent: &str) -> Result<Self> {
@@ -227,6 +223,15 @@ fn validate_record_account(account: &RecordAccount) -> Result<()> {
     Ok(())
 }
 
+/// The process-wide HTTP client; cookies travel per request, never in the pool.
+fn shared_http() -> Result<Client> {
+    static SHARED: OnceLock<Option<Client>> = OnceLock::new();
+    SHARED
+        .get_or_init(|| build_client(UA).ok())
+        .clone()
+        .ok_or(Error::ClientConfiguration)
+}
+
 fn build_client(ua: &str) -> Result<Client> {
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
@@ -265,6 +270,11 @@ fn prepare_request(
 }
 
 async fn send(request: reqwest::RequestBuilder) -> Result<Box<RawValue>> {
+    decode_response(&read_body(request).await?)
+}
+
+/// Sends the request and reads a 2xx body of at most `MAX_RESPONSE` bytes.
+async fn read_body(request: reqwest::RequestBuilder) -> Result<Vec<u8>> {
     let mut response = request.send().await.map_err(|_| Error::Network)?;
     if !response.status().is_success() {
         return Err(Error::Http(response.status().as_u16()));
@@ -276,7 +286,7 @@ async fn send(request: reqwest::RequestBuilder) -> Result<Box<RawValue>> {
         }
         body.extend_from_slice(&chunk);
     }
-    decode_response(&body)
+    Ok(body)
 }
 
 fn decode_response(body: &[u8]) -> Result<Box<RawValue>> {
