@@ -1,7 +1,7 @@
 //! Scans for new events and periodically evaluates game status, then delivers.
 use super::{
     Notice,
-    channel::{ADMIN_SCOPE, Channel, Notifications},
+    channel::{Channel, Notifications},
     conditions::{self, Game, Outcome, Rules},
     messages::word,
 };
@@ -518,62 +518,13 @@ impl<G: crate::dashboard::hoyolab::gateway::Gateway> Notifier<G> {
         Ok(())
     }
 
-    /// Sends a notice once per key to every route that chose its kind: the webhook by
-    /// `events`, a user's app inbox by `app_events`.
     async fn deliver(&self, user: Option<Uuid>, channel: &Channel, notice: &Notice) -> Result<()> {
-        let webhook = channel.wants(notice.kind);
-        let app = user.filter(|_| channel.wants_app(notice.kind));
-        if !webhook && app.is_none() {
-            return Ok(());
-        }
-        let scope = user.unwrap_or(ADMIN_SCOPE);
-        if self.already_sent(scope, &notice.key).await? {
-            return Ok(());
-        }
-        if webhook {
-            self.notifications
-                .send_webhook(user, channel, notice)
-                .await?;
-        }
-        if let Some(user) = app {
-            self.notifications
-                .send_to_app(user, notice, &channel.language)
-                .await?;
-        }
-        self.mark_sent(scope, &notice.key).await?;
+        self.notifications.deliver(user, channel, notice).await?;
         Ok(())
     }
 
     async fn deliver_admin(&self, channel: &Channel, notice: &Notice) -> Result<()> {
         self.deliver(None, channel, notice).await
-    }
-
-    async fn already_sent(&self, scope: Uuid, key: &str) -> Result<bool> {
-        Ok(notification_log::Entity::find()
-            .filter(notification_log::Column::Scope.eq(scope))
-            .filter(notification_log::Column::EventKey.eq(key))
-            .one(&self.notifications.db)
-            .await?
-            .is_some())
-    }
-
-    async fn mark_sent(&self, scope: Uuid, key: &str) -> Result<()> {
-        notification_log::Entity::insert(notification_log::ActiveModel {
-            scope: Set(scope),
-            event_key: Set(key.to_owned()),
-            sent_at: Set(Utc::now()),
-        })
-        .on_conflict(
-            OnConflict::columns([
-                notification_log::Column::Scope,
-                notification_log::Column::EventKey,
-            ])
-            .do_nothing()
-            .to_owned(),
-        )
-        .exec(&self.notifications.db)
-        .await?;
-        Ok(())
     }
 
     /// Deletes log entries older than seven days whose key is time-bounded (dates, weeks, run ids).

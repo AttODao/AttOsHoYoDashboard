@@ -7,6 +7,7 @@ pub(super) mod channel;
 mod channel_tests;
 mod conditions;
 mod delivery;
+mod dispatch;
 mod messages;
 pub(super) mod push;
 mod secret;
