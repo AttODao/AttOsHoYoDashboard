@@ -60,7 +60,8 @@ async fn migrations_are_ordered_idempotent_and_reversible() {
             "m20261109_000012_game_challenge_cache",
             "m20261109_000013_app_device_push",
             "m20261109_000014_game_calendar_cache",
-            "m20261109_000015_resource_history"
+            "m20261109_000015_resource_history",
+            "m20261123_000016_redemption_codes"
         ]
     );
     migrations::Migrator::down(&fixture.db, None).await.unwrap();
@@ -199,7 +200,7 @@ async fn audit_requires_existing_subject_and_diagnostics_redact_credentials() {
 async fn app_event_choices_start_as_the_webhook_choices_and_revert_cleanly() {
     let fixture = TestDatabase::new().await;
     let db = &fixture.db;
-    migrations::Migrator::down(db, Some(5)).await.unwrap();
+    migrations::Migrator::down(db, Some(6)).await.unwrap();
     let owner = insert_user(db, "owner").await;
     db.execute_unprepared(&format!(
         "INSERT INTO notification_settings (user_id, webhook_format, language, events) \
@@ -252,7 +253,7 @@ async fn app_event_choices_start_as_the_webhook_choices_and_revert_cleanly() {
         .await
         .is_err()
     );
-    migrations::Migrator::down(db, Some(5)).await.unwrap();
+    migrations::Migrator::down(db, Some(6)).await.unwrap();
     let column = db
         .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
@@ -265,4 +266,112 @@ async fn app_event_choices_start_as_the_webhook_choices_and_revert_cleanly() {
         .try_get::<i64>("", "n")
         .unwrap();
     assert_eq!(column, 0);
+}
+
+#[tokio::test]
+async fn redemption_code_schema_checks_values_and_reverts_cleanly() {
+    let fixture = TestDatabase::new().await;
+    let db = &fixture.db;
+    let owner = insert_user(db, "owner").await;
+    let link = Uuid::new_v4();
+    let account = Uuid::new_v4();
+    db.execute_unprepared(&format!(
+        "INSERT INTO hoyolab_accounts (id, owner_user_id, hoyolab_uid, encrypted_credentials, \
+         credential_version, auth_status, created_at, updated_at) \
+         VALUES ('{link}', '{}', '1', NULL, 1, 'removed', now(), now()); \
+         INSERT INTO game_accounts (id, hoyolab_account_id, game_kind, game_uid, region, visible, \
+         detected, last_detected_at) VALUES ('{account}', '{link}', 'genshin', '800000001', \
+         'os_asia', true, true, now())",
+        owner.id
+    ))
+    .await
+    .unwrap();
+    // The single source row exists with the documented defaults.
+    let source = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT enabled, interval_minutes, consecutive_failures FROM redemption_code_source",
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(source.try_get::<bool>("", "enabled").unwrap());
+    assert_eq!(source.try_get::<i32>("", "interval_minutes").unwrap(), 180);
+    assert_eq!(
+        source.try_get::<i32>("", "consecutive_failures").unwrap(),
+        0
+    );
+    for bad in [
+        "INSERT INTO redemption_code_source (id) VALUES (2)".to_owned(),
+        "UPDATE redemption_code_source SET interval_minutes = 59".to_owned(),
+        "UPDATE redemption_code_source SET interval_minutes = 1441".to_owned(),
+        "UPDATE redemption_code_source SET last_error = 'synthetic upstream body'".to_owned(),
+        "INSERT INTO redemption_codes (id, game_kind, code, first_seen_at, last_seen_at) \
+         VALUES (gen_random_uuid(), 'nap', 'GOODCODE', now(), now())"
+            .to_owned(),
+        "INSERT INTO redemption_codes (id, game_kind, code, first_seen_at, last_seen_at) \
+         VALUES (gen_random_uuid(), 'genshin', 'lower', now(), now())"
+            .to_owned(),
+        "INSERT INTO redemption_codes (id, game_kind, code, first_seen_at, last_seen_at) \
+         VALUES (gen_random_uuid(), 'genshin', 'GOODCODE', now(), now() - interval '1 day')"
+            .to_owned(),
+        format!(
+            "INSERT INTO redemption_code_settings (game_account_id, mode, enabled_at, updated_at) \
+             VALUES ('{account}', 'notify', NULL, now())"
+        ),
+        format!(
+            "INSERT INTO redemption_code_settings (game_account_id, mode, enabled_at, updated_at) \
+             VALUES ('{account}', 'always', now(), now())"
+        ),
+    ] {
+        assert!(db.execute_unprepared(&bad).await.is_err(), "{bad}");
+    }
+    let code = Uuid::new_v4();
+    db.execute_unprepared(&format!(
+        "INSERT INTO redemption_codes (id, game_kind, code, first_seen_at, last_seen_at) \
+         VALUES ('{code}', 'genshin', 'GOODCODE', now(), now()); \
+         INSERT INTO redemption_code_settings (game_account_id, mode, enabled_at, updated_at) \
+         VALUES ('{account}', 'auto', now(), now())"
+    ))
+    .await
+    .unwrap();
+    for state in [
+        "announced",
+        "pending",
+        "redeemed",
+        "already_used",
+        "expired",
+        "invalid",
+        "rank_too_low",
+        "cookie_invalid",
+        "captcha_required",
+        "unknown",
+    ] {
+        db.execute_unprepared(&format!(
+            "INSERT INTO redemption_code_results (game_account_id, code_id, state, created_at, \
+             updated_at) VALUES ('{account}', '{code}', '{state}', now(), now()) \
+             ON CONFLICT (game_account_id, code_id) DO UPDATE SET state = EXCLUDED.state"
+        ))
+        .await
+        .unwrap();
+    }
+    assert!(
+        db.execute_unprepared(&format!(
+            "UPDATE redemption_code_results SET state = 'available' WHERE code_id = '{code}'"
+        ))
+        .await
+        .is_err(),
+        "`available` is derived, never stored"
+    );
+    migrations::Migrator::down(db, Some(1)).await.unwrap();
+    let left = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT to_regclass('public.redemption_codes')::text AS name",
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(left.try_get::<Option<String>>("", "name").unwrap(), None);
+    migrations::Migrator::up(db, None).await.unwrap();
 }

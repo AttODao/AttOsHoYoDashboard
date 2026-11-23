@@ -5,6 +5,7 @@ pub(super) mod channel;
 #[cfg(test)]
 #[path = "channel_tests.rs"]
 mod channel_tests;
+pub(super) mod code_notices;
 mod conditions;
 mod delivery;
 mod dispatch;
@@ -24,7 +25,7 @@ pub(in crate::dashboard) const RESIN_WARN_HOURS: std::ops::RangeInclusive<i32> =
 mod worker_tests;
 
 /// Notification kinds a user can enable, with their defaults.
-pub(in crate::dashboard) const PERSONAL_EVENTS: [(&str, bool); 11] = [
+pub(in crate::dashboard) const PERSONAL_EVENTS: [(&str, bool); 12] = [
     ("reward_failed", true),
     ("reward_claimed", false),
     ("cookie_invalid", true),
@@ -36,6 +37,8 @@ pub(in crate::dashboard) const PERSONAL_EVENTS: [(&str, bool); 11] = [
     ("transformer_ready", true),
     ("daily_unfinished", true),
     ("weekly_unfinished", true),
+    // On by default: a UID's code mode (default off) is the opt-in.
+    ("code_available", true),
 ];
 
 /// Notification kinds for the administrator channel, with their defaults.

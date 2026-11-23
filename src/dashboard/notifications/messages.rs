@@ -83,6 +83,8 @@ pub(super) fn render(notice: &Notice, language: &str) -> (String, String) {
             "Weekly tasks remain",
             "{game} UID {uid}: {items}. Finish them before the weekly reset.",
         ),
+        ("code_available", false) => ("新しい交換コードが{count}件あります", "{codes}"),
+        ("code_available", true) => ("{count} new redemption code(s)", "{codes}"),
         ("user_attention", false) => ("ユーザーの対応が必要です", "{username}: {reason}"),
         ("user_attention", true) => ("A user needs attention", "{username}: {reason}"),
         ("worker_stalled", false) => (
@@ -151,6 +153,8 @@ pub(super) fn word(key: &str, language: &str) -> &'static str {
         ("cookie_invalid", true) => "the HoYoLAB Cookie stopped working",
         ("reward_attention", false) => "ログインボーナスの結果確認が必要です",
         ("reward_attention", true) => "a login bonus result needs checking",
+        ("codes_more", false) => "ほか{count}件",
+        ("codes_more", true) => "and {count} more",
         (_, false) => "",
         (_, true) => "",
     }

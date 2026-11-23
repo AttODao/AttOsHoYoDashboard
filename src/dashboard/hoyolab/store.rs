@@ -256,7 +256,8 @@ impl<G: Gateway> CookieStore<G> {
 
     /// Forget the stored Cookie. A verified link keeps its UID binding, game
     /// visibility, history and send guards so the same account can be restored;
-    /// automatic claiming turns off. An unverified link is deleted outright.
+    /// automatic claiming and every UID's redemption-code mode turn off. An unverified
+    /// link is deleted outright.
     pub(in crate::dashboard) async fn remove_cookie(&self, actor: &Identity) -> Result<()> {
         // Serialize with reward attempts so none is mid-flight with the old Cookie.
         let _operation = self.operations.acquire(actor.user.id).await;
@@ -295,6 +296,7 @@ impl<G: Gateway> CookieStore<G> {
                 .filter(reward_setting::Column::HoyolabAccountId.eq(link))
                 .exec(&tx)
                 .await?;
+            crate::dashboard::codes::settings::turn_off_link(&tx, link).await?;
         }
         record(
             &tx,

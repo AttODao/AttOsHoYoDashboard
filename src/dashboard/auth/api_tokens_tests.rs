@@ -281,6 +281,9 @@ fn scope_policy_allows_only_dashboard_reads_and_the_manual_run() {
         "/api/v1/game-accounts/{id}/resource-history",
         "/api/v1/reward-settings",
         "/api/v1/reward-runs",
+        "/api/v1/codes",
+        "/api/v1/code-settings",
+        "/api/v1/code-history",
     ];
     for scope in [Scope::Read, Scope::Run] {
         for route in reads {
@@ -299,6 +302,9 @@ fn scope_policy_allows_only_dashboard_reads_and_the_manual_run() {
             (Method::GET, "/api/v1/admin/audit"),
             (Method::PATCH, "/api/v1/reward-settings/{id}"),
             (Method::PATCH, "/api/v1/game-accounts/{id}"),
+            (Method::PATCH, "/api/v1/code-settings/{id}"),
+            (Method::GET, "/api/v1/admin/codes"),
+            (Method::PUT, "/api/v1/admin/codes"),
             (Method::PUT, "/api/v1/me/password"),
             (Method::POST, "/api/v1/auth/logout"),
             (Method::POST, "/api/v1/me/app-login"),

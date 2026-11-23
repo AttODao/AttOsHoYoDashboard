@@ -12,6 +12,7 @@ mod hoyolab_cookie_removal;
 mod initial_accounts;
 mod notifications;
 mod passkeys;
+mod redemption_codes;
 mod remove_web_push;
 mod resource_history;
 
@@ -38,6 +39,7 @@ impl MigratorTrait for Migrator {
             Box::new(app_device_push::AppDevicePush),
             Box::new(game_calendar_cache::GameCalendarCache),
             Box::new(resource_history::ResourceHistory),
+            Box::new(redemption_codes::RedemptionCodes),
         ]
     }
 }

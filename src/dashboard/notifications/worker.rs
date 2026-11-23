@@ -539,7 +539,8 @@ impl<G: crate::dashboard::hoyolab::gateway::Gateway> Notifier<G> {
                     .add(notification_log::Column::EventKey.starts_with("audit:"))
                     .add(notification_log::Column::EventKey.starts_with("run:"))
                     .add(notification_log::Column::EventKey.starts_with("deletion:"))
-                    .add(notification_log::Column::EventKey.starts_with("worker:")),
+                    .add(notification_log::Column::EventKey.starts_with("worker:"))
+                    .add(notification_log::Column::EventKey.starts_with("codes:")),
             )
             .exec(&self.notifications.db)
             .await?;

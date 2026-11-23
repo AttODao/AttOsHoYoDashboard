@@ -91,6 +91,7 @@ curl --fail http://127.0.0.1:8080/health
 | `RESOURCE_HISTORY_DAYS` | 樹脂・開拓力の履歴（ゲーム状態を取得するたびの1件）の保持日数。7〜90、既定 `7`。ダッシュボードは直近7日間を集計するため7日未満にはできない。1時間ごとの保守で、この日数に90分（窓の直前の起点）を足したより古い行を消す |
 | `CHALLENGE_CACHE_TTL_MINUTES` | 高難度コンテンツ（深境螺旋・混沌の記憶など）の要約のキャッシュ有効分数。5〜1440、既定 `60`。期間がキャッシュ後に終わった場合は期限前でも取り直し、一部のモードだけ取得に失敗した要約は `STATUS_CACHE_TTL_MINUTES` 後に取り直す |
 | `REWARD_MAX_ATTEMPTS` / `REWARD_RETRY_DELAY_SECONDS` | 一時的な失敗の試行回数（1〜4、既定 `4`）／再試行までの秒数（1〜600、既定 `10`） |
+| `CODES_SOURCE_URL` | 任意。交換コードの一覧の取得元（`GET <URL>codes?game=genshin` と `game=hkrpg`）。既定 `https://hoyo-codes.seria.moe/`（Hoyo Buddyが公開する第三者の一覧）。HTTPSのみ（テスト用にlocalhostだけHTTP可）、認証情報・クエリ・フラグメントは不可 |
 
 HoYoLAB Cookieは環境変数ではなく画面から登録します。
 
@@ -112,7 +113,7 @@ HTTPSリバースプロキシから `http://127.0.0.1:8080` へパスを保持�
 | `/docs` / `/openapi.json` | API仕様の閲覧／OpenAPI JSON |
 | `/manifest.webmanifest` | ホーム画面追加用のWebマニフェスト |
 | `/health` | DB疎通と報酬ワーカーの生存確認。正常時 `{"status":"ok","worker":"ok"}`、ワーカー停止時は503 |
-| `/metrics` | `METRICS_TOKEN` 設定時のみ。Prometheus形式の件数・ワーカー状態・直近24時間に終わった報酬実行の結果・APIトークン数・アプリの端末数（UnifiedPushの有無別）と起動後のプッシュ送信結果 |
+| `/metrics` | `METRICS_TOKEN` 設定時のみ。Prometheus形式の件数・ワーカー状態・直近24時間に終わった報酬実行の結果・APIトークン数・アプリの端末数（UnifiedPushの有無別）と起動後のプッシュ送信結果・交換コード（ゲーム別の一覧の件数 `ahd_codes_catalogue{game,state}`、起動後の取得結果 `ahd_codes_fetches_total{game,outcome}`・検証で捨てた行 `ahd_codes_rejected_rows_total{game}`・送った新着まとめ通知 `ahd_codes_announcements_total`） |
 
 ## 開発とUI設計
 
@@ -146,7 +147,7 @@ devenv shell -- node .pi/skills/impeccable/scripts/launcher.test.mjs
 
 #### 通知
 
-「通知」ページの「この端末に通知する」をONにすると、web版のWebhookと同じ個人の通知（ログインボーナスの結果、Cookieの失効、ログイン、樹脂・開拓力、派遣、参量物質変化器、デイリー・週間）を、種類ごとの選択（Webhookとは別。サーバーの `app_events`）に従ってこの端末に表示します。種類ごとの選択は、同じページの表で「この端末」と「Webhook」の列を並べて設定します。アプリはサーバーに端末を登録し、受信箱（`/me/notifications/app-devices/{id}/inbox`）をセッションCookieで15分ごと（JobScheduler。アプリの表示中は1分ごと）に読みます。UnifiedPushの配信アプリ（ntfyなど）が入っていれば、「UnifiedPushですぐに受け取る」をONにすると、受信箱に通知が入ったときにサーバーが暗号化した起床用のプッシュ（通知の内容は含まない）を送り、アプリはすぐに受信箱を読みます。FCMは使いません。配信アプリがない場合やプッシュが届かない場合は15分ごとの確認で届きます。タップすると通知を扱う画面（報酬・連携・セキュリティ・ダッシュボード）を開きます。管理者専用の通知は対象外です。一覧は [docs/notifications-inventory.md](docs/notifications-inventory.md) にあります。
+「通知」ページの「この端末に通知する」をONにすると、web版のWebhookと同じ個人の通知（ログインボーナスの結果、Cookieの失効、ログイン、樹脂・開拓力、派遣、参量物質変化器、デイリー・週間、新しい交換コード）を、種類ごとの選択（Webhookとは別。サーバーの `app_events`）に従ってこの端末に表示します。種類ごとの選択は、同じページの表で「この端末」と「Webhook」の列を並べて設定します。アプリはサーバーに端末を登録し、受信箱（`/me/notifications/app-devices/{id}/inbox`）をセッションCookieで15分ごと（JobScheduler。アプリの表示中は1分ごと）に読みます。UnifiedPushの配信アプリ（ntfyなど）が入っていれば、「UnifiedPushですぐに受け取る」をONにすると、受信箱に通知が入ったときにサーバーが暗号化した起床用のプッシュ（通知の内容は含まない）を送り、アプリはすぐに受信箱を読みます。FCMは使いません。配信アプリがない場合やプッシュが届かない場合は15分ごとの確認で届きます。タップすると通知を扱う画面（報酬・連携・セキュリティ・ダッシュボード）を開きます。管理者専用の通知は対象外です。一覧は [docs/notifications-inventory.md](docs/notifications-inventory.md) にあります。
 
 これとは別に、洞天宝銭の上限到達、派遣完了、参量物質変化器は、取得した状態から予測した時刻にAndroidのローカルアラームでも通知できます（同じ内容のサーバーの通知が2時間以内に届いた場合は片方だけを表示）。樹脂・開拓力の上限は端末で予測せず、サーバーが予測時刻に状態を取り直して上限を確かめたときだけ届きます（ゲーム内で使った後に古い予測で通知しないため）。アラームは不正確でDozeにより遅れる場合があり、予測の更新はアプリが状態を読み込んだときだけです。強制停止すると次にアプリを起動するまでアラームと受信箱の確認は止まります。`dx serve` のAPKにはreceiverとジョブが入らないため、通知には `build-android` のAPKを使います。
 
@@ -225,11 +226,12 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 | `src/dashboard/auth/` | ユーザーのライフサイクル、パスワード、セッション（一覧・個別／他端末の失効・最終利用）、APIトークン（`api_tokens.rs`。発行・失効・Bearer認証・スコープで通せるルート）、パスキー（名前変更・最終利用）（アカウントの有無を明かさないログインoptionsを含む）、削除要求と完了（再試行の待機を含む）、ユーザー名ごとのログイン試行制限、ユーザーごとの現在パスワード確認の試行制限 |
 | `src/dashboard/auth/app_logins.rs` | ブラウザからアプリへのPKCE（S256）ワンタイムコード承認・交換 |
 | `src/dashboard/http/app_login.rs` | アプリログイン承認・交換のHTTPペイロードとルート |
-| `src/dashboard/http/` | ルート、DTO、Cookie・Bearer APIトークン、Origin・キャッシュの境界、UI配信、ヘルスチェック・メトリクス、報酬・削除のバックグラウンド処理の起動と保守 |
+| `src/dashboard/http/` | ルート、DTO、Cookie・Bearer APIトークン、Origin・キャッシュの境界、UI配信、ヘルスチェック・メトリクス、報酬・削除・通知・交換コードのバックグラウンド処理の起動と保守 |
 | `src/dashboard/db/` | `entities/` に保存モデル、`migrations/` にスキーマ変更 |
 | `src/dashboard/hoyolab/` | Cookieの解析・暗号化保存・削除・鍵の再暗号化（`rekey`）、連携の検証・同期、ユーザー単位の操作ロック、管理者向けの連携の健全性と「要対応」の判定（`health.rs`、保存済みの行だけを読む） |
 | `src/dashboard/games/` | ゲームUID一覧・表示設定・状態キャッシュ（`service.rs`）、高難度コンテンツの要約とそのキャッシュ（`challenges.rs`、上流JSONからの防御的な読み取りは `challenge_summary.rs`）、イベントカレンダーとそのキャッシュ（`calendar.rs`、読み取りは `calendar_summary.rs`）。両方の読み取りが使う型に依存しない補助関数（Unix秒・日付オブジェクト・時刻文字列を読む `moment` など）は `upstream_json.rs`。樹脂・開拓力の履歴（`resource_history.rs`：状態取得の成功ごとのスナップショット、非表示・未検出UIDの行の削除、保持期間）と、上限に達していた時間を求める純粋関数（`cap_time.rs`） |
-| `src/dashboard/notifications/` | ユーザー・管理者のWebhookの設定、条件評価（上限・派遣完了・デイリー・週間など）、送信、重複排除、Androidアプリの端末登録と受信箱（`app.rs`）、UnifiedPushの購読の保存と起床用プッシュの送信（`push.rs`、RFC 8291/8292） |
+| `src/dashboard/notifications/` | ユーザー・管理者のWebhookの設定、条件評価（上限・派遣完了・デイリー・週間など）、送信と重複排除（`dispatch.rs`）、交換コードの新着まとめの文面（`code_notices.rs`）、Androidアプリの端末登録と受信箱（`app.rs`）、UnifiedPushの購読の保存と起床用プッシュの送信（`push.rs`、RFC 8291/8292） |
+| `src/dashboard/codes/` | 交換コード：第三者の一覧の取得と検証（`source.rs`。時間・サイズ・行数の上限、同じ取得元の中だけのリダイレクト）、サーバー共通の一覧（`catalog.rs`）、取得の予定・バックオフ・取得元の状態・メトリクス用の集計（`worker.rs`）、通知のみのモードの新着まとめ（`announce.rs`）、UIDごとのモード・一覧と履歴の読み取り・Cookie削除と設定の移行が使うモードの規則（`settings.rs`）、管理者の設定（`admin.rs`）。HoYoLABには何も送らない |
 | `src/dashboard/rewards/` | 報酬設定・スケジュール・実行（定時と遅延実行の区別）、送信不確定時のガード、今月の報酬一覧のキャッシュ、ユーザー削除前の報酬確認 |
 | `src/dashboard/settings_transfer/` | 本人の設定の書き出しと読み込み：`ahd-settings` 形式（版1）と項目ごとの検証（`document.rs`）、現在の設定との比較・プレビュー・1トランザクションでの反映（`service.rs`）。報酬の時刻変更は `rewards::service::reschedule_in`、通知の保存は `notifications::channel::PersonalPreferences` を共用 |
 | `src/hoyolab/` | HoYoLAB上流APIの型付きクライアント（ダッシュボードの方針は含めない）。高難度コンテンツのGET（`challenge.rs`：モード・パス・クエリ）とイベントカレンダー（`HoyolabClient::event_calendar`）は未検証の形式のためJSONのまま返す |
@@ -241,7 +243,7 @@ web版からの変更点（除外した機能とその方法、画面ごとの�
 - 登録には `ltoken_v2`・`ltuid_v2`・`ltmid_v2` の3つが必須です。ブラウザの `Cookie:` ヘッダー行をそのまま貼り付けても構いません（他のCookieや空の要素は無視されます）。旧形式（`ltoken`／`ltuid`）は登録できません。
 - 保存だけでは連携完了になりません。検証後にゲームアカウントを確認してください。
 - **自動受け取りは初期OFF**。画面で時刻を指定して有効にします。時刻はサーバー時刻（`TIMEZONE_OFFSET`）で、ログインボーナスの日付はUTC+8の0時（日本時間1時）に切り替わります。
-- 連携画面の「Cookieを削除」で保存済みCookieを消せます。UIDの紐付け・ゲーム表示・履歴は残り、自動受け取りはすべてOFFになります。再開するには同じHoYoLABアカウントのCookieを登録します。
+- 連携画面の「Cookieを削除」で保存済みCookieを消せます。UIDの紐付け・ゲーム表示・履歴は残り、自動受け取りと交換コードのモードはすべてOFFになります。再開するには同じHoYoLABアカウントのCookieを登録します。
 - 状態取得にはHoYoLAB側の戦績・リアルタイムノートの公開設定も影響します。Cookie失効・追加認証・HoYoLABの仕様変更により利用できなくなる場合があります。
 
 ## 運用上の制約
@@ -273,7 +275,7 @@ webのタグ `web-vX.Y.Z`（ルート `Cargo.toml` の版）のpushで `.forgejo
 
 - 設定の「認証・セキュリティ」で発行・一覧・失効します（1ユーザー10個まで）。平文（`ahd_` ＋16進64文字）は発行時に1回だけ表示し、サーバーにはSHA-256だけを保存します。
 - `Authorization: Bearer ahd_…` を付けて呼びます。Cookieを伴わないBearerの要求には `Origin` は不要です。トークンとセッションCookieを同時に送った要求は401です。
-- スコープ `read` で使えるのは `GET /me`、`/server-settings`、`/me/hoyolab`、`/game-accounts`、`/game-accounts/{id}/status`、`/game-accounts/{id}/challenges`、`/game-accounts/{id}/calendar`、`/game-accounts/{id}/resource-history`、`/reward-settings`、`/reward-runs` です。`run` はこれに加えて `POST /reward-settings/{id}/run` を使えます。それ以外（トークン管理を含む）はセッション専用で、トークンでは403になります。
+- スコープ `read` で使えるのは `GET /me`、`/server-settings`、`/me/hoyolab`、`/game-accounts`、`/game-accounts/{id}/status`、`/game-accounts/{id}/challenges`、`/game-accounts/{id}/calendar`、`/game-accounts/{id}/resource-history`、`/reward-settings`、`/reward-runs`、`/codes`、`/code-settings`、`/code-history` です。`run` はこれに加えて `POST /reward-settings/{id}/run` を使えます。それ以外（トークン管理を含む）はセッション専用で、トークンでは403になります。
 - 管理者によるパスワード再発行・無効化・削除要求で、そのユーザーのトークンはすべて失効します。本人のパスワード変更では失効しません。
 - 初回／復旧後のパスワード変更前は操作が制限されます。ゲーム・報酬機能にはHoYoLAB連携検証の完了も必要です。
 
@@ -289,6 +291,7 @@ webのタグ `web-vX.Y.Z`（ルート `Cargo.toml` の版）のpushで `.forgejo
 | HoYoLAB | `GET /me/hoyolab`、`PUT`・`DELETE /me/hoyolab/cookie`、`POST /me/hoyolab/verify`・`/me/hoyolab/sync` |
 | ゲーム | `GET /game-accounts`、`PATCH /game-accounts/{id}`、`GET /game-accounts/{id}/status`、`GET /game-accounts/{id}/challenges`、`GET /game-accounts/{id}/calendar`、`GET /game-accounts/{id}/resource-history` |
 | 報酬 | `GET /reward-settings`、`PATCH /reward-settings/{id}`、`POST /reward-settings/{id}/run`、`GET /reward-runs` |
+| 交換コード | `GET /codes`、`GET /code-settings`、`PATCH /code-settings/{id}`（セッション専用）、`GET /code-history`、`GET/PUT /admin/codes`（管理者・セッション専用） |
 | 設定の移行 | `GET /me/settings/export`、`POST /me/settings/import/preview`・`/me/settings/import`（セッション専用） |
 | 通知 | `GET/PUT /me/notifications`、`POST /me/notifications/test`、`POST /me/notifications/app-devices`、`DELETE /me/notifications/app-devices/{id}`、`GET /me/notifications/app-devices/{id}/inbox`、`GET/PUT/DELETE /me/notifications/app-devices/{id}/push`、`GET/PUT /admin/notifications`、`POST /admin/notifications/test` |
 | ユーザー管理 | `GET /admin/users`（連携状態・自動受け取り数・最終ログイン、`needs_attention` と `hoyolab`（本人確認日時・ゲーム状態の最終取得成功日時・ゲームごとの自動受け取りと直近に終わった実行の状態・日時・sanitized error code）を含む。HoYoLABは呼ばず、Cookie・UID・上流raw errorは含まない。セッション専用）、`POST /admin/users`、`PATCH /admin/users/{id}`（`active` または `is_admin`）、`PUT /admin/users/{id}/temporary-password`、`GET /admin/audit` |
@@ -297,6 +300,8 @@ webのタグ `web-vX.Y.Z`（ルート `Cargo.toml` の版）のpushで `.forgejo
 
 - 設定の移行（設定の「設定の移行」タブ、web版だけ）は、ログインボーナスの自動受け取り（ON/OFF・時刻）、ゲームUIDの表示、通知の選択（Webhookとアプリの種類ごとの選択・形式・言語・樹脂の警告時間・リマインダー時刻）を `{"format":"ahd-settings","version":1,…}` のJSONにします。HoYoLAB Cookie・Webhook URL・パスワード・パスキー・セッション・APIトークンは含めず、Webhookは設定済みかどうか（`webhook_configured`）だけを書きます。読み込みは項目ごとに検証し（問題があれば項目のパスと種類を一覧にして何も反映しない）、プレビューで変わる設定を示してから1トランザクションで反映します。このアカウントにないUIDやゲームは追加せず、理由付きで飛ばします。報酬・UIDの反映にはHoYoLAB連携の検証済みが必要です。言語・テーマはブラウザの設定（サーバーに保存しない）なので対象外です。
 - ゲーム種別は `genshin`／`starrail`。状態レスポンスの `stale` と取得日時を確認してください。
+- 交換コードは、サーバーが第三者の一覧（`CODES_SOURCE_URL`）を既定3時間ごとに原神とスターレイルの分だけ取得し、サーバー共通の一覧（コード・報酬の文・初めて／最後に見た日時・まだ載っているか）に保存します。ページの表示とは無関係に動き、HoYoLABには何も送りません。取得元の返す値はすべて信頼せず、コードは4〜32文字の英数字（大文字にそろえる）だけ、報酬の文は記号を除いて300文字まで、1回200行までを保存し、それ以外は数えて捨てます。取得の失敗では既知のコードを消さず、15分から倍々に間隔を空けて（間隔の設定値まで）再試行します。管理者は `GET/PUT /admin/codes` で機能全体の停止と取得間隔（60〜1440分、既定180分）を設定し、最後の試行・成功の日時・連続失敗数・最後の失敗の種類（上流の本文は含めない）を確認できます。
+- 交換コードのモードはHoYoLAB連携（検証済み）のゲームUIDごとに `off`（既定）・`notify`（通知のみ）・`auto`（自動で交換）です。`auto` は値としては受け付けますが、自動交換を実装するまで `PATCH /code-settings/{id}` は400を返します。`notify` のUIDがある利用者には、取得ごとに新しいコードを1件の通知（種類 `code_available`。Webhookとアプリの受信箱。各コードの公式の交換ページへのリンク付き）にまとめて送ります。知らせるのはそのUIDのモードをONにした後に初めて見たコードだけで、ONにする前から一覧にあったコードは `GET /code-history` で `available` と表示します（まとめて通知しません）。サーバーが最初にそのゲームの一覧を取得したときのコードも知らせません。Cookieを削除するとすべてのUIDのモードは `off` になり、履歴は残ります。
 - `GET /game-accounts/{id}/challenges` は高難度コンテンツの現在の期間の要約です（原神：深境螺旋・幻想シアター・幽境の激戦、スターレイル：混沌の記憶・虚構叙事・末日の幻影・異相の仲裁）。モードごとに期間名・開始／終了日時・星・到達階層・幕・難易度・最速クリア秒数・戦闘回数を返し、キャラクターごとの戦績は返しません。上流のフィールド名は実応答で未検証のため、値はすべてnullになり得て、nullは「不明」を意味します（未開放や非公開とはみなしません）。一部のモードだけ失敗した場合はそのモードの `error_code` に理由が入ります。
 - `GET /game-accounts/{id}/calendar` はイベントカレンダーです。原神はキャラクター・武器・集録の祈願とイベント、スターレイルはキャラクター・光円錐の跳躍とイベントを、終了の早い順に返します（取得時点で終了済みの項目と、高難度コンテンツ・模擬宇宙のような常設のモードは除きます）。項目ごとに名前・バージョン・開始／終了日時・ピックアップ（名前・レアリティ・公式画像CDNの画像URL）と、イベントの完了・未開放・進捗を返し、説明文や報酬一覧は返しません。`starts_at` が取得時刻より後の項目は開催予定です。上流のフィールド名は実応答で未検証のため、値はnullになり得て、nullは「不明」を意味します。期間はUnix秒・日付オブジェクト（`tzinfo`があればその時差、なければサーバー時刻）・サーバー時刻の文字列のどれからでも読みます。原神の上流 `POST /act_calendar` は本文に `role_id`／`server` だけを送る読み取り専用の照会です。
 - `GET /game-accounts/{id}/resource-history` は主リソース（原神は天然樹脂、スターレイルは開拓力）が直近7日間に上限に達していた時間です。HoYoLABは呼ばず、`/status` の取得（ダッシュボードと通知ワーカー）が成功するたびに保存した件数・上限・全回復時刻だけから計算します。スナップショットの間は回復速度（樹脂8分・開拓力6分で1）で何もしなかったと仮定して進め、次のスナップショットが90分以内でその見込みと1以内で一致したときだけ「上限」と数えます。見込みの上限到達より前は「回復中」（消費しても上限は遅れるだけ）、それより後で間隔が長いか消費が見えたときは「不明」、見込みより増えていた（アイテムでの回復や上限の変更）ときはその区間全体を「不明」にします。最後のスナップショットの後は90分までだけ見込みで進めてその先の上限は「不明」とし、窓の始まりから最初のスナップショットまでも「不明」です。`at_cap_seconds`・`unknown_seconds` と、窓全体を隙間なく覆う `segments`（`at_cap`／`below_cap`／`unknown`）を返します。非表示・未検出のUIDはスナップショットを持たないため窓全体が不明です。トークンは `read`／`run` のどちらでも読めます。

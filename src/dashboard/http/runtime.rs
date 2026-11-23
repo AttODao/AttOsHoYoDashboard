@@ -1,4 +1,5 @@
-//! Independent, bounded reward and deletion work; neither depends on Dashboard visits.
+//! Independent, bounded reward, deletion, notification and redemption-code work; none depends
+//! on Dashboard visits.
 use super::App;
 use crate::dashboard::{
     auth::sessions::Sessions,
@@ -53,8 +54,22 @@ pub(super) async fn run(app: App, stop: watch::Receiver<bool>) {
         rewards(app.clone(), stop.clone()),
         deletions(app.clone(), stop.clone()),
         notifier(app.clone(), stop.clone()),
+        codes(app.clone(), stop.clone()),
         maintenance(app, stop)
     );
+}
+
+/// Checks once a minute whether a redemption-code fetch is due (interval and switch are
+/// read from the database each time, so administrator changes need no restart).
+async fn codes(app: App, mut stop: watch::Receiver<bool>) {
+    let mut timer = interval(crate::dashboard::codes::worker::TICK);
+    timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    loop {
+        tokio::select! { _ = stop.changed() => break, _ = timer.tick() => {} }
+        if let Err(error) = app.codes.tick(chrono::Utc::now()).await {
+            tracing::error!(error = %error, "redemption code run failed");
+        }
+    }
 }
 
 /// Scans events and evaluates game conditions once a minute.

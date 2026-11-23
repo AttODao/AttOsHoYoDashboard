@@ -585,7 +585,8 @@ async fn app_choices_apply_per_event_independently_of_the_webhook() {
     let kinds: Vec<&str> = super::PERSONAL_EVENTS
         .iter()
         .map(|(kind, _)| *kind)
-        .filter(|kind| *kind != "cookie_invalid")
+        // `code_available` comes from the redemption-code worker (codes/worker_tests.rs).
+        .filter(|kind| !matches!(*kind, "cookie_invalid" | "code_available"))
         .collect();
     let mut users = Vec::new();
     // Webhook off for everything, app on for everything: the app still gets every notice.

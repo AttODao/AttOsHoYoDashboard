@@ -170,6 +170,20 @@ flowchart TD
 - 報酬とUIDの表示は検証済みのHoYoLAB連携に属する。連携がない（`not_linked`）、そのgameの報酬がない（`game_not_found`）、そのUIDがない（`uid_not_found`、UIDは作らない）、HoYoLABでの対応が必要な報酬をONにする（`reward_not_ready`）項目は飛ばして理由を示す。時刻・ON/OFFの変更は設定画面と同じく保留中の定時runを止め、次の未来tickを待つ。
 - セッション専用で、APIトークンでは使えない（403）。変更要求には他の操作と同じく `Origin` が必要。
 
+## 7.2. 交換コード
+
+- 第3波まであるうちの第1波。サーバー側の土台（一覧の定期取得・UIDごとのモード・通知のみのモード・管理者の設定）で、保存済みCookieは変えず、HoYoLABへは何も送らない。自動交換は第2波、設定タブ「コード」のUIは第3波。
+- 取得元は第三者の一覧（既定 `https://hoyo-codes.seria.moe/`、Hoyo Buddy用。`CODES_SOURCE_URL` で変更、HTTPSのみ）。`GET /codes?game=genshin` と `?game=hkrpg`（スターレイル）だけを読み、他のゲームは扱わない（§9）。認証なし。いつ変わり、なくなってもよい前提で、返す値はすべて信頼しない。
+- 一覧はサーバーに1つ（利用者ごとではない）。workerがページの表示と無関係に、既定180分ごとに両ゲームを取得し、コード・ゲーム・報酬の文・初めて見た日時・最後に見た日時・取得元にまだ載っているか（`listed`）を保存する。その取得で載っていなかったコードは `listed=false` にし、90日たてば消す。
+- 取得は1回15秒（接続5秒）まで、本文256KiBまで、リダイレクトは同じスキーム・ホスト・ポートの中で3回まで。各行はコードが4〜32文字のASCII英数字（大文字にそろえる。交換は大文字・小文字を区別しない）、`game` が要求したゲーム、`rewards` が文字列かnullであるものだけを保存し、`status` が `OK` でない行は「載っていない」として数えない。報酬の文は文字・数字・単一の空白・簡単な記号だけを残して300文字まで（リンクやマークアップにならない）。1回200行を超えた分と不正な行は数えて捨てる（メトリクス）。すべての行が不正なら取得の失敗とする。
+- 取得の失敗（`timeout`・`connect`・`http_status`・`redirect`・`too_large`・`invalid_payload`、保存の失敗は `storage`）は既知のコードを消さず変えない。失敗の後は15分・30分・60分…と間隔を倍にして（取得間隔まで）再試行する。
+- 管理者は機能全体の停止（停止中は取得も通知もしない。利用者の設定は保存できる）と取得間隔（60〜1440分、既定180分）をDBに保存して変えられ（`GET/PUT /admin/codes`、再起動不要）、最後の試行・成功の日時・連続失敗数・最後の失敗の種類・次の取得予定・ゲームごとの件数を見られる。上流の本文は保存も表示もしない。
+- 利用者の設定はHoYoLAB連携（検証済み）の検出済みゲームUIDごとのモードで、`off`（既定）・`notify`（通知のみ）・`auto`（自動で交換）。`auto` は保存できる値として検証するが、自動交換を実装するまでAPIは400で拒む（何もしないUIDが黙って残らないように）。第2波は `codes::settings::AUTO_REDEEM_AVAILABLE` を真にし、`auto` のUIDを交換の対象にする（そのUIDは通知のみの新着まとめの対象から外し、交換の結果を知らせる）。
+- 一覧と履歴: `GET /codes` はサーバー共通の一覧（各コードの公式の交換ページ：原神 `https://genshin.hoyoverse.com/en/gift?code=<code>`、スターレイル `https://hsr.hoyoverse.com/gift?code=<code>`）。`GET /code-history` はUID×コードの結果で、保存する結果は `announced`（通知済み）と、第2波の交換の結果 `pending`・`redeemed`・`already_used`・`expired`・`invalid`・`rank_too_low`・`cookie_invalid`・`captcha_required`・`unknown`。結果のない載っているコードは `available` と返す（保存しない）。載っていないコードは結果があるときだけ返す。
+- 通知のみ: 取得のたびに、`notify` のUIDを持つ利用者ごとに1件のまとめ（種類 `code_available`、既定ON、Webhookとアプリ受信箱で種類ごとに選べる）を送る。コードごとに1件にはしない。対象は、載っていて、そのUIDのモードがONになった時刻（`enabled_at`）以後かつ7日以内に初めて見たコードで、そのUIDに結果がまだないもの。ONにする前から一覧にあったコードはさかのぼって知らせず、履歴で `available` と示す。サーバーがそのゲームの一覧を初めて取得したとき（まだ両ゲームとも成功した取得が一度もない間）に載っていたコード（`seeded`）も知らせない。その後は、一覧が空になったゲームに現れたコードも新着として扱う。モードを `notify` と `auto` の間で切り替えても `enabled_at` は変わらず、`off` にすると消える。対象は有効な利用者の検証済みの連携（`cookie_invalid` は除く）の検出済みUIDだけ。まとめが少なくとも1つの経路に届いたとき（Webhookが2xxを返した、またはアプリ受信箱に入った）だけ、そのUIDとコードに `announced` を記録し、届かなかったもの（Webhookの失敗を含む）は次の取得で再び対象になる。本文は最大10件のコード（ゲーム・コード・報酬の文・交換ページ）と残りの件数。
+- トークン: 読み取り（`GET /codes`・`/code-settings`・`/code-history`）は `read`／`run` のどちらでも使える。モードの変更と管理者の設定はセッション専用（業務層でも `Sessions::authenticate`）。
+- ライフサイクル: Cookie削除（`DELETE /me/hoyolab/cookie`）で連携のすべてのUIDのモードを `off` にし、結果は履歴として残す。Dashboardユーザーの削除ではゲームUIDとともにモードと結果を消す（cascade）。一覧はサーバー共通なので消さない。
+
 ## 8. Web API契約
 
 OpenAPI 3.1 の正本は [`../dashboard-api.json`](../dashboard-api.json)。現在のAPIはWeb UI用であり、PATや外部クライアント認証ではない。実装済みrouteだけを載せ、HoYoLAB上流の `/record` や `/daily` などの架空proxy routeは作らない。
@@ -183,6 +197,7 @@ OpenAPI 3.1 の正本は [`../dashboard-api.json`](../dashboard-api.json)。現�
 - HoYoLAB: status/cookie/verify/sync
 - games: game accounts list/visibility/status/challenges/calendar/resource-history
 - rewards: settings/update/manual run/history
+- redemption codes: `GET /codes`、`GET /code-settings`、`PATCH /code-settings/{id}`、`GET /code-history`、`GET/PUT /admin/codes`
 - settings transfer: `GET /me/settings/export`、`POST /me/settings/import/preview`・`/me/settings/import`（セッション専用。`ahd-settings` 版1）
 
 ## 9. 対象外
