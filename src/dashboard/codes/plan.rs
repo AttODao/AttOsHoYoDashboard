@@ -329,6 +329,8 @@ pub(super) async fn admit<G: Gateway>(
             .filter(redemption_code::Column::GameKind.eq(&account.game_kind))
             .filter(redemption_code::Column::Code.eq(&item.code))
             .filter(redemption_code::Column::Listed.eq(true))
+            // Held until the commit, so the catalogue cannot unlist it in between.
+            .lock_shared()
             .one(&tx)
             .await?
             .is_some();
