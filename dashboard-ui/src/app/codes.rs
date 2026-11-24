@@ -346,8 +346,6 @@ pub(super) struct CodeRow {
     pub(super) rewards: String,
     pub(super) manual: bool,
     pub(super) result: CodeResult,
-    /// HoYoLAB's numeric retcode of the last answer, when one was answered.
-    pub(super) retcode: Option<i64>,
     /// The server stored this result (false for `available` and for codes rejected for
     /// everyone before this UID sent them).
     pub(super) stored: bool,
@@ -406,7 +404,6 @@ pub(super) fn code_rows(
                     .unwrap_or_default(),
                 manual: entry.source == "manual",
                 result: CodeResult::from_state(&entry.state),
-                retcode: entry.retcode,
                 stored: entry.updated_at.is_some(),
                 age: at.as_deref().and_then(age),
                 at,
@@ -686,7 +683,7 @@ mod tests {
     }
 
     #[test]
-    fn rows_carry_the_last_retcode_and_missing_uids_count_as_warnings() {
+    fn missing_uids_count_as_warnings() {
         let mut answered = entry(1, "starrail", "NOTFOUND", "no_game_account", Some(60));
         answered.retcode = Some(-1073);
         let settings = [setting(1, "starrail", "auto")];
@@ -694,7 +691,6 @@ mod tests {
             value.parse().ok()
         });
         assert_eq!(rows[0].result, CodeResult::NotFound);
-        assert_eq!(rows[0].retcode, Some(-1073));
         assert_eq!(chip_counts(&rows, "starrail").warn, 1);
     }
 

@@ -533,7 +533,8 @@ pub struct CodeHistoryEntry {
     #[serde(default)]
     pub source: String,
     pub state: String,
-    /// HoYoLAB's numeric retcode of this UID's last answer (older servers omit it).
+    /// HoYoLAB's numeric retcode of this UID's last answer (older servers omit it). Kept for
+    /// the API contract; the UI never renders it (operators read it in the log and metrics).
     #[serde(default)]
     pub retcode: Option<i64>,
     pub updated_at: Option<String>,
@@ -552,7 +553,8 @@ pub struct CodeRedemption {
     /// `cookie_invalid` or `captcha_required` while redemption is paused.
     pub action_required: Option<String>,
     pub action_at: Option<String>,
-    /// HoYoLAB's numeric retcode for the answer that paused redemption.
+    /// HoYoLAB's numeric retcode for the answer that paused redemption. Not rendered, like
+    /// `CodeHistoryEntry::retcode`.
     #[serde(default)]
     pub action_retcode: Option<i64>,
     /// When the current Cookie was last verified (registering one verifies it).

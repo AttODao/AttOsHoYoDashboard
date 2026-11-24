@@ -98,9 +98,6 @@ fn CodesBody(
         .filter(|game| settings.iter().any(|setting| setting.game_kind == *game))
         .collect();
     let action_at = short_at(redemption.action_at.as_deref(), ui).unwrap_or_default();
-    let action_code = redemption
-        .action_retcode
-        .map(|code| ui.format("codes.action_retcode", &[("code", &code.to_string())]));
     let cookie_body = cookie_notice_body(&redemption, ui);
     rsx! {
         if stopped {
@@ -133,7 +130,6 @@ fn CodesBody(
                     div { class: "notice-body",
                         strong { {ui.text("codes.action_cookie_title")} }
                         p { id: "codes-action-body", "{cookie_body}" }
-                        if let Some(code) = action_code.clone() { p { id: "codes-action-retcode", "{code}" } }
                     }
                     div { class: "button-row",
                         Button { r#type: "button", onclick: move |_| set_page(state, Page::Link),
@@ -149,7 +145,6 @@ fn CodesBody(
                     div { class: "notice-body",
                         strong { {ui.text("codes.action_captcha_title")} }
                         p { {ui.format("codes.action_captcha_body", &[("at", &action_at)])} }
-                        if let Some(code) = action_code.clone() { p { id: "codes-action-retcode", "{code}" } }
                     }
                     div { class: "button-row",
                         Button { id: "codes-resume", r#type: "button", disabled: stopped, onclick: move |_| {
@@ -540,7 +535,6 @@ fn HistoryRow(row: CodeRow) -> Element {
     let ui = use_preferences();
     let game = game_name(&row.game_kind, ui);
     let reason = result_reason(&row, ui);
-    let retcode = retcode_tag(&row, ui);
     let rewards = reward_text(&row.rewards);
     let mark_class = if row.game_kind == "genshin" {
         "genshin-mark"
@@ -564,7 +558,6 @@ fn HistoryRow(row: CodeRow) -> Element {
                         "UID {row.game_uid}"
                     }
                     if row.manual { " · " {ui.text("codes.manual_tag")} }
-                    if let Some(code) = retcode { " · " span { class: "retcode", "{code}" } }
                 }
                 p { class: "code-line",
                     span { class: "code-text", "{row.code}" }
@@ -655,16 +648,6 @@ fn cookie_notice_body(redemption: &CodeRedemption, ui: Preferences) -> String {
     }
 }
 
-/// HoYoLAB's number for an answered row (never for success, waiting or notify-only rows).
-fn retcode_tag(row: &CodeRow, ui: Preferences) -> Option<String> {
-    match row.result {
-        CodeResult::Redeemed | CodeResult::Pending | CodeResult::Announced => None,
-        _ => row
-            .retcode
-            .map(|code| ui.format("codes.retcode_tag", &[("code", &code.to_string())])),
-    }
-}
-
 /// The line under a result that says what happens next.
 fn result_reason(row: &CodeRow, ui: Preferences) -> Option<String> {
     Some(match row.result {
@@ -748,10 +731,7 @@ mod tests {
         );
         assert_eq!(source_warning_key(1, false), Some("codes.source_never_one"));
         assert_eq!(source_warning_key(3, false), Some("codes.source_never"));
-        let english = Preferences {
-            language: crate::i18n::Language::English,
-            ..Preferences::default()
-        };
+        let english = english();
         let text = |failures: i32, fetched_before: bool| {
             let key = source_warning_key(failures, fetched_before).unwrap();
             english.format(
@@ -792,7 +772,6 @@ mod tests {
             rewards: String::new(),
             manual,
             result,
-            retcode: None,
             stored: true,
             at: None,
             age: None,
@@ -817,8 +796,7 @@ mod tests {
     }
 
     #[test]
-    fn the_cookie_notice_says_a_fresh_cookie_was_refused_and_names_the_number() {
-        let ui = Preferences::default();
+    fn the_cookie_notice_says_a_fresh_cookie_was_refused_without_hoyolab_numbers() {
         let redemption = |after: bool, registered: Option<&str>| CodeRedemption {
             available: true,
             redemption_credentials: true,
@@ -829,33 +807,37 @@ mod tests {
             action_after_cookie_update: after,
             pending: 1,
         };
-        let repeat = ui.format(
-            "codes.action_cookie_repeat_body",
-            &[("registered", "R"), ("at", "A")],
-        );
-        let usual = ui.format("codes.action_cookie_body", &[("at", "A")]);
-        let fresh = cookie_notice_body(&redemption(true, Some("2026-11-24T06:41:00Z")), ui);
-        assert!(fresh.contains("cookie_token_v2"), "{fresh}");
-        assert_ne!(fresh, usual);
-        assert!(repeat.contains("cookie_token_v2"));
-        // Without the server's judgement or the time, the usual text stays.
-        let old = cookie_notice_body(&redemption(false, Some("2026-11-24T06:41:00Z")), ui);
-        assert!(!old.contains("cookie_token_v2"), "{old}");
-        assert!(!cookie_notice_body(&redemption(true, None), ui).contains("cookie_token_v2"));
-        let english = Preferences {
+        for ui in [Preferences::default(), english()] {
+            let repeat = ui.format(
+                "codes.action_cookie_repeat_body",
+                &[("registered", "R"), ("at", "A")],
+            );
+            let usual = ui.format("codes.action_cookie_body", &[("at", "A")]);
+            let fresh = cookie_notice_body(&redemption(true, Some("2026-11-24T06:41:00Z")), ui);
+            assert!(fresh.contains("cookie_token_v2"), "{fresh}");
+            assert_ne!(fresh, usual);
+            assert!(repeat.contains("cookie_token_v2"));
+            // Without the server's judgement or the time, the usual text stays.
+            let old = cookie_notice_body(&redemption(false, Some("2026-11-24T06:41:00Z")), ui);
+            assert!(!old.contains("cookie_token_v2"), "{old}");
+            assert!(!cookie_notice_body(&redemption(true, None), ui).contains("cookie_token_v2"));
+            // HoYoLAB's number stays in the server log and metrics only.
+            for text in [fresh, old] {
+                assert!(!text.contains("1071"), "{text}");
+            }
+        }
+    }
+
+    fn english() -> Preferences {
+        Preferences {
             language: crate::i18n::Language::English,
             ..Preferences::default()
-        };
-        assert_eq!(
-            english.format("codes.action_retcode", &[("code", "-1071")]),
-            "HoYoLAB answered error -1071."
-        );
+        }
     }
 
     #[test]
-    fn answered_rows_show_hoyolab_numbers_and_missing_uids_wait_with_a_reason() {
-        let ui = Preferences::default();
-        let row = |result, retcode| CodeRow {
+    fn answered_rows_show_no_hoyolab_numbers_and_missing_uids_wait_with_a_reason() {
+        let row = |result| CodeRow {
             game_account_id: Uuid::from_u128(1),
             game_kind: "starrail".to_owned(),
             game_uid: "800000002".to_owned(),
@@ -863,33 +845,32 @@ mod tests {
             rewards: String::new(),
             manual: true,
             result,
-            retcode,
             stored: true,
             at: None,
             age: None,
             next_attempt_at: None,
             redeem_url: None,
         };
-        let tag = |code: &str| ui.format("codes.retcode_tag", &[("code", code)]);
-        assert_eq!(
-            retcode_tag(&row(CodeResult::CookieInvalid, Some(-1071)), ui),
-            Some(tag("-1071"))
-        );
-        assert_eq!(
-            retcode_tag(&row(CodeResult::NotFound, Some(-1073)), ui),
-            Some(tag("-1073"))
-        );
-        assert_eq!(retcode_tag(&row(CodeResult::Redeemed, Some(0)), ui), None);
-        // A reopened row keeps its last number but is waiting now.
-        assert_eq!(
-            retcode_tag(&row(CodeResult::Pending, Some(-1071)), ui),
-            None
-        );
-        assert_eq!(retcode_tag(&row(CodeResult::Unknown, None), ui), None);
-        assert_eq!(
-            result_reason(&row(CodeResult::NotFound, Some(-1073)), ui).as_deref(),
-            Some(ui.text("codes.reason_no_game_account"))
-        );
+        for ui in [Preferences::default(), english()] {
+            for result in [
+                CodeResult::CookieInvalid,
+                CodeResult::NotFound,
+                CodeResult::Invalid,
+                CodeResult::Captcha,
+                CodeResult::Unknown,
+            ] {
+                let words = format!(
+                    "{} {}",
+                    ui.text(result_key(result)),
+                    result_reason(&row(result), ui).unwrap_or_default()
+                );
+                assert!(!words.chars().any(|c| c.is_ascii_digit()), "{words}");
+            }
+            assert_eq!(
+                result_reason(&row(CodeResult::NotFound), ui).as_deref(),
+                Some(ui.text("codes.reason_no_game_account"))
+            );
+        }
         assert_eq!(result_status(CodeResult::NotFound), Status::Warn);
     }
 }
