@@ -1116,9 +1116,14 @@ try{
  assert.equal(await official.count(),1,'only the notify-only code links to the official site');
  assert.deepEqual(await official.evaluate(a=>[a.getAttribute('href'),a.target,a.rel]),['https://genshin.hoyoverse.com/en/gift?code=GENSHINGIFT','_blank','noopener noreferrer']);
  assert.ok((await page.locator('.codes-history').innerText()).includes('HoYoLAB says this code is invalid. Check what you entered.'));
- // HoYoLAB's number follows an answered result (never a success).
- assert.equal(await page.locator('.codes-history > li',{hasText:'TYPEDCODE1'}).locator('.retcode').innerText(),'error -2003');
- assert.equal(await historyRows.first().locator('.retcode').count(),0,'a redeemed code shows no number');
+ // HoYoLAB's numbers stay in the server log and metrics: no row shows one (text, tooltip or
+ // accessible name), and removing it leaves no empty separator.
+ const retcodes=['-2003','-1071','-1073','-3101'];
+ const numberFree=locator=>locator.evaluateAll((elements,codes)=>elements.flatMap(element=>[element,...element.querySelectorAll('*')]).flatMap(node=>[node.textContent,...[...node.attributes].map(attribute=>attribute.value)]).filter(value=>/-\d{3,}/.test(value)||codes.some(code=>value.includes(code))),retcodes);
+ const separatorsClean=()=>page.locator('.codes-history .run-state').evaluateAll(lines=>lines.map(line=>line.textContent.replace(/\s+/g,' ').trim()).filter(text=>/·\s*·|·$|^·/.test(text)));
+ assert.equal(await page.locator('.codes-history .retcode').count(),0);
+ assert.deepEqual(await numberFree(historyRows),[],'no row shows HoYoLAB\'s number');
+ assert.deepEqual(await separatorsClean(),[],'no empty separator is left in a row');
  // Changing a mode saves it at once.
  await page.locator('#code-mode-'+uid(8)).selectOption('notify');await page.locator('.status.success').getByText('Code mode saved.',{exact:true}).waitFor();await idle();
  assert.deepEqual(codePatches.at(-1),{id:uid(8),mode:'notify'});
@@ -1212,21 +1217,55 @@ try{
  codeRedemption={...codeRedemption,action_required:'cookie_invalid',action_at:hoursAgo(0.01),action_retcode:-1071,cookie_verified_at:hoursAgo(0.05),action_after_cookie_update:true};
  await page.locator('#codes-refresh').click();await page.locator('#codes-action').waitFor();await idle();
  assert.equal(await page.locator('#codes-action').getAttribute('role'),'alert');
- assert.equal(await page.locator('#codes-action-retcode').innerText(),'HoYoLAB answered error -1071.');
+ assert.equal(await page.locator('#codes-action-retcode').count(),0,'the notice names no number');
+ assert.deepEqual(await numberFree(page.locator('#codes-action')),[]);
  const repeatBody=await page.locator('#codes-action-body').innerText();
  assert.ok(repeatBody.includes('Registering the same Cookie again will not help')&&repeatBody.includes('cookie_token_v2'),repeatBody);
  codeRedemption={...codeRedemption,action_after_cookie_update:false};
  await page.locator('#codes-refresh').click();await idle();
  const usualBody=await page.locator('#codes-action-body').innerText();
  assert.ok(usualBody.includes('register the Cookie again')&&!usualBody.includes('will not help'),usualBody);
- // A UID HoYoLAB did not find waits on its own, with its number and what reopens it.
+ // A UID HoYoLAB did not find waits on its own, with what reopens it (and no number).
  codeHistory.unshift({game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',code_id:null,code:'NOTFOUND01',source:'manual',state:'no_game_account',retcode:-1073,updated_at:hoursAgo(0),next_attempt_at:null,redeem_url:null});
  await page.locator('#codes-refresh').click();await idle();
  const notFound=page.locator('.codes-history > li',{hasText:'NOTFOUND01'});
  assert.equal(await notFound.locator('.run-state > .status-mark').getAttribute('data-status'),'warn');
  const notFoundText=(await notFound.innerText()).replace(/\s+/g,' ');
- assert.ok(notFoundText.includes('UID not found')&&notFoundText.includes('error -1073')&&notFoundText.includes(enText['codes.reason_no_game_account']),notFoundText);
- codeHistory.shift();
+ assert.ok(notFoundText.includes('UID not found')&&!notFoundText.includes('1073')&&!notFoundText.includes('error')&&notFoundText.includes(enText['codes.reason_no_game_account']),notFoundText);
+ assert.deepEqual(await numberFree(historyRows),[]);
+ // In Japanese too: failed rows and both action notices carry the result words and the steps,
+ // never HoYoLAB's number. Screenshots (ja, dark) at 1280px and 360px.
+ const jaText=JSON.parse(fs.readFileSync(path.join(root,'dashboard-ui/locales/ja.json'),'utf8'));
+ codeHistory.unshift({game_account_id:uid(8),game_kind:'starrail',game_uid:'700000008',code_id:null,code:'COOKIEFAIL1',source:'manual',state:'cookie_invalid',retcode:-1071,updated_at:hoursAgo(0),next_attempt_at:null,redeem_url:null});
+ codeRedemption={...codeRedemption,action_after_cookie_update:true};
+ await openMenu();await page.locator('#ahd-menu').getByRole('combobox',{name:'Language',exact:true}).selectOption('ja');
+ await page.waitForFunction(()=>document.documentElement.lang==='ja');
+ await page.keyboard.press('Escape');await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});
+ await page.locator('#codes-refresh').click();await page.locator('.codes-history > li',{hasText:'COOKIEFAIL1'}).waitFor();await idle();
+ const codesShot=async name=>{await page.evaluate(()=>{document.documentElement.dataset.codesShotTheme=document.documentElement.dataset.theme;document.documentElement.dataset.theme='dark';});for(const width of [1280,360]){await page.setViewportSize({width,height:width===360?800:900});await settled();await page.screenshot({path:path.join(root,`target/ui-codes-${name}-${width}-ja-dark.png`),fullPage:true});}await page.setViewportSize({width:1280,height:900});await page.evaluate(()=>{document.documentElement.dataset.theme=document.documentElement.dataset.codesShotTheme;delete document.documentElement.dataset.codesShotTheme;});};
+ for(const [code,key] of [['COOKIEFAIL1','codes.result_cookie_invalid'],['NOTFOUND01','codes.result_no_game_account'],['TYPEDCODE1','codes.result_invalid']]){
+  const text=(await page.locator('.codes-history > li',{hasText:code}).innerText()).replace(/\s+/g,' ');
+  assert.ok(text.includes(jaText[key])&&!text.includes('エラー'),text);
+ }
+ assert.deepEqual(await numberFree(historyRows),[],'no Japanese row shows a number');
+ assert.deepEqual(await separatorsClean(),[]);
+ assert.ok((await page.locator('#codes-action').innerText()).includes(jaText['codes.action_cookie_title']));
+ assert.ok((await page.locator('#codes-action-body').innerText()).includes('cookie_token_v2'));
+ assert.equal(await page.locator('#codes-action-retcode').count(),0);
+ assert.deepEqual(await numberFree(page.locator('#codes-action')),[],'the Japanese Cookie notice names no number');
+ await codesShot('cookie');
+ codeRedemption={...codeRedemption,action_required:'captcha_required',action_retcode:-3101,action_after_cookie_update:false};
+ await page.locator('#codes-refresh').click();await page.locator('#codes-resume').waitFor();await idle();
+ assert.ok((await page.locator('#codes-action').innerText()).includes(jaText['codes.action_captcha_title']));
+ assert.equal(await page.locator('#codes-action-retcode').count(),0);
+ assert.deepEqual(await numberFree(page.locator('#codes-action')),[],'the Japanese CAPTCHA notice names no number');
+ await codesShot('captcha');
+ codeRedemption={...codeRedemption,action_required:'cookie_invalid',action_retcode:-1071};
+ await openMenu();await page.locator('#ahd-menu').getByRole('combobox',{name:'言語',exact:true}).selectOption('en');
+ await page.waitForFunction(()=>document.documentElement.lang==='en');
+ await page.keyboard.press('Escape');await page.locator('#ahd-menu[open]').waitFor({state:'hidden'});
+ codeHistory.splice(0,2);
+ await page.locator('#codes-refresh').click();await page.locator('#codes-action').waitFor();await idle();
  // The notice's button opens the Cookie steps; pasting a Cookie without cookie_token_v2 over
  // one that redeems is warned about before saving.
  await page.locator('#codes-action').getByRole('button').click();await page.locator('#settings-tab-link[aria-selected=true]').waitFor();await idle();
