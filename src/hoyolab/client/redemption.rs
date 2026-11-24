@@ -1,7 +1,8 @@
 //! Gift-code redemption on HoYoverse's web endpoints, as genshin.py's `redeem_code` sends
-//! it (pinned commit in `docs/hoyolab/code-redemption.md`). One call is one request that
-//! may redeem a code: it is never retried here, and any transport or parse error means the
-//! outcome is unknown, never "not sent". Only the numeric retcode of an answer is kept.
+//! it, with the Star Rail body aligned to the official gift page's script (sources in
+//! `docs/hoyolab/code-redemption.md`). One call is one request that may redeem a code: it
+//! is never retried here, and any transport or parse error means the outcome is unknown,
+//! never "not sent". Only the numeric retcode of an answer is kept.
 use super::{Error, Result, read_body, shared_http};
 use crate::game::GameKind;
 use reqwest::{
@@ -18,7 +19,8 @@ pub const GENSHIN_URL: &str =
 /// Honkai: Star Rail: a POST with a JSON body (genshin.py `CODE_URL`).
 pub const STARRAIL_URL: &str =
     "https://public-operation-hkrpg.hoyoverse.com/common/apicdkey/api/webExchangeCdkeyRisk";
-/// genshin.py sends `create_short_lang_code(lang)`: `ja-jp` becomes `ja`.
+/// genshin.py sends `create_short_lang_code(lang)`: `ja-jp` becomes `ja`; the official
+/// gift page's `CDKEY_LANG_MAP` and its `x-rpc-language` header use the same short form.
 const LANG: &str = "ja";
 /// genshin.py `GEETEST_RETCODES`: answers that ask for a CAPTCHA.
 const GEETEST_RETCODES: [i64; 4] = [10035, 5003, 10041, 1034];
@@ -123,7 +125,8 @@ impl RedemptionClient {
         let t = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|_| Error::Clock)?
-            .as_secs();
+            .as_millis();
+        let t = u64::try_from(t).map_err(|_| Error::Clock)?;
         self.redeem_with(request, &uuid::Uuid::new_v4().to_string(), t)
             .await
     }
@@ -138,9 +141,12 @@ impl RedemptionClient {
     }
 
     /// genshin.py: Genshin is a GET with `uid, region, lang, cdkey, game_biz` as query;
-    /// Star Rail is a POST whose JSON body also carries a random `device_uuid`,
-    /// `platform: "4"` and the Unix time `t`. Both send the game site's Origin/Referer and
-    /// the Cookie, no DS header.
+    /// Star Rail is a POST whose JSON body also carries a random `device_uuid` and
+    /// `platform: "4"`. Both send the game site's Origin/Referer and the Cookie, no DS
+    /// header. For Star Rail the official gift page's script (`web-cdkey-exchange/hkrpg`)
+    /// differs from genshin.py in three details, and AHD follows the page: `t` is
+    /// `Date.now()` (Unix milliseconds), `uid` is the role list's `game_uid` text, and the
+    /// request carries `x-rpc-language`.
     fn prepare(
         &self,
         request: &RedemptionRequest<'_>,
@@ -162,7 +168,6 @@ impl RedemptionClient {
                 .header("Origin", "https://genshin.hoyoverse.com")
                 .header("Referer", "https://genshin.hoyoverse.com/"),
             GameKind::Starrail(_) => {
-                let uid: u64 = request.uid.parse().map_err(|_| "ゲームUIDが不正です")?;
                 // Keys in genshin.py's order (also alphabetical, as serde_json writes them).
                 let body = serde_json::json!({
                     "cdkey": request.code,
@@ -172,12 +177,13 @@ impl RedemptionClient {
                     "platform": "4",
                     "region": request.region,
                     "t": t,
-                    "uid": uid,
+                    "uid": request.uid,
                 });
                 self.http
                     .request(Method::POST, STARRAIL_URL)
                     .header("Origin", "https://hsr.hoyoverse.com")
                     .header("Referer", "https://hsr.hoyoverse.com/")
+                    .header("x-rpc-language", LANG)
                     .header(CONTENT_TYPE, "application/json")
                     .body(body.to_string())
             }

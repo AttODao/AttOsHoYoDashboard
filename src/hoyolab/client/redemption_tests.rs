@@ -119,7 +119,7 @@ fn answers_are_reduced_to_their_class_and_challenges_win_over_success() {
 }
 
 #[tokio::test]
-async fn requests_match_genshin_py_over_local_tls() {
+async fn requests_match_genshin_py_and_the_official_star_rail_page_over_local_tls() {
     let server = TlsMockServer::start(vec![
         ExpectedRequest::get(
             "public-operation-hk4e.hoyoverse.com",
@@ -141,9 +141,12 @@ async fn requests_match_genshin_py_over_local_tls() {
         .header("origin", "https://hsr.hoyoverse.com")
         .header("referer", "https://hsr.hoyoverse.com/")
         .header("content-type", "application/json")
+        // The official page (`web-cdkey-exchange/hkrpg/main.js`) sends the short language
+        // as `x-rpc-language`, `t` as `Date.now()` and the role list's `game_uid` text.
+        .header("x-rpc-language", "ja")
         .absent_header("ds")
         .request_body(
-            r#"{"cdkey":"STARRAILGIFT","device_uuid":"00000000-0000-4000-8000-000000000001","game_biz":"hkrpg_global","lang":"ja","platform":"4","region":"prod_official_asia","t":1700000000,"uid":800000002}"#,
+            r#"{"cdkey":"STARRAILGIFT","device_uuid":"00000000-0000-4000-8000-000000000001","game_biz":"hkrpg_global","lang":"ja","platform":"4","region":"prod_official_asia","t":1700000000123,"uid":"800000002"}"#,
         ),
         ExpectedRequest::status(
             "public-operation-hk4e.hoyoverse.com",
@@ -166,7 +169,7 @@ async fn requests_match_genshin_py_over_local_tls() {
             .redeem_with(
                 &starrail("STARRAILGIFT"),
                 "00000000-0000-4000-8000-000000000001",
-                1_700_000_000
+                1_700_000_000_123
             )
             .await,
         Ok(RedemptionAnswer {
