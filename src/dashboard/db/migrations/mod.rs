@@ -14,6 +14,7 @@ mod initial_accounts;
 mod notifications;
 mod passkeys;
 mod redemption_codes;
+mod redemption_no_game_account;
 mod remove_web_push;
 mod resource_history;
 
@@ -42,6 +43,7 @@ impl MigratorTrait for Migrator {
             Box::new(resource_history::ResourceHistory),
             Box::new(redemption_codes::RedemptionCodes),
             Box::new(code_redemption::CodeRedemption),
+            Box::new(redemption_no_game_account::RedemptionNoGameAccount),
         ]
     }
 }

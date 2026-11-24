@@ -46,7 +46,7 @@ fn every_documented_retcode_has_its_class() {
         (-2011, RankTooLow),
         (-2021, RankTooLow),
         (-1071, CookieInvalid),
-        (-1073, CookieInvalid),
+        (-1073, NoGameAccount),
         (-100, CookieInvalid),
         (10001, CookieInvalid),
         (10035, CaptchaRequired),
@@ -60,16 +60,25 @@ fn every_documented_retcode_has_its_class() {
         (-5003, Other(-5003)),
     ] {
         assert_eq!(RedemptionReply::classify(retcode), class, "{retcode}");
-        assert_eq!(decode(envelope(retcode).as_bytes()), Ok(class), "{retcode}");
+        // The retcode is kept with every class, not only with unclassified answers.
+        assert_eq!(
+            decode(envelope(retcode).as_bytes()),
+            Ok(RedemptionAnswer {
+                reply: class,
+                retcode
+            }),
+            "{retcode}"
+        );
     }
 }
 
 #[test]
 fn answers_are_reduced_to_their_class_and_challenges_win_over_success() {
+    let reply = |body: &str| decode(body.as_bytes()).map(|answer| answer.reply);
     // Success needs no data.
-    assert_eq!(decode(br#"{"retcode":0}"#), Ok(RedemptionReply::Redeemed));
+    assert_eq!(reply(r#"{"retcode":0}"#), Ok(RedemptionReply::Redeemed));
     assert_eq!(
-        decode(br#"{"retcode":0,"message":"OK","data":{"msg":"ok","special_shipping":0}}"#),
+        reply(r#"{"retcode":0,"message":"OK","data":{"msg":"ok","special_shipping":0}}"#),
         Ok(RedemptionReply::Redeemed)
     );
     // A risk challenge in data (genshin.py `check_for_geetest`), directly or in gt_result.
@@ -78,12 +87,16 @@ fn answers_are_reduced_to_their_class_and_challenges_win_over_success() {
         r#"{"retcode":0,"data":{"gt_result":{"risk_code":375,"gt":"g","challenge":"c"}}}"#,
         r#"{"retcode":-2017,"data":{"gt_result":{"gt":"g","challenge":"c","success":1}}}"#,
     ] {
-        assert_eq!(
-            decode(body.as_bytes()),
-            Ok(RedemptionReply::CaptchaRequired),
-            "{body}"
-        );
+        assert_eq!(reply(body), Ok(RedemptionReply::CaptchaRequired), "{body}");
     }
+    // A challenge keeps the retcode it came with.
+    assert_eq!(
+        decode(br#"{"retcode":-2017,"data":{"gt_result":{"gt":"g","challenge":"c","success":1}}}"#),
+        Ok(RedemptionAnswer {
+            reply: RedemptionReply::CaptchaRequired,
+            retcode: -2017
+        })
+    );
     // Not a challenge: risk_code 0, success 0, or an empty gt/challenge.
     for body in [
         r#"{"retcode":0,"data":{"gt_result":{"risk_code":0,"gt":"g","challenge":"c","success":1}}}"#,
@@ -92,11 +105,7 @@ fn answers_are_reduced_to_their_class_and_challenges_win_over_success() {
         r#"{"retcode":0,"data":{"gt_result":null}}"#,
         r#"{"retcode":0,"data":"text"}"#,
     ] {
-        assert_eq!(
-            decode(body.as_bytes()),
-            Ok(RedemptionReply::Redeemed),
-            "{body}"
-        );
+        assert_eq!(reply(body), Ok(RedemptionReply::Redeemed), "{body}");
     }
     // Anything that is not the envelope leaves the outcome unknown.
     for body in [
@@ -147,7 +156,10 @@ async fn requests_match_genshin_py_over_local_tls() {
         client
             .redeem_with(&genshin("GENSHINGIFT"), "unused-for-get", 1)
             .await,
-        Ok(RedemptionReply::Redeemed)
+        Ok(RedemptionAnswer {
+            reply: RedemptionReply::Redeemed,
+            retcode: 0
+        })
     );
     assert_eq!(
         client
@@ -157,7 +169,10 @@ async fn requests_match_genshin_py_over_local_tls() {
                 1_700_000_000
             )
             .await,
-        Ok(RedemptionReply::AlreadyUsed)
+        Ok(RedemptionAnswer {
+            reply: RedemptionReply::AlreadyUsed,
+            retcode: -2017
+        })
     );
     // An HTTP error is an error (unknown outcome), never a class.
     assert_eq!(

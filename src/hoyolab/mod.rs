@@ -8,6 +8,6 @@ pub mod models;
 
 pub use client::{
     HoyolabClient, RecordAccount,
-    redemption::{RedemptionClient, RedemptionReply, RedemptionRequest},
+    redemption::{RedemptionAnswer, RedemptionClient, RedemptionReply, RedemptionRequest},
 };
 pub use error::{Error, Result};

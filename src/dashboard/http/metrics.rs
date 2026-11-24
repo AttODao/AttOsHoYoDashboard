@@ -215,6 +215,23 @@ async fn codes(app: &App, out: &mut String) -> Result<()> {
             "ahd_code_redemptions_total{{game=\"{game}\",outcome=\"{outcome}\"}} {count}"
         );
     }
+    let _ = writeln!(
+        out,
+        "# HELP ahd_code_redemption_cookie_retcodes_total Cookie-invalid redemption answers since start, by game and HoYoLAB retcode.\n# TYPE ahd_code_redemption_cookie_retcodes_total counter"
+    );
+    let cookie_retcodes = app
+        .redemption
+        .as_ref()
+        .map(|runs| runs.stats().cookie_retcodes())
+        .unwrap_or_else(|| {
+            crate::dashboard::codes::redeem::RedeemStats::default().cookie_retcodes()
+        });
+    for (game, retcode, count) in cookie_retcodes {
+        let _ = writeln!(
+            out,
+            "ahd_code_redemption_cookie_retcodes_total{{game=\"{game}\",retcode=\"{retcode}\"}} {count}"
+        );
+    }
     let rows = app
         .accounts
         .db

@@ -13,7 +13,7 @@ use crate::dashboard::{
 };
 use attoshoyodashboard::{
     game::GameKind,
-    hoyolab::{Error as UpstreamError, RedemptionReply, RedemptionRequest},
+    hoyolab::{Error as UpstreamError, RedemptionAnswer, RedemptionRequest},
 };
 use axum::{
     Router,
@@ -227,10 +227,15 @@ pub(in crate::dashboard) struct Sent {
     pub(in crate::dashboard) at: std::time::Instant,
 }
 
-type Script = std::collections::VecDeque<Result<RedemptionReply, UpstreamError>>;
+type Script = std::collections::VecDeque<Result<RedemptionAnswer, UpstreamError>>;
+
+/// A scripted answer carrying `retcode`, classified like a real one.
+pub(in crate::dashboard) fn answer(retcode: i64) -> Result<RedemptionAnswer, UpstreamError> {
+    Ok(RedemptionAnswer::from_retcode(retcode))
+}
 type Hook = Box<dyn FnMut(&str) + Send>;
 
-/// Scripted answers per code (in order; `Redeemed` once a script runs out) and every
+/// Scripted answers per code (in order; retcode 0 once a script runs out) and every
 /// request received. Nothing leaves the process.
 #[derive(Clone, Default)]
 pub(in crate::dashboard) struct MockRedeem {
@@ -249,7 +254,7 @@ impl MockRedeem {
     pub(in crate::dashboard) fn script(
         &self,
         code: &str,
-        answers: impl IntoIterator<Item = Result<RedemptionReply, UpstreamError>>,
+        answers: impl IntoIterator<Item = Result<RedemptionAnswer, UpstreamError>>,
     ) -> &Self {
         self.answers
             .lock()
@@ -279,7 +284,7 @@ impl RedeemGateway for MockRedeem {
         &self,
         cookie: &Credentials,
         request: RedemptionRequest<'_>,
-    ) -> Result<RedemptionReply, UpstreamError> {
+    ) -> Result<RedemptionAnswer, UpstreamError> {
         if let Some(hook) = self.hook.lock().unwrap().as_mut() {
             hook(request.code);
         }
@@ -300,6 +305,6 @@ impl RedeemGateway for MockRedeem {
             .unwrap()
             .get_mut(request.code)
             .and_then(std::collections::VecDeque::pop_front)
-            .unwrap_or(Ok(RedemptionReply::Redeemed))
+            .unwrap_or_else(|| answer(0))
     }
 }

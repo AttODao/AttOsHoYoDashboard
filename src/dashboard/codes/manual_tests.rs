@@ -215,6 +215,9 @@ async fn the_view_reports_state_without_secrets_and_redeem_now_ends_a_pause() {
             "redemption_credentials": false,
             "action_required": null,
             "action_at": null,
+            "action_retcode": null,
+            "cookie_verified_at": null,
+            "action_after_cookie_update": false,
             "running": false,
             "pending": 0,
         })
@@ -230,6 +233,7 @@ async fn the_view_reports_state_without_secrets_and_redeem_now_ends_a_pause() {
             Expr::value("cookie_invalid"),
         )
         .col_expr(redemption_ledger::Column::Posts, Expr::value(1))
+        .col_expr(redemption_ledger::Column::Retcode, Expr::value(Some(-1071)))
         .col_expr(
             redemption_ledger::Column::LastSentAt,
             Expr::value(Some(Utc::now())),
@@ -255,6 +259,11 @@ async fn the_view_reports_state_without_secrets_and_redeem_now_ends_a_pause() {
     assert_eq!(paused["redemption_credentials"], true);
     assert_eq!(paused["action_required"], "cookie_invalid");
     assert!(paused["action_at"].is_string());
+    // The number of the answer that paused, and that it came right after the Cookie was
+    // verified (the fixture verified it just now).
+    assert_eq!(paused["action_retcode"], -1071);
+    assert!(paused["cookie_verified_at"].is_string());
+    assert_eq!(paused["action_after_cookie_update"], true);
     assert_eq!(paused["running"], true);
     assert_eq!(paused["pending"], 0);
     let text = paused.to_string();
@@ -267,4 +276,17 @@ async fn the_view_reports_state_without_secrets_and_redeem_now_ends_a_pause() {
         resumed["available"], false,
         "no Cookie storage, no redemption"
     );
+}
+
+#[test]
+fn a_pause_soon_after_registering_the_cookie_reads_as_the_new_cookie_refused() {
+    let registered = Utc::now() - chrono::Duration::days(3);
+    let at = |minutes: i64| Some(registered + chrono::Duration::minutes(minutes));
+    assert!(after_cookie_update(at(1), Some(registered)));
+    assert!(after_cookie_update(at(60), Some(registered)));
+    assert!(!after_cookie_update(at(61), Some(registered)));
+    // A pause older than the Cookie (cleared by registering) or without either time.
+    assert!(!after_cookie_update(at(-1), Some(registered)));
+    assert!(!after_cookie_update(None, Some(registered)));
+    assert!(!after_cookie_update(at(1), None));
 }

@@ -49,14 +49,35 @@ pub enum RedemptionReply {
     NotForAccount,
     /// -2011, -2021 (`RedeemGameLevelTooLow`).
     RankTooLow,
-    /// -1071, -100, 10001 (`InvalidCookies`), -1073 (no game account bound to the Cookie).
+    /// -1071, -100, 10001 (`InvalidCookies`).
     CookieInvalid,
+    /// -1073 (genshin.py `AccountNotFound`: "Account has no game account bound to it"):
+    /// the UID and server were not found on the account the Cookie names.
+    NoGameAccount,
     /// A Geetest retcode, or a `gt_result`/risk challenge in `data`.
     CaptchaRequired,
     /// -2016 (`RedemptionCooldown`), -110 and 1028 (`VisitsTooFrequently`): not processed.
     Cooldown,
     /// Any other retcode: whether the code was used is unknown.
     Other(i64),
+}
+
+/// One answer: its class and the numeric retcode it came with (kept for diagnostics; the
+/// message and `data` never leave this module).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RedemptionAnswer {
+    pub reply: RedemptionReply,
+    pub retcode: i64,
+}
+
+impl RedemptionAnswer {
+    /// The answer a bare retcode means (no CAPTCHA challenge in `data`).
+    pub fn from_retcode(retcode: i64) -> Self {
+        Self {
+            reply: RedemptionReply::classify(retcode),
+            retcode,
+        }
+    }
 }
 
 impl RedemptionReply {
@@ -69,7 +90,8 @@ impl RedemptionReply {
             -1065 | -2003 | -2004 => Self::Invalid,
             -2008 | -2014 => Self::NotForAccount,
             -2011 | -2021 => Self::RankTooLow,
-            -1071 | -1073 | -100 | 10001 => Self::CookieInvalid,
+            -1071 | -100 | 10001 => Self::CookieInvalid,
+            -1073 => Self::NoGameAccount,
             code if GEETEST_RETCODES.contains(&code) => Self::CaptchaRequired,
             -2016 | -110 | 1028 => Self::Cooldown,
             code => Self::Other(code),
@@ -97,7 +119,7 @@ impl RedemptionClient {
     }
 
     /// Sends the one request that may redeem `request.code`.
-    pub async fn redeem(&self, request: &RedemptionRequest<'_>) -> Result<RedemptionReply> {
+    pub async fn redeem(&self, request: &RedemptionRequest<'_>) -> Result<RedemptionAnswer> {
         let t = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|_| Error::Clock)?
@@ -111,7 +133,7 @@ impl RedemptionClient {
         request: &RedemptionRequest<'_>,
         device_uuid: &str,
         t: u64,
-    ) -> Result<RedemptionReply> {
+    ) -> Result<RedemptionAnswer> {
         decode(&read_body(self.prepare(request, device_uuid, t)?).await?)
     }
 
@@ -202,8 +224,9 @@ fn validate_cookie(raw: &str) -> Result<()> {
 }
 
 /// genshin.py `_request`: `check_for_geetest` first, then the retcode. A body that is not
-/// the JSON envelope is an error (outcome unknown); messages and `data` are discarded.
-fn decode(body: &[u8]) -> Result<RedemptionReply> {
+/// the JSON envelope is an error (outcome unknown); messages and `data` are discarded, the
+/// retcode is kept with the class.
+fn decode(body: &[u8]) -> Result<RedemptionAnswer> {
     #[derive(Deserialize)]
     struct Envelope {
         retcode: i64,
@@ -212,9 +235,12 @@ fn decode(body: &[u8]) -> Result<RedemptionReply> {
     }
     let envelope: Envelope = serde_json::from_slice(body).map_err(|_| Error::InvalidEnvelope)?;
     if envelope.data.as_ref().is_some_and(risk_challenge) {
-        return Ok(RedemptionReply::CaptchaRequired);
+        return Ok(RedemptionAnswer {
+            reply: RedemptionReply::CaptchaRequired,
+            retcode: envelope.retcode,
+        });
     }
-    Ok(RedemptionReply::classify(envelope.retcode))
+    Ok(RedemptionAnswer::from_retcode(envelope.retcode))
 }
 
 /// genshin.py `check_for_geetest` on `data`: its `gt_result` (or `data` itself) with

@@ -3,7 +3,7 @@
 //! session, never an API token, and are rate-limited per user.
 use super::{
     catalog::GAMES,
-    ledger::{MANUAL, PENDING, rejection},
+    ledger::{MANUAL, NO_GAME_ACCOUNT, PENDING, rejection},
     plan::switched_on,
     settings::{NEEDS_REDEMPTION_COOKIE, can_redeem},
     source,
@@ -36,6 +36,10 @@ const LIMITS: [(Operation, u32, Duration); 2] = [
     (Operation::RedeemNow, 3, Duration::from_secs(10 * 60)),
 ];
 const MAX_BUCKETS: usize = 4096;
+/// A pause this soon after the Cookie was verified (registering one verifies it) means a
+/// freshly checked Cookie was refused, not an old one that expired, so the settings tab says
+/// registering the same Cookie again will not help.
+const FRESH_COOKIE: chrono::Duration = chrono::Duration::hours(1);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(in crate::dashboard) enum Operation {
@@ -91,9 +95,16 @@ pub(in crate::dashboard) struct RedemptionView {
     /// Why redemption waits for the owner (`cookie_invalid`, `captcha_required`), or null.
     action_required: Option<String>,
     action_at: Option<DateTime<Utc>>,
+    /// HoYoLAB's numeric retcode for the answer that paused redemption (never a message).
+    action_retcode: Option<i32>,
+    /// When the current Cookie was last verified (registering a Cookie verifies it).
+    cookie_verified_at: Option<DateTime<Utc>>,
+    /// The pause came within `FRESH_COOKIE` of verifying the current Cookie.
+    action_after_cookie_update: bool,
     /// A run for this owner is going on.
     running: bool,
-    /// Codes waiting to be sent for the owner's UIDs.
+    /// Codes waiting to be sent for the owner's UIDs, including those held for a UID
+    /// HoYoLAB did not find (`no_game_account`), which "redeem now" sends again.
     pending: u64,
 }
 
@@ -171,33 +182,67 @@ pub(in crate::dashboard) async fn view(
         .filter(hoyolab_account::Column::OwnerUserId.eq(fresh.user.id))
         .one(&tx)
         .await?;
-    let pending = match &link {
+    let (pending, action_retcode) = match &link {
         Some(link) => {
             let ids: Vec<Uuid> = detected(&tx, link.id, None)
                 .await?
                 .into_iter()
                 .map(|row| row.id)
                 .collect();
-            sea_orm::PaginatorTrait::count(
+            let pending = sea_orm::PaginatorTrait::count(
                 redemption_ledger::Entity::find()
-                    .filter(redemption_ledger::Column::GameAccountId.is_in(ids))
-                    .filter(redemption_ledger::Column::State.eq(PENDING)),
+                    .filter(redemption_ledger::Column::GameAccountId.is_in(ids.clone()))
+                    .filter(redemption_ledger::Column::State.is_in([PENDING, NO_GAME_ACCOUNT])),
                 &tx,
             )
-            .await?
+            .await?;
+            // The row whose answer paused the link keeps that answer's state and number.
+            let retcode = match &link.redemption_action {
+                Some(action) => redemption_ledger::Entity::find()
+                    .filter(redemption_ledger::Column::GameAccountId.is_in(ids))
+                    .filter(redemption_ledger::Column::State.eq(action.as_str()))
+                    .order_by_desc(redemption_ledger::Column::UpdatedAt)
+                    .order_by_asc(redemption_ledger::Column::Code)
+                    .one(&tx)
+                    .await?
+                    .and_then(|row| row.retcode),
+                None => None,
+            };
+            (pending, retcode)
         }
-        None => 0,
+        None => (0, None),
     };
     let available = server_can_redeem && switched_on(&tx).await?;
     tx.commit().await?;
+    let action_at = link.as_ref().and_then(|row| row.redemption_action_at);
+    let cookie_verified_at = link
+        .as_ref()
+        .filter(|row| row.auth_status != "removed")
+        .and_then(|row| row.verified_at);
     Ok(RedemptionView {
         available,
         redemption_credentials: link.as_ref().is_some_and(can_redeem),
         action_required: link.as_ref().and_then(|row| row.redemption_action.clone()),
-        action_at: link.as_ref().and_then(|row| row.redemption_action_at),
+        action_at,
+        action_retcode,
+        cookie_verified_at,
+        action_after_cookie_update: after_cookie_update(action_at, cookie_verified_at),
         running,
         pending,
     })
+}
+
+/// Whether a pause at `action_at` came right after the Cookie verified at `registered_at`.
+fn after_cookie_update(
+    action_at: Option<DateTime<Utc>>,
+    registered_at: Option<DateTime<Utc>>,
+) -> bool {
+    match (action_at, registered_at) {
+        (Some(action_at), Some(registered_at)) => {
+            action_at >= registered_at && action_at - registered_at <= FRESH_COOKIE
+        }
+        _ => false,
+    }
 }
 
 /// Queues `raw` for every detected UID of `game_kind` (or only for `only`, one of
