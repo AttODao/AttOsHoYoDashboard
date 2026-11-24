@@ -10,6 +10,12 @@
 //! retries explicitly. Every answered row keeps HoYoLAB's numeric retcode (never a message).
 //! Expired and invalid codes are also recorded globally (`redemption_code_rejections`), so
 //! nobody sends them again, whatever the source lists later.
+//!
+//! Rows come from three sources: `catalogue` (an `auto` UID's listed code), `manual` (a
+//! code the owner entered) and `bulk` (a listed code the owner asked to redeem once for a
+//! UID outside `auto`). A `bulk` row still `pending` when the source stops listing its code
+//! is dropped (deleted, as if it had never been queued): it was never answered with a
+//! result, and only listed codes are redeemed that way.
 use crate::dashboard::{
     db::entities::{game_account, hoyolab_account, redemption_code_rejection, redemption_ledger},
     error::Result,
@@ -27,6 +33,9 @@ pub(in crate::dashboard) const PENDING: &str = "pending";
 pub(in crate::dashboard) const SENDING: &str = "sending";
 pub(in crate::dashboard) const CATALOGUE: &str = "catalogue";
 pub(in crate::dashboard) const MANUAL: &str = "manual";
+/// A listed code the owner asked to redeem once for a UID outside `auto`
+/// (`codes::bulk`): sent whatever the mode, but only while the source lists it.
+pub(in crate::dashboard) const BULK: &str = "bulk";
 /// HoYoLAB found no game account for the UID and server on the Cookie's account: that UID
 /// sends nothing more until the Cookie is updated or the owner retries.
 pub(in crate::dashboard) const NO_GAME_ACCOUNT: &str = "no_game_account";
@@ -268,6 +277,23 @@ pub(super) async fn reject_in(
     Ok(())
 }
 
+/// Drops every `bulk` row still `pending` whose code the source no longer lists for its
+/// UID's game (see the module documentation). Called wherever such a row can appear: when
+/// the catalogue stops listing a code, when the owner's action reopens rows and before
+/// each plan (a cooldown answer can put a row back after its code left the list).
+pub(in crate::dashboard) async fn drop_unlisted_in(db: &impl ConnectionTrait) -> Result<u64> {
+    Ok(db
+        .execute_raw(sea_orm::Statement::from_string(
+            sea_orm::DbBackend::Postgres,
+            "DELETE FROM redemption_ledger AS l USING game_accounts AS g \
+             WHERE l.game_account_id = g.id AND l.source = 'bulk' AND l.state = 'pending' \
+             AND NOT EXISTS (SELECT 1 FROM redemption_codes AS c \
+               WHERE c.game_kind = g.game_kind AND c.code = l.code AND c.listed)",
+        ))
+        .await?
+        .rows_affected())
+}
+
 /// The global rejection of `code`, if any (`expired` or `invalid`).
 pub(super) async fn rejection(
     db: &impl ConnectionTrait,
@@ -342,6 +368,8 @@ pub(in crate::dashboard) async fn reopen_in(
         .filter(redemption_ledger::Column::State.is_in(REOPENED))
         .exec(tx)
         .await?;
+    // A reopened `bulk` row whose code left the list meanwhile is dropped, not sent.
+    drop_unlisted_in(tx).await?;
     Ok(())
 }
 

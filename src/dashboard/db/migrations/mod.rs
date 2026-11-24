@@ -13,6 +13,7 @@ mod hoyolab_cookie_removal;
 mod initial_accounts;
 mod notifications;
 mod passkeys;
+mod redemption_bulk_source;
 mod redemption_codes;
 mod redemption_no_game_account;
 mod remove_web_push;
@@ -44,6 +45,7 @@ impl MigratorTrait for Migrator {
             Box::new(redemption_codes::RedemptionCodes),
             Box::new(code_redemption::CodeRedemption),
             Box::new(redemption_no_game_account::RedemptionNoGameAccount),
+            Box::new(redemption_bulk_source::RedemptionBulkSource),
         ]
     }
 }

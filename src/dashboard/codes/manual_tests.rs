@@ -220,6 +220,7 @@ async fn the_view_reports_state_without_secrets_and_redeem_now_ends_a_pause() {
             "action_after_cookie_update": false,
             "running": false,
             "pending": 0,
+            "bulk": [],
         })
     );
     let owner_link = redeem_link(db, actor.user.id, "100000001").await;

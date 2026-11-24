@@ -19,8 +19,9 @@ const KEEP_UNLISTED_DAYS: i64 = 90;
 /// refreshed and the rest marked unlisted. With `first_run` (no run has fully succeeded
 /// yet) codes added while the game has none are `seeded`: they predate AHD watching and
 /// are never announced. Later, an empty game (the source listed nothing, or pruning
-/// emptied it) takes new codes as news. Returns how many codes were new. A failed fetch
-/// never reaches this, so failures never remove codes.
+/// emptied it) takes new codes as news. Queued `bulk` rows of codes no longer listed are
+/// dropped. Returns how many codes were new. A failed fetch never reaches this, so
+/// failures never remove codes.
 pub(super) async fn store(
     db: &DatabaseConnection,
     game: &str,
@@ -78,6 +79,8 @@ pub(super) async fn store(
             .filter(redemption_code::Column::Id.is_in(gone))
             .exec(&tx)
             .await?;
+        // Codes the owner queued once (`bulk`) leave the queue with the list.
+        super::ledger::drop_unlisted_in(&tx).await?;
     }
     tx.commit().await?;
     Ok(added)

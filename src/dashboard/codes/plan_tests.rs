@@ -379,17 +379,25 @@ fn rank_too_low_is_due_once_its_day_passed_and_only_for_catalogue_rows() {
         created_at: now,
         updated_at: now,
     };
-    assert!(due(&row(PENDING, CATALOGUE, None), now));
+    assert!(due(&row(PENDING, CATALOGUE, None), now, true));
     assert!(!due(
         &row(PENDING, CATALOGUE, Some(now + Duration::seconds(1))),
-        now
+        now,
+        true
     ));
-    assert!(due(&row("rank_too_low", CATALOGUE, Some(now)), now));
+    assert!(due(&row("rank_too_low", CATALOGUE, Some(now)), now, true));
     assert!(!due(
         &row("rank_too_low", CATALOGUE, Some(now + Duration::hours(1))),
-        now
+        now,
+        true
     ));
-    assert!(!due(&row("rank_too_low", MANUAL, Some(now)), now));
+    assert!(!due(&row("rank_too_low", MANUAL, Some(now)), now, true));
+    assert!(!due(&row("rank_too_low", MANUAL, Some(now)), now, false));
+    // Queued rows wait like manual ones; a rank-too-low answer is retried daily only while
+    // the UID is `auto`.
+    assert!(due(&row(PENDING, BULK, None), now, false));
+    assert!(due(&row("rank_too_low", BULK, Some(now)), now, true));
+    assert!(!due(&row("rank_too_low", BULK, Some(now)), now, false));
     for state in [
         SENDING,
         "redeemed",
@@ -400,6 +408,7 @@ fn rank_too_low_is_due_once_its_day_passed_and_only_for_catalogue_rows() {
         "captcha_required",
         "unknown",
     ] {
-        assert!(!due(&row(state, CATALOGUE, None), now), "{state}");
+        assert!(!due(&row(state, CATALOGUE, None), now, true), "{state}");
+        assert!(!due(&row(state, BULK, None), now, false), "{state}");
     }
 }
