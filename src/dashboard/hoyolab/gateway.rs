@@ -4,7 +4,7 @@ use attoshoyodashboard::{
     challenge::Challenge,
     game::{GameKind, Genshin, Starrail},
     hoyolab::{
-        HoyolabClient, RecordAccount, RedemptionClient, RedemptionReply, RedemptionRequest, Result,
+        HoyolabClient, RecordAccount, RedemptionAnswer, RedemptionClient, RedemptionRequest, Result,
     },
     models::account::Account,
 };
@@ -171,7 +171,7 @@ pub(in crate::dashboard) trait RedeemGateway: Send + Sync + 'static {
         &self,
         cookie: &Credentials,
         request: RedemptionRequest<'_>,
-    ) -> impl Future<Output = Result<RedemptionReply>> + Send;
+    ) -> impl Future<Output = Result<RedemptionAnswer>> + Send;
 }
 
 pub(in crate::dashboard) struct LiveRedeemGateway;
@@ -180,7 +180,7 @@ impl RedeemGateway for LiveRedeemGateway {
         &self,
         cookie: &Credentials,
         request: RedemptionRequest<'_>,
-    ) -> Result<RedemptionReply> {
+    ) -> Result<RedemptionAnswer> {
         let header = cookie
             .redemption()
             .ok_or("Cookie has no redemption credentials")?;

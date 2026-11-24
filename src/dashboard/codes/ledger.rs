@@ -5,15 +5,16 @@
 //! then an outcome. `sending` left behind by a crash or an error after the POST becomes
 //! `unknown`, and `unknown` is never sent again automatically (like the reward guard).
 //! Cooldown answers put the row back to `pending` after a wait; `rank_too_low` is retried at
-//! most once a day while the source lists the code; `cookie_invalid` and `captcha_required`
-//! go back to `pending` only when the Cookie is updated or the owner retries explicitly.
+//! most once a day while the source lists the code; `cookie_invalid`, `captcha_required` and
+//! `no_game_account` go back to `pending` only when the Cookie is updated or the owner
+//! retries explicitly. Every answered row keeps HoYoLAB's numeric retcode (never a message).
 //! Expired and invalid codes are also recorded globally (`redemption_code_rejections`), so
 //! nobody sends them again, whatever the source lists later.
 use crate::dashboard::{
     db::entities::{game_account, hoyolab_account, redemption_code_rejection, redemption_ledger},
     error::Result,
 };
-use attoshoyodashboard::hoyolab::{Error as UpstreamError, RedemptionReply};
+use attoshoyodashboard::hoyolab::{Error as UpstreamError, RedemptionAnswer, RedemptionReply};
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect,
@@ -26,8 +27,13 @@ pub(in crate::dashboard) const PENDING: &str = "pending";
 pub(in crate::dashboard) const SENDING: &str = "sending";
 pub(in crate::dashboard) const CATALOGUE: &str = "catalogue";
 pub(in crate::dashboard) const MANUAL: &str = "manual";
+/// HoYoLAB found no game account for the UID and server on the Cookie's account: that UID
+/// sends nothing more until the Cookie is updated or the owner retries.
+pub(in crate::dashboard) const NO_GAME_ACCOUNT: &str = "no_game_account";
+/// States the owner's action (a Cookie update or an explicit retry) returns to `pending`.
+const REOPENED: [&str; 3] = ["cookie_invalid", "captcha_required", NO_GAME_ACCOUNT];
 /// Every state a row may have, as `/metrics` reports them.
-pub(in crate::dashboard) const STATES: [&str; 10] = [
+pub(in crate::dashboard) const STATES: [&str; 11] = [
     "pending",
     "sending",
     "redeemed",
@@ -37,6 +43,7 @@ pub(in crate::dashboard) const STATES: [&str; 10] = [
     "rank_too_low",
     "cookie_invalid",
     "captcha_required",
+    "no_game_account",
     "unknown",
 ];
 /// A rank-too-low code is tried again after this long, while the source lists it.
@@ -54,6 +61,9 @@ pub(in crate::dashboard) enum Outcome {
     RankTooLow,
     CookieInvalid,
     CaptchaRequired,
+    /// No game account for this UID and server on the Cookie's account (-1073): this UID
+    /// only, never a pause of the whole owner.
+    NoGameAccount,
     /// Not processed (cooldown or too frequent): the code waits and is tried again.
     Cooldown,
     /// Transport error, unreadable answer or an unclassified retcode.
@@ -62,7 +72,7 @@ pub(in crate::dashboard) enum Outcome {
 
 impl Outcome {
     /// Every outcome, in the order `/metrics` reports them.
-    pub(in crate::dashboard) const ALL: [Self; 10] = [
+    pub(in crate::dashboard) const ALL: [Self; 11] = [
         Self::Redeemed,
         Self::AlreadyUsed,
         Self::Expired,
@@ -71,25 +81,30 @@ impl Outcome {
         Self::RankTooLow,
         Self::CookieInvalid,
         Self::CaptchaRequired,
+        Self::NoGameAccount,
         Self::Cooldown,
         Self::Unknown,
     ];
 
     /// Any error means the request may have been processed: the outcome is unknown.
     pub(in crate::dashboard) fn of(
-        answer: &std::result::Result<RedemptionReply, UpstreamError>,
+        answer: &std::result::Result<RedemptionAnswer, UpstreamError>,
     ) -> Self {
-        match answer {
-            Ok(RedemptionReply::Redeemed) => Self::Redeemed,
-            Ok(RedemptionReply::AlreadyUsed) => Self::AlreadyUsed,
-            Ok(RedemptionReply::Expired) => Self::Expired,
-            Ok(RedemptionReply::Invalid) => Self::Invalid,
-            Ok(RedemptionReply::NotForAccount) => Self::NotForAccount,
-            Ok(RedemptionReply::RankTooLow) => Self::RankTooLow,
-            Ok(RedemptionReply::CookieInvalid) => Self::CookieInvalid,
-            Ok(RedemptionReply::CaptchaRequired) => Self::CaptchaRequired,
-            Ok(RedemptionReply::Cooldown) => Self::Cooldown,
-            Ok(RedemptionReply::Other(_)) | Err(_) => Self::Unknown,
+        let Ok(answer) = answer else {
+            return Self::Unknown;
+        };
+        match answer.reply {
+            RedemptionReply::Redeemed => Self::Redeemed,
+            RedemptionReply::AlreadyUsed => Self::AlreadyUsed,
+            RedemptionReply::Expired => Self::Expired,
+            RedemptionReply::Invalid => Self::Invalid,
+            RedemptionReply::NotForAccount => Self::NotForAccount,
+            RedemptionReply::RankTooLow => Self::RankTooLow,
+            RedemptionReply::CookieInvalid => Self::CookieInvalid,
+            RedemptionReply::CaptchaRequired => Self::CaptchaRequired,
+            RedemptionReply::NoGameAccount => Self::NoGameAccount,
+            RedemptionReply::Cooldown => Self::Cooldown,
+            RedemptionReply::Other(_) => Self::Unknown,
         }
     }
 
@@ -104,6 +119,7 @@ impl Outcome {
             Self::RankTooLow => "rank_too_low",
             Self::CookieInvalid => "cookie_invalid",
             Self::CaptchaRequired => "captcha_required",
+            Self::NoGameAccount => NO_GAME_ACCOUNT,
             Self::Cooldown => "cooldown",
             Self::Unknown => "unknown",
         }
@@ -145,8 +161,8 @@ pub(super) struct Answered<'a> {
     pub(super) code: &'a str,
 }
 
-/// Records an answer to an admitted row (`sending`). `retcode` is kept only for answers no
-/// class covers. Expired/invalid codes are marked for everyone, and other UIDs' rows still
+/// Records an answer to an admitted row (`sending`) with HoYoLAB's retcode (None only when
+/// nothing was answered: a transport or parse error). Expired/invalid codes are marked for everyone, and other UIDs' rows still
 /// waiting for that code take the same state without a request; an account-specific answer
 /// never touches other rows. An action answer pauses the link's redemption.
 pub(super) async fn record(
@@ -286,7 +302,8 @@ pub(in crate::dashboard) async fn recover(
 }
 
 /// The owner's action is done (a Cookie update or an explicit retry): the link's pause
-/// ends and the codes it stopped are pending again. Other outcomes stay as they are.
+/// ends and the codes it stopped (including UIDs HoYoLAB did not find) are pending again.
+/// Other outcomes stay as they are.
 pub(in crate::dashboard) async fn reopen_in(
     tx: &impl ConnectionTrait,
     link: Uuid,
@@ -322,7 +339,7 @@ pub(in crate::dashboard) async fn reopen_in(
         )
         .col_expr(redemption_ledger::Column::UpdatedAt, Expr::value(now))
         .filter(redemption_ledger::Column::GameAccountId.is_in(accounts))
-        .filter(redemption_ledger::Column::State.is_in(["cookie_invalid", "captcha_required"]))
+        .filter(redemption_ledger::Column::State.is_in(REOPENED))
         .exec(tx)
         .await?;
     Ok(())

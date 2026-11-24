@@ -20,10 +20,10 @@ use crate::dashboard::{
     },
     notifications::{channel::Notifications, code_notices::RedeemedCode},
 };
-use attoshoyodashboard::hoyolab::{RedemptionReply, RedemptionRequest};
+use attoshoyodashboard::hoyolab::RedemptionRequest;
 use chrono::Utc;
 use std::{
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     future::Future,
     pin::Pin,
     sync::{Arc, Mutex},
@@ -59,14 +59,19 @@ impl Default for RedeemTuning {
     }
 }
 
-/// Answers since start, by game and outcome.
+/// The retcodes genshin.py reads as an invalid Cookie; `/metrics` counts them one by one
+/// so a production answer can be told apart without reading the database.
+pub(in crate::dashboard) const COOKIE_RETCODES: [i64; 3] = [-1071, -100, 10001];
+
+/// Answers since start, by game and outcome, and Cookie-invalid answers by retcode.
 #[derive(Default)]
 pub(in crate::dashboard) struct RedeemStats {
     answers: Mutex<BTreeMap<(&'static str, &'static str), u64>>,
+    cookie_retcodes: Mutex<BTreeMap<(&'static str, i64), u64>>,
 }
 
 impl RedeemStats {
-    fn count(&self, game: &str, outcome: Outcome) {
+    fn count(&self, game: &str, outcome: Outcome, retcode: Option<i64>) {
         let Some(game) = super::catalog::GAMES.iter().find(|known| **known == game) else {
             return;
         };
@@ -76,6 +81,34 @@ impl RedeemStats {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .entry((game, outcome.label()))
             .or_default() += 1;
+        if let Some(retcode) = retcode.filter(|code| COOKIE_RETCODES.contains(code)) {
+            *self
+                .cookie_retcodes
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .entry((game, retcode))
+                .or_default() += 1;
+        }
+    }
+
+    /// `(game, retcode, count)` for every game and Cookie-invalid retcode.
+    pub(in crate::dashboard) fn cookie_retcodes(&self) -> Vec<(&'static str, i64, u64)> {
+        let counts = self
+            .cookie_retcodes
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        super::catalog::GAMES
+            .iter()
+            .flat_map(|game| {
+                COOKIE_RETCODES.iter().map(|retcode| {
+                    (
+                        *game,
+                        *retcode,
+                        counts.get(&(*game, *retcode)).copied().unwrap_or(0),
+                    )
+                })
+            })
+            .collect()
     }
 
     /// `(game, outcome, count)` for every game and outcome.
@@ -286,9 +319,14 @@ impl<R: RedeemGateway, G: Gateway> Redeemer<R, G> {
             .collect();
         let mut run = OwnerRun::default();
         let mut redeemed = Vec::new();
+        // UIDs HoYoLAB did not find on the Cookie's account in this pass.
+        let mut not_found = BTreeSet::new();
         while let Some((item, retried)) = queue.pop_front() {
             if run.posts >= self.tuning.max_posts {
                 break;
+            }
+            if not_found.contains(&item.game_account) {
+                continue;
             }
             let game = gateway::game(&item.game_kind)?;
             self.wait_turn(plan.link).await;
@@ -310,10 +348,7 @@ impl<R: RedeemGateway, G: Gateway> Redeemer<R, G> {
             self.hold(plan.link, self.tuning.spacing);
             run.posts += 1;
             let outcome = Outcome::of(&answer);
-            let retcode = match answer {
-                Ok(RedemptionReply::Other(code)) => Some(code),
-                _ => None,
-            };
+            let retcode = answer.as_ref().ok().map(|answer| answer.retcode);
             // A failure here leaves the row `sending`: it becomes `unknown`, never resent.
             ledger::record(
                 &self.store.db,
@@ -331,12 +366,13 @@ impl<R: RedeemGateway, G: Gateway> Redeemer<R, G> {
             )
             .await?;
             drop(operation);
-            self.stats.count(&item.game_kind, outcome);
-            // Never the code, the user or the UID: the outcome class only.
+            self.stats.count(&item.game_kind, outcome, retcode);
+            // Never the code, the user, the UID or the message: the class and the number.
             tracing::info!(
                 game = %item.game_kind,
                 source = item.source,
                 outcome = outcome.label(),
+                retcode = retcode.map_or_else(|| "none".to_owned(), |code| code.to_string()),
                 "redemption code answered"
             );
             match outcome {
@@ -348,6 +384,10 @@ impl<R: RedeemGateway, G: Gateway> Redeemer<R, G> {
                         code: item.code.clone(),
                         rewards: item.rewards.clone(),
                     });
+                }
+                // Only this UID stops; the owner's other UIDs go on.
+                Outcome::NoGameAccount => {
+                    not_found.insert(item.game_account);
                 }
                 Outcome::Cooldown => {
                     self.hold(plan.link, self.tuning.cooldown_wait);

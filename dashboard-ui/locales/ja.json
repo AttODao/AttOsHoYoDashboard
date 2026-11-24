@@ -761,6 +761,8 @@
   "codes.open_link_tab": "HoYoLAB連携を開く",
   "codes.action_cookie_title": "対応が必要です: HoYoLABのCookieが無効です",
   "codes.action_cookie_body": "{at} の引き換えでCookieが無効と返されたため、自動の引き換えを止めています。Cookieを登録し直すと再開します。止めている間のコードは「待機中」に残ります。",
+  "codes.action_retcode": "HoYoLABの応答: エラー {code}",
+  "codes.action_cookie_repeat_body": "{registered} に登録・本人確認したばかりのCookieでも、{at} の引き換えでCookieが無効と返されました。同じCookieをもう一度登録しても直りません。HoYoLABでいったんログアウトしてログインし直し、すぐにCookieをコピーして、cookie_token_v2・account_id_v2 を含めて登録してください（やり方は「HoYoLAB連携」のCookieの案内にあります）。止めている間のコードは「待機中」に残ります。",
   "codes.action_captcha_title": "対応が必要です: HoYoLABが確認（CAPTCHA）を求めています",
   "codes.action_captcha_body": "{at} の引き換えでHoYoLABが確認を求めたため、自動の引き換えを止めています。AHDは確認を代わりに解けません。公式サイトで一度ログインしてコードを引き換えてから「再開する」を押してください。",
   "codes.resume": "再開する",
@@ -810,13 +812,16 @@
   "codes.result_rank_too_low": "ランク不足",
   "codes.result_cookie_invalid": "Cookieが無効",
   "codes.result_captcha": "確認が必要（CAPTCHA）",
+  "codes.result_no_game_account": "UIDが見つからない",
   "codes.result_unknown": "結果不明",
   "codes.result_pending": "待機中",
   "codes.result_announced": "通知のみ",
+  "codes.retcode_tag": "エラー {code}",
   "codes.reason_rank_too_low": "冒険ランク／開拓レベルが足りません。コードが一覧にある間、1日1回試し直します（次回 {at}）。",
   "codes.reason_unknown": "HoYoLABの応答を確認できませんでした。二重に送らないよう、このコードは送り直しません。ゲーム内のメールで確かめてください。",
   "codes.reason_cookie_invalid": "Cookieを登録し直すと、もう一度試します。",
   "codes.reason_captcha": "確認が済んで「再開する」を押すと、もう一度試します。",
+  "codes.reason_no_game_account": "HoYoLABが、CookieのアカウントにこのUIDを見つけられませんでした。このUIDへの引き換えは、Cookieを登録し直すか「待機中のコードを今すぐ引き換える」を押すまで止めています。",
   "codes.reason_invalid_manual": "HoYoLABがこのコードを無効と返しました。入力を確かめてください。",
   "codes.summary_label": "このゲームのコードの状態",
   "codes.chip_redeemed": "直近7日間に引き換え済み {n}件",
@@ -868,5 +873,6 @@
   "admin.codes_error_invalid_payload": "応答を読めません",
   "admin.codes_error_storage": "保存できません",
   "transfer.change_code_mode": "{game} UID {uid}・交換コードのモード",
-  "hoyolab.cookie_step_redemption": "交換コードを自動で引き換えるには、cookie_token_v2 と account_id_v2 も含めてください（account_id_v2 は ltuid_v2 と同じ値です）。"
+  "hoyolab.cookie_step_redemption": "交換コードを自動で引き換えるには、cookie_token_v2 と account_id_v2 も含めてください（account_id_v2 は ltuid_v2 と同じ値です。account_mid_v2 もあれば含めます）。cookie_token_v2 はほかの項目より先に使えなくなることがあるため、引き換えで「Cookieが無効」と出たら、HoYoLABでログアウトしてログインし直し、すぐにコピーしてください。",
+  "hoyolab.cookie_redemption_dropped": "このCookieには cookie_token_v2 がありません。保存すると交換コードの引き換えは止まり、「自動」は「通知のみ」に戻ります。"
 }

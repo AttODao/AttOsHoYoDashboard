@@ -307,6 +307,8 @@ pub(super) enum CodeResult {
     RankTooLow,
     CookieInvalid,
     Captcha,
+    /// HoYoLAB did not find the UID on the Cookie's account: this UID waits.
+    NotFound,
     Unknown,
     Pending,
     /// Notify only: announced, or listed with nothing done yet (`available`).
@@ -325,6 +327,7 @@ impl CodeResult {
             "rank_too_low" => Self::RankTooLow,
             "cookie_invalid" => Self::CookieInvalid,
             "captcha_required" | "captcha" => Self::Captcha,
+            "no_game_account" => Self::NotFound,
             "pending" | "sending" => Self::Pending,
             "announced" | "available" => Self::Announced,
             _ => Self::Unknown,
@@ -343,6 +346,8 @@ pub(super) struct CodeRow {
     pub(super) rewards: String,
     pub(super) manual: bool,
     pub(super) result: CodeResult,
+    /// HoYoLAB's numeric retcode of the last answer, when one was answered.
+    pub(super) retcode: Option<i64>,
     /// The server stored this result (false for `available` and for codes rejected for
     /// everyone before this UID sent them).
     pub(super) stored: bool,
@@ -401,6 +406,7 @@ pub(super) fn code_rows(
                     .unwrap_or_default(),
                 manual: entry.source == "manual",
                 result: CodeResult::from_state(&entry.state),
+                retcode: entry.retcode,
                 stored: entry.updated_at.is_some(),
                 age: at.as_deref().and_then(age),
                 at,
@@ -448,7 +454,9 @@ pub(super) fn chip_counts(rows: &[CodeRow], game: &str) -> ChipCounts {
             CodeResult::Redeemed if recent(row) => counts.done += 1,
             CodeResult::Announced if recent(row) => counts.open += 1,
             CodeResult::Pending | CodeResult::RankTooLow => counts.waiting += 1,
-            CodeResult::CookieInvalid | CodeResult::Captcha => counts.warn += 1,
+            CodeResult::CookieInvalid | CodeResult::Captcha | CodeResult::NotFound => {
+                counts.warn += 1
+            }
             CodeResult::Unknown if recent(row) => counts.warn += 1,
             _ => {}
         }
@@ -529,6 +537,7 @@ mod tests {
             code: code.to_owned(),
             source: "catalogue".to_owned(),
             state: state.to_owned(),
+            retcode: None,
             updated_at: at.map(|at| at.to_string()),
             next_attempt_at: None,
             redeem_url: Some(format!("https://example.invalid/{code}")),
@@ -555,6 +564,7 @@ mod tests {
             ("rank_too_low", CodeResult::RankTooLow),
             ("cookie_invalid", CodeResult::CookieInvalid),
             ("captcha_required", CodeResult::Captcha),
+            ("no_game_account", CodeResult::NotFound),
             ("unknown", CodeResult::Unknown),
             ("pending", CodeResult::Pending),
             ("sending", CodeResult::Pending),
@@ -676,12 +686,28 @@ mod tests {
     }
 
     #[test]
+    fn rows_carry_the_last_retcode_and_missing_uids_count_as_warnings() {
+        let mut answered = entry(1, "starrail", "NOTFOUND", "no_game_account", Some(60));
+        answered.retcode = Some(-1073);
+        let settings = [setting(1, "starrail", "auto")];
+        let rows = code_rows(&[answered], None, &settings, &|value: &str| {
+            value.parse().ok()
+        });
+        assert_eq!(rows[0].result, CodeResult::NotFound);
+        assert_eq!(rows[0].retcode, Some(-1073));
+        assert_eq!(chip_counts(&rows, "starrail").warn, 1);
+    }
+
+    #[test]
     fn the_dashboard_hint_is_the_action_or_recent_redemptions_or_nothing() {
         let state = |action: Option<&str>| CodeRedemption {
             available: true,
             redemption_credentials: true,
             action_required: action.map(str::to_owned),
             action_at: None,
+            action_retcode: None,
+            cookie_verified_at: None,
+            action_after_cookie_update: false,
             pending: 0,
         };
         let history = vec![

@@ -178,8 +178,10 @@ fn v2_credentials(
 /// The redemption credentials (`cookie_token_v2` with its `account_id_v2`), when present.
 /// They must name the same HoYoLAB account as the ltoken pair, whose UID is the one the
 /// identity check verifies: a `cookie_token_v2` without `account_id_v2`, or with another
-/// account's, is refused rather than dropped. The MID kept for the ltoken pair is sent as
-/// `account_mid_v2`. Legacy `cookie_token` (v1) is never kept.
+/// account's, is refused rather than dropped. The Cookie's own `account_mid_v2` is sent as
+/// it was submitted (genshin.py sends the whole Cookie, hoyolab-auto this very cookie); the
+/// ltoken pair's MID stands in only when it is missing or unusable. Legacy `cookie_token`
+/// (v1) is never kept.
 fn redemption_part(pairs: &Pairs, claimed_uid: &str, mid: Option<&str>) -> Result<Option<String>> {
     let Some(token) = pairs.get("cookie_token_v2")? else {
         return Ok(None);
@@ -193,6 +195,10 @@ fn redemption_part(pairs: &Pairs, claimed_uid: &str, mid: Option<&str>) -> Resul
             "Cookie header contains conflicting UID aliases",
         ));
     }
+    let mid = pairs
+        .get("account_mid_v2")?
+        .and_then(|value| parse_cookie_token(value).ok())
+        .or(mid);
     let mut header = format!("cookie_token_v2={token}; account_id_v2={account}");
     if let Some(mid) = mid {
         header.push_str("; account_mid_v2=");

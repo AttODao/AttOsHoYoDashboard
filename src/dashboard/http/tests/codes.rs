@@ -333,7 +333,8 @@ async fn redemption_requests_need_a_session_redemption_credentials_and_respect_b
     assert_eq!(
         body(response).await,
         json!({"available": true, "redemption_credentials": false, "action_required": null,
-               "action_at": null, "running": false, "pending": 0})
+               "action_at": null, "action_retcode": null, "cookie_verified_at": null,
+               "action_after_cookie_update": false, "running": false, "pending": 0})
     );
     // A link whose Cookie lacks cookie_token_v2 can neither enter codes nor take `auto`.
     let plain = link(&app.accounts.db, admin.user.id, "100000001", "verified").await;
@@ -587,6 +588,9 @@ async fn redemption_requests_need_a_session_redemption_credentials_and_respect_b
         "ahd_code_auto_users 1",
         "ahd_code_action_required_users 0",
         "ahd_code_redemptions_total{game=\"starrail\",outcome=\"captcha_required\"} 0",
+        "ahd_code_redemptions_total{game=\"genshin\",outcome=\"no_game_account\"} 0",
+        "ahd_code_redemption_cookie_retcodes_total{game=\"starrail\",retcode=\"-1071\"} 0",
+        "ahd_code_redemption_cookie_retcodes_total{game=\"genshin\",retcode=\"10001\"} 0",
     ] {
         assert!(text.lines().any(|candidate| candidate == line), "{line}");
     }

@@ -4,7 +4,7 @@
 //! codes listed before the mode was switched on), and the owner's own manual entries for
 //! any detected UID. Only verified links whose sealed Cookie carries the redemption
 //! credentials, with no action pending, of active users that finished setup take part.
-use super::ledger::{CATALOGUE, MANUAL, PENDING, SENDING, rejection};
+use super::ledger::{CATALOGUE, MANUAL, NO_GAME_ACCOUNT, PENDING, SENDING, rejection};
 use crate::dashboard::{
     db::entities::{
         game_account, hoyolab_account, redemption_code, redemption_code_rejection,
@@ -129,7 +129,9 @@ pub(super) async fn owners(db: &DatabaseConnection) -> Result<Vec<Uuid>> {
 }
 
 /// The owner's due items: manual entries first (oldest first), then catalogue codes for
-/// `auto` UIDs, oldest listing first. None when the owner cannot redeem now.
+/// `auto` UIDs, oldest listing first. A UID HoYoLAB did not find on the Cookie's account
+/// (`no_game_account`) is left out until a Cookie update or an explicit retry reopens it.
+/// None when the owner cannot redeem now.
 pub(super) async fn plan(
     db: &DatabaseConnection,
     owner: Uuid,
@@ -169,6 +171,15 @@ pub(super) async fn plan(
     let ledger: BTreeMap<(Uuid, &str), &redemption_ledger::Model> = rows
         .iter()
         .map(|row| ((row.game_account_id, row.code.as_str()), row))
+        .collect();
+    let not_found: BTreeSet<Uuid> = rows
+        .iter()
+        .filter(|row| row.state == NO_GAME_ACCOUNT)
+        .map(|row| row.game_account_id)
+        .collect();
+    let accounts: Vec<game_account::Model> = accounts
+        .into_iter()
+        .filter(|account| !not_found.contains(&account.id))
         .collect();
     let rejected: BTreeSet<(String, String)> = redemption_code_rejection::Entity::find()
         .all(db)

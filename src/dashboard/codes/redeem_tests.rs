@@ -2,7 +2,7 @@ use super::*;
 use crate::dashboard::{
     codes::{
         manual,
-        test_support::{MockRedeem, fast_tuning, game, ready_user, redeem_link, test_key},
+        test_support::{MockRedeem, answer, fast_tuning, game, ready_user, redeem_link, test_key},
     },
     db::entities::{
         app_device, app_notification, hoyolab_account, redemption_code, redemption_code_rejection,
@@ -191,9 +191,7 @@ async fn uncertain_answers_become_unknown_and_are_never_resent() {
     fixture
         .gateway
         .script("TIMEOUTCODE", [Err(UpstreamError::Network)]);
-    fixture
-        .gateway
-        .script("ODDCODE", [Ok(RedemptionReply::Other(-31337))]);
+    fixture.gateway.script("ODDCODE", [answer(-31337)]);
     fixture
         .gateway
         .script("BROKENCODE", [Err(UpstreamError::InvalidEnvelope)]);
@@ -271,10 +269,9 @@ async fn requests_are_spaced_capped_per_run_and_cooldowns_wait_without_failing()
         ],
     )
     .await;
-    fixture.gateway.script(
-        "COOLCODE",
-        [Ok(RedemptionReply::Cooldown), Ok(RedemptionReply::Redeemed)],
-    );
+    fixture
+        .gateway
+        .script("COOLCODE", [answer(-2016), answer(0)]);
     let run = fixture.redeemer.run_owner(owner).await.unwrap();
     assert_eq!(
         run.posts, 4,
@@ -328,10 +325,9 @@ async fn a_cooldown_answer_is_retried_once_in_the_same_run() {
     let db = &fixture.db.db;
     let (owner, _, account) = auto_user(db, "cool", "100000001", "800000001").await;
     list(db, &["COOLCODE", "NEXTCODE"]).await;
-    fixture.gateway.script(
-        "COOLCODE",
-        [Ok(RedemptionReply::Cooldown), Ok(RedemptionReply::Redeemed)],
-    );
+    fixture
+        .gateway
+        .script("COOLCODE", [answer(-2016), answer(0)]);
     let run = fixture.redeemer.run_owner(owner).await.unwrap();
     assert_eq!(run.posts, 3);
     assert_eq!(
@@ -379,14 +375,9 @@ async fn cookie_and_captcha_answers_pause_the_owner_until_an_explicit_retry() {
     let (owner, link, account) = auto_user(db, "paused", "100000001", "800000001").await;
     let (other, _, other_account) = auto_user(db, "unaffected", "100000002", "800000002").await;
     list(db, &["CAPTCHACODE", "SECONDCODE"]).await;
-    fixture.gateway.script(
-        "CAPTCHACODE",
-        [
-            Ok(RedemptionReply::CaptchaRequired),
-            Ok(RedemptionReply::Redeemed),
-            Ok(RedemptionReply::Redeemed),
-        ],
-    );
+    fixture
+        .gateway
+        .script("CAPTCHACODE", [answer(10035), answer(0), answer(0)]);
     let run = fixture.redeemer.run_owner(owner).await.unwrap();
     assert_eq!(
         run,
@@ -396,9 +387,10 @@ async fn cookie_and_captcha_answers_pause_the_owner_until_an_explicit_retry() {
             action: Some("captcha_required")
         }
     );
+    let paused_row = row(db, account, "CAPTCHACODE").await.unwrap();
     assert_eq!(
-        state(db, account, "CAPTCHACODE").await.as_deref(),
-        Some("captcha_required")
+        (paused_row.state.as_str(), paused_row.retcode),
+        ("captcha_required", Some(10035))
     );
     assert_eq!(
         state(db, account, "SECONDCODE").await,
@@ -463,6 +455,133 @@ async fn cookie_and_captcha_answers_pause_the_owner_until_an_explicit_retry() {
     let _ = other;
 }
 
+/// A session identity for `owner`, as the HTTP layer hands it to `manual`.
+async fn session(
+    db: &DatabaseConnection,
+    owner: Uuid,
+) -> crate::dashboard::auth::sessions::Identity {
+    crate::dashboard::auth::sessions::Sessions::authenticate(
+        db,
+        &crate::dashboard::auth::password::token_hash(
+            &crate::dashboard::auth::sessions::Sessions::new(chrono::Duration::days(1))
+                .issue(db, owner)
+                .await
+                .unwrap()
+                .token,
+        )
+        .unwrap(),
+    )
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn every_answer_keeps_its_retcode_and_cookie_answers_are_counted_by_number() {
+    let fixture = fixture().await;
+    let db = &fixture.db.db;
+    let (owner, link, account) = auto_user(db, "numbers", "100000001", "800000001").await;
+    list(db, &["GOODCODE", "COOKIECODE"]).await;
+    fixture.gateway.script("COOKIECODE", [answer(-100)]);
+    let run = fixture.redeemer.run_owner(owner).await.unwrap();
+    assert_eq!(run.action, Some("cookie_invalid"));
+    // Classified answers keep their number too, not only unclassified ones.
+    let good = row(db, account, "GOODCODE").await.unwrap();
+    assert_eq!((good.state.as_str(), good.retcode), ("redeemed", Some(0)));
+    let cookie = row(db, account, "COOKIECODE").await.unwrap();
+    assert_eq!(
+        (cookie.state.as_str(), cookie.retcode),
+        ("cookie_invalid", Some(-100))
+    );
+    let counted = fixture.redeemer.stats.cookie_retcodes();
+    assert!(counted.contains(&("genshin", -100, 1)), "{counted:?}");
+    assert!(counted.contains(&("genshin", -1071, 0)), "{counted:?}");
+    assert!(counted.contains(&("starrail", 10001, 0)), "{counted:?}");
+    assert_eq!(counted.len(), 2 * COOKIE_RETCODES.len());
+    // The settings tab reads the number of the answer that paused the link.
+    let view = manual::view(db, &session(db, owner).await, true, false)
+        .await
+        .unwrap();
+    let view = serde_json::to_value(view).unwrap();
+    assert_eq!(view["action_required"], "cookie_invalid");
+    assert_eq!(view["action_retcode"], -100);
+    let _ = link;
+}
+
+#[tokio::test]
+async fn a_missing_game_account_stops_that_uid_only_until_the_owner_retries() {
+    let fixture = fixture().await;
+    let db = &fixture.db.db;
+    let (owner, link, missing) = auto_user(db, "missing", "100000001", "800000001").await;
+    let found = game(db, link, "genshin", "800000003").await;
+    set_mode(db, found, "auto").await;
+    list(db, &["NOTFOUNDCODE", "SECONDCODE"]).await;
+    // Scripts are per code: the first request (UID 800000001) is answered -1073.
+    fixture
+        .gateway
+        .script("NOTFOUNDCODE", [answer(-1073), answer(0)]);
+    let run = fixture.redeemer.run_owner(owner).await.unwrap();
+    assert_eq!(
+        run,
+        OwnerRun {
+            posts: 3,
+            redeemed: 2,
+            action: None
+        },
+        "the owner is not paused"
+    );
+    let not_found = row(db, missing, "NOTFOUNDCODE").await.unwrap();
+    assert_eq!(
+        (not_found.state.as_str(), not_found.retcode),
+        ("no_game_account", Some(-1073))
+    );
+    assert_eq!(
+        state(db, missing, "SECONDCODE").await,
+        None,
+        "nothing more for that UID in the pass"
+    );
+    for code in ["NOTFOUNDCODE", "SECONDCODE"] {
+        assert_eq!(state(db, found, code).await.as_deref(), Some("redeemed"));
+    }
+    let link_row = hoyolab_account::Entity::find_by_id(link)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(link_row.redemption_action, None);
+    assert!(
+        inbox(db, owner)
+            .await
+            .iter()
+            .all(|(kind, _)| kind != "code_action_required")
+    );
+    assert!(
+        fixture
+            .redeemer
+            .stats
+            .answers()
+            .contains(&("genshin", "no_game_account", 1))
+    );
+    // Later runs leave that UID alone instead of asking again for every new code.
+    list(db, &["THIRDCODE"]).await;
+    let later = fixture.redeemer.run_owner(owner).await.unwrap();
+    assert_eq!((later.posts, later.redeemed), (1, 1));
+    assert_eq!(state(db, missing, "THIRDCODE").await, None);
+    // "Redeem now" (or a Cookie update) reopens it.
+    manual::redeem_now(db, &session(db, owner).await)
+        .await
+        .unwrap();
+    assert_eq!(
+        state(db, missing, "NOTFOUNDCODE").await.as_deref(),
+        Some("pending")
+    );
+    let retried = fixture.redeemer.run_owner(owner).await.unwrap();
+    assert_eq!((retried.posts, retried.redeemed), (3, 3));
+    assert_eq!(
+        state(db, missing, "NOTFOUNDCODE").await.as_deref(),
+        Some("redeemed")
+    );
+}
+
 #[tokio::test]
 async fn an_expired_code_is_never_sent_for_anyone_again_but_account_answers_stay_private() {
     let fixture = fixture().await;
@@ -470,15 +589,9 @@ async fn an_expired_code_is_never_sent_for_anyone_again_but_account_answers_stay
     let (first, _, first_account) = auto_user(db, "first", "100000001", "800000001").await;
     let (second, _, second_account) = auto_user(db, "second", "100000002", "800000002").await;
     list(db, &["DEADCODE", "USEDCODE", "LOWRANKCODE"]).await;
-    fixture
-        .gateway
-        .script("DEADCODE", [Ok(RedemptionReply::Expired)]);
-    fixture
-        .gateway
-        .script("USEDCODE", [Ok(RedemptionReply::AlreadyUsed)]);
-    fixture
-        .gateway
-        .script("LOWRANKCODE", [Ok(RedemptionReply::RankTooLow)]);
+    fixture.gateway.script("DEADCODE", [answer(-2001)]);
+    fixture.gateway.script("USEDCODE", [answer(-2017)]);
+    fixture.gateway.script("LOWRANKCODE", [answer(-2021)]);
     fixture.redeemer.run_owner(first).await.unwrap();
     fixture.redeemer.run_owner(second).await.unwrap();
     let second_codes: Vec<String> = fixture
@@ -536,13 +649,9 @@ async fn rank_too_low_is_retried_once_a_day_while_listed() {
     let db = &fixture.db.db;
     let (owner, _, account) = auto_user(db, "low-rank", "100000001", "800000001").await;
     list(db, &["RANKCODE"]).await;
-    fixture.gateway.script(
-        "RANKCODE",
-        [
-            Ok(RedemptionReply::RankTooLow),
-            Ok(RedemptionReply::RankTooLow),
-        ],
-    );
+    fixture
+        .gateway
+        .script("RANKCODE", [answer(-2021), answer(-2021)]);
     fixture.redeemer.run_owner(owner).await.unwrap();
     fixture.redeemer.run_owner(owner).await.unwrap();
     assert_eq!(fixture.gateway.sent().len(), 1, "not again the same day");

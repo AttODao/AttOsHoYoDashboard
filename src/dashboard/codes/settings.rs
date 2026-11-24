@@ -264,9 +264,12 @@ pub(in crate::dashboard) struct HistoryEntry {
     source: &'static str,
     /// The redemption state (`pending`, `sending`, `redeemed`, `already_used`,
     /// `expired`, `invalid`, `rank_too_low`, `cookie_invalid`, `captcha_required`,
-    /// `unknown`); else `expired`/`invalid` when HoYoLAB rejected the code for everyone;
-    /// else `announced`; else `available` for a listed code.
+    /// `no_game_account`, `unknown`); else `expired`/`invalid` when HoYoLAB rejected the
+    /// code for everyone; else `announced`; else `available` for a listed code.
     state: String,
+    /// HoYoLAB's numeric retcode for this UID's last answer (never the message); null
+    /// before any answer, after a transport error and for rows without a request.
+    retcode: Option<i32>,
     /// When the state was last written; null for `available` and global rejections.
     updated_at: Option<DateTime<Utc>>,
     /// When a waiting code (cooldown, rank too low) may be sent again.
@@ -496,6 +499,7 @@ impl CodeSettings {
                     listed: code.listed,
                     source: row.map_or(CATALOGUE, |row| source_name(&row.source)),
                     state,
+                    retcode: row.and_then(|row| row.retcode),
                     updated_at,
                     next_attempt_at: row.and_then(|row| row.next_attempt_at),
                     redeem_url: redeem_url(&code.game_kind, &code.code),
@@ -514,6 +518,7 @@ impl CodeSettings {
                     listed: false,
                     source: source_name(&row.source),
                     state: row.state.clone(),
+                    retcode: row.retcode,
                     updated_at: Some(row.updated_at),
                     next_attempt_at: row.next_attempt_at,
                     redeem_url: redeem_url(&account.game_kind, &row.code),

@@ -361,10 +361,10 @@ async fn history_keeps_redemptions_after_pruning_and_shows_entered_codes() {
     code(db, "genshin", "LISTEDCODE", true).await;
     code(db, "genshin", "DEADLISTED", true).await;
     let now = Utc::now();
-    for (code, source, state) in [
-        ("LISTEDCODE", CATALOGUE, "redeemed"),
-        ("PRUNEDCODE", CATALOGUE, "already_used"),
-        ("MYOWNCODE", MANUAL, "pending"),
+    for (code, source, state, retcode) in [
+        ("LISTEDCODE", CATALOGUE, "redeemed", Some(0)),
+        ("PRUNEDCODE", CATALOGUE, "already_used", Some(-2017)),
+        ("MYOWNCODE", MANUAL, "pending", None),
     ] {
         redemption_ledger::ActiveModel {
             game_account_id: Set(genshin),
@@ -372,7 +372,7 @@ async fn history_keeps_redemptions_after_pruning_and_shows_entered_codes() {
             source: Set(source.to_owned()),
             state: Set(state.to_owned()),
             posts: Set(i32::from(state != "pending")),
-            retcode: Set(None),
+            retcode: Set(retcode),
             next_attempt_at: Set(None),
             last_sent_at: Set((state != "pending").then_some(now)),
             created_at: Set(now),
@@ -391,13 +391,24 @@ async fn history_keeps_redemptions_after_pruning_and_shows_entered_codes() {
     .insert(db)
     .await
     .unwrap();
-    let mut history: Vec<(String, String, String, bool)> = service
+    let entries: Vec<serde_json::Value> = service
         .history(&actor)
         .await
         .unwrap()
         .into_iter()
-        .map(|entry| {
-            let value = serde_json::to_value(entry).unwrap();
+        .map(|entry| serde_json::to_value(entry).unwrap())
+        .collect();
+    // HoYoLAB's number of each answer (null without one, and for global rejections).
+    let retcodes: std::collections::BTreeMap<&str, &serde_json::Value> = entries
+        .iter()
+        .map(|value| (value["code"].as_str().unwrap(), &value["retcode"]))
+        .collect();
+    assert_eq!(retcodes["LISTEDCODE"], &serde_json::json!(0));
+    assert_eq!(retcodes["PRUNEDCODE"], &serde_json::json!(-2017));
+    assert!(retcodes["MYOWNCODE"].is_null() && retcodes["DEADLISTED"].is_null());
+    let mut history: Vec<(String, String, String, bool)> = entries
+        .iter()
+        .map(|value| {
             (
                 value["code"].as_str().unwrap().to_owned(),
                 value["state"].as_str().unwrap().to_owned(),

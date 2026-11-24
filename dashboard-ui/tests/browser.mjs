@@ -51,7 +51,7 @@ const codeGift=code=>`https://genshin.hoyoverse.com/en/gift?code=${code}`;
 let codeRedemption={available:true,redemption_credentials:true,action_required:null,action_at:null,running:false,pending:1};
 const codeCatalogue={enabled:true,last_success_at:hoursAgo(1),consecutive_failures:0,next_fetch_at:hoursAgo(-2),codes:[{id:uid(90),game_kind:'genshin',code:'GENSHINGIFT',rewards:'Primogem*60;Mora*10000',first_seen_at:hoursAgo(5)},{id:uid(91),game_kind:'starrail',code:'STARRAILGIFT',rewards:'',first_seen_at:hoursAgo(30)}]};
 const codeSettings=[{game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',region:'os_usa',mode:'auto'},{game_account_id:uid(6),game_kind:'genshin',game_uid:'600000006',region:'os_usa',mode:'notify'},{game_account_id:uid(8),game_kind:'starrail',game_uid:'700000008',region:'prod_official_usa',mode:'off'}];
-const codeHistory=[{game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',code_id:uid(90),code:'GENSHINGIFT',source:'catalogue',state:'redeemed',updated_at:hoursAgo(2),next_attempt_at:null,redeem_url:codeGift('GENSHINGIFT')},{game_account_id:uid(6),game_kind:'genshin',game_uid:'600000006',code_id:uid(90),code:'GENSHINGIFT',source:'catalogue',state:'available',updated_at:null,next_attempt_at:null,redeem_url:codeGift('GENSHINGIFT')},{game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',code_id:null,code:'TYPEDCODE1',source:'manual',state:'invalid',updated_at:hoursAgo(3),next_attempt_at:null,redeem_url:null},{game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',code_id:null,code:'RANKCODE22',source:'manual',state:'rank_too_low',updated_at:hoursAgo(4),next_attempt_at:hoursAgo(-20),redeem_url:null}];
+const codeHistory=[{game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',code_id:uid(90),code:'GENSHINGIFT',source:'catalogue',state:'redeemed',retcode:0,updated_at:hoursAgo(2),next_attempt_at:null,redeem_url:codeGift('GENSHINGIFT')},{game_account_id:uid(6),game_kind:'genshin',game_uid:'600000006',code_id:uid(90),code:'GENSHINGIFT',source:'catalogue',state:'available',updated_at:null,next_attempt_at:null,redeem_url:codeGift('GENSHINGIFT')},{game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',code_id:null,code:'TYPEDCODE1',source:'manual',state:'invalid',retcode:-2003,updated_at:hoursAgo(3),next_attempt_at:null,redeem_url:null},{game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',code_id:null,code:'RANKCODE22',source:'manual',state:'rank_too_low',updated_at:hoursAgo(4),next_attempt_at:hoursAgo(-20),redeem_url:null}];
 let adminCodes={enabled:true,interval_minutes:180,source_host:'hoyo-codes.seria.moe',last_attempt_at:hoursAgo(1),last_success_at:null,consecutive_failures:2,last_error:'timeout',next_fetch_at:hoursAgo(-2),catalogue:{genshin:{listed:1},starrail:{listed:1}},redemption:{auto_users:1,auto_uids:1,action_required_users:0,unknown:0}};
 const codePatches=[],codeEntries=[],adminCodeSaves=[];let codeRuns=0;
 // Backend error codes (gateway::error_code) must never be rendered raw in settings.
@@ -483,6 +483,11 @@ try{
  assert.equal(await page.locator('#hoyolab-cookie').getAttribute('aria-invalid'),'true');
  assert.equal(await page.locator('#hoyolab-cookie').getAttribute('aria-describedby'),'hoyolab-cookie-help hoyolab-cookie-error');
  assert.equal(counts.get('/api/v1/me/hoyolab/cookie')||0,0,'an incomplete Cookie is not sent');
+ // A redemption token without its account is named before it is sent (the server refuses it).
+ await page.locator('#hoyolab-cookie').fill('ltuid_v2=123; ltoken_v2=synthetic-browser-token; ltmid_v2=synthetic-mid; cookie_token_v2=v2_synthetic');
+ await button('Save').click();
+ assert.equal(await page.locator('#hoyolab-cookie-error').innerText(),'These Cookies are missing: account_id_v2');
+ assert.equal(counts.get('/api/v1/me/hoyolab/cookie')||0,0,'a token without its account is not sent');
  await page.locator('#hoyolab-cookie').fill('ltuid_v2=123; ltoken_v2=synthetic-browser-token; ltmid_v2=synthetic-mid');
  assert.equal(await page.locator('#hoyolab-cookie-error').count(),0,'a complete Cookie clears the error');
  const cookieField=await page.locator('#hoyolab-cookie').elementHandle();
@@ -1111,6 +1116,9 @@ try{
  assert.equal(await official.count(),1,'only the notify-only code links to the official site');
  assert.deepEqual(await official.evaluate(a=>[a.getAttribute('href'),a.target,a.rel]),['https://genshin.hoyoverse.com/en/gift?code=GENSHINGIFT','_blank','noopener noreferrer']);
  assert.ok((await page.locator('.codes-history').innerText()).includes('HoYoLAB says this code is invalid. Check what you entered.'));
+ // HoYoLAB's number follows an answered result (never a success).
+ assert.equal(await page.locator('.codes-history > li',{hasText:'TYPEDCODE1'}).locator('.retcode').innerText(),'error -2003');
+ assert.equal(await historyRows.first().locator('.retcode').count(),0,'a redeemed code shows no number');
  // Changing a mode saves it at once.
  await page.locator('#code-mode-'+uid(8)).selectOption('notify');await page.locator('.status.success').getByText('Code mode saved.',{exact:true}).waitFor();await idle();
  assert.deepEqual(codePatches.at(-1),{id:uid(8),mode:'notify'});
@@ -1199,6 +1207,40 @@ try{
  assert.equal((await page.locator('#code-last-'+uid(5)).innerText()).includes('Paused'),true,'automatic UIDs read as paused');
  await page.locator('#codes-resume').click();await page.locator('#codes-action').waitFor({state:'detached'});await idle();
  assert.equal(codeRuns,2);
+ // A Cookie answer right after a Cookie update: the notice says registering it again will not
+ // help, names HoYoLAB's number and leads to the steps.
+ codeRedemption={...codeRedemption,action_required:'cookie_invalid',action_at:hoursAgo(0.01),action_retcode:-1071,cookie_verified_at:hoursAgo(0.05),action_after_cookie_update:true};
+ await page.locator('#codes-refresh').click();await page.locator('#codes-action').waitFor();await idle();
+ assert.equal(await page.locator('#codes-action').getAttribute('role'),'alert');
+ assert.equal(await page.locator('#codes-action-retcode').innerText(),'HoYoLAB answered error -1071.');
+ const repeatBody=await page.locator('#codes-action-body').innerText();
+ assert.ok(repeatBody.includes('Registering the same Cookie again will not help')&&repeatBody.includes('cookie_token_v2'),repeatBody);
+ codeRedemption={...codeRedemption,action_after_cookie_update:false};
+ await page.locator('#codes-refresh').click();await idle();
+ const usualBody=await page.locator('#codes-action-body').innerText();
+ assert.ok(usualBody.includes('register the Cookie again')&&!usualBody.includes('will not help'),usualBody);
+ // A UID HoYoLAB did not find waits on its own, with its number and what reopens it.
+ codeHistory.unshift({game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',code_id:null,code:'NOTFOUND01',source:'manual',state:'no_game_account',retcode:-1073,updated_at:hoursAgo(0),next_attempt_at:null,redeem_url:null});
+ await page.locator('#codes-refresh').click();await idle();
+ const notFound=page.locator('.codes-history > li',{hasText:'NOTFOUND01'});
+ assert.equal(await notFound.locator('.run-state > .status-mark').getAttribute('data-status'),'warn');
+ const notFoundText=(await notFound.innerText()).replace(/\s+/g,' ');
+ assert.ok(notFoundText.includes('UID not found')&&notFoundText.includes('error -1073')&&notFoundText.includes(enText['codes.reason_no_game_account']),notFoundText);
+ codeHistory.shift();
+ // The notice's button opens the Cookie steps; pasting a Cookie without cookie_token_v2 over
+ // one that redeems is warned about before saving.
+ await page.locator('#codes-action').getByRole('button').click();await page.locator('#settings-tab-link[aria-selected=true]').waitFor();await idle();
+ assert.ok((await page.locator('#hoyolab-cookie-redemption').textContent()).includes('log out of HoYoLAB'),'the steps say how to get a fresh cookie_token_v2');
+ await page.locator('#hoyolab-cookie').fill('ltuid_v2=123; ltoken_v2=synthetic-browser-token; ltmid_v2=synthetic-mid');
+ await page.locator('#hoyolab-cookie').blur();
+ await page.locator('#hoyolab-cookie-redemption-warning').waitFor();
+ assert.equal(await page.locator('#hoyolab-cookie-redemption-warning').innerText(),enText['hoyolab.cookie_redemption_dropped']);
+ assert.equal(await page.locator('#hoyolab-cookie').getAttribute('aria-describedby'),'hoyolab-cookie-help hoyolab-cookie-redemption-warning');
+ await page.locator('#hoyolab-cookie').fill('ltuid_v2=123; ltoken_v2=synthetic-browser-token; ltmid_v2=synthetic-mid; cookie_token_v2=v2_synthetic; account_id_v2=123');
+ assert.equal(await page.locator('#hoyolab-cookie-redemption-warning').count(),0,'a Cookie with the redemption items needs no warning');
+ await page.locator('#hoyolab-cookie').fill('');
+ codeRedemption={...codeRedemption,action_required:null,action_at:null,action_retcode:null,cookie_verified_at:null,action_after_cookie_update:false};
+ await page.locator('#settings-tab-codes').click();await page.locator('#settings-tab-codes[aria-selected=true]').waitFor();await idle();
  // Without the redemption Cookie: the notice leads to the link tab and "auto" cannot be chosen.
  codeRedemption={...codeRedemption,redemption_credentials:false};
  await page.locator('#codes-refresh').click();await page.locator('#codes-cookie-notice').waitFor();await idle();

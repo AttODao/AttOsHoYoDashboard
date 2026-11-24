@@ -8386,6 +8386,7 @@
           "listed",
           "source",
           "state",
+          "retcode",
           "updated_at",
           "next_attempt_at",
           "redeem_url"
@@ -8437,9 +8438,17 @@
               "rank_too_low",
               "cookie_invalid",
               "captcha_required",
+              "no_game_account",
               "unknown"
             ],
-            "description": "The redemption ledger state for this UID (`sending` = a request may be in flight; `unknown` = the outcome is uncertain and the code is never sent again automatically); else `expired`/`invalid` when HoYoLAB rejected the code for everyone; else `announced` (sent in a notify-only summary); else `available` (listed, no state; never stored)."
+            "description": "The redemption ledger state for this UID (`sending` = a request may be in flight; `no_game_account` = HoYoLAB found no game account for this UID and server on the Cookie's account (retcode -1073): this UID sends nothing more until the Cookie is updated or `POST /code-redemption/run` is called; `unknown` = the outcome is uncertain and the code is never sent again automatically); else `expired`/`invalid` when HoYoLAB rejected the code for everyone; else `announced` (sent in a notify-only summary); else `available` (listed, no state; never stored)."
+          },
+          "retcode": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "HoYoLAB's numeric retcode of this UID's last answer for the code (never the message or data); null before any answer, after a transport or parse error, and for rows without a request. A reopened (`pending`) row keeps the number of its last answer."
           },
           "updated_at": {
             "type": [
@@ -8646,6 +8655,9 @@
           "redemption_credentials",
           "action_required",
           "action_at",
+          "action_retcode",
+          "cookie_verified_at",
+          "action_after_cookie_update",
           "running",
           "pending"
         ],
@@ -8677,6 +8689,25 @@
             ],
             "format": "date-time"
           },
+          "action_retcode": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "HoYoLAB's numeric retcode of the answer that paused redemption (for example -1071, -100 or 10001 for `cookie_invalid`); null without a pause or when the paused row no longer holds it."
+          },
+          "cookie_verified_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the current Cookie was last verified (registering a Cookie verifies it); null without a Cookie."
+          },
+          "action_after_cookie_update": {
+            "type": "boolean",
+            "description": "The pause came within an hour of verifying the current Cookie (registering one verifies it): a freshly checked Cookie was refused, so registering the same Cookie again will not help."
+          },
           "running": {
             "type": "boolean",
             "description": "A run for this user is going on."
@@ -8684,7 +8715,7 @@
           "pending": {
             "type": "integer",
             "minimum": 0,
-            "description": "Ledger rows waiting to be sent."
+            "description": "Ledger rows waiting to be sent, including codes held for a UID HoYoLAB did not find (`no_game_account`), which `POST /code-redemption/run` sends again."
           }
         }
       },

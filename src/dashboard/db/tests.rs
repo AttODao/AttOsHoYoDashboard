@@ -62,7 +62,8 @@ async fn migrations_are_ordered_idempotent_and_reversible() {
             "m20261109_000014_game_calendar_cache",
             "m20261109_000015_resource_history",
             "m20261123_000016_redemption_codes",
-            "m20261124_000017_code_redemption"
+            "m20261124_000017_code_redemption",
+            "m20261124_000018_redemption_no_game_account"
         ]
     );
     migrations::Migrator::down(&fixture.db, None).await.unwrap();
@@ -201,7 +202,7 @@ async fn audit_requires_existing_subject_and_diagnostics_redact_credentials() {
 async fn app_event_choices_start_as_the_webhook_choices_and_revert_cleanly() {
     let fixture = TestDatabase::new().await;
     let db = &fixture.db;
-    migrations::Migrator::down(db, Some(7)).await.unwrap();
+    migrations::Migrator::down(db, Some(8)).await.unwrap();
     let owner = insert_user(db, "owner").await;
     db.execute_unprepared(&format!(
         "INSERT INTO notification_settings (user_id, webhook_format, language, events) \
@@ -254,7 +255,7 @@ async fn app_event_choices_start_as_the_webhook_choices_and_revert_cleanly() {
         .await
         .is_err()
     );
-    migrations::Migrator::down(db, Some(7)).await.unwrap();
+    migrations::Migrator::down(db, Some(8)).await.unwrap();
     let column = db
         .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
@@ -364,8 +365,8 @@ async fn redemption_code_schema_checks_values_and_reverts_cleanly() {
         .is_err(),
         "`available` is derived, never stored"
     );
-    // The code-redemption migration is undone first.
-    migrations::Migrator::down(db, Some(2)).await.unwrap();
+    // The code-redemption migrations are undone first.
+    migrations::Migrator::down(db, Some(3)).await.unwrap();
     let left = db
         .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
@@ -492,7 +493,7 @@ async fn code_redemption_schema_checks_values_and_reverts_cleanly() {
         count("SELECT count(*) AS n FROM redemption_code_rejections").await,
         1
     );
-    migrations::Migrator::down(db, Some(1)).await.unwrap();
+    migrations::Migrator::down(db, Some(2)).await.unwrap();
     assert_eq!(
         count(
             "SELECT count(*) AS n FROM information_schema.columns \
@@ -510,5 +511,62 @@ async fn code_redemption_schema_checks_values_and_reverts_cleanly() {
         .unwrap()
         .unwrap();
     assert_eq!(left.try_get::<Option<String>>("", "name").unwrap(), None);
+    migrations::Migrator::up(db, None).await.unwrap();
+}
+
+#[tokio::test]
+async fn no_game_account_is_a_ledger_state_and_reverts_to_pending() {
+    let fixture = TestDatabase::new().await;
+    let db = &fixture.db;
+    let owner = insert_user(db, "owner").await;
+    let link = Uuid::new_v4();
+    let account = Uuid::new_v4();
+    db.execute_unprepared(&format!(
+        "INSERT INTO hoyolab_accounts (id, owner_user_id, hoyolab_uid, encrypted_credentials, \
+         credential_version, auth_status, created_at, updated_at) \
+         VALUES ('{link}', '{}', '1', NULL, 1, 'removed', now(), now()); \
+         INSERT INTO game_accounts (id, hoyolab_account_id, game_kind, game_uid, region, visible, \
+         detected, last_detected_at) VALUES ('{account}', '{link}', 'starrail', '800000002', \
+         'prod_official_asia', true, true, now()); \
+         INSERT INTO redemption_ledger (game_account_id, code, source, state, posts, retcode, \
+         last_sent_at, created_at, updated_at) VALUES ('{account}', 'NOTFOUND', 'manual', \
+         'no_game_account', 1, -1073, now(), now(), now())",
+        owner.id
+    ))
+    .await
+    .unwrap();
+    let state = || async {
+        db.query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT state, retcode FROM redemption_ledger WHERE code = 'NOTFOUND'",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+    };
+    assert_eq!(
+        state().await.try_get::<String>("", "state").unwrap(),
+        "no_game_account"
+    );
+    let bad = format!(
+        "INSERT INTO redemption_ledger (game_account_id, code, source, state, created_at, \
+         updated_at) VALUES ('{account}', 'OTHERCODE', 'manual', 'account_missing', now(), now())"
+    );
+    assert!(db.execute_unprepared(&bad).await.is_err());
+    migrations::Migrator::down(db, Some(1)).await.unwrap();
+    // Undone: the row waits again (its number stays), and the state is refused.
+    let row = state().await;
+    assert_eq!(row.try_get::<String>("", "state").unwrap(), "pending");
+    assert_eq!(
+        row.try_get::<Option<i32>>("", "retcode").unwrap(),
+        Some(-1073)
+    );
+    assert!(
+        db.execute_unprepared(
+            "UPDATE redemption_ledger SET state = 'no_game_account' WHERE code = 'NOTFOUND'"
+        )
+        .await
+        .is_err()
+    );
     migrations::Migrator::up(db, None).await.unwrap();
 }

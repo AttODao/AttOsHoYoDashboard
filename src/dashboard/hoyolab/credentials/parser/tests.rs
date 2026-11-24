@@ -281,3 +281,73 @@ fn redemption_credentials_of_another_account_or_without_an_account_are_refused()
         Some(format!("cookie_token_v2={COOKIE_TOKEN}; account_id_v2=42").as_str())
     );
 }
+
+#[test]
+fn the_submitted_account_mid_v2_is_sent_for_redemption_and_survives_sealing() {
+    // genshin.py sends the whole Cookie and hoyolab-auto keeps the Cookie's own
+    // `account_mid_v2`: when it differs from `ltmid_v2`, the submitted value is the one sent.
+    let raw = format!(
+        "ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}; cookie_token_v2={COOKIE_TOKEN}; account_id_v2=42; account_mid_v2=other_mid_9"
+    );
+    let credentials = Credentials::parse_submitted(&raw).unwrap();
+    assert_eq!(
+        credentials.as_str(),
+        format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}")
+    );
+    let expected =
+        format!("cookie_token_v2={COOKIE_TOKEN}; account_id_v2=42; account_mid_v2=other_mid_9");
+    assert_eq!(credentials.redemption(), Some(expected.as_str()));
+    let reopened = Credentials::parse(&credentials.sealed_text()).unwrap();
+    assert_eq!(reopened.as_str(), credentials.as_str());
+    assert_eq!(reopened.redemption(), Some(expected.as_str()));
+    // An unusable account_mid_v2 falls back to ltmid_v2, as the ltoken pair's MID does.
+    let fallback = Credentials::parse_submitted(&format!(
+        "ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}; cookie_token_v2={COOKIE_TOKEN}; account_id_v2=42; account_mid_v2=bad\\mid"
+    ))
+    .unwrap();
+    assert_eq!(
+        fallback.redemption(),
+        Some(
+            format!("cookie_token_v2={COOKIE_TOKEN}; account_id_v2=42; account_mid_v2={MID}")
+                .as_str()
+        )
+    );
+}
+
+#[test]
+fn token_shaped_values_reach_the_redemption_header_byte_for_byte() {
+    // Shapes HoYoLAB tokens take (synthetic): a `v2_` prefix, base64 padding, `-`, `_`, `.`,
+    // `/`, `+` and percent-escapes. Nothing is trimmed, decoded or re-encoded.
+    for token in [
+        "v2_CAQSDGM5b3FhcTNzM2d1OBokYjk4YTU3ZDAtZmFrZS0wMDAwLTAwMDAtc3ludGhldGljIAEo==",
+        "v2_abc.DEF-ghi_jkl/mno+pqr=",
+        "v2_percent%3D%2Fescaped%2B",
+    ] {
+        for raw in [
+            format!(
+                "ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}; cookie_token_v2={token}; account_id_v2=42; account_mid_v2={MID}"
+            ),
+            // A DevTools copy: the header name, extra spaces and unrelated cookies around it.
+            format!(
+                "Cookie:  mi18nLang=ja-jp;  cookie_token_v2={token};account_id_v2=42 ; ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}; account_mid_v2={MID}; _MHYUUID=x  "
+            ),
+        ] {
+            let credentials = Credentials::parse_submitted(&raw).expect("token-shaped value");
+            let expected =
+                format!("cookie_token_v2={token}; account_id_v2=42; account_mid_v2={MID}");
+            assert_eq!(credentials.redemption(), Some(expected.as_str()), "{raw}");
+            let reopened = Credentials::parse(&credentials.sealed_text()).unwrap();
+            assert_eq!(reopened.redemption(), Some(expected.as_str()), "{raw}");
+        }
+    }
+    // A quoted or comma-carrying value is refused, never stored altered.
+    for token in ["\"v2_quoted\"", "v2_a,b"] {
+        let raw = format!(
+            "ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}; cookie_token_v2={token}; account_id_v2=42"
+        );
+        assert!(
+            matches!(Credentials::parse_submitted(&raw), Err(Error::Invalid(_))),
+            "{raw}"
+        );
+    }
+}
