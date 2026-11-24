@@ -640,3 +640,94 @@ async fn redemption_credentials_follow_each_verified_cookie_and_never_reach_read
     assert!(!removed.redemption_credentials);
     assert_eq!(ledger_state("DONECODE").await, "redeemed");
 }
+
+#[tokio::test]
+async fn a_cookie_update_during_a_cookie_pause_replaces_the_redemption_token_and_reopens() {
+    use crate::dashboard::db::entities::redemption_ledger;
+    let fixture = TestDatabase::new().await;
+    let (_, actor) = fixture.ready_admin().await;
+    let store = CookieStore::for_test(fixture.db.clone(), key(), Mock::new("42"));
+    store
+        .submit(&actor, &redeeming_cookie("42", "42"))
+        .await
+        .unwrap();
+    store.verify(&actor).await.unwrap();
+    let before = row(&store, actor.user.id).await;
+    let uid = game_account::Entity::find()
+        .filter(game_account::Column::HoyolabAccountId.eq(before.id))
+        .one(&store.db)
+        .await
+        .unwrap()
+        .unwrap()
+        .id;
+    // The worker paused the link for a Cookie answer and stopped two codes.
+    let mut paused = before.clone().into_active_model();
+    paused.redemption_action = Set(Some("cookie_invalid".to_owned()));
+    paused.redemption_action_at = Set(Some(Utc::now()));
+    paused.update(&store.db).await.unwrap();
+    for (code, state, retcode) in [
+        ("COOKIECODE", "cookie_invalid", -1071),
+        ("NOTFOUNDCODE", "no_game_account", -1073),
+    ] {
+        redemption_ledger::ActiveModel {
+            game_account_id: Set(uid),
+            code: Set(code.to_owned()),
+            source: Set("manual".to_owned()),
+            state: Set(state.to_owned()),
+            posts: Set(1),
+            retcode: Set(Some(retcode)),
+            next_attempt_at: Set(None),
+            last_sent_at: Set(Some(Utc::now())),
+            created_at: Set(Utc::now()),
+            updated_at: Set(Utc::now()),
+        }
+        .insert(&store.db)
+        .await
+        .unwrap();
+    }
+    // A newly copied Cookie: another cookie_token_v2 and the Cookie's own account_mid_v2,
+    // pasted as a DevTools header line with token-shaped values.
+    let fresh = format!(
+        "Cookie: {}; cookie_token_v2=v2_FRESH.token-AB_c%3D==; account_id_v2=42; account_mid_v2=fresh_mid_1",
+        cookie("42")
+    );
+    store.submit(&actor, &fresh).await.unwrap();
+    let after = row(&store, actor.user.id).await;
+    assert_eq!(after.auth_status, "verified");
+    assert!(after.credential_version > before.credential_version);
+    assert!(after.verified_at >= before.verified_at);
+    assert!(after.redemption_credentials);
+    assert_eq!(after.redemption_action, None);
+    assert_eq!(after.redemption_action_at, None);
+    let opened = store
+        .key
+        .open(
+            actor.user.id,
+            Some("42"),
+            after.sealed_credentials().unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        opened.redemption(),
+        Some(
+            "cookie_token_v2=v2_FRESH.token-AB_c%3D==; account_id_v2=42; account_mid_v2=fresh_mid_1"
+        )
+    );
+    for code in ["COOKIECODE", "NOTFOUNDCODE"] {
+        let row = redemption_ledger::Entity::find_by_id((uid, code.to_owned()))
+            .one(&store.db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.state, "pending", "{code}");
+    }
+    // A Cookie that names cookie_token_v2 without account_id_v2 is refused and changes
+    // nothing: the stored redemption token stays the fresh one.
+    let missing_account = format!("{}; cookie_token_v2=v2_other", cookie("42"));
+    assert!(matches!(
+        store.submit(&actor, &missing_account).await,
+        Err(Error::Invalid(_))
+    ));
+    let unchanged = row(&store, actor.user.id).await;
+    assert_eq!(unchanged.credential_version, after.credential_version);
+}
