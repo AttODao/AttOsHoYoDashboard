@@ -29,10 +29,10 @@ HOYOLAB_COOKIE="ltuid_v2=<HoYoLAB UID>; ltoken_v2=<認証トークン>"
 
 ### 交換コード用のCookie（Dashboard）
 
-交換コードの引き換え（[交換コードの引き換え](code-redemption.md)）は `ltoken_v2` ではなく `cookie_token_v2` を使う（genshin.py の `requires_cookie_token`。必要な組み合わせは未確認）。Dashboardは新しく登録されたCookieに `cookie_token_v2` があれば、次の条件で `ltoken_v2`・`ltuid_v2`・`ltmid_v2` と一緒に暗号化して保存する。
+交換コードの引き換え（[交換コードの引き換え](code-redemption.md)）は `ltoken_v2` ではなく `cookie_token_v2` を使う（genshin.py の `requires_cookie_token`。hoyolab-auto は `cookie_token_v2`・`account_id_v2`・`account_mid_v2` だけを送る。`cookie_token_v2` は他の項目より先に使えなくなることがある：[寿命](code-redemption.md#cookie_token_v2-の寿命未確認)）。Dashboardは新しく登録されたCookieに `cookie_token_v2` があれば、次の条件で `ltoken_v2`・`ltuid_v2`・`ltmid_v2` と一緒に暗号化して保存する。
 
 - 同じHoYoLABアカウントの `account_id_v2` が必須で、`ltuid_v2`（本人確認で検証するUID）と一致しなければ登録を拒む（ない・重複も拒む）。拘束の確認はこのUIDの一致だけで、`cookie_token_v2` 自体がそのアカウントのものかをHoYoLABに問い合わせる読み取りAPIは使っていない（引き換え時にHoYoLABが判断する。未確認）。
-- 保存形式は従来の正規化したヘッダーの後ろに `cookie_token_v2=…; account_id_v2=…[; account_mid_v2=…]` を足したもの。`account_mid_v2` には `ltmid_v2` と同じMIDを入れる。これを含まない保存済みCookieもそのまま復号できる。
+- 保存形式は従来の正規化したヘッダーの後ろに `cookie_token_v2=…; account_id_v2=…[; account_mid_v2=…]` を足したもの。`account_mid_v2` には貼り付けたCookieの `account_mid_v2` を入れ、ない（使えない）ときだけ `ltmid_v2` と同じMIDを入れる。これを含まない保存済みCookieもそのまま復号できる。
 - 読み取りとログインボーナスの要求には `cookie_token_v2` を送らず、引き換えの要求には `cookie_token_v2`・`account_id_v2`・`account_mid_v2` だけを送る。
 - 旧形式の `cookie_token`（v1）は保存しない。APIは保存の有無を真偽値（`redemption_credentials`）でだけ返す。
 - `cookie_token_v2` のないCookieに更新すると、そのUIDの交換コードの自動引き換え（`auto`）は通知のみ（`notify`）に戻る。Cookieの型は参照実装の [cookie.py](https://github.com/seriaati/genshin.py/blob/ab289440508ef81a9672a198a53b9a31f9365c4a/genshin/models/auth/cookie.py) も参照すること。
