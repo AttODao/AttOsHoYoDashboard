@@ -90,7 +90,7 @@ APIとschedulerは同じDB/業務処理を使う。単一process/instance前提�
 | `redemption_codes` | サーバー共通の交換コード一覧：game_kind × code（`^[A-Z0-9]{4,32}$`）unique、報酬の文（300文字まで）、first/last seen、listed、seeded（初回の一覧）。掲載終了から90日で削除 |
 | `redemption_code_settings` | game account × mode（`off`/`notify`/`auto`）、enabled_at（`off` のときだけnull）。game account削除でcascade、Cookie削除で `off` |
 | `redemption_code_results` | game account × code の通知のみの結果（`announced`）。game account・code削除でcascade |
-| `redemption_ledger` | game account × code の文字列の引き換え台帳：source（`catalogue`/`manual`）、state（`pending`/`sending`/結果）、送信数、分類できなかったretcode、次の試行時刻、最後の送信。一覧の削除・Cookie更新・削除では消さず、game account削除でcascade |
+| `redemption_ledger` | game account × code の文字列の引き換え台帳：source（`catalogue`/`manual`）、state（`pending`/`sending`/結果）、送信数、最後の応答のretcode（数値だけ。ログ・`/metrics`・APIで使い、画面には出さない）、次の試行時刻、最後の送信。一覧の削除・Cookie更新・削除では消さず、game account削除でcascade |
 | `redemption_code_rejections` | game × code の文字列：HoYoLABが全員向けに無効（`expired`/`invalid`）と答えたコード。消さない |
 | `redemption_code_source` | 1行（id=1）：機能全体のON/OFF、取得間隔（60〜1440分）、最後の試行・成功、連続失敗数、最後の失敗の種類 |
 
