@@ -39,6 +39,19 @@ pub(super) fn relative_age(seconds: i64, ui: Preferences) -> String {
     ui.format(key, &[("count", &count.to_string())])
 }
 
+/// A counted message in the grammatical number of `count`: the `one` template for exactly
+/// one, the `other` template otherwise. English needs both ("1 failure", "2 failures");
+/// Japanese catalogs carry the same sentence under both keys.
+pub(super) fn counted(
+    ui: Preferences,
+    count: i64,
+    one: &str,
+    other: &str,
+    arguments: &[(&str, &str)],
+) -> String {
+    ui.format(if count == 1 { one } else { other }, arguments)
+}
+
 /// How close a resource is to its cap: "full" at or over it, "near" from 90%.
 pub(super) fn fill_level(current: Option<i64>, maximum: Option<i64>) -> &'static str {
     match (current, maximum) {
@@ -294,6 +307,37 @@ mod tests {
         assert_eq!(fill_level(Some(179), Some(200)), "");
         assert_eq!(fill_level(Some(5), None), "");
         assert_eq!(fill_level(Some(0), Some(0)), "");
+    }
+
+    #[test]
+    fn counted_messages_take_the_singular_only_for_exactly_one() {
+        let english = Preferences {
+            language: crate::i18n::Language::English,
+            ..Preferences::default()
+        };
+        let redeemed = |count: i64| {
+            counted(
+                english,
+                count,
+                "dash.codes_redeemed_one",
+                "dash.codes_redeemed",
+                &[("n", &count.to_string())],
+            )
+        };
+        assert_eq!(redeemed(1), "1 code redeemed in the last 24 hours");
+        assert_eq!(redeemed(2), "2 codes redeemed in the last 24 hours");
+        assert_eq!(redeemed(0), "0 codes redeemed in the last 24 hours");
+        let japanese = Preferences::default();
+        assert_eq!(
+            counted(
+                japanese,
+                1,
+                "dash.codes_redeemed_one",
+                "dash.codes_redeemed",
+                &[("n", "1")]
+            ),
+            "直近24時間に1件のコードを引き換えました"
+        );
     }
 
     #[test]

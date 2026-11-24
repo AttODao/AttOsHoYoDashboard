@@ -13,8 +13,8 @@ use crate::app::actions::spawn_root;
 use crate::app::codes::{CodeHint, code_hint};
 use crate::app::data::{RunAll, load_game, run_all_targets, run_rewards_now};
 use crate::app::display::{
-    compact_datetime, data_age, datetime_text, error_text, fill_level, hours_minutes, local_moment,
-    relative_age, seconds_since, short_time,
+    compact_datetime, counted, data_age, datetime_text, error_text, fill_level, hours_minutes,
+    local_moment, relative_age, seconds_since, short_time,
 };
 use crate::app::preferences::{Preferences, use_preferences};
 use crate::app::state::{AppState, DASHBOARD_GAMES, Page, set_page};
@@ -94,7 +94,7 @@ fn ClaimNow(state: Signal<AppState>) -> Element {
                         span { class: "visually-hidden", {ui.text("codes.tab")} " " }
                         match hint {
                             CodeHint::Action => rsx! { StatusMark { status: Status::Warn, text: ui.text("dash.codes_action_short").to_owned(), label: ui.text("dash.codes_action").to_owned() } },
-                            CodeHint::Redeemed(count) => rsx! { StatusMark { status: Status::Done, text: count.to_string(), label: ui.format("dash.codes_redeemed", &[("n", &count.to_string())]) } },
+                            CodeHint::Redeemed(count) => rsx! { StatusMark { status: Status::Done, text: count.to_string(), label: counted(ui, count as i64, "dash.codes_redeemed_one", "dash.codes_redeemed", &[("n", &count.to_string())]) } },
                         }
                     }
                 }

@@ -10,7 +10,7 @@ use crate::app::codes::{
     load_codes, manual_code, redeem_now, reward_text, save_code_mode,
 };
 use crate::app::display::{
-    compact_datetime, local_moment, relative_age, seconds_since, short_time,
+    compact_datetime, counted, local_moment, relative_age, seconds_since, short_time,
 };
 use crate::app::preferences::{Preferences, use_preferences};
 use crate::app::state::{AppState, DASHBOARD_GAMES, Page, set_page};
@@ -192,29 +192,50 @@ fn CodesBody(
     }
 }
 
+/// The warning while fetching the code list fails. Without any successful fetch there are
+/// no listed codes yet, so it says when they start instead of naming a last success; one
+/// failure and several read differently in English.
+fn source_warning_key(failures: i32, fetched_before: bool) -> Option<&'static str> {
+    Some(match (failures, fetched_before) {
+        (..=0, _) => return None,
+        (1, true) => "codes.source_unavailable_one",
+        (_, true) => "codes.source_unavailable",
+        (1, false) => "codes.source_never_one",
+        (_, false) => "codes.source_never",
+    })
+}
+
 /// When the code list was fetched and when the next fetch is due, or that the source
 /// keeps failing.
 #[component]
 fn CatalogueLine(catalogue: CodeCatalogue) -> Element {
     let ui = use_preferences();
-    if catalogue.consecutive_failures > 0 {
-        let at = short_at(catalogue.last_success_at.as_deref(), ui)
-            .unwrap_or_else(|| ui.text("common.not_fetched").to_owned());
+    let last_success = catalogue.last_success_at.as_deref();
+    if let Some(key) = source_warning_key(catalogue.consecutive_failures, last_success.is_some()) {
+        let at = short_at(last_success, ui).unwrap_or_default();
         return rsx! {
-            WarningLine { status: Status::Warn, text: ui.format("codes.source_unavailable", &[("count", &catalogue.consecutive_failures.to_string()), ("at", &at)]) }
+            WarningLine { status: Status::Warn, text: ui.format(key, &[("count", &catalogue.consecutive_failures.to_string()), ("at", &at)]) }
         };
     }
-    let ago = seconds_since(catalogue.last_success_at.as_deref())
-        .map(|seconds| relative_age(seconds, ui));
+    // Before the first fetch the line says so instead of leaving "next" alone.
+    let fetched = match last_success {
+        Some(_) => seconds_since(last_success).map(|seconds| {
+            ui.format(
+                "codes.catalogue_fetched",
+                &[("ago", &relative_age(seconds, ui))],
+            )
+        }),
+        None => Some(ui.text("codes.catalogue_not_yet").to_owned()),
+    };
     let next = short_at(catalogue.next_fetch_at.as_deref(), ui);
-    if ago.is_none() && next.is_none() {
+    if fetched.is_none() && next.is_none() {
         return rsx! {};
     }
     rsx! {
         p { class: "catalogue-line", role: "status",
             Glyph { icon: Icon::Clock }
-            if let Some(ago) = &ago { span { class: "part", {ui.format("codes.catalogue_fetched", &[("ago", ago)])} } }
-            if ago.is_some() && next.is_some() { span { "aria-hidden": "true", "·" } }
+            if let Some(fetched) = &fetched { span { class: "part", "{fetched}" } }
+            if fetched.is_some() && next.is_some() { span { "aria-hidden": "true", "·" } }
             if let Some(next) = &next { span { class: "part", {ui.format("codes.catalogue_next", &[("eta", next)])} } }
         }
     }
@@ -225,23 +246,44 @@ fn CatalogueLine(catalogue: CodeCatalogue) -> Element {
 #[component]
 fn SummaryChips(counts: ChipCounts) -> Element {
     let ui = use_preferences();
-    let chips: Vec<(Status, usize, &'static str)> = [
-        (Status::Done, counts.done, "codes.chip_redeemed"),
-        (Status::Open, counts.open, "codes.chip_announced"),
-        (Status::Waiting, counts.waiting, "codes.chip_waiting"),
-        (Status::Warn, counts.warn, "codes.chip_attention"),
+    // The sentence for one chip and for several (English verbs agree with the count).
+    let chips: Vec<(Status, usize, &'static str, &'static str)> = [
+        (
+            Status::Done,
+            counts.done,
+            "codes.chip_redeemed",
+            "codes.chip_redeemed",
+        ),
+        (
+            Status::Open,
+            counts.open,
+            "codes.chip_announced",
+            "codes.chip_announced",
+        ),
+        (
+            Status::Waiting,
+            counts.waiting,
+            "codes.chip_waiting",
+            "codes.chip_waiting",
+        ),
+        (
+            Status::Warn,
+            counts.warn,
+            "codes.chip_attention_one",
+            "codes.chip_attention",
+        ),
     ]
     .into_iter()
-    .filter(|(_, count, _)| *count > 0)
+    .filter(|(_, count, _, _)| *count > 0)
     .collect();
     if chips.is_empty() {
         return rsx! {};
     }
     rsx! {
         ul { class: "summary-chips", "aria-label": ui.text("codes.summary_label"),
-            for (status, count, key) in chips {
-                li { key: "{key}",
-                    StatusMark { status, text: count.to_string(), label: ui.format(key, &[("n", &count.to_string())]) }
+            for (status, count, one, other) in chips {
+                li { key: "{other}",
+                    StatusMark { status, text: count.to_string(), label: counted(ui, count as i64, one, other, &[("n", &count.to_string())]) }
                 }
             }
         }
@@ -646,6 +688,53 @@ mod tests {
             Some("codes.manual_blocked_action")
         );
         assert_eq!(blocked_reason(false, true, false), None);
+    }
+
+    #[test]
+    fn the_source_warning_names_the_last_success_only_after_one_and_counts_in_english() {
+        assert_eq!(source_warning_key(0, true), None);
+        assert_eq!(source_warning_key(0, false), None);
+        assert_eq!(
+            source_warning_key(1, true),
+            Some("codes.source_unavailable_one")
+        );
+        assert_eq!(
+            source_warning_key(4, true),
+            Some("codes.source_unavailable")
+        );
+        assert_eq!(source_warning_key(1, false), Some("codes.source_never_one"));
+        assert_eq!(source_warning_key(3, false), Some("codes.source_never"));
+        let english = Preferences {
+            language: crate::i18n::Language::English,
+            ..Preferences::default()
+        };
+        let text = |failures: i32, fetched_before: bool| {
+            let key = source_warning_key(failures, fetched_before).unwrap();
+            english.format(
+                key,
+                &[("count", &failures.to_string()), ("at", "11/23 13:12")],
+            )
+        };
+        for failures in [1, 3] {
+            let never = text(failures, false);
+            assert!(
+                never.starts_with("The code list has not been fetched yet"),
+                "{never}"
+            );
+            assert!(
+                !never.contains("last success") && !never.contains("Not fetched"),
+                "{never}"
+            );
+            assert!(!never.contains("known codes"), "{never}");
+        }
+        assert!(text(1, false).contains("(1 failed attempt)"));
+        assert!(text(3, false).contains("(3 failed attempts)"));
+        assert!(text(1, true).contains("last success 11/23 13:12"));
+        assert!(!text(1, true).contains("failures"));
+        assert!(text(4, true).contains("4 failures in a row, last success 11/23 13:12"));
+        let japanese = Preferences::default();
+        let never = japanese.format("codes.source_never", &[("count", "3")]);
+        assert!(never.contains("3") && !never.contains(japanese.text("common.not_fetched")));
     }
 
     #[test]

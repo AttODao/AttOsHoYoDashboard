@@ -52,7 +52,7 @@ let codeRedemption={available:true,redemption_credentials:true,action_required:n
 const codeCatalogue={enabled:true,last_success_at:hoursAgo(1),consecutive_failures:0,next_fetch_at:hoursAgo(-2),codes:[{id:uid(90),game_kind:'genshin',code:'GENSHINGIFT',rewards:'Primogem*60;Mora*10000',first_seen_at:hoursAgo(5)},{id:uid(91),game_kind:'starrail',code:'STARRAILGIFT',rewards:'',first_seen_at:hoursAgo(30)}]};
 const codeSettings=[{game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',region:'os_usa',mode:'auto'},{game_account_id:uid(6),game_kind:'genshin',game_uid:'600000006',region:'os_usa',mode:'notify'},{game_account_id:uid(8),game_kind:'starrail',game_uid:'700000008',region:'prod_official_usa',mode:'off'}];
 const codeHistory=[{game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',code_id:uid(90),code:'GENSHINGIFT',source:'catalogue',state:'redeemed',updated_at:hoursAgo(2),next_attempt_at:null,redeem_url:codeGift('GENSHINGIFT')},{game_account_id:uid(6),game_kind:'genshin',game_uid:'600000006',code_id:uid(90),code:'GENSHINGIFT',source:'catalogue',state:'available',updated_at:null,next_attempt_at:null,redeem_url:codeGift('GENSHINGIFT')},{game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',code_id:null,code:'TYPEDCODE1',source:'manual',state:'invalid',updated_at:hoursAgo(3),next_attempt_at:null,redeem_url:null},{game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',code_id:null,code:'RANKCODE22',source:'manual',state:'rank_too_low',updated_at:hoursAgo(4),next_attempt_at:hoursAgo(-20),redeem_url:null}];
-let adminCodes={enabled:true,interval_minutes:180,source_host:'hoyo-codes.seria.moe',last_attempt_at:hoursAgo(1),last_success_at:hoursAgo(1),consecutive_failures:0,last_error:null,next_fetch_at:hoursAgo(-2),catalogue:{genshin:{listed:1},starrail:{listed:1}},redemption:{auto_users:1,auto_uids:1,action_required_users:0,unknown:0}};
+let adminCodes={enabled:true,interval_minutes:180,source_host:'hoyo-codes.seria.moe',last_attempt_at:hoursAgo(1),last_success_at:null,consecutive_failures:2,last_error:'timeout',next_fetch_at:hoursAgo(-2),catalogue:{genshin:{listed:1},starrail:{listed:1}},redemption:{auto_users:1,auto_uids:1,action_required_users:0,unknown:0}};
 const codePatches=[],codeEntries=[],adminCodeSaves=[];let codeRuns=0;
 // Backend error codes (gateway::error_code) must never be rendered raw in settings.
 let sessions=[{id:uid(50),created_at:hoursAgo(2),last_seen_at:hoursAgo(0.1),expires_at:hoursAgo(-100),user_agent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36',current:true},{id:uid(51),created_at:hoursAgo(30),last_seen_at:null,expires_at:hoursAgo(-70),user_agent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1',current:false},{id:uid(52),created_at:hoursAgo(50),last_seen_at:null,expires_at:hoursAgo(-50),user_agent:null,current:false}];
@@ -1147,6 +1147,49 @@ try{
  await page.locator('#codes-history-game').selectOption('');assert.equal(await historyRows.count(),20,'changing the filter starts again at 20');
  codeHistory.splice(codeHistory.length-extra.length,extra.length);
  await page.locator('#codes-refresh').click();await idle();
+ // Source status: before any successful fetch there is no "last success" to name and no
+ // known code; afterwards one failure and several read differently in English.
+ Object.assign(codeCatalogue,{last_success_at:null,consecutive_failures:1});
+ await page.locator('#codes-refresh').click();await page.locator('.codes-page .warning-line').waitFor();await idle();
+ let sourceLine=(await page.locator('.codes-page .warning-line').innerText()).replace(/\s+/g,' ').trim();
+ assert.ok(sourceLine.startsWith('The code list has not been fetched yet (1 failed attempt).'),sourceLine);
+ assert.ok(!/Not fetched|last success|known codes|failures/.test(sourceLine),sourceLine);
+ Object.assign(codeCatalogue,{consecutive_failures:3});
+ await page.locator('#codes-refresh').click();await page.locator('.codes-page .warning-line').filter({hasText:'3 failed attempts'}).waitFor();await idle();
+ Object.assign(codeCatalogue,{consecutive_failures:0});
+ await page.locator('#codes-refresh').click();await page.locator('.codes-page .warning-line').waitFor({state:'detached'});await idle();
+ assert.equal((await page.locator('.catalogue-line').innerText()).replace(/\s+/g,' ').trim().split(' · ')[0],'Code list not fetched yet','before the first fetch the status says so');
+ Object.assign(codeCatalogue,{last_success_at:hoursAgo(13),consecutive_failures:1});
+ await page.locator('#codes-refresh').click();await page.locator('.codes-page .warning-line').filter({hasText:'The latest fetch of the code list failed'}).waitFor();await idle();
+ sourceLine=(await page.locator('.codes-page .warning-line').innerText()).replace(/\s+/g,' ').trim();
+ assert.ok(sourceLine.includes('(last success ')&&!sourceLine.includes('failures'),sourceLine);
+ Object.assign(codeCatalogue,{consecutive_failures:4});
+ await page.locator('#codes-refresh').click();await page.locator('.codes-page .warning-line').filter({hasText:'4 failures in a row, last success '}).waitFor();await idle();
+ Object.assign(codeCatalogue,{last_success_at:hoursAgo(1),consecutive_failures:0});
+ await page.locator('#codes-refresh').click();await page.locator('.codes-page .warning-line').waitFor({state:'detached'});await idle();
+ // Chips at 360px: two chips stay on the game-name line; four chips wrap as one group
+ // inside the card. "Needs" agrees with a count of one.
+ const chipRows=[['redeemed',uid(8),'starrail','700000008'],['announced',uid(8),'starrail','700000008'],['unknown',uid(5),'genshin','600000005']].map(([state,id,game_kind,game_uid],i)=>({game_account_id:id,game_kind,game_uid,code_id:null,code:'CHIPCODE'+i,source:'manual',state,updated_at:hoursAgo(2),next_attempt_at:null,redeem_url:null}));
+ codeHistory.push(...chipRows);
+ await page.setViewportSize({width:360,height:800});
+ await page.locator('#codes-refresh').click();await page.locator('.reward-card.starrail .summary-chips').waitFor();await idle();
+ const chipBoxes=await page.evaluate(()=>Object.fromEntries([...document.querySelectorAll('.codes-page .reward-card')].map(card=>{
+  const box=e=>{const b=e.getBoundingClientRect();return {top:b.top,bottom:b.bottom,left:b.left,right:b.right};};
+  const chips=[...card.querySelectorAll('.summary-chips li')].map(box);
+  return [card.classList[2],{name:box(card.querySelector('.game-head h3')),list:box(card.querySelector('.summary-chips')),chips,card:box(card)}];
+ })));
+ const {starrail:twoChips,genshin:fourChips}=chipBoxes;
+ assert.equal(twoChips.chips.length,2);
+ assert.ok(twoChips.list.top<twoChips.name.bottom&&twoChips.list.bottom>twoChips.name.top&&twoChips.list.left>=twoChips.name.right,'two chips sit on the name line: '+JSON.stringify(twoChips));
+ assert.ok(twoChips.list.right<=twoChips.card.right+0.5,'two chips stay inside the card');
+ assert.equal(fourChips.chips.length,4);
+ assert.equal(new Set(fourChips.chips.map(chip=>Math.round(chip.top))).size,1,'four chips never split across lines');
+ assert.ok(fourChips.chips.every(chip=>chip.left>=fourChips.card.left-0.5&&chip.right<=fourChips.card.right+0.5),'four chips do not overflow the card: '+JSON.stringify(fourChips));
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth),360,'no page overflow at 360px');
+ assert.equal(await page.locator('.reward-card.genshin .summary-chips .status-mark[data-status=warn]').getAttribute('title'),'1 needs checking or action (result unknown: last 7 days)');
+ codeHistory.splice(codeHistory.length-chipRows.length,chipRows.length);
+ await page.setViewportSize({width:1280,height:900});
+ await page.locator('#codes-refresh').click();await idle();
  // Action required (CAPTCHA): the alert names the action; entry waits; Resume is the explicit retry.
  codeRedemption={...codeRedemption,action_required:'captcha_required',action_at:hoursAgo(1)};
  await page.locator('#codes-refresh').click();await page.locator('#codes-action').waitFor();await idle();
@@ -1172,7 +1215,7 @@ try{
  assert.deepEqual(await page.locator('#code-hint .status-mark').evaluate(mark=>[mark.dataset.status,mark.querySelector('.status-short').textContent,mark.title]),['warn','Action','Code redemption needs action (see Settings, Codes)']);
  codeRedemption={...codeRedemption,action_required:null,action_at:null};
  await page.reload();await dashboard();await page.locator('#code-hint .status-mark[data-status=done]').waitFor();
- assert.equal(await page.locator('#code-hint .status-mark').getAttribute('title'),'1 codes redeemed in the last 24 hours');
+ assert.equal(await page.locator('#code-hint .status-mark').getAttribute('title'),'1 code redeemed in the last 24 hours','one code reads in the singular');
  assert.equal(await page.locator('#code-hint li').count(),1,'one chip at most');
  assert.deepEqual(errors,[],'the codes tab raises no browser errors');
  await settings('notifications');
@@ -1850,6 +1893,11 @@ try{
  // Redemption codes: the server-wide switch keeps the stored interval; the interval saves on its own.
  const adminCodesCard=page.locator('section.admin-codes');
  await adminCodesCard.locator('#admin-codes-enabled').waitFor({state:'attached'});
+ // The source has never been fetched: a dedicated sentence and "None yet", never "Not fetched".
+ assert.equal((await adminCodesCard.locator('.warning-line').innerText()).replace(/\s+/g,' ').trim(),'The code list has never been fetched from the source (2 failed attempts). Users get codes from the list only after the first successful fetch.');
+ const lastSuccess=adminCodesCard.locator('.metric').filter({has:page.locator('dt',{hasText:'Last success'})}).locator('dd .status-mark');
+ assert.deepEqual(await lastSuccess.evaluate(mark=>[mark.dataset.status,mark.textContent.trim()]),['warn','None yet']);
+ assert.equal(await page.locator('#admin-codes-interval option[value="1"]').textContent(),'1 hour','one hour reads in the singular');
  assert.ok(await page.locator('#admin-codes-enabled').isChecked());
  assert.equal(await page.locator('#admin-codes-interval').inputValue(),'3');
  assert.deepEqual(await page.locator('#admin-codes-interval option').evaluateAll(options=>options.map(option=>option.value)),['1','2','3','6','12','24']);
@@ -1863,6 +1911,11 @@ try{
  assert.deepEqual(adminCodeSaves.at(-1),{enabled:false,interval_minutes:360});
  await adminCodesCard.locator('label.switch').click();await page.locator('#admin-codes-stopped').waitFor({state:'detached'});await idle();
  assert.deepEqual(adminCodeSaves.at(-1),{enabled:true,interval_minutes:360});
+ adminCodes={...adminCodes,last_success_at:hoursAgo(13),consecutive_failures:1,last_error:'timeout'};
+ await page.reload();await adminCodesCard.locator('.warning-line').filter({hasText:'The latest fetch from the source failed.'}).waitFor();await idle();
+ assert.equal(await lastSuccess.evaluate(mark=>mark.dataset.status),'warn');
+ assert.ok(!(await adminCodesCard.innerText()).includes('None yet'));
+ adminCodes={...adminCodes,last_success_at:hoursAgo(1),consecutive_failures:0,last_error:null};
  assert.equal(await button('Load logs').count(),0,'no permanently disabled log section without an endpoint');
  assert.equal(await page.getByRole('heading',{name:'Logs',exact:true}).count(),0);
  assert.equal(await page.locator('[data-slot=card]').first().evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(24, 23, 29)','AHD card skin does not depend on hashed module class names');
