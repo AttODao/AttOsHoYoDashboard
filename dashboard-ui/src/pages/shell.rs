@@ -2,6 +2,7 @@ use super::about::AboutPage;
 use super::accounts::UidsPage;
 use super::admin::AdminPage;
 use super::app_nav::AppNav;
+use super::codes::CodesPage;
 use super::common::{focus_element, reveal_horizontally, use_modal};
 use super::dashboard::DashboardPage;
 use super::deletion::DeletePage;
@@ -59,7 +60,7 @@ fn menu_items(app: bool, admin: bool) -> Vec<MenuItem> {
 }
 
 /// Settings tabs: page, element key, label, short label (narrow screens) and icon.
-const SETTINGS: [(Page, &str, &str, &str, Icon); 7] = [
+const SETTINGS: [(Page, &str, &str, &str, Icon); 8] = [
     (
         Page::Uids,
         "uids",
@@ -73,6 +74,13 @@ const SETTINGS: [(Page, &str, &str, &str, Icon); 7] = [
         "settings.bonus",
         "settings.bonus_short",
         Icon::Gift,
+    ),
+    (
+        Page::Codes,
+        "codes",
+        "settings.codes",
+        "settings.codes_short",
+        Icon::Code,
     ),
     (
         Page::Link,
@@ -284,6 +292,7 @@ fn SettingsPanel(
             match page {
                 Page::Uids => rsx! { UidsPage { state } },
                 Page::Rewards => rsx! { RewardsPage { state } },
+                Page::Codes => rsx! { CodesPage { state } },
                 Page::Link => rsx! { LinkPage { state } },
                 Page::Security => rsx! { SecurityPage { state } },
                 Page::Notifications => rsx! { NotificationsPage { state } },
@@ -464,6 +473,13 @@ mod tests {
         assert!(next_settings(Page::Delete, &Key::ArrowRight, false) == Some(Page::Uids));
         assert!(next_settings(Page::Rewards, &Key::Home, false) == Some(Page::Uids));
         assert!(next_settings(Page::Rewards, &Key::End, false) == Some(Page::Delete));
+        // Codes sits between the login bonus and the HoYoLAB link, on the web and in the app.
+        for app in [false, true] {
+            assert!(next_settings(Page::Rewards, &Key::ArrowRight, app) == Some(Page::Codes));
+            assert!(next_settings(Page::Codes, &Key::ArrowRight, app) == Some(Page::Link));
+            assert!(next_settings(Page::Link, &Key::ArrowLeft, app) == Some(Page::Codes));
+            assert!(next_settings(Page::Codes, &Key::ArrowLeft, app) == Some(Page::Rewards));
+        }
         assert!(next_settings(Page::Dashboard, &Key::ArrowRight, false).is_none());
         assert!(next_settings(Page::Uids, &Key::Enter, false).is_none());
     }
@@ -505,21 +521,21 @@ mod tests {
         assert!(pages(Page::Rewards, false, false) == vec![(1, Page::Rewards)]);
         assert!(
             pages(Page::Rewards, true, false)
-                == vec![(0, Page::Uids), (1, Page::Rewards), (2, Page::Link)]
+                == vec![(0, Page::Uids), (1, Page::Rewards), (2, Page::Codes)]
         );
         assert!(pages(Page::Uids, true, false) == vec![(0, Page::Uids), (1, Page::Rewards)]);
-        assert!(pages(Page::Delete, true, false) == vec![(5, Page::Transfer), (6, Page::Delete)]);
+        assert!(pages(Page::Delete, true, false) == vec![(6, Page::Transfer), (7, Page::Delete)]);
         // The app ends at the notifications tab and never previews web-only pages.
         assert!(
             pages(Page::Notifications, true, true)
-                == vec![(3, Page::Security), (4, Page::Notifications)]
+                == vec![(4, Page::Security), (5, Page::Notifications)]
         );
         assert!(pages(Page::Dashboard, true, false).is_empty());
         let keys: Vec<_> = settings_panels(false, Page::Link, true)
             .into_iter()
             .map(|(.., key)| key)
             .collect();
-        assert_eq!(keys, ["bonus", "link", "security"]);
+        assert_eq!(keys, ["codes", "link", "security"]);
     }
 
     /// Swipes walk the same tab order as the tab bar but stop at either end
@@ -534,6 +550,8 @@ mod tests {
         };
         assert!(swipe(Page::Uids, SwipeDirection::Next, false) == Some(Page::Rewards));
         assert!(swipe(Page::Rewards, SwipeDirection::Previous, false) == Some(Page::Uids));
+        assert!(swipe(Page::Rewards, SwipeDirection::Next, true) == Some(Page::Codes));
+        assert!(swipe(Page::Link, SwipeDirection::Previous, true) == Some(Page::Codes));
         assert!(swipe(Page::Notifications, SwipeDirection::Next, false) == Some(Page::Transfer));
         assert!(swipe(Page::Transfer, SwipeDirection::Next, false) == Some(Page::Delete));
         assert!(swipe(Page::Uids, SwipeDirection::Previous, false).is_none());

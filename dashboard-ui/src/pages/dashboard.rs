@@ -10,6 +10,7 @@ use super::rewards::AutomationSwitch;
 use super::status_tiles::{GenshinTiles, StarRailTiles};
 use super::swipe_tabs::SwipeableTabs;
 use crate::app::actions::spawn_root;
+use crate::app::codes::{CodeHint, code_hint};
 use crate::app::data::{RunAll, load_game, run_all_targets, run_rewards_now};
 use crate::app::display::{
     compact_datetime, data_age, datetime_text, error_text, fill_level, hours_minutes, local_moment,
@@ -72,6 +73,12 @@ fn ClaimNow(state: Signal<AppState>) -> Element {
         .is_some_and(|poll| poll.page == Page::Dashboard);
     let loaded = snapshot.rewards_error.is_none();
     let today = claim_summary(&snapshot.rewards);
+    let age = |value: &str| seconds_since(Some(value));
+    let hint = code_hint(
+        snapshot.code_redemption.as_ref(),
+        snapshot.code_history.as_deref().unwrap_or_default(),
+        &age,
+    );
     drop(snapshot);
     let blocked = match &targets {
         RunAll::Ready(_) => None,
@@ -79,6 +86,19 @@ fn ClaimNow(state: Signal<AppState>) -> Element {
     };
     rsx! {
         div { class: "claim-now",
+            // Redemption codes get their own list: they are not part of today's bonus.
+            if let Some(hint) = hint {
+                ul { class: "claim-chips", id: "code-hint", "aria-label": ui.text("codes.tab"),
+                    li { class: "claim-chip codes", "data-state": if hint == CodeHint::Action { "action" } else { "done" },
+                        Glyph { icon: Icon::Code }
+                        span { class: "visually-hidden", {ui.text("codes.tab")} " " }
+                        match hint {
+                            CodeHint::Action => rsx! { StatusMark { status: Status::Warn, text: ui.text("dash.codes_action_short").to_owned(), label: ui.text("dash.codes_action").to_owned() } },
+                            CodeHint::Redeemed(count) => rsx! { StatusMark { status: Status::Done, text: count.to_string(), label: ui.format("dash.codes_redeemed", &[("n", &count.to_string())]) } },
+                        }
+                    }
+                }
+            }
             // Today's claim per game beside the control that claims it; the bonus section at
             // the bottom of each card keeps the details.
             if loaded && !today.is_empty() {

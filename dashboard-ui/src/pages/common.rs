@@ -332,6 +332,24 @@ pub(super) fn reset_checked(id: &str, checked: bool) {
     let _ = (id, checked);
 }
 
+/// The same for a controlled `select`: a rejected choice is written back to the stored one.
+pub(super) fn reset_value(id: &str, value: &str) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen::JsCast;
+        if let Some(select) = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.get_element_by_id(id))
+            .and_then(|e| e.dyn_into::<web_sys::HtmlSelectElement>().ok())
+        {
+            select.set_value(value);
+        }
+    }
+    #[cfg(feature = "mobile")]
+    crate::mobile::dom::set_value(id, value);
+    let _ = (id, value);
+}
+
 /// Native modal dialog with a labelled heading; Escape, backdrop, the app's Back key and
 /// focus restoration come from `use_modal`. `back_closes: false` keeps it open on Back
 /// while it must stay (the app only; the browser's Back is unchanged).

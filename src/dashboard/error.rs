@@ -20,6 +20,8 @@ pub(crate) enum Error {
     Conflict,
     #[error("too many login attempts; try again later")]
     RateLimited,
+    #[error("too many requests; try again later")]
+    Throttled,
     #[error("authentication service busy; try again later")]
     Busy,
     #[error("{0}")]

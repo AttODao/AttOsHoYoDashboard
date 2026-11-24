@@ -4,6 +4,7 @@ mod api_tokens;
 mod app_device_push;
 mod app_notification_events;
 mod app_notifications;
+mod code_redemption;
 mod dashboard_games;
 mod game_calendar_cache;
 mod game_challenge_cache;
@@ -40,6 +41,7 @@ impl MigratorTrait for Migrator {
             Box::new(game_calendar_cache::GameCalendarCache),
             Box::new(resource_history::ResourceHistory),
             Box::new(redemption_codes::RedemptionCodes),
+            Box::new(code_redemption::CodeRedemption),
         ]
     }
 }

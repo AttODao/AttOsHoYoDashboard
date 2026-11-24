@@ -4940,7 +4940,7 @@
         ],
         "operationId": "updateRedemptionCodeSetting",
         "summary": "Set one game UID's redemption-code mode.",
-        "description": "`{id}` is the game account id. `auto` is a valid mode but is rejected with 400 until automatic redemption is available. Session only: API tokens get 403.",
+        "description": "`{id}` is the game account id. `auto` needs a verified link whose Cookie carries `cookie_token_v2` (`redemption_credentials`); otherwise 400. Session only: API tokens get 403.",
         "responses": {
           "204": {
             "description": "No content."
@@ -5027,7 +5027,7 @@
         ],
         "operationId": "listRedemptionCodeHistory",
         "summary": "List each detected game UID's result per code of its game.",
-        "description": "A listed code without a result is `available`; unlisted codes appear only with a result.",
+        "description": "Per detected UID and code: the redemption ledger state, else a rejection for everyone, else `announced`, else `available` for a listed code. Codes no longer listed and codes the owner entered appear while they have a state.",
         "responses": {
           "200": {
             "description": "OK.",
@@ -5085,6 +5085,266 @@
           },
           {
             "ahdApiToken": []
+          }
+        ]
+      }
+    },
+    "/api/v1/code-redemption": {
+      "get": {
+        "tags": [
+          "codes"
+        ],
+        "operationId": "getCodeRedemption",
+        "summary": "The session user's automatic redemption state.",
+        "description": "Read-only: API tokens of either scope may read it. Never returns Cookie material.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeRedemptionState"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          },
+          {
+            "ahdApiToken": []
+          }
+        ]
+      }
+    },
+    "/api/v1/code-redemption/run": {
+      "post": {
+        "tags": [
+          "codes"
+        ],
+        "operationId": "redeemCodesNow",
+        "summary": "Redeem the user's waiting codes now.",
+        "description": "Session only (tokens get 403). Also the explicit retry after a CAPTCHA or Cookie answer: clears `action_required` and makes the codes it stopped `pending` again. Never resends a code whose outcome is `unknown`. At most 3 per user per 10 minutes (429 `rate_limited`). The run happens in the background; read `GET /code-redemption` and `GET /code-history`.",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "started"
+                  ],
+                  "properties": {
+                    "started": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/code-redemption/codes": {
+      "post": {
+        "tags": [
+          "codes"
+        ],
+        "operationId": "enterRedemptionCode",
+        "summary": "Enter a code to redeem for every detected UID of a game.",
+        "description": "Session only (tokens get 403). The code is validated like catalogue rows, kept private to this user and never added to the shared catalogue; it is redeemed whatever the UID's mode. Needs a verified link whose Cookie carries `cookie_token_v2` (400 otherwise). A code HoYoLAB rejected for everyone takes that state without a request. At most 10 per user per 10 minutes (429 `rate_limited`). 503 while the feature is stopped.",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnterRedemptionCodeInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted; one entry per detected UID of the game.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "entries"
+                  ],
+                  "properties": {
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/EnteredRedemptionCode"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
           }
         ]
       }
@@ -5931,7 +6191,8 @@
           "id",
           "hoyolab_uid",
           "verified_at",
-          "verification_available"
+          "verification_available",
+          "redemption_credentials"
         ],
         "properties": {
           "status": {
@@ -5977,6 +6238,10 @@
           },
           "verification_available": {
             "type": "boolean"
+          },
+          "redemption_credentials": {
+            "type": "boolean",
+            "description": "The stored Cookie carries the redemption credentials (`cookie_token_v2` with `account_id_v2`). Only this flag is returned, never the values."
           }
         }
       },
@@ -7378,7 +7643,7 @@
       },
       "EventList": {
         "type": "string",
-        "description": "Known kinds — personal: reward_failed, reward_claimed, cookie_invalid, signed_in, sign_in_failed, resource_near_cap, resource_full, expeditions_done, transformer_ready, daily_unfinished, weekly_unfinished, code_available. Admin: user_attention, worker_stalled, deletion_stuck, sign_in_failed, signed_in."
+        "description": "Known kinds — personal: reward_failed, reward_claimed, cookie_invalid, signed_in, sign_in_failed, resource_near_cap, resource_full, expeditions_done, transformer_ready, daily_unfinished, weekly_unfinished, code_available, code_redeemed, code_action_required. Admin: user_attention, worker_stalled, deletion_stuck, sign_in_failed, signed_in."
       },
       "ApiTokenView": {
         "type": "object",
@@ -7670,7 +7935,7 @@
           "codes": {
             "type": "array",
             "maxItems": 64,
-            "description": "Redemption-code mode per game UID. Optional (files without it change no mode); exports always include it. UIDs missing on the importing account are skipped, and `auto` is skipped as `mode_unavailable` while automatic redemption is not available.",
+            "description": "Redemption-code mode per game UID. Optional (files without it change no mode); exports always include it. UIDs missing on the importing account are skipped, and `auto` is skipped as `redemption_cookie_missing` when the link's Cookie lacks `cookie_token_v2`.",
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -7798,7 +8063,7 @@
                     "game_not_found",
                     "uid_not_found",
                     "reward_not_ready",
-                    "mode_unavailable"
+                    "redemption_cookie_missing"
                   ]
                 }
               }
@@ -7963,7 +8228,7 @@
           "notify",
           "auto"
         ],
-        "description": "`off` (default), `notify` (one summary notice per fetch run for codes first seen after the mode left `off`) or `auto` (automatic redemption; not available yet, rejected)."
+        "description": "`off` (default), `notify` (one summary notice per fetch run for codes first seen after the mode left `off`) or `auto` (automatic redemption; needs a Cookie with `cookie_token_v2`)."
       },
       "RedemptionCode": {
         "type": "object",
@@ -8022,6 +8287,8 @@
         "required": [
           "enabled",
           "last_success_at",
+          "consecutive_failures",
+          "next_fetch_at",
           "codes"
         ],
         "properties": {
@@ -8035,6 +8302,19 @@
               "null"
             ],
             "format": "date-time"
+          },
+          "consecutive_failures": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Failed fetches since the last success; the Codes tab warns while it is above 0."
+          },
+          "next_fetch_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the next fetch is due; null while the feature is stopped."
           },
           "codes": {
             "type": "array",
@@ -8104,8 +8384,10 @@
           "code_id",
           "code",
           "listed",
+          "source",
           "state",
           "updated_at",
+          "next_attempt_at",
           "redeem_url"
         ],
         "properties": {
@@ -8120,8 +8402,12 @@
             "type": "string"
           },
           "code_id": {
-            "type": "string",
-            "format": "uuid"
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The shared catalogue row; null for a code the catalogue no longer (or never) had, such as a code the owner entered."
           },
           "code": {
             "type": "string"
@@ -8129,12 +8415,21 @@
           "listed": {
             "type": "boolean"
           },
+          "source": {
+            "type": "string",
+            "enum": [
+              "catalogue",
+              "manual"
+            ],
+            "description": "`manual` for a code the owner entered (private to them, never in the shared catalogue)."
+          },
           "state": {
             "type": "string",
             "enum": [
               "available",
               "announced",
               "pending",
+              "sending",
               "redeemed",
               "already_used",
               "expired",
@@ -8144,7 +8439,7 @@
               "captcha_required",
               "unknown"
             ],
-            "description": "`available` (listed, no result yet; never stored), `announced` (sent in a notify-only summary) or an automatic redemption outcome."
+            "description": "The redemption ledger state for this UID (`sending` = a request may be in flight; `unknown` = the outcome is uncertain and the code is never sent again automatically); else `expired`/`invalid` when HoYoLAB rejected the code for everyone; else `announced` (sent in a notify-only summary); else `available` (listed, no state; never stored)."
           },
           "updated_at": {
             "type": [
@@ -8152,7 +8447,15 @@
               "null"
             ],
             "format": "date-time",
-            "description": "When the result was written; null for `available`."
+            "description": "When the state was written; null for `available` and for codes rejected for everyone without a request for this UID."
+          },
+          "next_attempt_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When a waiting code (cooldown, rank too low) may be sent again; null otherwise."
           },
           "redeem_url": {
             "type": [
@@ -8177,7 +8480,8 @@
           "consecutive_failures",
           "last_error",
           "next_fetch_at",
-          "catalogue"
+          "catalogue",
+          "redemption"
         ],
         "properties": {
           "enabled": {
@@ -8281,6 +8585,38 @@
                 }
               }
             }
+          },
+          "redemption": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "auto_users",
+              "auto_uids",
+              "action_required_users",
+              "unknown"
+            ],
+            "description": "Counts only.",
+            "properties": {
+              "auto_users": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Users with at least one detected UID in `auto`."
+              },
+              "auto_uids": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "action_required_users": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Users whose redemption waits for a Cookie update or an explicit retry."
+              },
+              "unknown": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Ledger rows of uncertain outcome (never sent again automatically)."
+              }
+            }
           }
         }
       },
@@ -8299,6 +8635,106 @@
             "type": "integer",
             "minimum": 60,
             "maximum": 1440
+          }
+        }
+      },
+      "CodeRedemptionState": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "available",
+          "redemption_credentials",
+          "action_required",
+          "action_at",
+          "running",
+          "pending"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "The server can redeem: Cookie storage is configured and the administrator's switch is on."
+          },
+          "redemption_credentials": {
+            "type": "boolean",
+            "description": "The registered Cookie carries `cookie_token_v2`; without it only `notify` works."
+          },
+          "action_required": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "cookie_invalid",
+              "captcha_required",
+              null
+            ],
+            "description": "Why redemption is paused for this user until the Cookie is updated or `POST /code-redemption/run` is called; no CAPTCHA is ever solved."
+          },
+          "action_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "running": {
+            "type": "boolean",
+            "description": "A run for this user is going on."
+          },
+          "pending": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Ledger rows waiting to be sent."
+          }
+        }
+      },
+      "EnteredRedemptionCode": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "game_account_id",
+          "game_uid",
+          "code",
+          "state"
+        ],
+        "properties": {
+          "game_account_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "game_uid": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Z0-9]{4,32}$"
+          },
+          "state": {
+            "type": "string",
+            "description": "The ledger state for this UID: `pending` for a new code, or the state the code already has."
+          }
+        }
+      },
+      "EnterRedemptionCodeInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "game_kind",
+          "code"
+        ],
+        "properties": {
+          "game_kind": {
+            "$ref": "#/components/schemas/GameKind"
+          },
+          "code": {
+            "type": "string",
+            "description": "4–32 ASCII letters or digits after trimming; upper-cased.",
+            "maxLength": 64
+          },
+          "game_account_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Optional: only this detected UID of the game (404 when it is not one); absent means every detected UID of the game."
           }
         }
       }

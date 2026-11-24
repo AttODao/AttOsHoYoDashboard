@@ -49,6 +49,12 @@ async fn every_domain_error_has_an_exact_status_code_and_safe_message() {
             "too many login attempts; try again later",
         ),
         (
+            Error::Throttled,
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate_limited",
+            "too many requests; try again later",
+        ),
+        (
             Error::Busy,
             StatusCode::SERVICE_UNAVAILABLE,
             "busy",

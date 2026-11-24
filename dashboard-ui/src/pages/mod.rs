@@ -1,6 +1,7 @@
 mod about;
 mod accounts;
 mod admin;
+mod admin_codes;
 pub(super) mod app_login;
 pub(super) mod app_nav;
 mod app_server;
@@ -10,6 +11,7 @@ pub(super) mod auth;
 mod calendar;
 mod cap_history;
 mod challenges;
+mod codes;
 mod common;
 mod dashboard;
 mod deletion;

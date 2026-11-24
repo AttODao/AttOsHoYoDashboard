@@ -3,7 +3,9 @@ use super::credentials::Credentials;
 use attoshoyodashboard::{
     challenge::Challenge,
     game::{GameKind, Genshin, Starrail},
-    hoyolab::{HoyolabClient, RecordAccount, Result},
+    hoyolab::{
+        HoyolabClient, RecordAccount, RedemptionClient, RedemptionReply, RedemptionRequest, Result,
+    },
     models::account::Account,
 };
 use serde_json::Value;
@@ -159,6 +161,30 @@ impl Gateway for LiveGateway {
                 icon: award.icon,
             })
             .collect())
+    }
+}
+
+/// The redemption endpoints, apart from `Gateway` so its many read-only mocks stay as they
+/// are. One call is one request that may redeem the code.
+pub(in crate::dashboard) trait RedeemGateway: Send + Sync + 'static {
+    fn redeem(
+        &self,
+        cookie: &Credentials,
+        request: RedemptionRequest<'_>,
+    ) -> impl Future<Output = Result<RedemptionReply>> + Send;
+}
+
+pub(in crate::dashboard) struct LiveRedeemGateway;
+impl RedeemGateway for LiveRedeemGateway {
+    async fn redeem(
+        &self,
+        cookie: &Credentials,
+        request: RedemptionRequest<'_>,
+    ) -> Result<RedemptionReply> {
+        let header = cookie
+            .redemption()
+            .ok_or("Cookie has no redemption credentials")?;
+        RedemptionClient::new(header)?.redeem(&request).await
     }
 }
 

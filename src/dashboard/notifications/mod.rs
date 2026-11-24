@@ -25,7 +25,7 @@ pub(in crate::dashboard) const RESIN_WARN_HOURS: std::ops::RangeInclusive<i32> =
 mod worker_tests;
 
 /// Notification kinds a user can enable, with their defaults.
-pub(in crate::dashboard) const PERSONAL_EVENTS: [(&str, bool); 12] = [
+pub(in crate::dashboard) const PERSONAL_EVENTS: [(&str, bool); 14] = [
     ("reward_failed", true),
     ("reward_claimed", false),
     ("cookie_invalid", true),
@@ -39,6 +39,9 @@ pub(in crate::dashboard) const PERSONAL_EVENTS: [(&str, bool); 12] = [
     ("weekly_unfinished", true),
     // On by default: a UID's code mode (default off) is the opt-in.
     ("code_available", true),
+    // Results of automatic or requested redemption, and its pause for the user's action.
+    ("code_redeemed", true),
+    ("code_action_required", true),
 ];
 
 /// Notification kinds for the administrator channel, with their defaults.

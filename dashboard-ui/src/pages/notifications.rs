@@ -13,10 +13,13 @@ use dioxus::prelude::*;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
-/// Personal notices in the order the settings page lists them, with their label keys.
-pub(super) const PERSONAL_EVENTS: [(&str, &str); 11] = [
+/// Personal notice rows in the order the settings page lists them, with their label keys.
+/// A row is one notice kind, except the redemption-code rows (see `row_kinds`).
+pub(super) const PERSONAL_EVENTS: [(&str, &str); 13] = [
     ("reward_failed", "notifications.event_reward_failed"),
     ("reward_claimed", "notifications.event_reward_claimed"),
+    ("code_summary", "notifications.event_code_summary"),
+    ("code_action", "notifications.event_code_action"),
     ("cookie_invalid", "notifications.event_cookie_invalid"),
     ("signed_in", "notifications.event_signed_in"),
     ("sign_in_failed", "notifications.event_sign_in_failed"),
@@ -28,12 +31,60 @@ pub(super) const PERSONAL_EVENTS: [(&str, &str); 11] = [
     ("weekly_unfinished", "notifications.event_weekly_unfinished"),
 ];
 
+/// The notice kinds one row switches together. The code summary row covers both per-run
+/// summaries: new codes for notify-only UIDs and the redemption results.
+pub(super) fn row_kinds(row: &'static str) -> Vec<&'static str> {
+    match row {
+        "code_summary" => vec!["code_available", "code_redeemed"],
+        "code_action" => vec!["code_action_required"],
+        kind => vec![kind],
+    }
+}
+
+/// The rows this server knows: a row shows only when the loaded choices hold every kind
+/// it switches (an older server, which the app may talk to, has no code notices).
+fn shown_rows(choices: &BTreeMap<String, bool>) -> Vec<(&'static str, &'static str)> {
+    PERSONAL_EVENTS
+        .into_iter()
+        .filter(|(row, _)| {
+            !row.starts_with("code_")
+                || row_kinds(row)
+                    .iter()
+                    .all(|kind| choices.contains_key(*kind))
+        })
+        .collect()
+}
+
+/// A row is on when any of its kinds is on, so a kind switched on elsewhere (an older
+/// settings file) never reads as off; switching it sets every kind of the row.
+fn row_checked(choices: &BTreeMap<String, bool>, row: &'static str) -> bool {
+    row_kinds(row)
+        .iter()
+        .any(|kind| choices.get(*kind).copied().unwrap_or(false))
+}
+
+fn set_row(choices: &mut BTreeMap<String, bool>, row: &'static str, on: bool) {
+    for kind in row_kinds(row) {
+        choices.insert(kind.to_owned(), on);
+    }
+}
+
+/// The label of a notice kind (settings file reports name kinds, not rows).
+pub(super) fn kind_label(kind: &str) -> Option<&'static str> {
+    PERSONAL_EVENTS
+        .into_iter()
+        .find(|(row, _)| row_kinds(row).contains(&kind))
+        .map(|(_, label)| label)
+}
+
 /// The icon beside a notice kind (personal and admin), so a row is found by shape before
 /// its name is read. Kinds without their own icon get the bell.
 pub(super) fn event_icon(kind: &str) -> Icon {
     match kind {
         "reward_failed" => Icon::Warning,
         "reward_claimed" => Icon::Gift,
+        "code_summary" | "code_available" | "code_redeemed" => Icon::Code,
+        "code_action" | "code_action_required" => Icon::Warning,
         "cookie_invalid" => Icon::Link,
         "signed_in" => Icon::Key,
         "sign_in_failed" => Icon::Lock,
@@ -176,7 +227,7 @@ fn PersonalChannelCard(
                 EventMatrix { events, app_events, realm }
             } else {
                 div { class: "event-list",
-                    for (kind, label) in PERSONAL_EVENTS {
+                    for (kind, label) in shown_rows(&events()) {
                         EventToggle { key: "{kind}", kind, label, events }
                     }
                 }
@@ -315,7 +366,7 @@ fn EventMatrix(
                 th { id: "event-column-webhook", scope: "col", {ui.text("notifications.column_webhook")} }
             } }
             tbody {
-                for (kind, label) in PERSONAL_EVENTS {
+                for (kind, label) in shown_rows(&events()) {
                     tr { key: "{kind}",
                         th { id: "event-name-{kind}", scope: "row",
                             span { class: "event-name", Glyph { icon: event_icon(kind) } {ui.text(label)} }
@@ -352,13 +403,13 @@ fn MatrixCheck(
     column: &'static str,
     mut choices: Signal<BTreeMap<String, bool>>,
 ) -> Element {
-    let checked = choices().get(kind).copied().unwrap_or(false);
+    let checked = row_checked(&choices(), kind);
     rsx! {
         label { class: "matrix-check",
             input { id, r#type: "checkbox", checked, "aria-labelledby": "event-name-{kind} {column}",
                 onchange: move |event| {
                     let mut next = choices();
-                    next.insert(kind.to_owned(), event.checked());
+                    set_row(&mut next, kind, event.checked());
                     choices.set(next);
                 }
             }
@@ -374,12 +425,12 @@ fn EventToggle(
 ) -> Element {
     let ui = use_preferences();
     let id = format!("event-{kind}");
-    let checked = events().get(kind).copied().unwrap_or(false);
+    let checked = row_checked(&events(), kind);
     rsx! {
         label { class: "check",
             input { id: "{id}", r#type: "checkbox", checked, onchange: move |event| {
                 let mut next = events();
-                next.insert(kind.to_owned(), event.checked());
+                set_row(&mut next, kind, event.checked());
                 events.set(next);
             } }
             Glyph { icon: event_icon(kind) }
@@ -587,6 +638,60 @@ mod tests {
                 .unwrap()
                 .contains_key("webhook_url")
         );
+    }
+
+    #[test]
+    fn code_rows_switch_their_kinds_together_and_need_a_server_that_knows_them() {
+        let mut choices = BTreeMap::from([
+            ("reward_failed".to_owned(), true),
+            ("code_available".to_owned(), false),
+            ("code_redeemed".to_owned(), true),
+            ("code_action_required".to_owned(), false),
+        ]);
+        assert!(row_checked(&choices, "code_summary"));
+        assert!(!row_checked(&choices, "code_action"));
+        set_row(&mut choices, "code_summary", false);
+        assert!(!choices["code_available"]);
+        assert!(!choices["code_redeemed"]);
+        set_row(&mut choices, "code_action", true);
+        assert!(choices["code_action_required"]);
+        set_row(&mut choices, "reward_failed", false);
+        assert!(!choices["reward_failed"]);
+        let rows: Vec<_> = shown_rows(&choices)
+            .into_iter()
+            .map(|(row, _)| row)
+            .collect();
+        assert_eq!(
+            &rows[..4],
+            [
+                "reward_failed",
+                "reward_claimed",
+                "code_summary",
+                "code_action"
+            ]
+        );
+        // An older server's choices: the code rows stay hidden, the others stay.
+        let old = BTreeMap::from([("reward_failed".to_owned(), true)]);
+        let rows: Vec<_> = shown_rows(&old).into_iter().map(|(row, _)| row).collect();
+        assert_eq!(rows.len(), PERSONAL_EVENTS.len() - 2);
+        assert!(!rows.iter().any(|row| row.starts_with("code_")));
+        assert_eq!(
+            kind_label("code_available"),
+            Some("notifications.event_code_summary")
+        );
+        assert_eq!(
+            kind_label("code_redeemed"),
+            Some("notifications.event_code_summary")
+        );
+        assert_eq!(
+            kind_label("code_action_required"),
+            Some("notifications.event_code_action")
+        );
+        assert_eq!(
+            kind_label("resource_full"),
+            Some("notifications.event_resource_full")
+        );
+        assert_eq!(kind_label("synthetic_kind"), None);
     }
 
     #[test]

@@ -26,6 +26,7 @@ async fn overview_reports_link_state_and_automatic_claims_for_admins_only() {
         created_at: Set(Utc::now()),
         updated_at: Set(Utc::now()),
         verified_at: Set(None),
+        ..Default::default()
     }
     .insert(&test.db)
     .await

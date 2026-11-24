@@ -52,6 +52,7 @@ flowchart TD
 - verified HoYoLAB UID は全ユーザーで一意。同一UIDのCookie更新だけが設定・履歴・game visibilityを維持して許可される。
 - Cookie claimやrolesのgame UIDだけを本人HoYoLAB UIDの証明にしない。候補の `account_identity()` と `community_identity()` は実装済みだが、token-to-UID binding とroles principal一致の本番証拠ではない。
 - Cookie parserはlegacy/v2の正規化保存に対応する。ブラウザからコピーした `Cookie: ...` ヘッダー行を受け付け、空・値なし・不正な名前の要素は無視する。新規登録では有効な `ltoken_v2`・`ltuid_v2`・`ltmid_v2` が各1つ必須で、それ以外（旧形式Cookieや他のUID/MID alias、その重複・不一致）は無視する。MIDの必須性は未実証のため、MIDなしの登録は受け付けない。保存済みCookieの復号時は、MIDなし・旧形式も従来どおり読み込む。draft verification pathは現在 v2 ltoken credential だけを受け入れる。MIDが本当に不要かは未実証で、`ltuid`+`ltoken`だけで十分とは書かない。
+- 交換コード用に、新規登録のCookieに `cookie_token_v2` があれば同じアカウントの `account_id_v2`（`ltuid_v2` と一致すること。なし・不一致・重複は登録を拒む）とともに同じ暗号文に保存する。登録し直すまでは通知のみ（`notify`）しか使えないことは所有者が了承済み。読み取り・ログインボーナスの要求には送らず、引き換えの要求にだけ `cookie_token_v2`・`account_id_v2`・`account_mid_v2`（`ltmid_v2` と同じ値）を送る。APIは有無の真偽値（`GET /me/hoyolab` の `redemption_credentials`）だけを返す。Cookieの更新は従来どおり `credential_version` を上げ、`cookie_token_v2` のないCookieへの更新はそのUIDの `auto` を `notify` に戻す。詳細は [`docs/hoyolab/authentication.md`](../hoyolab/authentication.md)。
 - Cookie平文はAPIで返さず、ownerと検証済みUID contextに束縛してAES-256-GCMで保存する。key/AAD mismatchや改竄はfail closed。ブラウザUIもlocalStorageに秘密を保存せず、same-origin credentialsでAPIを呼ぶ。
 - roles syncで見つかった新ゲームUIDはhidden by default。未検出UIDは管理用に保持し、取得・表示しない。再検出時は以前のvisibilityを復元する。
 
@@ -167,22 +168,38 @@ flowchart TD
 - 含めないもの: HoYoLAB Cookie、Webhook URL、パスワード、パスキー、セッション、APIトークン。読み込みはWebhook URLを変更しない。書き出し元にWebhookがあり読み込み先にない場合は、設定し直すよう案内する。
 - 読み込みは厳密に検証する。未知の項目・型違い・範囲外・重複・件数超過（報酬2件、UID 64件）・未対応の形式や版は、項目のパス（例 `rewards[0].local_time`）と種類（`missing`・`type`・`unknown`・`invalid`・`unsupported`・`duplicate`・`too_many`）の一覧（最大50件）で示し、何も反映しない。ファイルの上限はAPIのbody上限と同じ16KiB。
 - 反映の前にプレビュー（`POST /me/settings/import/preview`）で変わる設定・反映しない項目を示す。反映（`POST /me/settings/import`）は同じ計画を1トランザクションで書き、結果の一覧を返す。通知の種類のうちファイルにないものは現在の選択を保つ。
-- 報酬とUIDの表示は検証済みのHoYoLAB連携に属する。連携がない（`not_linked`）、そのgameの報酬がない（`game_not_found`）、そのUIDがない（`uid_not_found`、UIDは作らない）、HoYoLABでの対応が必要な報酬をONにする（`reward_not_ready`）、このサーバーではまだ使えない交換コードのモード `auto`（`mode_unavailable`）の項目は飛ばして理由を示す。時刻・ON/OFFの変更は設定画面と同じく保留中の定時runを止め、次の未来tickを待つ。
+- 報酬とUIDの表示は検証済みのHoYoLAB連携に属する。連携がない（`not_linked`）、そのgameの報酬がない（`game_not_found`）、そのUIDがない（`uid_not_found`、UIDは作らない）、HoYoLABでの対応が必要な報酬をONにする（`reward_not_ready`）、Cookieに `cookie_token_v2` がないのに交換コードのモード `auto` を読み込む（`redemption_cookie_missing`）項目は飛ばして理由を示す。時刻・ON/OFFの変更は設定画面と同じく保留中の定時runを止め、次の未来tickを待つ。
 - セッション専用で、APIトークンでは使えない（403）。変更要求には他の操作と同じく `Origin` が必要。
 
 ## 7.2. 交換コード
 
-- 第3波まであるうちの第1波。サーバー側の土台（一覧の定期取得・UIDごとのモード・通知のみのモード・管理者の設定）で、保存済みCookieは変えず、HoYoLABへは何も送らない。自動交換は第2波、設定タブ「コード」のUIは第3波。
+- 3つの波で作る。第1波はサーバー側の土台（一覧の定期取得・UIDごとのモード・通知のみのモード・管理者の設定）、第2波はHoYoLABでの自動・手動の引き換え（下の「引き換え」、バックエンドのみ）、第3波は設定タブ「コード」のUI。
+- **引き換えは開発中もリリース前も、本物のアカウントで一度も実行していない。** 要求の形と応答の分類は genshin.py のソースだけを根拠にしたもので（[`docs/hoyolab/code-redemption.md`](../hoyolab/code-redemption.md)）、試験はすべてローカルのモック。本番で最初の引き換えを [運用文書](../dashboard-operations.md) の手順で確かめる。
 - 取得元は第三者の一覧（既定 `https://hoyo-codes.seria.moe/`、Hoyo Buddy用。`CODES_SOURCE_URL` で変更、HTTPSのみ）。`GET /codes?game=genshin` と `?game=hkrpg`（スターレイル）だけを読み、他のゲームは扱わない（§9）。認証なし。いつ変わり、なくなってもよい前提で、返す値はすべて信頼しない。
 - 一覧はサーバーに1つ（利用者ごとではない）。workerがページの表示と無関係に、既定180分ごとに両ゲームを取得し、コード・ゲーム・報酬の文・初めて見た日時・最後に見た日時・取得元にまだ載っているか（`listed`）を保存する。その取得で載っていなかったコードは `listed=false` にし、90日たてば消す。
 - 取得は1回15秒（接続5秒）まで、本文256KiBまで、リダイレクトは同じスキーム・ホスト・ポートの中で3回まで。各行はコードが4〜32文字のASCII英数字（大文字にそろえる。交換は大文字・小文字を区別しない）、`game` が要求したゲーム、`rewards` が文字列かnullであるものだけを保存し、`status` が `OK` でない行は「載っていない」として数えない。報酬の文は文字・数字・単一の空白・簡単な記号だけを残して300文字まで（リンクやマークアップにならない）。1回200行を超えた分と不正な行は数えて捨てる（メトリクス）。すべての行が不正なら取得の失敗とする。
 - 取得の失敗（`timeout`・`connect`・`http_status`・`redirect`・`too_large`・`invalid_payload`、保存の失敗は `storage`）は既知のコードを消さず変えない。失敗の後は15分・30分・60分…と間隔を倍にして（取得間隔まで）再試行する。
 - 管理者は機能全体の停止（停止中は取得も通知もしない。利用者の設定は保存できる）と取得間隔（60〜1440分、既定180分）をDBに保存して変えられ（`GET/PUT /admin/codes`、再起動不要）、最後の試行・成功の日時・連続失敗数・最後の失敗の種類・次の取得予定・ゲームごとの件数を見られる。上流の本文は保存も表示もしない。
-- 利用者の設定はHoYoLAB連携（検証済み）の検出済みゲームUIDごとのモードで、`off`（既定）・`notify`（通知のみ）・`auto`（自動で交換）。`auto` は保存できる値として検証するが、自動交換を実装するまでAPIは400、設定の移行は `mode_unavailable` で拒む（何もしないUIDが黙って残らないように）。第2波は `codes::settings::AUTO_REDEEM_AVAILABLE` を真にし、`auto` のUIDを交換の対象にする（そのUIDは通知のみの新着まとめの対象から外し、交換の結果を知らせる）。
-- 一覧と履歴: `GET /codes` はサーバー共通の一覧（各コードの公式の交換ページ：原神 `https://genshin.hoyoverse.com/en/gift?code=<code>`、スターレイル `https://hsr.hoyoverse.com/gift?code=<code>`）。`GET /code-history` はUID×コードの結果で、保存する結果は `announced`（通知済み）と、第2波の交換の結果 `pending`・`redeemed`・`already_used`・`expired`・`invalid`・`rank_too_low`・`cookie_invalid`・`captcha_required`・`unknown`。結果のない載っているコードは `available` と返す（保存しない）。載っていないコードは結果があるときだけ返す。
+- 利用者の設定はHoYoLAB連携（検証済み）の検出済みゲームUIDごとのモードで、`off`（既定）・`notify`（通知のみ）・`auto`（自動で交換）。`auto` は連携のCookieに引き換え用の資格情報（`cookie_token_v2`）があるときだけ選べ（ないとAPIは400、設定の移行は `redemption_cookie_missing` で飛ばす）、そのUIDは通知のみの新着まとめの対象から外れ、引き換えの結果を知らせる。
+- 一覧と履歴: `GET /codes` はサーバー共通の一覧（各コードの公式の交換ページ：原神 `https://genshin.hoyoverse.com/en/gift?code=<code>`、スターレイル `https://hsr.hoyoverse.com/gift?code=<code>`）。`GET /code-history` はUID×コードの状態で、引き換えの台帳の状態（`pending`・`sending`・`redeemed`・`already_used`・`expired`・`invalid`・`rank_too_low`・`cookie_invalid`・`captcha_required`・`unknown`）、なければ全員向けに無効と分かったコードの `expired`／`invalid`、なければ `announced`（通知済み）、なければ載っているコードの `available`（保存しない）。載っていないコードは状態があるときだけ返し、一覧から消えたコードと利用者が入力したコードも台帳にある限り返す（`code_id` null）。各項目に `source`（`catalogue`／`manual`）と、待ちのある項目の `next_attempt_at` を付ける。
 - 通知のみ: 取得のたびに、`notify` のUIDを持つ利用者ごとに1件のまとめ（種類 `code_available`、既定ON、Webhookとアプリ受信箱で種類ごとに選べる）を送る。コードごとに1件にはしない。対象は、載っていて、そのUIDのモードがONになった時刻（`enabled_at`）以後かつ7日以内に初めて見たコードで、そのUIDに結果がまだないもの。ONにする前から一覧にあったコードはさかのぼって知らせず、履歴で `available` と示す。サーバーがそのゲームの一覧を初めて取得したとき（まだ両ゲームとも成功した取得が一度もない間）に載っていたコード（`seeded`）も知らせない。その後は、一覧が空になったゲームに現れたコードも新着として扱う。モードを `notify` と `auto` の間で切り替えても `enabled_at` は変わらず、`off` にすると消える。対象は有効な利用者の検証済みの連携（`cookie_invalid` は除く）の検出済みUIDだけ。まとめが少なくとも1つの経路に届いたとき（Webhookが2xxを返した、またはアプリ受信箱に入った）だけ、そのUIDとコードに `announced` を記録し、届かなかったもの（Webhookの失敗を含む）は次の取得で再び対象になる。本文は最大10件のコード（ゲーム・コード・報酬の文・交換ページ）と残りの件数。
-- トークン: 読み取り（`GET /codes`・`/code-settings`・`/code-history`）は `read`／`run` のどちらでも使える。モードの変更と管理者の設定はセッション専用（業務層でも `Sessions::authenticate`）。
-- ライフサイクル: Cookie削除（`DELETE /me/hoyolab/cookie`）で連携のすべてのUIDのモードを `off` にし、結果は履歴として残す。Dashboardユーザーの削除ではゲームUIDとともにモードと結果を消す（cascade）。一覧はサーバー共通なので消さない。
+- トークン: 読み取り（`GET /codes`・`/code-settings`・`/code-history`・`/code-redemption`）は `read`／`run` のどちらでも使える。モードの変更、コードの入力、今すぐ引き換え、管理者の設定はセッション専用（業務層でも `Sessions::authenticate`）。
+- ライフサイクル: Cookie削除（`DELETE /me/hoyolab/cookie`）で連携のすべてのUIDのモードを `off` にし（`notify` へ下げるのではなく、自動受け取りと同じく止める）、引き換え用の資格情報と要対応の状態を消す。結果と引き換えの台帳は残すので、同じアカウントを登録し直しても送ったコードは二度と送らない。Dashboardユーザーの削除ではゲームUIDとともにモード・結果・台帳を消す（cascade）。一覧と全員向けの無効なコードはサーバー共通なので消さない。管理者による無効化・パスワード再発行に特別な扱いはない（無効なユーザーは引き換えの対象にならない）。
+
+### 引き換え
+
+- 対象: `auto` のUIDでは取得元に載っているコードすべて（`auto` にする前から載っていたものも含む）、利用者が入力したコードはモードに関係なくそのゲームの検出済みUIDすべて。検証済みで `cookie_token_v2` のある連携、要対応でない、有効でパスワード変更済みの利用者だけ。原神・スターレイルの海外版だけ（§9）。
+- 実行: 一覧の取得（既定180分ごと。失敗した取得の後も既存の一覧で行う）のたびに、対象のある利用者ごとに行う。利用者の「今すぐ引き換え」とコードの入力でも、その利用者だけをすぐに行う（同じworkerと台帳。実行中の利用者への依頼は、その実行の後にもう一度行う）。
+- 台帳（`redemption_ledger`）: UIDとコードの文字列ごとに1行。要求の直前に同じトランザクションで「送ったかもしれない」（`sending`、送信数を加算）を記録してから送る。通信エラー・タイムアウト・HTTPエラー・読めない応答・分類できないretcodeは `unknown` とし、自動では二度と送らない。再起動時に残っていた `sending` も `unknown` にする（起動直後、要求を受け付ける前）。台帳は一覧の90日後の削除と無関係で、Cookieの更新・削除でも消えないので、同じコードを同じUIDに二度送ることはない（例外は下のランク不足の再試行と、待ち・要対応の応答で「処理されなかった」と分かっているもの）。
+- 直前の確認: 要求のたびに、所有者のユーザー行のロック（Cookieを書き換える処理と同じ）の下で、利用者が有効、連携が検証済みで計画時と同じ `credential_version`、引き換え用の資格情報があり要対応でない、管理者の停止スイッチがON、サーバーが停止中でない、UIDが検出済み（一覧のコードなら `auto` のままで、まだ載っている）、全員向けに無効でない、行が送れる状態、をすべて確かめる。報酬の自動受け取りとCookie更新と同じ所有者単位の操作ロックで直列にし、待ちの間はロックを持たない。
+- 速さの制限: 同じHoYoLABアカウントへの要求は7秒あける（約5秒の待ちに余裕を足した値）。待ちの応答（`-2016`・`-110`・`1028`）の後は30秒あけ、そのコードは失敗として数えず `pending` に戻し、同じ実行の最後に1度だけ再試行する。1回の実行で1アカウントに送るのは10件まで（残りは次の実行）。同時に処理する利用者は4人まで。
+- 結果: `redeemed`・`already_used`・`expired`・`invalid`・`rank_too_low`・`cookie_invalid`・`captcha_required`・`unknown`・`pending`（分類表は `docs/hoyolab/code-redemption.md`）。retcodeは分類できないものだけ数値で残し、メッセージ・本文は保存もログ出力もしない。
+- 全員向けの無効: `expired`（期限切れ・上限）と `invalid`（存在しない・形式違い）の応答は、ゲームとコードの文字列で全員向けに記録し（`redemption_code_rejections`）、誰のためにも二度と送らない。他の利用者の待っている行は要求なしで同じ状態にする。取得元が同じコードを後で再び載せても（一覧から消えた後を含む）開き直さない（コードは再利用されない前提）。使用済み・ランク不足・地域・Cookie・CAPTCHAなどアカウントごとの応答は全員向けにしない。
+- ランク不足: 取得元に載っている間だけ、1日に1回まで再試行する。入力したコードは自動では再試行せず、1日たってから同じコードを入力し直すと再試行する。
+- 要対応: `cookie_invalid`（`-1071` など。ltokenの連携は `verified` のまま）と `captcha_required` は、その利用者を要対応（`hoyolab_accounts.redemption_action`）にし、Cookieの登録し直しか、利用者の「今すぐ引き換え」（保存済みCookieの本人確認のやり直しでは再開しない）まで要求を送らない。その応答を受けたコードは `cookie_invalid`／`captcha_required` のまま残り、再開したときに `pending` に戻る。CAPTCHAは解かない（§9）。
+- 手動の操作（セッション専用、報酬と同じ認可と `credential_version` の確認）: `POST /code-redemption/codes`（`{game_kind, code}`。一覧の行と同じ検証で大文字にそろえ、その利用者だけの台帳に入れ、共通の一覧には加えない。全員向けに無効なコードは要求なしでその状態になる）は10分に10回まで、`POST /code-redemption/run`（`{}`、要対応を解いて待っているコードを引き換える）は10分に3回まで（超えると429 `rate_limited`）。どちらも202を返し、引き換えはバックグラウンドで行う。`GET /code-redemption` は状態（`available`・`redemption_credentials`・`action_required`・`action_at`・`running`・`pending`）。
+- 通知: 引き換えた実行ごとに利用者へ1件のまとめ（`code_redeemed`、既定ON。ゲーム・UID・コード・報酬の文を最大10件）と、要対応になったとき1件（`code_action_required`、既定ON。理由と再開の方法）。どちらもWebhookとアプリ受信箱で種類ごとに選べ、日本語と英語。届かなくても再送しない（台帳が記録）。`notify` のUIDの新着まとめ（`code_available`）は従来どおり。
+- 管理者: `GET /admin/codes` の `redemption` に、`auto` のUIDを持つ利用者数・`auto` のUID数・要対応の利用者数・`unknown` の行数（人数と件数だけ）。停止スイッチはOFFにした時点で次の要求から止まる。
 
 ## 8. Web API契約
 
@@ -197,7 +214,7 @@ OpenAPI 3.1 の正本は [`../dashboard-api.json`](../dashboard-api.json)。現�
 - HoYoLAB: status/cookie/verify/sync
 - games: game accounts list/visibility/status/challenges/calendar/resource-history
 - rewards: settings/update/manual run/history
-- redemption codes: `GET /codes`、`GET /code-settings`、`PATCH /code-settings/{id}`、`GET /code-history`、`GET/PUT /admin/codes`
+- redemption codes: `GET /codes`、`GET /code-settings`、`PATCH /code-settings/{id}`、`GET /code-history`、`GET /code-redemption`、`POST /code-redemption/run`、`POST /code-redemption/codes`、`GET/PUT /admin/codes`
 - settings transfer: `GET /me/settings/export`、`POST /me/settings/import/preview`・`/me/settings/import`（セッション専用。`ahd-settings` 版1）
 
 ## 9. 対象外

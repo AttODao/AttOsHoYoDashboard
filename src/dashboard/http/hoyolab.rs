@@ -41,6 +41,8 @@ async fn status(
         "id":row.as_ref().map(|row|row.id),
         "hoyolab_uid":row.as_ref().and_then(|row|row.hoyolab_uid.as_deref()),
         "verified_at":row.as_ref().and_then(|row|row.verified_at),
+        // Only whether the Cookie carries the redemption credentials; never the values.
+        "redemption_credentials":row.as_ref().is_some_and(|row| row.auth_status != "removed" && row.redemption_credentials),
         "verification_available":true,
     })))
 }

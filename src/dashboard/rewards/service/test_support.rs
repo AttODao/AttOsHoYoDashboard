@@ -215,6 +215,7 @@ pub(super) async fn verified_link(
         created_at: Set(now),
         updated_at: Set(now),
         verified_at: Set(Some(now)),
+        ..Default::default()
     }
     .insert(db)
     .await

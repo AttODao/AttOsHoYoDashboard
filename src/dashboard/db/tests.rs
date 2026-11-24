@@ -61,7 +61,8 @@ async fn migrations_are_ordered_idempotent_and_reversible() {
             "m20261109_000013_app_device_push",
             "m20261109_000014_game_calendar_cache",
             "m20261109_000015_resource_history",
-            "m20261123_000016_redemption_codes"
+            "m20261123_000016_redemption_codes",
+            "m20261124_000017_code_redemption"
         ]
     );
     migrations::Migrator::down(&fixture.db, None).await.unwrap();
@@ -200,7 +201,7 @@ async fn audit_requires_existing_subject_and_diagnostics_redact_credentials() {
 async fn app_event_choices_start_as_the_webhook_choices_and_revert_cleanly() {
     let fixture = TestDatabase::new().await;
     let db = &fixture.db;
-    migrations::Migrator::down(db, Some(6)).await.unwrap();
+    migrations::Migrator::down(db, Some(7)).await.unwrap();
     let owner = insert_user(db, "owner").await;
     db.execute_unprepared(&format!(
         "INSERT INTO notification_settings (user_id, webhook_format, language, events) \
@@ -253,7 +254,7 @@ async fn app_event_choices_start_as_the_webhook_choices_and_revert_cleanly() {
         .await
         .is_err()
     );
-    migrations::Migrator::down(db, Some(6)).await.unwrap();
+    migrations::Migrator::down(db, Some(7)).await.unwrap();
     let column = db
         .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
@@ -363,11 +364,147 @@ async fn redemption_code_schema_checks_values_and_reverts_cleanly() {
         .is_err(),
         "`available` is derived, never stored"
     );
-    migrations::Migrator::down(db, Some(1)).await.unwrap();
+    // The code-redemption migration is undone first.
+    migrations::Migrator::down(db, Some(2)).await.unwrap();
     let left = db
         .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
             "SELECT to_regclass('public.redemption_codes')::text AS name",
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(left.try_get::<Option<String>>("", "name").unwrap(), None);
+    migrations::Migrator::up(db, None).await.unwrap();
+}
+
+#[tokio::test]
+async fn code_redemption_schema_checks_values_and_reverts_cleanly() {
+    let fixture = TestDatabase::new().await;
+    let db = &fixture.db;
+    let owner = insert_user(db, "owner").await;
+    let link = Uuid::new_v4();
+    let account = Uuid::new_v4();
+    db.execute_unprepared(&format!(
+        "INSERT INTO hoyolab_accounts (id, owner_user_id, hoyolab_uid, encrypted_credentials, \
+         credential_version, auth_status, created_at, updated_at) \
+         VALUES ('{link}', '{}', '1', NULL, 1, 'removed', now(), now()); \
+         INSERT INTO game_accounts (id, hoyolab_account_id, game_kind, game_uid, region, visible, \
+         detected, last_detected_at) VALUES ('{account}', '{link}', 'genshin', '800000001', \
+         'os_asia', true, true, now())",
+        owner.id
+    ))
+    .await
+    .unwrap();
+    // Existing links start without redemption credentials or a pending action.
+    let row = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            format!(
+                "SELECT redemption_credentials, redemption_action IS NULL AS clear \
+                 FROM hoyolab_accounts WHERE id = '{link}'"
+            ),
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!row.try_get::<bool>("", "redemption_credentials").unwrap());
+    assert!(row.try_get::<bool>("", "clear").unwrap());
+    let ledger = |code: &str, state: &str, posts: i32, sent: &str| {
+        format!(
+            "INSERT INTO redemption_ledger (game_account_id, code, source, state, posts, \
+             last_sent_at, created_at, updated_at) \
+             VALUES ('{account}', '{code}', 'catalogue', '{state}', {posts}, {sent}, now(), now())"
+        )
+    };
+    for bad in [
+        format!(
+            "UPDATE hoyolab_accounts SET redemption_action = 'cookie_invalid' WHERE id = '{link}'"
+        ),
+        format!(
+            "UPDATE hoyolab_accounts SET redemption_action = 'banned', \
+             redemption_action_at = now() WHERE id = '{link}'"
+        ),
+        ledger("lower", "pending", 0, "NULL"),
+        ledger("GOODCODE", "available", 0, "NULL"),
+        ledger("GOODCODE", "pending", 1, "NULL"),
+        ledger("GOODCODE", "redeemed", 0, "now()"),
+        ledger("GOODCODE", "pending", -1, "NULL"),
+        format!(
+            "INSERT INTO redemption_ledger (game_account_id, code, source, state, created_at, \
+             updated_at) VALUES ('{account}', 'GOODCODE', 'shared', 'pending', now(), now())"
+        ),
+        "INSERT INTO redemption_code_rejections (game_kind, code, reason, rejected_at) \
+         VALUES ('genshin', 'GOODCODE', 'already_used', now())"
+            .to_owned(),
+        "INSERT INTO redemption_code_rejections (game_kind, code, reason, rejected_at) \
+         VALUES ('nap', 'GOODCODE', 'expired', now())"
+            .to_owned(),
+    ] {
+        assert!(db.execute_unprepared(&bad).await.is_err(), "{bad}");
+    }
+    db.execute_unprepared(&format!(
+        "UPDATE hoyolab_accounts SET redemption_credentials = true, \
+         redemption_action = 'captcha_required', redemption_action_at = now() WHERE id = '{link}'"
+    ))
+    .await
+    .unwrap();
+    for (index, state) in [
+        "pending",
+        "sending",
+        "redeemed",
+        "already_used",
+        "expired",
+        "invalid",
+        "rank_too_low",
+        "cookie_invalid",
+        "captcha_required",
+        "unknown",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        db.execute_unprepared(&ledger(&format!("CODE{index:04}"), state, 1, "now()"))
+            .await
+            .unwrap();
+    }
+    db.execute_unprepared(
+        "INSERT INTO redemption_code_rejections (game_kind, code, reason, rejected_at) \
+         VALUES ('genshin', 'GOODCODE', 'expired', now())",
+    )
+    .await
+    .unwrap();
+    // Deleting the user removes the ledger with the UID; rejections are not per user.
+    user::Entity::delete_by_id(owner.id).exec(db).await.unwrap();
+    let count = |sql: &'static str| async move {
+        db.query_one_raw(Statement::from_string(DbBackend::Postgres, sql))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get::<i64>("", "n")
+            .unwrap()
+    };
+    assert_eq!(
+        count("SELECT count(*) AS n FROM redemption_ledger").await,
+        0
+    );
+    assert_eq!(
+        count("SELECT count(*) AS n FROM redemption_code_rejections").await,
+        1
+    );
+    migrations::Migrator::down(db, Some(1)).await.unwrap();
+    assert_eq!(
+        count(
+            "SELECT count(*) AS n FROM information_schema.columns \
+             WHERE table_name = 'hoyolab_accounts' AND column_name LIKE 'redemption%'"
+        )
+        .await,
+        0
+    );
+    let left = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT to_regclass('public.redemption_ledger')::text AS name",
         ))
         .await
         .unwrap()

@@ -1,9 +1,10 @@
 use super::actions::spawn_root;
 use super::data::load_page_data;
 use crate::models::{
-    ApiTokenView, AuditEntry, CookieStatus, GameAccount, GameCalendar, GameChallenges, GameStatus,
-    MeView, NotificationChannelView, PasskeyView, PersonalNotificationView, ResourceHistory,
-    RewardRun, RewardSetting, ServerSettings, SessionView, UserView,
+    AdminCodes, ApiTokenView, AuditEntry, CodeCatalogue, CodeHistoryEntry, CodeRedemption,
+    CodeSetting, CookieStatus, GameAccount, GameCalendar, GameChallenges, GameStatus, MeView,
+    NotificationChannelView, PasskeyView, PersonalNotificationView, ResourceHistory, RewardRun,
+    RewardSetting, ServerSettings, SessionView, UserView,
 };
 use dioxus::prelude::*;
 use std::collections::BTreeMap;
@@ -46,6 +47,8 @@ pub(super) enum Page {
     Link,
     Uids,
     Rewards,
+    /// Redemption codes: per-UID modes, code entry and the redemption history.
+    Codes,
     Security,
     Notifications,
     Transfer,
@@ -141,6 +144,18 @@ pub(super) struct AppState {
     pub(super) reward_runs: Option<Vec<RewardRun>>,
     pub(super) reward_runs_error: Option<String>,
     pub(super) reward_poll: Option<RewardPoll>,
+    /// Redemption codes (the Codes tab; the dashboard hint reads the history and the
+    /// redemption state). `None` until loaded.
+    pub(super) code_settings: Option<Vec<CodeSetting>>,
+    pub(super) code_catalogue: Option<CodeCatalogue>,
+    pub(super) code_history: Option<Vec<CodeHistoryEntry>>,
+    pub(super) code_redemption: Option<CodeRedemption>,
+    /// Message key of the failed Codes tab load.
+    pub(super) codes_error: Option<String>,
+    /// The Codes tab needs a verified HoYoLAB link first.
+    pub(super) codes_unlinked: bool,
+    pub(super) admin_codes: Option<AdminCodes>,
+    pub(super) admin_codes_error: Option<String>,
     pub(super) passkeys: Option<Vec<PasskeyView>>,
     pub(super) passkeys_error: Option<String>,
     pub(super) sessions: Option<Vec<SessionView>>,
@@ -188,6 +203,14 @@ impl AppState {
             reward_runs: None,
             reward_runs_error: None,
             reward_poll: None,
+            code_settings: None,
+            code_catalogue: None,
+            code_history: None,
+            code_redemption: None,
+            codes_error: None,
+            codes_unlinked: false,
+            admin_codes: None,
+            admin_codes_error: None,
             passkeys: None,
             passkeys_error: None,
             sessions: None,
@@ -302,6 +325,14 @@ impl AppState {
         self.reward_runs = None;
         self.reward_runs_error = None;
         self.reward_poll = None;
+        self.code_settings = None;
+        self.code_catalogue = None;
+        self.code_history = None;
+        self.code_redemption = None;
+        self.codes_error = None;
+        self.codes_unlinked = false;
+        self.admin_codes = None;
+        self.admin_codes_error = None;
         self.passkeys = None;
         self.passkeys_error = None;
         self.sessions = None;
@@ -638,6 +669,7 @@ mod tests {
             Page::Events,
             Page::Uids,
             Page::Rewards,
+            Page::Codes,
             Page::Link,
             Page::Security,
             Page::Notifications,

@@ -2,7 +2,7 @@
 //! file after a preview of every change. The server validates and applies; this page only
 //! reads the chosen file, shows the plan and asks before applying it.
 use super::common::{Field, focus_element, game_name};
-use super::notifications::PERSONAL_EVENTS;
+use super::notifications::kind_label;
 use crate::app::actions::{handle_api_error_for, spawn_action, spawn_root};
 use crate::app::preferences::{Preferences, use_preferences};
 use crate::app::settings_file;
@@ -234,6 +234,7 @@ fn skip_reason(reason: &str, ui: Preferences) -> String {
         "game_not_found" => ui.text("transfer.skip_game_not_found").to_owned(),
         "uid_not_found" => ui.text("transfer.skip_uid_not_found").to_owned(),
         "reward_not_ready" => ui.text("transfer.skip_reward_not_ready").to_owned(),
+        "redemption_cookie_missing" => ui.text("codes.manual_blocked_cookie").to_owned(),
         // A newer server's reason is still shown rather than hidden.
         other => other.to_owned(),
     }
@@ -248,10 +249,7 @@ fn skipped_label(entry: &SettingsSkipped, ui: Preferences) -> String {
 }
 
 fn event_label(kind: &str, ui: Preferences) -> String {
-    PERSONAL_EVENTS
-        .iter()
-        .find(|(known, _)| *known == kind)
-        .map_or_else(|| kind.to_owned(), |(_, label)| ui.text(label).to_owned())
+    kind_label(kind).map_or_else(|| kind.to_owned(), |label| ui.text(label).to_owned())
 }
 
 /// What a change is about, in the words of the settings pages.
@@ -266,6 +264,13 @@ fn change_label(change: &SettingsChange, ui: Preferences) -> String {
         ("rewards", "local_time") => ui.format("transfer.change_reward_time", &[("game", game)]),
         ("game_accounts", "visible") => ui.format(
             "transfer.change_visible",
+            &[
+                ("game", game),
+                ("uid", change.game_uid.as_deref().unwrap_or("")),
+            ],
+        ),
+        ("codes", "mode") => ui.format(
+            "transfer.change_code_mode",
             &[
                 ("game", game),
                 ("uid", change.game_uid.as_deref().unwrap_or("")),
@@ -318,6 +323,12 @@ fn value_text(setting: &str, value: &Value, ui: Preferences) -> String {
         ("language", Value::String(language)) if language == "en" => {
             ui.text("language.english").to_owned()
         }
+        ("mode", Value::String(mode)) => match mode.as_str() {
+            "off" => ui.text("codes.mode_off").to_owned(),
+            "notify" => ui.text("codes.mode_notify").to_owned(),
+            "auto" => ui.text("codes.mode_auto").to_owned(),
+            other => other.to_owned(),
+        },
         ("resin_warn_hours", Value::Number(hours)) => {
             ui.format("transfer.hours", &[("count", &hours.to_string())])
         }
@@ -389,6 +400,31 @@ mod tests {
                 "Webhook · {}",
                 ui.text("notifications.event_reward_claimed")
             )
+        );
+        assert_eq!(
+            change_label(
+                &change("notifications", None, None, "events.code_redeemed"),
+                ui
+            ),
+            format!("Webhook · {}", ui.text("notifications.event_code_summary"))
+        );
+        assert_eq!(
+            change_label(
+                &change("codes", Some("genshin"), Some("800000001"), "mode"),
+                ui
+            ),
+            ui.format(
+                "transfer.change_code_mode",
+                &[("game", "Genshin Impact"), ("uid", "800000001")]
+            )
+        );
+        assert_eq!(
+            value_text("mode", &Value::String("notify".into()), ui),
+            ui.text("codes.mode_notify")
+        );
+        assert_eq!(
+            skip_reason("redemption_cookie_missing", ui),
+            ui.text("codes.manual_blocked_cookie")
         );
         assert_eq!(
             change_label(

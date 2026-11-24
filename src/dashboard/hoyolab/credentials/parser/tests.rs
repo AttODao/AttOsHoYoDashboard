@@ -202,3 +202,82 @@ fn parse_rejects_placeholders_bad_uids_and_bad_credential_tokens() {
         );
     }
 }
+
+const COOKIE_TOKEN: &str = "fake_cookie.token-XYZ==";
+
+#[test]
+fn submissions_keep_redemption_credentials_bound_to_the_same_account() {
+    let raw = format!(
+        "ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}; cookie_token_v2={COOKIE_TOKEN}; account_id_v2=000042; account_mid_v2={MID}; _ga=x"
+    );
+    let credentials = Credentials::parse_submitted(&raw).expect("v2 bundle with cookie_token");
+    // Reads and the check-in keep sending only the ltoken pair.
+    assert_eq!(
+        credentials.as_str(),
+        format!("ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}")
+    );
+    assert_eq!(
+        credentials.redemption(),
+        Some(
+            format!("cookie_token_v2={COOKIE_TOKEN}; account_id_v2=42; account_mid_v2={MID}")
+                .as_str()
+        )
+    );
+    // The sealed text parses back to the same credentials (what `open` relies on).
+    let reopened = Credentials::parse(&credentials.sealed_text()).unwrap();
+    assert_eq!(reopened.as_str(), credentials.as_str());
+    assert_eq!(reopened.redemption(), credentials.redemption());
+    assert_eq!(reopened.claimed_uid(), "42");
+
+    // Without cookie_token_v2 nothing is kept for redemption.
+    let plain = Credentials::parse_submitted(&format!(
+        "ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}; cookie_token=legacy-v1; account_id_v2=42"
+    ))
+    .unwrap();
+    assert_eq!(plain.redemption(), None);
+    assert_eq!(plain.sealed_text(), plain.as_str());
+}
+
+#[test]
+fn redemption_credentials_of_another_account_or_without_an_account_are_refused() {
+    for raw in [
+        // The cookie_token names another HoYoLAB account than the verified ltoken pair.
+        format!(
+            "ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}; cookie_token_v2={COOKIE_TOKEN}; account_id_v2=43"
+        ),
+        // No account_id_v2 to bind it to.
+        format!(
+            "ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}; cookie_token_v2={COOKIE_TOKEN}"
+        ),
+        format!(
+            "ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}; cookie_token_v2={COOKIE_TOKEN}; account_id_v2=42; account_id_v2=43"
+        ),
+        format!(
+            "ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}; cookie_token_v2=bad\\token; account_id_v2=42"
+        ),
+        format!(
+            "ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}; cookie_token_v2=YOUR_TOKEN; account_id_v2=42"
+        ),
+        format!(
+            "ltoken_v2={V2_TOKEN}; ltuid_v2=42; ltmid_v2={MID}; cookie_token_v2={COOKIE_TOKEN}; cookie_token_v2=other; account_id_v2=42"
+        ),
+    ] {
+        assert!(
+            matches!(Credentials::parse_submitted(&raw), Err(Error::Invalid(_))),
+            "{raw:?} should be rejected"
+        );
+        assert!(
+            matches!(Credentials::parse(&raw), Err(Error::Invalid(_))),
+            "{raw:?} should be rejected when stored too"
+        );
+    }
+    // Without a MID the redemption header carries no account_mid_v2.
+    let stored = Credentials::parse(&format!(
+        "ltoken_v2={V2_TOKEN}; ltuid_v2=42; cookie_token_v2={COOKIE_TOKEN}; account_id_v2=42"
+    ))
+    .unwrap();
+    assert_eq!(
+        stored.redemption(),
+        Some(format!("cookie_token_v2={COOKIE_TOKEN}; account_id_v2=42").as_str())
+    );
+}

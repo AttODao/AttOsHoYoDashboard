@@ -46,6 +46,14 @@ const accounts=[{id:uid(3),visible:false,detected:true,game_uid:'600000003'},{id
 accounts.push(...[{id:uid(6),game_kind:'genshin',game_uid:'600000006'},{id:uid(7),game_kind:'starrail',game_uid:'700000007'},{id:uid(8),game_kind:'starrail',game_uid:'700000008'}].map(a=>({...accounts[2],...a})));
 const rewardSettings=['genshin','starrail'].map((game_kind,i)=>({id:uid(20+i),game_kind,enabled:false,local_time:'06:00',auth_status:'ready',next_run_at:null,last_run:null,is_sign:!!i,total_sign_day:12+i,today_award:i?null:{name:'Primogem',count:20,icon:awardIcon},last_checked_at:new Date().toISOString(),error_code:null,error_at:null}));
 const hoursAgo=h=>new Date(Date.now()-h*3600e3).toISOString();
+// Redemption codes: stored state only (never HoYoLAB); the checks below change these.
+const codeGift=code=>`https://genshin.hoyoverse.com/en/gift?code=${code}`;
+let codeRedemption={available:true,redemption_credentials:true,action_required:null,action_at:null,running:false,pending:1};
+const codeCatalogue={enabled:true,last_success_at:hoursAgo(1),consecutive_failures:0,next_fetch_at:hoursAgo(-2),codes:[{id:uid(90),game_kind:'genshin',code:'GENSHINGIFT',rewards:'Primogem*60;Mora*10000',first_seen_at:hoursAgo(5)},{id:uid(91),game_kind:'starrail',code:'STARRAILGIFT',rewards:'',first_seen_at:hoursAgo(30)}]};
+const codeSettings=[{game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',region:'os_usa',mode:'auto'},{game_account_id:uid(6),game_kind:'genshin',game_uid:'600000006',region:'os_usa',mode:'notify'},{game_account_id:uid(8),game_kind:'starrail',game_uid:'700000008',region:'prod_official_usa',mode:'off'}];
+const codeHistory=[{game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',code_id:uid(90),code:'GENSHINGIFT',source:'catalogue',state:'redeemed',updated_at:hoursAgo(2),next_attempt_at:null,redeem_url:codeGift('GENSHINGIFT')},{game_account_id:uid(6),game_kind:'genshin',game_uid:'600000006',code_id:uid(90),code:'GENSHINGIFT',source:'catalogue',state:'available',updated_at:null,next_attempt_at:null,redeem_url:codeGift('GENSHINGIFT')},{game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',code_id:null,code:'TYPEDCODE1',source:'manual',state:'invalid',updated_at:hoursAgo(3),next_attempt_at:null,redeem_url:null},{game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',code_id:null,code:'RANKCODE22',source:'manual',state:'rank_too_low',updated_at:hoursAgo(4),next_attempt_at:hoursAgo(-20),redeem_url:null}];
+let adminCodes={enabled:true,interval_minutes:180,source_host:'hoyo-codes.seria.moe',last_attempt_at:hoursAgo(1),last_success_at:hoursAgo(1),consecutive_failures:0,last_error:null,next_fetch_at:hoursAgo(-2),catalogue:{genshin:{listed:1},starrail:{listed:1}},redemption:{auto_users:1,auto_uids:1,action_required_users:0,unknown:0}};
+const codePatches=[],codeEntries=[],adminCodeSaves=[];let codeRuns=0;
 // Backend error codes (gateway::error_code) must never be rendered raw in settings.
 let sessions=[{id:uid(50),created_at:hoursAgo(2),last_seen_at:hoursAgo(0.1),expires_at:hoursAgo(-100),user_agent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36',current:true},{id:uid(51),created_at:hoursAgo(30),last_seen_at:null,expires_at:hoursAgo(-70),user_agent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1',current:false},{id:uid(52),created_at:hoursAgo(50),last_seen_at:null,expires_at:hoursAgo(-50),user_agent:null,current:false}];
 let apiTokens=[],passkeyOptionsBody;
@@ -91,7 +99,7 @@ const server=http.createServer(async(req,res)=>{
    if(!actor||sessionExpired)return json(res,{error:'unauthorized'},401);
    if(p==='/api/v1/me'&&req.method==='DELETE'){assert.deepEqual(body,{current_password:'wrong-synthetic-password',confirmation:user.username});return json(res,{error:'unauthorized'},401);}
    if(p==='/api/v1/me')return json(res,{...actor,onboarding:{password_change_required:actor.must_change_password,cookie_setup_complete:verified,cookie_status:verified?'verified':cookieSaved?'pending_verification':'not_configured',verification_available:true},capabilities:{reward_posting_available:true}});
-   if(p==='/api/v1/me/hoyolab'){await settingsGate;return json(res,{id:cookieSaved||verified?uid(2):null,hoyolab_uid:verified?'123':null,status:verified?'verified':cookieSaved?'pending_verification':'not_configured',setup_complete:verified,updated_at:cookieSaved||verified?hoursAgo(1):null,verification_available:true});}
+   if(p==='/api/v1/me/hoyolab'){await settingsGate;return json(res,{id:cookieSaved||verified?uid(2):null,hoyolab_uid:verified?'123':null,status:verified?'verified':cookieSaved?'pending_verification':'not_configured',setup_complete:verified,updated_at:cookieSaved||verified?hoursAgo(1):null,verification_available:true,redemption_credentials:codeRedemption.redemption_credentials});}
    if(p==='/api/v1/me/password'){
     assert.equal(req.method,'PUT');
     if(expirePasswordSession){sessionExpired=true;return json(res,{error:'unauthorized'},401);}
@@ -122,7 +130,7 @@ const server=http.createServer(async(req,res)=>{
    if(p==='/api/v1/me/api-tokens'&&req.method==='GET')return json(res,apiTokens);
    if(p==='/api/v1/me/api-tokens'){assert.equal(req.method,'POST');assert.deepEqual(Object.keys(body),['name','scope']);assert.deepEqual(body,{name:'Stream Deck',scope:'run'});const row={id:uid(60),name:body.name,scope:body.scope,created_at:hoursAgo(0),last_used_at:null};apiTokens=[row,...apiTokens];return json(res,{...row,token:'ahd_'+'5'.repeat(64)},201);}
    if(p===`/api/v1/me/api-tokens/${uid(60)}`){assert.equal(req.method,'DELETE');apiTokens=apiTokens.filter(row=>row.id!==uid(60));res.writeHead(204);return res.end();}
-   if(p==='/api/v1/me/notifications'&&req.method==='GET')return json(res,{webhook_configured:false,webhook_hint:null,webhook_format:'discord',language:'ja',events:{},app_events:{signed_in:true},last_delivery_at:null,last_delivery_ok:null,resin_warn_hours:2,daily_reminder_time:'21:00',weekly_reminder_time:'15:00'});
+   if(p==='/api/v1/me/notifications'&&req.method==='GET')return json(res,{webhook_configured:false,webhook_hint:null,webhook_format:'discord',language:'ja',events:{code_available:false,code_redeemed:true,code_action_required:true},app_events:{signed_in:true,code_available:false,code_redeemed:true,code_action_required:true},last_delivery_at:null,last_delivery_ok:null,resin_warn_hours:2,daily_reminder_time:'21:00',weekly_reminder_time:'15:00'});
    if(p==='/api/v1/me/notifications'&&req.method==='PUT'){assert.ok(body.webhook_format);notificationSaves.push(body);res.writeHead(204);return res.end();}
    if(p==='/api/v1/me/settings/export'){assert.equal(req.method,'GET');return json(res,settingsExport);}
    if(p==='/api/v1/me/settings/import/preview'||p==='/api/v1/me/settings/import'){
@@ -240,6 +248,16 @@ const server=http.createServer(async(req,res)=>{
    if(account&&statusMode==='recovering')return json(res,{...account,data:{current_stamina:150,max_stamina:300,stamina_full_at:new Date(Date.now()+(7*3600+12*60+4)*1000).toISOString()},fetched_at:new Date().toISOString(),error_code:null,error_at:null,stale:false});
    if(account&&statusMode==='stale')return json(res,{...account,data:{current_stamina:5,max_stamina:300},fetched_at:new Date(Date.now()-6*3600e3-60e3).toISOString(),error_code:'http:503',error_at:new Date().toISOString(),stale:true});
    if(account){assert.ok(account.visible&&account.detected);return json(res,{...account,data:account.game_kind==='genshin'?{current_resin:actor===user?(account.id===uid(5)?0:31):77,max_resin:200,finished_task_num:0,total_task_num:4,resin_full_at:account.id===uid(5)?'2026-10-17T12:38:00Z':'invalid-date',current_home_coin:510,max_home_coin:2400,home_coin_full_at:'2026-10-19T08:38:40Z',remain_resin_discount_num:2,resin_discount_num_limit:3,max_expedition_num:5,transformer_obtained:true,transformer_ready:true,expeditions:[{status:'Ongoing',remained_time:'30360',avatar_side_icon:avatarIcon},{status:'Finished',remained_time:'0',avatar_side_icon:avatarIcon}]}:{current_stamina:account.id===uid(7)?12:24,max_stamina:300,weekly_cocoon_cnt:1,weekly_cocoon_limit:3,current_rogue_score:2000,max_rogue_score:14000,stamina_full_at:account.id===uid(7)?'2026-10-17T16:52:31Z':null,expeditions:account.id===uid(7)?[{name:'Synthetic assignment',status:'Ongoing',remaining_time:1200,item_url:itemIcon}]:[]},fetched_at:new Date().toISOString(),error_code:null,error_at:null,stale:false});}
+   if(p==='/api/v1/code-redemption'){assert.equal(req.method,'GET');return json(res,codeRedemption);}
+   if(p==='/api/v1/codes'){assert.equal(req.method,'GET');return json(res,codeCatalogue);}
+   if(p==='/api/v1/code-settings'){assert.equal(req.method,'GET');if(!verified)return json(res,{error:'initial_setup_required'},403);return json(res,codeSettings);}
+   if(p==='/api/v1/code-history'){assert.equal(req.method,'GET');if(!verified)return json(res,{error:'initial_setup_required'},403);return json(res,codeHistory);}
+   const codeSetting=codeSettings.find(s=>p===`/api/v1/code-settings/${s.game_account_id}`);
+   if(codeSetting){assert.equal(req.method,'PATCH');assert.deepEqual(Object.keys(body),['mode']);assert.ok(['off','notify','auto'].includes(body.mode));codePatches.push({id:codeSetting.game_account_id,...body});if(body.mode==='auto'&&!codeRedemption.redemption_credentials)return json(res,{error:'invalid_input'},400);codeSetting.mode=body.mode;res.writeHead(204);return res.end();}
+   if(p==='/api/v1/code-redemption/codes'){assert.equal(req.method,'POST');assert.match(body.code,/^[A-Z0-9]{6,24}$/);assert.ok(['genshin','starrail'].includes(body.game_kind));codeEntries.push(body);const rows=codeSettings.filter(s=>s.game_kind===body.game_kind&&(!body.game_account_id||s.game_account_id===body.game_account_id));for(const row of rows)codeHistory.unshift({game_account_id:row.game_account_id,game_kind:row.game_kind,game_uid:row.game_uid,code_id:null,code:body.code,source:'manual',state:'pending',updated_at:hoursAgo(0),next_attempt_at:null,redeem_url:null});return json(res,{entries:rows.map(row=>({game_account_id:row.game_account_id,game_uid:row.game_uid,code:body.code,state:'pending'}))},202);}
+   if(p==='/api/v1/code-redemption/run'){assert.equal(req.method,'POST');assert.deepEqual(body,{});codeRuns++;codeRedemption={...codeRedemption,action_required:null,action_at:null};return json(res,{started:true},202);}
+   if(p==='/api/v1/admin/codes'&&req.method==='GET')return json(res,adminCodes);
+   if(p==='/api/v1/admin/codes'){assert.equal(req.method,'PUT');assert.deepEqual(Object.keys(body).sort(),['enabled','interval_minutes']);assert.ok(body.interval_minutes>=60&&body.interval_minutes<=1440);adminCodeSaves.push(body);adminCodes={...adminCodes,...body};codeCatalogue.enabled=body.enabled;res.writeHead(204);return res.end();}
    if(p==='/api/v1/reward-settings'){
     assert.equal(req.method,'GET');
     // Each read after an accepted manual run advances it one state, like the worker would.
@@ -256,7 +274,7 @@ const server=http.createServer(async(req,res)=>{
   if(p==='/openapi.json'){assert.equal(req.method,'GET');counts.set(p,(counts.get(p)||0)+1);return json(res,JSON.parse(fs.readFileSync(path.join(root,'docs/dashboard-api.json'),'utf8')));}
   let file;
   if(p==='/settings'){res.writeHead(308,{'Location':'/settings/games'});return res.end();}
-  if(['/','/login','/app-login','/dashboard','/events','/settings/games','/settings/bonus','/settings/link','/settings/security','/settings/notifications','/settings/transfer','/settings/delete','/admin','/about','/docs'].includes(p)){file=path.join(publicDir,'index.html');res.setHeader('Content-Type','text/html');res.setHeader('Content-Security-Policy',csp);}
+  if(['/','/login','/app-login','/dashboard','/events','/settings/games','/settings/bonus','/settings/codes','/settings/link','/settings/security','/settings/notifications','/settings/transfer','/settings/delete','/admin','/about','/docs'].includes(p)){file=path.join(publicDir,'index.html');res.setHeader('Content-Type','text/html');res.setHeader('Content-Security-Policy',csp);}
   else if(p.startsWith('/assets/')){file=path.resolve(publicDir,'.'+p);assert.ok(file.startsWith(path.join(publicDir,'assets')+path.sep));res.setHeader('Content-Type',({'.wasm':'application/wasm','.js':'text/javascript','.css':'text/css','.png':'image/png'})[path.extname(file)]||'application/octet-stream');}
   else {res.writeHead(404);return res.end();}
   res.end(fs.readFileSync(file));
@@ -1049,8 +1067,10 @@ try{
  for(const id of ['#webhook-url','#resin-warn'])assert.ok((await page.locator(id).boundingBox()).height>=48,id+' uses the 48px text field');
  // The web lists only the Webhook's choices and leaves the app's (app_events) untouched.
  assert.equal(await page.locator('#app-event-signed_in, .event-matrix').count(),0);
- assert.ok(await page.locator('.event-list label.check').evaluateAll(rows=>rows.length===11&&rows.every(row=>row.querySelectorAll('svg[aria-hidden=true]').length===1&&row.querySelector('span').textContent.length>0)),'every notice kind has an icon beside its name');
+ assert.ok(await page.locator('.event-list label.check').evaluateAll(rows=>rows.length===13&&rows.every(row=>row.querySelectorAll('svg[aria-hidden=true]').length===1&&row.querySelector('span').textContent.length>0)),'every notice kind has an icon beside its name');
  await page.locator('#event-reward_failed').check();
+ assert.ok(await page.locator('#event-code_summary').isChecked(),'a row is on when either of its kinds is on');
+ assert.ok(await page.locator('#event-code_action').isChecked());
  const saves=notificationSaves.length;
  await page.locator('#webhook-url').locator('xpath=ancestor::section[1]').locator('.button-row button').first().click();
  await page.locator('.status.success').waitFor();
@@ -1058,8 +1078,104 @@ try{
  await page.waitForFunction(()=>document.activeElement?.matches('.button-row button:first-child'),null,{timeout:3000});
  const saved=notificationSaves.at(-1);
  assert.equal(saved.events.reward_failed,true);
+ assert.equal(saved.events.code_redeemed,true);assert.equal(saved.events.code_action_required,true);
+ // The code summary row switches both per-run summaries (new codes and results) together.
+ await page.locator('#event-code_summary').uncheck();
+ await page.locator('#webhook-url').locator('xpath=ancestor::section[1]').locator('.button-row button').first().click();await idle();
+ assert.equal(notificationSaves.length,saves+2);
+ assert.deepEqual([notificationSaves.at(-1).events.code_available,notificationSaves.at(-1).events.code_redeemed],[false,false]);
  assert.ok(!('app_events' in saved),'the web keeps the app choices');
  assert.ok(!('webhook_url' in saved),'an empty URL field keeps the stored URL');
+ // Redemption codes: a mode per UID, the last result, summary chips, entry validation,
+ // history with the official link for notify-only codes, redeem now and the action-required state.
+ await settings('codes');
+ await page.waitForURL(origin+'/settings/codes');
+ await page.locator('#code-mode-'+uid(5)).waitFor();
+ assert.equal(await page.title(),'Codes – AHD','the codes tab names the page');
+ assert.equal(await page.locator('#settings-panel').getAttribute('aria-labelledby'),'settings-tab-codes');
+ assert.deepEqual(await page.locator('#settings-panel select[id^=code-mode-]').evaluateAll(selects=>selects.map(select=>[select.id.slice(-2),select.value])),[['05','auto'],['06','notify'],['08','off']]);
+ assert.equal(await page.locator('#codes-cookie-notice, #codes-action').count(),0,'no notice while redemption works');
+ const enText=JSON.parse(fs.readFileSync(path.join(root,'dashboard-ui/locales/en.json'),'utf8'));
+ assert.ok((await page.locator('.catalogue-line').innerText()).includes('Code list fetched '+enText['time.hours_ago'].replace('{count}','1')),'the list status names the last fetch');
+ assert.equal((await page.locator('#code-last-'+uid(5)).innerText()).replace(/\s+/g,' ').trim().split(' · ')[0],'Last result: Redeemed');
+ // Chips: a symbol with its count; the sentence is the accessible name. Zero counts stay hidden.
+ const genshinChips=page.locator('.reward-card.genshin .summary-chips .status-mark');
+ assert.deepEqual(await genshinChips.evaluateAll(marks=>marks.map(mark=>[mark.dataset.status,mark.querySelector('.status-short').textContent])),[['done','1'],['open','1'],['waiting','1']]);
+ assert.equal(await page.locator('.reward-card.starrail .summary-chips').count(),0,'a quiet game shows no chips');
+ // History: code, reward text, result word and time; the official link only for notify-only codes.
+ const historyRows=page.locator('.codes-history > li');
+ assert.equal(await historyRows.count(),4);
+ assert.ok(await historyRows.evaluateAll(rows=>rows.every(row=>{const mark=row.querySelector('.run-state > .status-mark');return mark&&mark.dataset.status&&mark.textContent.trim().length>0&&row.querySelector('.code-text').textContent.length>0&&row.querySelector('time[datetime]');})),'every row has a result word, a code and a time');
+ assert.ok((await historyRows.first().innerText()).includes('Primogem ×60 · Mora ×10000'),'reward text is readable');
+ const official=page.locator('.codes-history a.external-link');
+ assert.equal(await official.count(),1,'only the notify-only code links to the official site');
+ assert.deepEqual(await official.evaluate(a=>[a.getAttribute('href'),a.target,a.rel]),['https://genshin.hoyoverse.com/en/gift?code=GENSHINGIFT','_blank','noopener noreferrer']);
+ assert.ok((await page.locator('.codes-history').innerText()).includes('HoYoLAB says this code is invalid. Check what you entered.'));
+ // Changing a mode saves it at once.
+ await page.locator('#code-mode-'+uid(8)).selectOption('notify');await page.locator('.status.success').getByText('Code mode saved.',{exact:true}).waitFor();await idle();
+ assert.deepEqual(codePatches.at(-1),{id:uid(8),mode:'notify'});
+ assert.equal(await page.locator('#code-mode-'+uid(8)).inputValue(),'notify');
+ // Code entry: a malformed code is refused in the form; a valid one goes to all UIDs or one.
+ const entries=codeEntries.length;
+ await page.locator('#codes-manual-code').fill('BAD-CODE');await button('Redeem').click();
+ await page.locator('#codes-manual-error').waitFor();
+ assert.equal(codeEntries.length,entries,'a malformed code is never sent');
+ assert.equal(await page.locator('#codes-manual-code').getAttribute('aria-invalid'),'true');
+ assert.ok(await page.locator('#codes-manual-code').evaluate(e=>e===document.activeElement),'the field keeps focus to fix the code');
+ assert.ok((await page.locator('#codes-manual-code').getAttribute('aria-describedby')).includes('codes-manual-error'));
+ await page.locator('#codes-manual-code').fill('newgift77');await button('Redeem').click();
+ await page.locator('.status.success').getByText('Code accepted. The result appears in the history.',{exact:true}).waitFor();await idle();
+ assert.deepEqual(codeEntries.at(-1),{game_kind:'genshin',code:'NEWGIFT77'},'all UIDs by default, upper-cased');
+ assert.equal(await page.locator('#codes-manual-code').inputValue(),'','an accepted code clears the field');
+ assert.equal(await page.locator('#codes-manual-error').count(),0);
+ await page.locator('#codes-manual-uid').selectOption(uid(6));await page.locator('#codes-manual-code').fill('ONEUID001');await button('Redeem').click();
+ await page.locator('.status.success').getByText('Code accepted. The result appears in the history.',{exact:true}).waitFor();await idle();
+ assert.deepEqual(codeEntries.at(-1),{game_kind:'genshin',code:'ONEUID001',game_account_id:uid(6)});
+ assert.equal(await historyRows.count(),7,'entered codes appear as pending rows');
+ // Redeem now.
+ await page.locator('#codes-redeem-now').click();await page.locator('.status.success').getByText('Redemption started. Results appear in the history.',{exact:true}).waitFor();await idle();
+ assert.equal(codeRuns,1);
+ // A long history shows 20 rows at a time; the game filter starts again at 20.
+ const extra=Array.from({length:25},(_,i)=>({game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',code_id:null,code:'OLDCODE'+String(i).padStart(3,'0'),source:'manual',state:'expired',updated_at:hoursAgo(100+i),next_attempt_at:null,redeem_url:null}));
+ codeHistory.push(...extra);
+ await page.locator('#codes-refresh').click();await idle();
+ await page.locator('#codes-show-more').waitFor();
+ assert.equal(await historyRows.count(),20);
+ await page.locator('#codes-show-more').click();await page.locator('#codes-show-more').waitFor({state:'detached'});
+ assert.equal(await historyRows.count(),32);
+ await page.locator('#codes-history-game').selectOption('starrail');await page.locator('#codes-history-empty').waitFor();assert.equal(await historyRows.count(),0,'the filter keeps one game');
+ await page.locator('#codes-history-game').selectOption('');assert.equal(await historyRows.count(),20,'changing the filter starts again at 20');
+ codeHistory.splice(codeHistory.length-extra.length,extra.length);
+ await page.locator('#codes-refresh').click();await idle();
+ // Action required (CAPTCHA): the alert names the action; entry waits; Resume is the explicit retry.
+ codeRedemption={...codeRedemption,action_required:'captcha_required',action_at:hoursAgo(1)};
+ await page.locator('#codes-refresh').click();await page.locator('#codes-action').waitFor();await idle();
+ assert.equal(await page.locator('#codes-action').getAttribute('role'),'alert');
+ assert.ok((await page.locator('#codes-action').innerText()).includes('Action required'));
+ assert.ok(await page.locator('#codes-manual-code').isDisabled(),'entry waits while an action is required');
+ assert.equal((await page.locator('#code-last-'+uid(5)).innerText()).includes('Paused'),true,'automatic UIDs read as paused');
+ await page.locator('#codes-resume').click();await page.locator('#codes-action').waitFor({state:'detached'});await idle();
+ assert.equal(codeRuns,2);
+ // Without the redemption Cookie: the notice leads to the link tab and "auto" cannot be chosen.
+ codeRedemption={...codeRedemption,redemption_credentials:false};
+ await page.locator('#codes-refresh').click();await page.locator('#codes-cookie-notice').waitFor();await idle();
+ assert.ok(await page.locator('#code-mode-'+uid(6)+' option[value=auto]').isDisabled());
+ assert.equal(await page.locator('#code-mode-'+uid(6)).getAttribute('aria-describedby'),'auto-needs-cookie');
+ await page.locator('#codes-cookie-notice').getByRole('button').click();await page.locator('#settings-tab-link[aria-selected=true]').waitFor();await idle();
+ await page.locator('#hoyolab-cookie-redemption').waitFor();
+ assert.ok((await page.locator('#hoyolab-cookie-redemption').innerText()).includes('cookie_token_v2'),'the Cookie instructions name the extra items');
+ assert.ok(await page.locator('#hoyolab-cookie-help').isVisible(),'the steps stay open while the stored Cookie lacks the redemption items');
+ codeRedemption={...codeRedemption,redemption_credentials:true};
+ // The dashboard hint: one chip, action required first, otherwise the codes redeemed in 24 hours.
+ codeRedemption={...codeRedemption,action_required:'cookie_invalid',action_at:hoursAgo(1)};
+ await page.locator('a.wordmark').click();await dashboard();await page.locator('#code-hint .status-mark[data-status=warn]').waitFor();
+ assert.deepEqual(await page.locator('#code-hint .status-mark').evaluate(mark=>[mark.dataset.status,mark.querySelector('.status-short').textContent,mark.title]),['warn','Action','Code redemption needs action (see Settings, Codes)']);
+ codeRedemption={...codeRedemption,action_required:null,action_at:null};
+ await page.reload();await dashboard();await page.locator('#code-hint .status-mark[data-status=done]').waitFor();
+ assert.equal(await page.locator('#code-hint .status-mark').getAttribute('title'),'1 codes redeemed in the last 24 hours');
+ assert.equal(await page.locator('#code-hint li').count(),1,'one chip at most');
+ assert.deepEqual(errors,[],'the codes tab raises no browser errors');
+ await settings('notifications');
  // Settings transfer: download the export, reject unreadable or invalid files, preview, then apply.
  await page.locator('#settings-tab-transfer').click();await idle();
  await page.waitForURL(origin+'/settings/transfer');
@@ -1380,11 +1496,11 @@ try{
  failPatch=false;
  // Settings replaces the removed nav/schedule checkbox/input[type=time].
  await settings('bonus');
- assert.equal(await page.locator('.settings-tabs [role=tab]').count(),7);
+ assert.equal(await page.locator('.settings-tabs [role=tab]').count(),8);
  // Each tab has its own decorative icon and keeps its visible label and accessible name.
  const tabLooks=await page.locator('.settings-tabs [role=tab]').evaluateAll(tabs=>tabs.map(tab=>[tab.querySelectorAll('svg[aria-hidden=true]').length,tab.querySelector('svg path').getAttribute('d'),tab.innerText.trim().length>0,Boolean(tab.getAttribute('aria-label'))]));
  assert.ok(tabLooks.every(([icons,,label,name])=>icons===1&&label&&name),'every settings tab shows one icon beside its label');
- assert.equal(new Set(tabLooks.map(([,d])=>d)).size,7,'settings tab icons differ');
+ assert.equal(new Set(tabLooks.map(([,d])=>d)).size,8,'settings tab icons differ');
  assert.equal(await page.locator('#settings-panel').getAttribute('aria-labelledby'),'settings-tab-bonus');
  assert.equal(await page.locator('#settings-panel input[type=time]').count(),0);
  assert.equal(await page.locator('#settings-panel input[role=switch]').count(),2,'each game has its automatic claiming switch here too');
@@ -1505,7 +1621,9 @@ try{
  const toggle=page.locator('#settings-panel input[role=switch]').first();await toggle.scrollIntoViewIfNeeded();const toggleBox=await toggle.boundingBox();const toggled=await toggle.isChecked();
  await settingsDrag({x:toggleBox.x+toggleBox.width/2,y:toggleBox.y+toggleBox.height/2},-120);await staysOn('bonus');
  assert.equal(await toggle.isChecked(),toggled,'a drag across a switch neither switches tabs nor toggles it');assert.equal(rewardWrites(),writesBefore);
+ await swipeTo(-120,'codes','/settings/codes');
  await swipeTo(-120,'link','/settings/link');
+ await swipeTo(120,'codes','/settings/codes');
  await swipeTo(120,'bonus','/settings/bonus');
  await swipeTo(120,'uids','/settings/games');
  const first=await plainPoint();await settingsDrag(first,120);await staysOn('uids');
@@ -1542,24 +1660,24 @@ try{
  for(const width of [360,412]){
   await page.setViewportSize({width,height:800});
   await page.locator('.page-intro button').first().click();await dashboard();await menu('Settings');await page.locator('#settings-tab-uids[aria-selected=true]').waitFor();await idle();
-  await page.locator('#settings-tab-bonus').click();await page.locator('#settings-tab-bonus[aria-selected=true]').waitFor();await idle();
+  await page.locator('#settings-tab-codes').click();await page.locator('#settings-tab-codes[aria-selected=true]').waitFor();await idle();
   assert.equal(await page.locator('#settings-swipe>[data-swipe-preview]').count(),0,'no previews before the first drag');
   const linkReads=counts.get('/api/v1/me/hoyolab')||0,passkeys=counts.get('/api/v1/me/passkeys')||0;
   const start=await plainPoint();assert.ok(start,'the settings panel has a plain area to drag');
   await hold(settingsTouch,start,-120);await dragging('settings-swipe',-120);
   await page.waitForFunction(()=>document.querySelector('#settings-swipe>[data-swipe-role=peek]'));
   let mid=await pagerState('settings-swipe');
-  assert.ok(mid.peek&&mid.peek.page==='2'&&mid.peek.visible&&mid.peek.text>0,`mid-drag the next settings tab is visible with content: ${JSON.stringify(mid)}`);
+  assert.ok(mid.peek&&mid.peek.page==='3'&&mid.peek.visible&&mid.peek.text>0,`mid-drag the next settings tab is visible with content: ${JSON.stringify(mid)}`);
   assert.ok(mid.peek.inert&&mid.peek.hidden==='true'&&!mid.peek.focusable&&mid.peek.id==='','the settings neighbour is an inert preview without the panel id');
   assert.ok(Math.abs(mid.peek.left-mid.lead.left-(mid.width+16))<1.5,'the settings neighbour sits beside the panel');
   assert.deepEqual(mid.duplicateIds,[],'previews add no duplicate ids');
-  assert.equal(await page.locator('#settings-panel').count(),1);assert.equal(await page.locator('#settings-panel').getAttribute('aria-labelledby'),'settings-tab-bonus');
-  assert.equal(new URL(page.url()).pathname,'/settings/bonus','the URL does not change mid-drag');
-  assert.equal(await page.locator('#settings-tab-bonus').getAttribute('aria-selected'),'true','the settings tab bar does not react mid-drag');
+  assert.equal(await page.locator('#settings-panel').count(),1);assert.equal(await page.locator('#settings-panel').getAttribute('aria-labelledby'),'settings-tab-codes');
+  assert.equal(new URL(page.url()).pathname,'/settings/codes','the URL does not change mid-drag');
+  assert.equal(await page.locator('#settings-tab-codes').getAttribute('aria-selected'),'true','the settings tab bar does not react mid-drag');
   if(width===360)await shoot('settings-360');
   await lift(settingsTouch);await page.locator('#settings-tab-link[aria-selected=true]').waitFor();await pagerAtRest('settings-swipe');await idle();
   assert.equal(new URL(page.url()).pathname,'/settings/link');
-  assert.deepEqual(await page.locator('#settings-panel').evaluate(e=>[e.dataset.swipePage,e.getAttribute('role'),e.getAttribute('aria-labelledby'),e.inert,e.hasAttribute('aria-hidden')]),['2','tabpanel','settings-tab-link',false,false],'the previewed tab became the selected panel');
+  assert.deepEqual(await page.locator('#settings-panel').evaluate(e=>[e.dataset.swipePage,e.getAttribute('role'),e.getAttribute('aria-labelledby'),e.inert,e.hasAttribute('aria-hidden')]),['3','tabpanel','settings-tab-link',false,false],'the previewed tab became the selected panel');
   await oneTabLooksSelected('.settings-tabs','settings-tab-link','a completed settings pager swipe leaves one tab looking selected');
   await page.waitForFunction(()=>!document.querySelector('#settings-swipe>[data-swipe-preview]'));
   // The previewed tab was read once before the swipe and once by the visit itself.
@@ -1568,7 +1686,7 @@ try{
   // shown by both reads its data once per settings visit.
   const again=await plainPoint();
   await hold(settingsTouch,again,-30,0,8);await dragging('settings-swipe',-30);
-  await page.waitForFunction(()=>document.querySelector('#settings-swipe>[data-swipe-role=peek][data-swipe-page="3"]')?.innerText.trim().length>0);
+  await page.waitForFunction(()=>document.querySelector('#settings-swipe>[data-swipe-role=peek][data-swipe-page="4"]')?.innerText.trim().length>0);
   await lift(settingsTouch);await pagerAtRest('settings-swipe');
   await hold(settingsTouch,again,-120);await dragging('settings-swipe',-120);await lift(settingsTouch,'touchCancel');await pagerAtRest('settings-swipe');
   await page.waitForFunction(()=>!document.querySelector('#settings-swipe>[data-swipe-preview]'));await page.waitForTimeout(200);
@@ -1729,6 +1847,22 @@ try{
  stage='admin';
  // Admin generated credentials: entropy failure and API failure never reveal a candidate.
  await menu('Administration');
+ // Redemption codes: the server-wide switch keeps the stored interval; the interval saves on its own.
+ const adminCodesCard=page.locator('section.admin-codes');
+ await adminCodesCard.locator('#admin-codes-enabled').waitFor({state:'attached'});
+ assert.ok(await page.locator('#admin-codes-enabled').isChecked());
+ assert.equal(await page.locator('#admin-codes-interval').inputValue(),'3');
+ assert.deepEqual(await page.locator('#admin-codes-interval option').evaluateAll(options=>options.map(option=>option.value)),['1','2','3','6','12','24']);
+ assert.ok((await adminCodesCard.innerText()).includes('hoyo-codes.seria.moe'));
+ await page.locator('#admin-codes-interval').selectOption('6');
+ await adminCodesCard.locator('label.switch').click();await page.locator('.status.success').getByText('Redemption code settings saved.',{exact:true}).waitFor();await idle();
+ assert.deepEqual(adminCodeSaves.at(-1),{enabled:false,interval_minutes:180},'the switch keeps the stored interval');
+ await page.locator('#admin-codes-stopped').waitFor();
+ assert.equal(await page.locator('#admin-codes-enabled').isChecked(),false);
+ await page.locator('#admin-codes-interval').selectOption('6');await page.locator('#admin-codes-save').click();await idle();
+ assert.deepEqual(adminCodeSaves.at(-1),{enabled:false,interval_minutes:360});
+ await adminCodesCard.locator('label.switch').click();await page.locator('#admin-codes-stopped').waitFor({state:'detached'});await idle();
+ assert.deepEqual(adminCodeSaves.at(-1),{enabled:true,interval_minutes:360});
  assert.equal(await button('Load logs').count(),0,'no permanently disabled log section without an endpoint');
  assert.equal(await page.getByRole('heading',{name:'Logs',exact:true}).count(),0);
  assert.equal(await page.locator('[data-slot=card]').first().evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(24, 23, 29)','AHD card skin does not depend on hashed module class names');

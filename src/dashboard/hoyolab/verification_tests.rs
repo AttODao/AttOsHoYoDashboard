@@ -494,3 +494,149 @@ async fn removing_an_unverified_cookie_deletes_the_pending_link() {
     store.remove_cookie(&actor).await.unwrap();
     assert!(store.status(&actor).await.unwrap().is_none());
 }
+
+fn redeeming_cookie(uid: &str, account: &str) -> String {
+    format!(
+        "{}; cookie_token_v2=synthetic_cookie_token; account_id_v2={account}; account_mid_v2=synthetic_mid",
+        cookie(uid)
+    )
+}
+
+#[tokio::test]
+async fn redemption_credentials_follow_each_verified_cookie_and_never_reach_reads() {
+    use crate::dashboard::db::entities::redemption_ledger;
+    let fixture = TestDatabase::new().await;
+    let (_, actor) = fixture.ready_admin().await;
+    let gateway = Mock::new("42");
+    let store = CookieStore::for_test(fixture.db.clone(), key(), gateway.clone());
+    // A cookie_token naming another account is refused before anything is stored.
+    assert!(matches!(
+        store.submit(&actor, &redeeming_cookie("42", "43")).await,
+        Err(Error::Invalid(_))
+    ));
+    assert!(store.status(&actor).await.unwrap().is_none());
+    store
+        .submit(&actor, &redeeming_cookie("42", "42"))
+        .await
+        .unwrap();
+    assert!(row(&store, actor.user.id).await.redemption_credentials);
+    store.verify(&actor).await.unwrap();
+    let link = row(&store, actor.user.id).await;
+    assert!(link.redemption_credentials);
+    let opened = store
+        .key
+        .open(
+            actor.user.id,
+            Some("42"),
+            link.sealed_credentials().unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        opened.redemption(),
+        Some(
+            "cookie_token_v2=synthetic_cookie_token; account_id_v2=42; account_mid_v2=synthetic_mid"
+        )
+    );
+    // Identity checks and role reads never carry the redemption token.
+    assert!(
+        gateway
+            .state
+            .lock()
+            .unwrap()
+            .headers
+            .iter()
+            .all(|header| !header.contains("cookie_token"))
+    );
+
+    // `auto` on a UID, a CAPTCHA pause and the code it stopped.
+    let uid = game_account::Entity::find()
+        .filter(game_account::Column::HoyolabAccountId.eq(link.id))
+        .one(&store.db)
+        .await
+        .unwrap()
+        .unwrap()
+        .id;
+    redemption_code_setting::ActiveModel {
+        game_account_id: Set(uid),
+        mode: Set("auto".to_owned()),
+        enabled_at: Set(Some(Utc::now())),
+        updated_at: Set(Utc::now()),
+    }
+    .insert(&store.db)
+    .await
+    .unwrap();
+    let mut paused = link.clone().into_active_model();
+    paused.redemption_action = Set(Some("captcha_required".to_owned()));
+    paused.redemption_action_at = Set(Some(Utc::now()));
+    paused.update(&store.db).await.unwrap();
+    for (code, state) in [
+        ("CAPTCHACODE", "captcha_required"),
+        ("DONECODE", "redeemed"),
+    ] {
+        redemption_ledger::ActiveModel {
+            game_account_id: Set(uid),
+            code: Set(code.to_owned()),
+            source: Set("catalogue".to_owned()),
+            state: Set(state.to_owned()),
+            posts: Set(1),
+            retcode: Set(None),
+            next_attempt_at: Set(None),
+            last_sent_at: Set(Some(Utc::now())),
+            created_at: Set(Utc::now()),
+            updated_at: Set(Utc::now()),
+        }
+        .insert(&store.db)
+        .await
+        .unwrap();
+    }
+    let ledger_state = |code: &'static str| {
+        let db = store.db.clone();
+        async move {
+            redemption_ledger::Entity::find_by_id((uid, code.to_owned()))
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap()
+                .state
+        }
+    };
+
+    // Verifying the stored Cookie again is not the owner's action: the pause stays.
+    store.verify(&actor).await.unwrap();
+    assert_eq!(
+        row(&store, actor.user.id)
+            .await
+            .redemption_action
+            .as_deref(),
+        Some("captcha_required")
+    );
+    assert_eq!(ledger_state("CAPTCHACODE").await, "captcha_required");
+
+    // A Cookie update without cookie_token_v2: no redemption, `auto` becomes `notify`,
+    // the pause ends and the code it stopped waits again (never the redeemed one).
+    store.submit(&actor, &cookie("42")).await.unwrap();
+    let updated = row(&store, actor.user.id).await;
+    assert!(!updated.redemption_credentials);
+    assert_eq!(updated.redemption_action, None);
+    assert!(updated.credential_version > link.credential_version);
+    let mode = redemption_code_setting::Entity::find_by_id(uid)
+        .one(&store.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(mode.mode, "notify");
+    assert_eq!(ledger_state("CAPTCHACODE").await, "pending");
+    assert_eq!(ledger_state("DONECODE").await, "redeemed");
+
+    // Registering the full Cookie again restores the credentials; the mode stays.
+    store
+        .submit(&actor, &redeeming_cookie("42", "42"))
+        .await
+        .unwrap();
+    assert!(row(&store, actor.user.id).await.redemption_credentials);
+    // Removal forgets them and keeps the ledger.
+    store.remove_cookie(&actor).await.unwrap();
+    let removed = row(&store, actor.user.id).await;
+    assert!(!removed.redemption_credentials);
+    assert_eq!(ledger_state("DONECODE").await, "redeemed");
+}

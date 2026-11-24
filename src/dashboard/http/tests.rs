@@ -75,10 +75,21 @@ fn app(accounts: Accounts) -> App {
         crate::dashboard::codes::source::Source::new(config.codes_source.clone()),
         notifications.clone(),
     ));
+    // A local stand-in: no HTTP test can send a redemption request to HoYoLAB.
+    let redemption = cookies.as_ref().map(|cookies| {
+        Arc::new(crate::dashboard::codes::redeem::Redeemer::with(
+            cookies.clone(),
+            crate::dashboard::codes::test_support::MockRedeem::new(),
+            notifications.clone(),
+            crate::dashboard::codes::test_support::fast_tuning(),
+        )) as Arc<dyn crate::dashboard::codes::redeem::RedemptionRuns>
+    });
     Arc::new(HttpState {
         cookies,
         operations,
         codes,
+        redemption,
+        code_throttle: crate::dashboard::codes::manual::Throttle::default(),
         app_logins: super::AppLogins::new(),
         passkeys: Passkeys::new(&config.rp_id, &config.origin, config.cookie_key.as_deref())
             .unwrap(),

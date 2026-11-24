@@ -67,7 +67,7 @@ impl CookieKey {
             &self.0,
             Some(&nonce),
             &aad,
-            cookie.as_str().as_bytes(),
+            cookie.sealed_text().as_bytes(),
             &mut tag,
         )
         .map_err(|_| Error::Internal)?;

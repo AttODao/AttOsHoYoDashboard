@@ -1,4 +1,6 @@
-//! The notify-only summary of new redemption codes: one notice per user and fetch run.
+//! Redemption-code notices: the notify-only summary of new codes (one per user and fetch
+//! run), the summary of codes redeemed for the user (one per user and redemption run) and
+//! the notice that redemption waits for the user's action.
 use super::{Notice, channel::Notifications, messages::word};
 use crate::dashboard::error::Result;
 use uuid::Uuid;
@@ -17,7 +19,44 @@ pub(in crate::dashboard) struct NewCode {
     pub(in crate::dashboard) redeem_url: String,
 }
 
+/// One code redeemed for one of the user's UIDs.
+#[derive(Clone, Debug, PartialEq)]
+pub(in crate::dashboard) struct RedeemedCode {
+    pub(in crate::dashboard) game_kind: String,
+    pub(in crate::dashboard) game_uid: String,
+    pub(in crate::dashboard) code: String,
+    pub(in crate::dashboard) rewards: String,
+}
+
 impl Notifications {
+    /// Sends the user one `code_redeemed` summary under `key`. True when a route took it.
+    pub(in crate::dashboard) async fn announce_redeemed(
+        &self,
+        user: Uuid,
+        key: &str,
+        codes: &[RedeemedCode],
+    ) -> Result<bool> {
+        if codes.is_empty() {
+            return Ok(false);
+        }
+        let (channel, _) = self.personal_channel(user).await?;
+        let notice = redeemed_summary(key, codes, &channel.language);
+        self.deliver(Some(user), &channel, &notice).await
+    }
+
+    /// Tells the user that redemption stopped until they act: `action` is
+    /// `cookie_invalid` or `captcha_required`.
+    pub(in crate::dashboard) async fn redemption_action(
+        &self,
+        user: Uuid,
+        key: &str,
+        action: &str,
+    ) -> Result<bool> {
+        let (channel, _) = self.personal_channel(user).await?;
+        let notice = action_notice(key, action, &channel.language);
+        self.deliver(Some(user), &channel, &notice).await
+    }
+
     /// Sends the user one `code_available` summary under `key` through the routes that
     /// chose that kind. True when a route took it (see `deliver`).
     pub(in crate::dashboard) async fn announce_codes(
@@ -35,6 +74,54 @@ impl Notifications {
     }
 }
 
+/// Reward text as shown in a notice line: `*` ("times") as `×`, cut to `REWARD_CHARS`.
+fn reward_text(raw: &str) -> String {
+    let mut rewards: String = raw.replace('*', "×");
+    if rewards.chars().count() > REWARD_CHARS {
+        rewards = rewards.chars().take(REWARD_CHARS - 1).collect::<String>() + "…";
+    }
+    rewards
+}
+
+/// The redeemed summary: one line per code (game, UID, code, rewards), at most `LISTED`.
+pub(super) fn redeemed_summary(key: &str, codes: &[RedeemedCode], language: &str) -> Notice {
+    let mut lines: Vec<String> = codes
+        .iter()
+        .take(LISTED)
+        .map(|code| {
+            let rewards = reward_text(&code.rewards);
+            let head = format!(
+                "{} UID {}: {}",
+                word(&code.game_kind, language),
+                code.game_uid,
+                code.code
+            );
+            if rewards.is_empty() {
+                head
+            } else {
+                format!("{head} ({rewards})")
+            }
+        })
+        .collect();
+    if codes.len() > LISTED {
+        lines.push(
+            word("codes_more", language).replace("{count}", &(codes.len() - LISTED).to_string()),
+        );
+    }
+    Notice::new("code_redeemed", key)
+        .with("count", codes.len().to_string())
+        .with("codes", lines.join("\n"))
+}
+
+/// The action notice: why redemption stopped and what resumes it.
+pub(super) fn action_notice(key: &str, action: &str, language: &str) -> Notice {
+    let reason = match action {
+        "captcha_required" => "code_action_captcha_required",
+        _ => "code_action_cookie_invalid",
+    };
+    Notice::new("code_action_required", key).with("reason", word(reason, language))
+}
+
 /// The notice text: one line per code (game, code, rewards) and its redemption link.
 /// `*` in source reward text means "times" and is shown as `×` (Discord reads `*` as markup).
 pub(super) fn summary(key: &str, codes: &[NewCode], language: &str) -> Notice {
@@ -42,10 +129,7 @@ pub(super) fn summary(key: &str, codes: &[NewCode], language: &str) -> Notice {
         .iter()
         .take(LISTED)
         .map(|code| {
-            let mut rewards: String = code.rewards.replace('*', "×");
-            if rewards.chars().count() > REWARD_CHARS {
-                rewards = rewards.chars().take(REWARD_CHARS - 1).collect::<String>() + "…";
-            }
+            let rewards = reward_text(&code.rewards);
             let game = word(&code.game_kind, language);
             let head = if rewards.is_empty() {
                 format!("{game}: {}", code.code)
@@ -102,6 +186,63 @@ mod tests {
             "ja",
         );
         assert_eq!(title, "新しい交換コードが1件あります");
+    }
+
+    #[test]
+    fn redeemed_summaries_name_the_uid_and_action_notices_say_what_resumes() {
+        let redeemed = |code: &str, rewards: &str| RedeemedCode {
+            game_kind: "starrail".into(),
+            game_uid: "800000002".into(),
+            code: code.into(),
+            rewards: rewards.into(),
+        };
+        let notice = redeemed_summary(
+            "code_redeemed:1",
+            &[
+                redeemed("RAILGIFT", "Stellar Jade*60"),
+                redeemed("PLAINGIFT", ""),
+            ],
+            "en",
+        );
+        assert_eq!(notice.kind, "code_redeemed");
+        let (title, body) = render(&notice, "en");
+        assert_eq!(title, "Redeemed 2 code(s)");
+        assert_eq!(
+            body,
+            "Honkai: Star Rail UID 800000002: RAILGIFT (Stellar Jade×60)\nHonkai: Star Rail UID 800000002: PLAINGIFT"
+        );
+        let (title, body) = render(
+            &redeemed_summary("k", &[redeemed("RAILGIFT", "")], "ja"),
+            "ja",
+        );
+        assert_eq!(title, "交換コードを1件引き換えました");
+        assert_eq!(body, "崩壊：スターレイル UID 800000002: RAILGIFT");
+        let many: Vec<_> = (0..12)
+            .map(|n| redeemed(&format!("GIFT{n:04}"), ""))
+            .collect();
+        assert!(
+            render(&redeemed_summary("k", &many, "ja"), "ja")
+                .1
+                .ends_with("ほか2件")
+        );
+
+        for (action, ja, en) in [
+            (
+                "cookie_invalid",
+                "cookie_token_v2",
+                "Register the Cookie again",
+            ),
+            ("captcha_required", "CAPTCHA", "Redeem now"),
+        ] {
+            let notice = action_notice("code_action:1", action, "ja");
+            assert_eq!(notice.kind, "code_action_required");
+            let (title, body) = render(&notice, "ja");
+            assert_eq!(title, "交換コードの自動引き換えを止めました");
+            assert!(body.contains(ja), "{body}");
+            let (title, body) = render(&action_notice("k", action, "en"), "en");
+            assert_eq!(title, "Code redemption paused");
+            assert!(body.contains(en), "{body}");
+        }
     }
 
     #[test]

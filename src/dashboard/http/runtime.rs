@@ -60,14 +60,33 @@ pub(super) async fn run(app: App, stop: watch::Receiver<bool>) {
 }
 
 /// Checks once a minute whether a redemption-code fetch is due (interval and switch are
-/// read from the database each time, so administrator changes need no restart).
+/// read from the database each time, so administrator changes need no restart). After each
+/// run, codes are redeemed for every UID in automatic mode.
 async fn codes(app: App, mut stop: watch::Receiver<bool>) {
     let mut timer = interval(crate::dashboard::codes::worker::TICK);
     timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
         tokio::select! { _ = stop.changed() => break, _ = timer.tick() => {} }
-        if let Err(error) = app.codes.tick(chrono::Utc::now()).await {
-            tracing::error!(error = %error, "redemption code run failed");
+        match app.codes.tick(chrono::Utc::now()).await {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(error) => {
+                tracing::error!(error = %error, "redemption code run failed");
+                continue;
+            }
+        }
+        let Some(runs) = app.redemption.clone() else {
+            continue;
+        };
+        // Shutdown stops new requests first (`stop_new_operations`); a request cut off
+        // here is recorded as `unknown` by the next start, never sent again.
+        tokio::select! {
+            _ = stop.changed() => break,
+            result = runs.run_all() => {
+                if let Err(error) = result {
+                    tracing::error!(error = %error, "code redemption failed");
+                }
+            }
         }
     }
 }

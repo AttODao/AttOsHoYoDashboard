@@ -49,6 +49,7 @@ const ENDED_STATES: [&str; 6] = [
 ];
 const APP_DEVICES: &str = "SELECT CASE WHEN push_subscription IS NULL THEN 'poll' ELSE 'push' END AS label, count(*) AS n FROM app_devices GROUP BY 1";
 const CODES: &str = "SELECT game_kind || ':' || CASE WHEN listed THEN 'listed' ELSE 'unlisted' END AS label, count(*) AS n FROM redemption_codes GROUP BY 1";
+const LEDGER: &str = "SELECT state AS label, count(*) AS n FROM redemption_ledger GROUP BY 1";
 const ENDED_24H: &str = "SELECT state AS label, count(*) AS n FROM reward_runs WHERE ended_at >= now() - interval '24 hours' GROUP BY 1";
 
 pub(super) async fn metrics(
@@ -198,6 +199,51 @@ async fn codes(app: &App, out: &mut String) -> Result<()> {
         out,
         "# HELP ahd_codes_announcements_total New-code summaries sent to users since start.\n# TYPE ahd_codes_announcements_total counter\nahd_codes_announcements_total {}",
         stats.announcements()
+    );
+    let _ = writeln!(
+        out,
+        "# HELP ahd_code_redemptions_total Redemption requests answered since start, by game and outcome (unknown: transport error or unclassified answer).\n# TYPE ahd_code_redemptions_total counter"
+    );
+    let answers = app
+        .redemption
+        .as_ref()
+        .map(|runs| runs.stats().answers())
+        .unwrap_or_else(|| crate::dashboard::codes::redeem::RedeemStats::default().answers());
+    for (game, outcome, count) in answers {
+        let _ = writeln!(
+            out,
+            "ahd_code_redemptions_total{{game=\"{game}\",outcome=\"{outcome}\"}} {count}"
+        );
+    }
+    let rows = app
+        .accounts
+        .db
+        .query_all_raw(Statement::from_string(DbBackend::Postgres, LEDGER))
+        .await?;
+    let mut states = std::collections::BTreeMap::new();
+    for row in rows {
+        let label: String = row.try_get("", "label")?;
+        let count: i64 = row.try_get("", "n")?;
+        states.insert(label, count);
+    }
+    let _ = writeln!(
+        out,
+        "# HELP ahd_code_ledger Redemption ledger rows by state (sending: a request may be in flight; unknown: never sent again automatically).\n# TYPE ahd_code_ledger gauge"
+    );
+    for state in crate::dashboard::codes::ledger::STATES {
+        let count = states.get(state).copied().unwrap_or(0);
+        let _ = writeln!(out, "ahd_code_ledger{{state=\"{state}\"}} {count}");
+    }
+    let counts = crate::dashboard::codes::admin::redemption_counts(&app.accounts.db).await?;
+    let _ = writeln!(
+        out,
+        "# HELP ahd_code_auto_users Users with a game UID in automatic redemption.\n# TYPE ahd_code_auto_users gauge\nahd_code_auto_users {}",
+        counts.auto_users
+    );
+    let _ = writeln!(
+        out,
+        "# HELP ahd_code_action_required_users Users whose code redemption waits for their action (CAPTCHA or Cookie).\n# TYPE ahd_code_action_required_users gauge\nahd_code_action_required_users {}",
+        counts.action_required_users
     );
     Ok(())
 }

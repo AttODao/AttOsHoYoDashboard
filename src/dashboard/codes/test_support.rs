@@ -1,12 +1,19 @@
-//! Small shared fixtures for redemption-code tests: synthetic users, links and UIDs, and a
-//! local stand-in for the code source.
+//! Small shared fixtures for redemption-code tests: synthetic users, links and UIDs, a
+//! local stand-in for the code source and a scripted stand-in for HoYoLAB redemption.
 use crate::dashboard::{
     auth::{
         password::token_hash,
         sessions::{Identity, Sessions},
     },
     db::entities::{game_account, hoyolab_account, user},
-    hoyolab::credentials::{CookieKey, Credentials},
+    hoyolab::{
+        credentials::{CookieKey, Credentials},
+        gateway::RedeemGateway,
+    },
+};
+use attoshoyodashboard::{
+    game::GameKind,
+    hoyolab::{Error as UpstreamError, RedemptionReply, RedemptionRequest},
 };
 use axum::{
     Router,
@@ -47,16 +54,48 @@ pub(in crate::dashboard) async fn ready_user(db: &DatabaseConnection, name: &str
         .unwrap()
 }
 
-/// A link in `status` (`verified`, `cookie_invalid`, …) with a sealed synthetic Cookie.
+/// A link in `status` (`verified`, `cookie_invalid`, …) with a sealed synthetic Cookie
+/// without redemption credentials.
 pub(in crate::dashboard) async fn link(
     db: &DatabaseConnection,
     owner: Uuid,
     uid: &str,
     status: &str,
 ) -> Uuid {
-    let key = CookieKey::from_hex(&"11".repeat(32)).unwrap();
-    let cookie =
-        Credentials::parse(&format!("ltoken_v2=synthetictoken{uid}; ltuid_v2={uid}")).unwrap();
+    sealed_link(db, owner, uid, status, false).await
+}
+
+/// A verified link whose synthetic Cookie carries `cookie_token_v2`.
+pub(in crate::dashboard) async fn redeem_link(
+    db: &DatabaseConnection,
+    owner: Uuid,
+    uid: &str,
+) -> Uuid {
+    sealed_link(db, owner, uid, "verified", true).await
+}
+
+/// The key the fixtures seal Cookies with.
+pub(in crate::dashboard) fn test_key() -> CookieKey {
+    CookieKey::from_hex(&"11".repeat(32)).unwrap()
+}
+
+async fn sealed_link(
+    db: &DatabaseConnection,
+    owner: Uuid,
+    uid: &str,
+    status: &str,
+    redemption: bool,
+) -> Uuid {
+    let key = test_key();
+    let extra = if redemption {
+        format!("; cookie_token_v2=syntheticcookietoken{uid}; account_id_v2={uid}")
+    } else {
+        String::new()
+    };
+    let cookie = Credentials::parse(&format!(
+        "ltoken_v2=synthetictoken{uid}; ltuid_v2={uid}{extra}"
+    ))
+    .unwrap();
     hoyolab_account::ActiveModel {
         id: Set(Uuid::new_v4()),
         owner_user_id: Set(owner),
@@ -67,6 +106,9 @@ pub(in crate::dashboard) async fn link(
         created_at: Set(Utc::now()),
         updated_at: Set(Utc::now()),
         verified_at: Set(Some(Utc::now())),
+        redemption_credentials: Set(redemption),
+        redemption_action: Set(None),
+        redemption_action_at: Set(None),
     }
     .insert(db)
     .await
@@ -161,5 +203,103 @@ impl MockSource {
     /// Games requested so far, in order.
     pub(in crate::dashboard) fn requests(&self) -> Vec<String> {
         self.requests.lock().unwrap().clone()
+    }
+}
+
+/// Pacing for tests: short waits, the production caps.
+pub(in crate::dashboard) fn fast_tuning() -> crate::dashboard::codes::redeem::RedeemTuning {
+    crate::dashboard::codes::redeem::RedeemTuning {
+        spacing: std::time::Duration::from_millis(20),
+        cooldown_wait: std::time::Duration::from_millis(40),
+        ..Default::default()
+    }
+}
+
+/// One redemption request the mock received.
+#[derive(Clone, Debug, PartialEq)]
+pub(in crate::dashboard) struct Sent {
+    pub(in crate::dashboard) game: String,
+    pub(in crate::dashboard) uid: String,
+    pub(in crate::dashboard) region: String,
+    pub(in crate::dashboard) code: String,
+    /// The Cookie header the request would carry (synthetic).
+    pub(in crate::dashboard) cookie: String,
+    pub(in crate::dashboard) at: std::time::Instant,
+}
+
+type Script = std::collections::VecDeque<Result<RedemptionReply, UpstreamError>>;
+type Hook = Box<dyn FnMut(&str) + Send>;
+
+/// Scripted answers per code (in order; `Redeemed` once a script runs out) and every
+/// request received. Nothing leaves the process.
+#[derive(Clone, Default)]
+pub(in crate::dashboard) struct MockRedeem {
+    answers: Arc<Mutex<HashMap<String, Script>>>,
+    sent: Arc<Mutex<Vec<Sent>>>,
+    /// Runs before each answer (e.g. to change the database mid-run).
+    hook: Arc<Mutex<Option<Hook>>>,
+}
+
+impl MockRedeem {
+    pub(in crate::dashboard) fn new() -> Self {
+        Self::default()
+    }
+
+    /// Answers for `code`, one per request, in order.
+    pub(in crate::dashboard) fn script(
+        &self,
+        code: &str,
+        answers: impl IntoIterator<Item = Result<RedemptionReply, UpstreamError>>,
+    ) -> &Self {
+        self.answers
+            .lock()
+            .unwrap()
+            .entry(code.to_owned())
+            .or_default()
+            .extend(answers);
+        self
+    }
+
+    pub(in crate::dashboard) fn on_request(&self, hook: impl FnMut(&str) + Send + 'static) {
+        *self.hook.lock().unwrap() = Some(Box::new(hook));
+    }
+
+    pub(in crate::dashboard) fn sent(&self) -> Vec<Sent> {
+        self.sent.lock().unwrap().clone()
+    }
+
+    /// The codes requested, in order.
+    pub(in crate::dashboard) fn codes(&self) -> Vec<String> {
+        self.sent().into_iter().map(|sent| sent.code).collect()
+    }
+}
+
+impl RedeemGateway for MockRedeem {
+    async fn redeem(
+        &self,
+        cookie: &Credentials,
+        request: RedemptionRequest<'_>,
+    ) -> Result<RedemptionReply, UpstreamError> {
+        if let Some(hook) = self.hook.lock().unwrap().as_mut() {
+            hook(request.code);
+        }
+        self.sent.lock().unwrap().push(Sent {
+            game: match request.game {
+                GameKind::Genshin(_) => "genshin",
+                GameKind::Starrail(_) => "starrail",
+            }
+            .to_owned(),
+            uid: request.uid.to_owned(),
+            region: request.region.to_owned(),
+            code: request.code.to_owned(),
+            cookie: cookie.redemption().unwrap_or_default().to_owned(),
+            at: std::time::Instant::now(),
+        });
+        self.answers
+            .lock()
+            .unwrap()
+            .get_mut(request.code)
+            .and_then(std::collections::VecDeque::pop_front)
+            .unwrap_or(Ok(RedemptionReply::Redeemed))
     }
 }

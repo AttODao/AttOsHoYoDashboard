@@ -563,6 +563,7 @@ async fn reactivation_turns_automatic_rewards_off_but_keeps_their_times() {
         created_at: Set(now),
         updated_at: Set(now),
         verified_at: Set(None),
+        ..Default::default()
     }
     .insert(&test.db)
     .await

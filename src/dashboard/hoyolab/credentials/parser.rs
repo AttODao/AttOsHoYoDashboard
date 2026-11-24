@@ -26,7 +26,8 @@ impl Credentials {
                 .get("ltmid_v2")?
                 .ok_or(Error::Invalid("Cookie header is missing ltmid_v2"))?,
         )?;
-        Ok(v2_credentials(token, claimed_uid, Some(mid)))
+        let redemption = redemption_part(&pairs, &claimed_uid, Some(mid))?;
+        v2_credentials(token, claimed_uid, Some(mid), redemption)
     }
 
     /// Normalizes any supported family; stored Cookies saved before MID was required still open.
@@ -130,6 +131,7 @@ fn build_legacy(pairs: &Pairs) -> Result<Credentials> {
     Ok(Credentials {
         header,
         claimed_uid,
+        redemption: None,
     })
 }
 
@@ -145,19 +147,58 @@ fn build_v2(pairs: &Pairs) -> Result<Credentials> {
             uid
         }
     };
-    Ok(v2_credentials(token, claimed_uid, optional_mid(pairs)))
+    let mid = optional_mid(pairs);
+    let redemption = redemption_part(pairs, &claimed_uid, mid)?;
+    v2_credentials(token, claimed_uid, mid, redemption)
 }
 
-fn v2_credentials(token: &str, claimed_uid: String, mid: Option<&str>) -> Credentials {
+fn v2_credentials(
+    token: &str,
+    claimed_uid: String,
+    mid: Option<&str>,
+    redemption: Option<String>,
+) -> Result<Credentials> {
     let mut header = format!("ltoken_v2={token}; ltuid_v2={claimed_uid}");
     if let Some(mid) = mid {
         header.push_str("; ltmid_v2=");
         header.push_str(mid);
     }
-    Credentials {
+    let credentials = Credentials {
         header,
         claimed_uid,
+        redemption,
+    };
+    // The sealed form must open again, so it stays within the submitted size limit.
+    if credentials.sealed_text().len() > MAX_COOKIE_LEN {
+        return Err(Error::Invalid("Cookie header must contain 1 to 8192 bytes"));
     }
+    Ok(credentials)
+}
+
+/// The redemption credentials (`cookie_token_v2` with its `account_id_v2`), when present.
+/// They must name the same HoYoLAB account as the ltoken pair, whose UID is the one the
+/// identity check verifies: a `cookie_token_v2` without `account_id_v2`, or with another
+/// account's, is refused rather than dropped. The MID kept for the ltoken pair is sent as
+/// `account_mid_v2`. Legacy `cookie_token` (v1) is never kept.
+fn redemption_part(pairs: &Pairs, claimed_uid: &str, mid: Option<&str>) -> Result<Option<String>> {
+    let Some(token) = pairs.get("cookie_token_v2")? else {
+        return Ok(None);
+    };
+    let token = parse_cookie_token(token)?;
+    let account = parse_uid(pairs.get("account_id_v2")?.ok_or(Error::Invalid(
+        "Cookie header has cookie_token_v2 without account_id_v2",
+    ))?)?;
+    if account != claimed_uid {
+        return Err(Error::Invalid(
+            "Cookie header contains conflicting UID aliases",
+        ));
+    }
+    let mut header = format!("cookie_token_v2={token}; account_id_v2={account}");
+    if let Some(mid) = mid {
+        header.push_str("; account_mid_v2=");
+        header.push_str(mid);
+    }
+    Ok(Some(header))
 }
 
 fn resolve_uid_aliases(pairs: &Pairs, aliases: &[&str]) -> Result<String> {

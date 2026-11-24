@@ -73,6 +73,7 @@ async fn verified_link(db: &DatabaseConnection, owner: Uuid, uid: &str) -> Uuid 
         created_at: Set(Utc::now()),
         updated_at: Set(Utc::now()),
         verified_at: Set(None),
+        ..Default::default()
     }
     .insert(db)
     .await
@@ -403,7 +404,7 @@ async fn imports_reject_bad_files_skip_unlinked_entries_and_need_a_live_session(
 }
 
 #[tokio::test]
-async fn code_modes_export_and_import_per_uid_and_auto_is_skipped() {
+async fn code_modes_export_and_import_per_uid_and_auto_needs_redemption_credentials() {
     let fixture = TestDatabase::new().await;
     let db = &fixture.db;
     let actor = ready_identity(db, "codes-user").await;
@@ -431,7 +432,7 @@ async fn code_modes_export_and_import_per_uid_and_auto_is_skipped() {
             {"section": "codes", "game_kind": "genshin", "game_uid": "800000001", "setting": "mode", "from": "off", "to": "notify"},
         ],
         "skipped": [
-            {"section": "codes", "game_kind": "starrail", "game_uid": "900000001", "reason": "mode_unavailable"},
+            {"section": "codes", "game_kind": "starrail", "game_uid": "900000001", "reason": "redemption_cookie_missing"},
             {"section": "codes", "game_kind": "starrail", "game_uid": "900000002", "reason": "uid_not_found"},
         ],
         "webhook": {"in_file": false, "configured": false},
@@ -487,5 +488,36 @@ async fn code_modes_export_and_import_per_uid_and_auto_is_skipped() {
             .unwrap()
             .mode,
         "notify"
+    );
+
+    // With a Cookie that carries cookie_token_v2, `auto` is imported like any mode.
+    use sea_orm::QueryFilter;
+    hoyolab_account::Entity::update_many()
+        .col_expr(
+            hoyolab_account::Column::RedemptionCredentials,
+            sea_orm::sea_query::Expr::value(true),
+        )
+        .filter({
+            use sea_orm::ColumnTrait;
+            hoyolab_account::Column::Id.eq(link)
+        })
+        .exec(db)
+        .await
+        .unwrap();
+    let report = planned(service.import(&actor, &file).await.unwrap());
+    assert_eq!(
+        report["changes"],
+        json!([
+            {"section": "codes", "game_kind": "starrail", "game_uid": "900000001", "setting": "mode", "from": "off", "to": "auto"},
+        ])
+    );
+    assert_eq!(
+        redemption_code_setting::Entity::find_by_id(starrail)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap()
+            .mode,
+        "auto"
     );
 }

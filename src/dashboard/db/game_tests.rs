@@ -43,6 +43,7 @@ async fn insert_hoyolab(db: &DatabaseConnection, owner_user_id: Uuid) -> hoyolab
         created_at: Set(Utc::now()),
         updated_at: Set(Utc::now()),
         verified_at: Set(None),
+        ..Default::default()
     }
     .insert(db)
     .await
@@ -139,7 +140,7 @@ async fn dashboard_games_migration_is_ordered_reversible_and_updates_hoyolab_sta
         .map(|row| row.try_get("", "version").unwrap())
         .collect();
     assert_eq!(
-        names.iter().rev().nth(12).map(String::as_str),
+        names.iter().rev().nth(13).map(String::as_str),
         Some("m20261013_000004_dashboard_games")
     );
 
@@ -154,8 +155,8 @@ async fn dashboard_games_migration_is_ordered_reversible_and_updates_hoyolab_sta
         .await
         .unwrap();
 
-    // The later Cookie-removal, activity, notification, API token, app notification, Web Push removal, app event, challenge cache, app push, calendar cache, resource history and redemption code migrations are undone first.
-    migrations::Migrator::down(&fixture.db, Some(13))
+    // The later Cookie-removal, activity, notification, API token, app notification, Web Push removal, app event, challenge cache, app push, calendar cache, resource history, redemption code and code redemption migrations are undone first.
+    migrations::Migrator::down(&fixture.db, Some(14))
         .await
         .unwrap();
     let row = fixture
@@ -917,7 +918,7 @@ async fn removed_cookie_state_requires_no_ciphertext_and_reverts_by_deleting_the
     )
     .await;
 
-    migrations::Migrator::down(db, Some(12)).await.unwrap();
+    migrations::Migrator::down(db, Some(13)).await.unwrap();
     // The entity now names a column the older schema lacks: count with raw SQL.
     let remaining = db
         .query_one_raw(Statement::from_string(

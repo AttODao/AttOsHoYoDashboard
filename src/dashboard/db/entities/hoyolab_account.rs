@@ -19,6 +19,12 @@ pub struct Model {
     pub updated_at: DateTimeUtc,
     /// Last successful identity verification.
     pub verified_at: Option<DateTimeUtc>,
+    /// Whether the sealed Cookie carries the redemption credentials (`cookie_token_v2`).
+    pub redemption_credentials: bool,
+    /// Why code redemption waits for the owner (`cookie_invalid` or `captcha_required`);
+    /// cleared by a Cookie update or an explicit retry.
+    pub redemption_action: Option<String>,
+    pub redemption_action_at: Option<DateTimeUtc>,
 }
 
 impl Model {

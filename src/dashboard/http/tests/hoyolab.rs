@@ -15,7 +15,7 @@ async fn cookie_setup_routes_store_pending_without_returning_credentials_or_clai
     assert_eq!(initial.status(), StatusCode::OK);
     assert_eq!(
         body(initial).await,
-        json!({"status":"not_configured","setup_complete":false,"updated_at":null,"id":null,"hoyolab_uid":null,"verified_at":null,"verification_available":true})
+        json!({"status":"not_configured","setup_complete":false,"updated_at":null,"id":null,"hoyolab_uid":null,"verified_at":null,"verification_available":true,"redemption_credentials":false})
     );
     let response = call(
         &app,
@@ -44,7 +44,7 @@ async fn cookie_setup_routes_store_pending_without_returning_credentials_or_clai
     assert_eq!(data["status"], "pending_verification");
     assert_eq!(data["setup_complete"], false);
     assert!(data["updated_at"].is_string());
-    assert_eq!(data.as_object().unwrap().len(), 7);
+    assert_eq!(data.as_object().unwrap().len(), 8);
     assert!(data["id"].is_string());
     assert!(data["hoyolab_uid"].is_null());
     assert!(data["verified_at"].is_null());

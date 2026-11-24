@@ -1,5 +1,6 @@
 mod actions;
 mod browser_login;
+mod codes;
 mod credentials;
 mod data;
 #[cfg(feature = "mobile")]
@@ -35,7 +36,7 @@ use state::{AppState, Page, Phase, current_ready_page, initial_page};
 // External CSS uses these fingerprinted filenames; retain them without a second DX suffix.
 #[used]
 static FONT_JP: Asset = asset!(
-    "/assets/fonts/noto-sans-jp-b76b3417b3ac.woff2",
+    "/assets/fonts/noto-sans-jp-d822cd8f9495.woff2",
     AssetOptions::builder().with_hash_suffix(false)
 );
 #[used]
@@ -178,6 +179,7 @@ fn page_title(page: Page, phase: Phase, ready: bool, ui: preferences::Preference
             Page::Events => "calendar.page_title",
             Page::Uids => "settings.uids",
             Page::Rewards => "settings.bonus",
+            Page::Codes => "settings.codes",
             Page::Link => "settings.link",
             Page::Security => "settings.security",
             Page::Notifications => "settings.notifications",
@@ -333,6 +335,10 @@ mod tests {
         assert_eq!(
             page_title(Page::Events, Phase::SignedIn, true, ui),
             "イベント – AHD"
+        );
+        assert_eq!(
+            page_title(Page::Codes, Phase::SignedIn, true, ui),
+            "交換コード – AHD"
         );
     }
 }
