@@ -5349,6 +5349,91 @@
         ]
       }
     },
+    "/api/v1/code-redemption/listed": {
+      "post": {
+        "tags": [
+          "codes"
+        ],
+        "operationId": "redeemListedCodes",
+        "summary": "Redeem every listed code once for the UIDs outside automatic mode.",
+        "description": "Session only (tokens get 403). Queues, for each chosen detected UID whose mode is `off` or `notify` (default: all of them), every code the source lists now for its game that the UID has no ledger row for yet and HoYoLAB has not rejected for everyone; the mode stays as it is. The rows are sent like entered codes (whatever the mode, about 7 s apart and at most 10 per HoYoLAB account per run, so a long list continues in the following runs without another request), but only while the source lists the code: a queued code the source stops listing before it is sent is dropped. A code is never sent twice for a UID, also after switching it to `auto`; a queued code is not announced again to a `notify` UID. `GET /code-redemption` returns the count per UID (`bulk`). Needs a verified link whose Cookie carries `cookie_token_v2` (400 otherwise). 404 when a chosen UID is not one of the user's detected UIDs or there is no UID outside `auto`; 400 for an `auto` UID or an empty list; 409 while redemption waits for the user's action (`action_required`; `POST /code-redemption/run` first). At most 2 per user per 10 minutes (429 `rate_limited`). 503 while the feature is stopped. The run starts in the background.",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Required on state-changing requests and must exactly match PUBLIC_ORIGIN."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedeemListedCodesInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted; one entry per chosen UID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedeemListedCodesResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableContent"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "security": [
+          {
+            "attosSessionCookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/codes": {
       "get": {
         "tags": [
@@ -8422,7 +8507,7 @@
               "catalogue",
               "manual"
             ],
-            "description": "`manual` for a code the owner entered (private to them, never in the shared catalogue)."
+            "description": "`manual` for a code the owner entered (private to them, never in the shared catalogue); `catalogue` otherwise, also for a listed code queued through `POST /code-redemption/listed`."
           },
           "state": {
             "type": "string",
@@ -8659,7 +8744,8 @@
           "cookie_verified_at",
           "action_after_cookie_update",
           "running",
-          "pending"
+          "pending",
+          "bulk"
         ],
         "properties": {
           "available": {
@@ -8716,6 +8802,49 @@
             "type": "integer",
             "minimum": 0,
             "description": "Ledger rows waiting to be sent, including codes held for a UID HoYoLAB did not find (`no_game_account`), which `POST /code-redemption/run` sends again."
+          },
+          "bulk": {
+            "type": "array",
+            "description": "The detected UIDs outside `auto` (`off` or `notify`), each with how many listed codes `POST /code-redemption/listed` would queue for it now; empty without a verified link.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "game_account_id",
+                "game_kind",
+                "game_uid",
+                "region",
+                "mode",
+                "codes"
+              ],
+              "properties": {
+                "game_account_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "game_kind": {
+                  "$ref": "#/components/schemas/GameKind"
+                },
+                "game_uid": {
+                  "type": "string"
+                },
+                "region": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "off",
+                    "notify"
+                  ]
+                },
+                "codes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Listed codes of the UID's game without a ledger row for it and not rejected for everyone."
+                }
+              }
+            }
           }
         }
       },
@@ -8766,6 +8895,91 @@
             "type": "string",
             "format": "uuid",
             "description": "Optional: only this detected UID of the game (404 when it is not one); absent means every detected UID of the game."
+          }
+        }
+      },
+      "RedeemListedCodesInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "game_account_ids": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": false,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional: only these detected UIDs, each outside `auto`; absent means every detected UID whose mode is `off` or `notify`."
+          }
+        }
+      },
+      "RedeemListedCodesResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "accounts",
+          "queued",
+          "already_recorded",
+          "rejected"
+        ],
+        "properties": {
+          "accounts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "game_account_id",
+                "game_kind",
+                "game_uid",
+                "queued",
+                "already_recorded",
+                "rejected"
+              ],
+              "properties": {
+                "game_account_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "game_kind": {
+                  "$ref": "#/components/schemas/GameKind"
+                },
+                "game_uid": {
+                  "type": "string"
+                },
+                "queued": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Listed codes queued for this UID now (ledger rows `pending`)."
+                },
+                "already_recorded": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Listed codes left out because this UID already has a ledger row for them (sent, answered or waiting)."
+                },
+                "rejected": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Listed codes left out because HoYoLAB rejected them for everyone (expired or invalid)."
+                }
+              }
+            }
+          },
+          "queued": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Sum over `accounts`."
+          },
+          "already_recorded": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Sum over `accounts`."
+          },
+          "rejected": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Sum over `accounts`."
           }
         }
       }

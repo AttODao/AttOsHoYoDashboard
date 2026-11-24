@@ -1,10 +1,13 @@
 //! What a run may send for one owner, and the admission right before each POST.
 //!
-//! Work comes from two places: every listed catalogue code for each `auto` UID (including
-//! codes listed before the mode was switched on), and the owner's own manual entries for
-//! any detected UID. Only verified links whose sealed Cookie carries the redemption
+//! Work comes from three places: the owner's own manual entries for any detected UID, the
+//! listed codes the owner queued once for a UID outside `auto` (`bulk`, sent whatever the
+//! mode while the source lists them), and every listed catalogue code for each `auto` UID
+//! (including codes listed before the mode was switched on). Only verified links whose sealed Cookie carries the redemption
 //! credentials, with no action pending, of active users that finished setup take part.
-use super::ledger::{CATALOGUE, MANUAL, NO_GAME_ACCOUNT, PENDING, SENDING, rejection};
+use super::ledger::{
+    BULK, CATALOGUE, MANUAL, NO_GAME_ACCOUNT, PENDING, SENDING, drop_unlisted_in, rejection,
+};
 use crate::dashboard::{
     db::entities::{
         game_account, hoyolab_account, redemption_code, redemption_code_rejection,
@@ -30,7 +33,7 @@ pub(super) struct Item {
     pub(super) game_uid: String,
     pub(super) region: String,
     pub(super) code: String,
-    /// `catalogue` or `manual`.
+    /// `catalogue`, `manual` or `bulk`.
     pub(super) source: &'static str,
     /// The catalogue's reward text; empty for manual codes.
     pub(super) rewards: String,
@@ -55,13 +58,18 @@ pub(super) enum Admission {
     Stop,
 }
 
-/// Whether a row may be sent now.
-fn due(row: &redemption_ledger::Model, now: DateTime<Utc>) -> bool {
+/// Whether a row may be sent now; `auto` is whether its UID is in automatic mode.
+fn due(row: &redemption_ledger::Model, now: DateTime<Utc>, auto: bool) -> bool {
     let waited = row.next_attempt_at.is_none_or(|at| at <= now);
     match row.state.as_str() {
         PENDING => waited,
-        // Retried once a day, and only while the source lists it (catalogue rows).
-        "rank_too_low" => row.source == CATALOGUE && row.next_attempt_at.is_some() && waited,
+        // Retried once a day while the source lists it: catalogue rows, and queued rows
+        // only while their UID is `auto` (as a catalogue row would be).
+        "rank_too_low" => {
+            (row.source == CATALOGUE || (row.source == BULK && auto))
+                && row.next_attempt_at.is_some()
+                && waited
+        }
         _ => false,
     }
 }
@@ -75,7 +83,8 @@ fn link_ready(link: &hoyolab_account::Model) -> bool {
         && link.redemption_action.is_none()
 }
 
-/// Owners with possible work: an `auto` UID or a waiting manual row on a ready link.
+/// Owners with possible work: an `auto` UID or a waiting manual or queued row on a ready
+/// link.
 pub(super) async fn owners(db: &DatabaseConnection) -> Result<Vec<Uuid>> {
     let auto: Vec<Uuid> = redemption_code_setting::Entity::find()
         .select_only()
@@ -87,7 +96,7 @@ pub(super) async fn owners(db: &DatabaseConnection) -> Result<Vec<Uuid>> {
     let manual: Vec<Uuid> = redemption_ledger::Entity::find()
         .select_only()
         .column(redemption_ledger::Column::GameAccountId)
-        .filter(redemption_ledger::Column::Source.eq(MANUAL))
+        .filter(redemption_ledger::Column::Source.is_in([MANUAL, BULK]))
         .filter(redemption_ledger::Column::State.eq(PENDING))
         .distinct()
         .into_tuple()
@@ -128,15 +137,17 @@ pub(super) async fn owners(db: &DatabaseConnection) -> Result<Vec<Uuid>> {
         .collect())
 }
 
-/// The owner's due items: manual entries first (oldest first), then catalogue codes for
-/// `auto` UIDs, oldest listing first. A UID HoYoLAB did not find on the Cookie's account
-/// (`no_game_account`) is left out until a Cookie update or an explicit retry reopens it.
+/// The owner's due items: manual entries first (oldest first), then queued `bulk` codes,
+/// then catalogue codes for `auto` UIDs, both oldest listing first. A UID HoYoLAB did not
+/// find on the Cookie's account (`no_game_account`) is left out until a Cookie update or
+/// an explicit retry reopens it. Queued rows whose code left the list are dropped first.
 /// None when the owner cannot redeem now.
 pub(super) async fn plan(
     db: &DatabaseConnection,
     owner: Uuid,
     now: DateTime<Utc>,
 ) -> Result<Option<Plan>> {
+    drop_unlisted_in(db).await?;
     let Some(link) = hoyolab_account::Entity::find()
         .filter(hoyolab_account::Column::OwnerUserId.eq(owner))
         .one(db)
@@ -199,15 +210,20 @@ pub(super) async fn plan(
     let mut items = Vec::new();
     for row in rows
         .iter()
-        .filter(|row| row.source == MANUAL && due(row, now))
+        .filter(|row| row.source == MANUAL && due(row, now, false))
     {
         if let Some(account) = accounts.iter().find(|a| a.id == row.game_account_id) {
             items.push(item(account, &row.code, MANUAL, ""));
         }
     }
+    let queued: BTreeSet<Uuid> = rows
+        .iter()
+        .filter(|row| row.source == BULK)
+        .map(|row| row.game_account_id)
+        .collect();
     let games: BTreeSet<&str> = accounts
         .iter()
-        .filter(|account| auto.contains(&account.id))
+        .filter(|account| auto.contains(&account.id) || queued.contains(&account.id))
         .map(|account| account.game_kind.as_str())
         .collect();
     if !games.is_empty() {
@@ -218,14 +234,36 @@ pub(super) async fn plan(
             .order_by_asc(redemption_code::Column::Code)
             .all(db)
             .await?;
+        let open: Vec<&redemption_code::Model> = codes
+            .iter()
+            .filter(|code| !rejected.contains(&(code.game_kind.clone(), code.code.clone())))
+            .collect();
+        // Queued by the owner: whatever the UID's mode, while the source lists the code.
+        for account in accounts
+            .iter()
+            .filter(|account| queued.contains(&account.id))
+        {
+            let auto = auto.contains(&account.id);
+            for code in open
+                .iter()
+                .filter(|code| code.game_kind == account.game_kind)
+            {
+                if ledger
+                    .get(&(account.id, code.code.as_str()))
+                    .is_some_and(|row| row.source == BULK && due(row, now, auto))
+                {
+                    items.push(item(account, &code.code, BULK, &code.rewards));
+                }
+            }
+        }
         for account in accounts.iter().filter(|account| auto.contains(&account.id)) {
-            for code in codes.iter().filter(|code| {
-                code.game_kind == account.game_kind
-                    && !rejected.contains(&(code.game_kind.clone(), code.code.clone()))
-            }) {
+            for code in open
+                .iter()
+                .filter(|code| code.game_kind == account.game_kind)
+            {
                 let wanted = match ledger.get(&(account.id, code.code.as_str())) {
                     None => true,
-                    Some(row) => row.source == CATALOGUE && due(row, now),
+                    Some(row) => row.source == CATALOGUE && due(row, now, true),
                 };
                 if wanted {
                     items.push(item(account, &code.code, CATALOGUE, &code.rewards));
@@ -246,9 +284,10 @@ pub(super) async fn plan(
 
 /// The last check before a POST, in one transaction under the owner's row lock: the user,
 /// link and Cookie version still match the plan, the administrator's switch is on, the UID
-/// is still detected (and `auto` for catalogue codes, which must still be listed), the code
-/// is not rejected, and the row is due. The row is then `sending` with its POST counted,
-/// so whatever happens next it is never sent again automatically.
+/// is still detected (and `auto` for catalogue codes), catalogue and queued codes are still
+/// listed (a queued row whose code left the list is dropped), the code is not rejected,
+/// and the row is due. The row is then `sending` with its POST counted, so whatever
+/// happens next it is never sent again automatically.
 pub(super) async fn admit<G: Gateway>(
     store: &CookieStore<G>,
     plan: &Plan,
@@ -282,18 +321,35 @@ pub(super) async fn admit<G: Gateway>(
     else {
         return Ok(Admission::Skip);
     };
-    if item.source == CATALOGUE {
+    let mut auto = false;
+    if item.source == BULK || item.source == CATALOGUE {
         let modes = super::settings::modes_in(&tx, &[account.id], true).await?;
+        auto = modes.get(&account.id).map(String::as_str) == Some("auto");
         let listed = redemption_code::Entity::find()
             .filter(redemption_code::Column::GameKind.eq(&account.game_kind))
             .filter(redemption_code::Column::Code.eq(&item.code))
             .filter(redemption_code::Column::Listed.eq(true))
+            // Held until the commit, so the catalogue cannot unlist it in between.
+            .lock_shared()
             .one(&tx)
             .await?
             .is_some();
-        if modes.get(&account.id).map(String::as_str) != Some("auto") || !listed {
+        if item.source == BULK && !listed {
+            redemption_ledger::Entity::delete_many()
+                .filter(redemption_ledger::Column::GameAccountId.eq(account.id))
+                .filter(redemption_ledger::Column::Code.eq(&item.code))
+                .filter(redemption_ledger::Column::Source.eq(BULK))
+                .filter(redemption_ledger::Column::State.eq(PENDING))
+                .exec(&tx)
+                .await?;
+            tx.commit().await?;
             return Ok(Admission::Skip);
         }
+        if !listed || (item.source == CATALOGUE && !auto) {
+            return Ok(Admission::Skip);
+        }
+    }
+    if item.source == CATALOGUE {
         redemption_ledger::Entity::insert(redemption_ledger::ActiveModel {
             game_account_id: Set(account.id),
             code: Set(item.code.clone()),
@@ -326,7 +382,7 @@ pub(super) async fn admit<G: Gateway>(
         .lock_exclusive()
         .one(&tx)
         .await?
-        .filter(|row| due(row, now))
+        .filter(|row| due(row, now, auto))
     else {
         return Ok(Admission::Skip);
     };

@@ -1,7 +1,9 @@
 //! What the owner does with redemption: read its state, enter a private code, and redeem
 //! now (which is also the explicit retry after a CAPTCHA or Cookie answer). Changes need a
-//! session, never an API token, and are rate-limited per user.
+//! session, never an API token, and are rate-limited per user; queuing the listed codes
+//! for UIDs outside `auto` (`codes::bulk`) shares the session rules and the budgets.
 use super::{
+    bulk::{self, Candidate},
     catalog::GAMES,
     ledger::{MANUAL, NO_GAME_ACCOUNT, PENDING, rejection},
     plan::switched_on,
@@ -31,9 +33,10 @@ use std::{
 use uuid::Uuid;
 
 /// Requests per user and window for each operation.
-const LIMITS: [(Operation, u32, Duration); 2] = [
+const LIMITS: [(Operation, u32, Duration); 3] = [
     (Operation::EnterCode, 10, Duration::from_secs(10 * 60)),
     (Operation::RedeemNow, 3, Duration::from_secs(10 * 60)),
+    (Operation::RedeemListed, 2, Duration::from_secs(10 * 60)),
 ];
 const MAX_BUCKETS: usize = 4096;
 /// A pause this soon after the Cookie was verified (registering one verifies it) means a
@@ -45,6 +48,8 @@ const FRESH_COOKIE: chrono::Duration = chrono::Duration::hours(1);
 pub(in crate::dashboard) enum Operation {
     EnterCode,
     RedeemNow,
+    /// Queuing the listed codes for UIDs outside `auto` (`codes::bulk`).
+    RedeemListed,
 }
 
 /// Fixed-window budgets per user and operation, kept in memory.
@@ -106,6 +111,9 @@ pub(in crate::dashboard) struct RedemptionView {
     /// Codes waiting to be sent for the owner's UIDs, including those held for a UID
     /// HoYoLAB did not find (`no_game_account`), which "redeem now" sends again.
     pending: u64,
+    /// The detected UIDs outside `auto`, each with how many listed codes "redeem the
+    /// listed codes" would queue for it now (`codes::bulk`).
+    bulk: Vec<Candidate>,
 }
 
 /// One UID a code was entered for, and its state.
@@ -118,7 +126,7 @@ pub(in crate::dashboard) struct EnteredCode {
 }
 
 /// The session owner, locked, ready, with a link that can redeem.
-async fn session_owner(
+pub(super) async fn session_owner(
     tx: &DatabaseTransaction,
     actor: &Identity,
 ) -> Result<hoyolab_account::Model> {
@@ -147,7 +155,7 @@ async fn session_owner(
 }
 
 /// The link's detected UIDs.
-async fn detected(
+pub(super) async fn detected(
     db: &impl ConnectionTrait,
     link: Uuid,
     game_kind: Option<&str>,
@@ -182,7 +190,7 @@ pub(in crate::dashboard) async fn view(
         .filter(hoyolab_account::Column::OwnerUserId.eq(fresh.user.id))
         .one(&tx)
         .await?;
-    let (pending, action_retcode) = match &link {
+    let (pending, action_retcode, candidates) = match &link {
         Some(link) => {
             let ids: Vec<Uuid> = detected(&tx, link.id, None)
                 .await?
@@ -208,9 +216,14 @@ pub(in crate::dashboard) async fn view(
                     .and_then(|row| row.retcode),
                 None => None,
             };
-            (pending, retcode)
+            let candidates = if link.auth_status == "verified" {
+                bulk::candidates(&tx, link.id).await?
+            } else {
+                Vec::new()
+            };
+            (pending, retcode, candidates)
         }
-        None => (0, None),
+        None => (0, None, Vec::new()),
     };
     let available = server_can_redeem && switched_on(&tx).await?;
     tx.commit().await?;
@@ -229,6 +242,7 @@ pub(in crate::dashboard) async fn view(
         action_after_cookie_update: after_cookie_update(action_at, cookie_verified_at),
         running,
         pending,
+        bulk: candidates,
     })
 }
 

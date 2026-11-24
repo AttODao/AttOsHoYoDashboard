@@ -2,12 +2,15 @@
 //! notices, the code list status, a mode per game UID with its last result and per-game
 //! summary chips, code entry with redeem now, and the redemption history.
 //! `app::codes` holds the reads, the actions and the rules.
-use super::common::{Field, HintFold, LoadError, Skeleton, WarningLine, game_name, reset_value};
+use super::common::{
+    Field, HintFold, LoadError, ModalDialog, Skeleton, WarningLine, game_name, reset_value,
+};
 use super::icons::{Glyph, Icon, NamedIcon, Status, StatusMark};
 use crate::app::actions::spawn_action;
 use crate::app::codes::{
-    ChipCounts, CodeResult, CodeRow, HISTORY_PAGE, chip_counts, code_rows, enter_code, last_result,
-    load_codes, manual_code, redeem_now, reward_text, save_code_mode,
+    ChipCounts, CodeResult, CodeRow, HISTORY_PAGE, bulk_blocked, bulk_choice, bulk_preselected,
+    chip_counts, code_rows, enter_code, last_result, load_codes, manual_code, redeem_listed,
+    redeem_now, reward_text, save_code_mode,
 };
 use crate::app::display::{
     compact_datetime, counted, local_moment, relative_age, seconds_since, short_time,
@@ -15,8 +18,9 @@ use crate::app::display::{
 use crate::app::preferences::{Preferences, use_preferences};
 use crate::app::state::{AppState, DASHBOARD_GAMES, Page, set_page};
 use crate::components::{Button, ButtonVariant};
-use crate::models::{CodeCatalogue, CodeRedemption, CodeSetting};
+use crate::models::{BulkCandidate, BulkSummary, CodeCatalogue, CodeRedemption, CodeSetting};
 use dioxus::prelude::*;
+use std::collections::BTreeSet;
 use uuid::Uuid;
 
 const AUTO_HINT_ID: &str = "auto-needs-cookie";
@@ -187,7 +191,7 @@ fn CodesBody(
             }
         }
         hr { class: "divider" }
-        ManualEntry { state, settings: settings.clone(), games, stopped, credentials, action: action.is_some(), pending: redemption.pending }
+        ManualEntry { state, settings: settings.clone(), games, stopped, credentials, action: action.is_some(), pending: redemption.pending, bulk: redemption.bulk.clone() }
         hr { class: "divider" }
         History { state, rows: rows.clone() }
     }
@@ -353,6 +357,7 @@ fn ManualEntry(
     credentials: bool,
     action: bool,
     pending: u64,
+    bulk: Vec<BulkCandidate>,
 ) -> Element {
     let ui = use_preferences();
     let mut game = use_signal(|| games.first().copied().unwrap_or("genshin"));
@@ -477,6 +482,162 @@ fn ManualEntry(
                 if let Some(reason) = redeem_blocked {
                     p { id: "codes-redeem-now-hint", class: "field-hint", {ui.text(reason)} }
                 }
+            }
+            BulkRedeem { state, candidates: bulk, stopped, credentials, action }
+        }
+    }
+}
+
+/// "Redeem all listed codes": hidden without a UID outside `auto`; the dialog names the
+/// UIDs (all with something to send preselected), their counts and the pacing, and says
+/// the modes stay. The summary of the last request stays under the button.
+#[component]
+fn BulkRedeem(
+    state: Signal<AppState>,
+    candidates: Vec<BulkCandidate>,
+    stopped: bool,
+    credentials: bool,
+    action: bool,
+) -> Element {
+    let ui = use_preferences();
+    let mut open = use_signal(|| false);
+    let mut chosen = use_signal(BTreeSet::<Uuid>::new);
+    let mut summary = use_signal(|| None::<BulkSummary>);
+    if candidates.is_empty() {
+        return rsx! {};
+    }
+    let available: u64 = candidates.iter().map(|candidate| candidate.codes).sum();
+    let blocked = bulk_blocked(stopped, credentials, action, available);
+    let (ids, total) = bulk_choice(&candidates, &chosen());
+    let total_text = if total > 0 {
+        counted(
+            ui,
+            total as i64,
+            "codes.bulk_total_one",
+            "codes.bulk_total",
+            &[("n", &total.to_string())],
+        )
+    } else {
+        ui.text("codes.bulk_choose").to_owned()
+    };
+    let start = candidates.clone();
+    let done = summary().map(|done| {
+        let queued = counted(
+            ui,
+            done.queued as i64,
+            "codes.bulk_queued_one",
+            "codes.bulk_queued",
+            &[("n", &done.queued.to_string())],
+        );
+        let key = match (done.already_recorded, done.rejected) {
+            (0, 0) => return queued,
+            (_, 0) => "codes.bulk_skipped_recorded",
+            (0, _) => "codes.bulk_skipped_rejected",
+            _ => "codes.bulk_skipped",
+        };
+        let skipped = ui.format(
+            key,
+            &[
+                ("recorded", &done.already_recorded.to_string()),
+                ("rejected", &done.rejected.to_string()),
+            ],
+        );
+        // Japanese sentences follow each other without a space.
+        let gap = if queued.ends_with('。') { "" } else { " " };
+        format!("{queued}{gap}{skipped}")
+    });
+    rsx! {
+        div { class: "redeem-now bulk-redeem",
+            Button { id: "codes-bulk-open", variant: ButtonVariant::Secondary, r#type: "button",
+                disabled: blocked.is_some(), aria_describedby: blocked.map(|_| "codes-bulk-hint"),
+                onclick: move |_| {
+                    chosen.set(bulk_preselected(&start));
+                    summary.set(None);
+                    open.set(true);
+                },
+                {ui.text("codes.bulk_open")}
+            }
+            if let Some(reason) = blocked {
+                p { id: "codes-bulk-hint", class: "field-hint", {ui.text(reason)} }
+            }
+            if let Some(done) = done {
+                p { id: "codes-bulk-summary", class: "field-hint", role: "status", "{done}" }
+            }
+        }
+        if open() {
+            ModalDialog { id: "codes-bulk-dialog", title: ui.text("codes.bulk_open"), onclose: move |_| open.set(false),
+                p { {ui.text("codes.bulk_body")} }
+                fieldset { class: "bulk-uids",
+                    legend { {ui.text("codes.bulk_uids")} }
+                    for candidate in candidates.clone() {
+                        BulkChoice { key: "{candidate.game_account_id}", candidate, chosen }
+                    }
+                }
+                p { class: "field-hint", {ui.text("codes.bulk_pacing")} }
+                p { id: "codes-bulk-total", class: "bulk-total", "aria-live": "polite", "{total_text}" }
+                div { class: "actions",
+                    Button { variant: ButtonVariant::Secondary, r#type: "button", onclick: move |_| open.set(false), {ui.text("admin.cancel")} }
+                    Button { id: "codes-bulk-confirm", r#type: "button", disabled: total == 0, aria_describedby: "codes-bulk-total",
+                        onclick: move |_| {
+                            let ids = ids.clone();
+                            if ids.is_empty() { return; }
+                            open.set(false);
+                            spawn_action(state, move |generation| async move {
+                                let done = redeem_listed(state, generation, ids).await;
+                                // A failed reload may have replaced the tab (and this signal).
+                                if let Ok(mut summary) = summary.try_write() {
+                                    *summary = done;
+                                }
+                            });
+                        },
+                        {ui.text("codes.bulk_confirm")}
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// One UID in the dialog: a 48px checkbox row with the game, UID, mode and count.
+#[component]
+fn BulkChoice(candidate: BulkCandidate, chosen: Signal<BTreeSet<Uuid>>) -> Element {
+    let ui = use_preferences();
+    let id = candidate.game_account_id;
+    let element = format!("codes-bulk-{id}");
+    let empty = candidate.codes == 0;
+    let count = counted(
+        ui,
+        candidate.codes as i64,
+        "codes.bulk_count_one",
+        "codes.bulk_count",
+        &[("n", &candidate.codes.to_string())],
+    );
+    let name = format!(
+        "{} · UID {} · {}",
+        game_name(&candidate.game_kind, ui),
+        candidate.game_uid,
+        candidate.region
+    );
+    let mode = if candidate.mode == "notify" {
+        ui.text("codes.mode_notify")
+    } else {
+        ui.text("codes.mode_off")
+    };
+    rsx! {
+        label { class: "checkbox-row", r#for: element.clone(),
+            input { id: element.clone(), r#type: "checkbox", checked: !empty && chosen().contains(&id), disabled: empty,
+                onchange: move |event| {
+                    let mut next = chosen();
+                    if event.checked() { next.insert(id); } else { next.remove(&id); }
+                    chosen.set(next);
+                },
+            }
+            span { class: "bulk-uid",
+                span { class: "bulk-name {candidate.game_kind}",
+                    if let Some(mark) = Icon::game_mark(&candidate.game_kind) { Glyph { icon: mark } }
+                    "{name}"
+                }
+                span { class: "field-hint", "{count} · {mode}" }
             }
         }
     }
@@ -806,6 +967,7 @@ mod tests {
             cookie_verified_at: registered.map(str::to_owned),
             action_after_cookie_update: after,
             pending: 1,
+            bulk: Vec::new(),
         };
         for ui in [Preferences::default(), english()] {
             let repeat = ui.format(

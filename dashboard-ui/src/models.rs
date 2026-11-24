@@ -564,6 +564,32 @@ pub struct CodeRedemption {
     #[serde(default)]
     pub action_after_cookie_update: bool,
     pub pending: u64,
+    /// The detected UIDs outside `auto` and how many listed codes "redeem all listed
+    /// codes" would queue for each now (older servers omit it: no button).
+    #[serde(default)]
+    pub bulk: Vec<BulkCandidate>,
+}
+
+/// One UID outside `auto` in `CodeRedemption::bulk`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BulkCandidate {
+    pub game_account_id: Uuid,
+    pub game_kind: String,
+    pub game_uid: String,
+    pub region: String,
+    /// `off` or `notify`; the request never changes it.
+    pub mode: String,
+    pub codes: u64,
+}
+
+/// `POST /code-redemption/listed`: what was queued, and what was left out, in total.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct BulkSummary {
+    pub queued: u64,
+    /// Listed codes the UIDs already had a ledger row for.
+    pub already_recorded: u64,
+    /// Listed codes HoYoLAB rejected for everyone.
+    pub rejected: u64,
 }
 
 /// `GET /admin/codes`.

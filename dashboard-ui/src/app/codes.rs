@@ -10,11 +10,14 @@ use super::state::{
 };
 use crate::{
     api,
-    models::{AdminCodes, CodeCatalogue, CodeHistoryEntry, CodeRedemption, CodeSetting},
+    models::{
+        AdminCodes, BulkCandidate, BulkSummary, CodeCatalogue, CodeHistoryEntry, CodeRedemption,
+        CodeSetting,
+    },
 };
 use dioxus::prelude::*;
 use serde_json::json;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 /// The message key of `initial_setup_required`: no verified HoYoLAB link.
@@ -228,6 +231,85 @@ pub(super) async fn redeem_now(state: Signal<AppState>, generation: u64) {
         Err(error) => handle_api_error_for(state, generation, error),
     }
     load_codes(state).await;
+}
+
+/// Queues every listed code once for the chosen UIDs outside `auto`, leaving their modes
+/// as they are. The summary when the server accepted it. Call inside `spawn_action`: the
+/// request only writes the queue (the run goes on in the background), so the busy shell
+/// never waits for HoYoLAB.
+pub(super) async fn redeem_listed(
+    state: Signal<AppState>,
+    generation: u64,
+    ids: Vec<Uuid>,
+) -> Option<BulkSummary> {
+    if !current_ready_generation(state, generation) {
+        return None;
+    }
+    let body = json!({ "game_account_ids": ids });
+    let result = api::json::<BulkSummary>("POST", "/code-redemption/listed", Some(body)).await;
+    if !current_ready_generation(state, generation) {
+        return None;
+    }
+    let summary = match result {
+        Ok(summary) => {
+            set_status(state, "codes.bulk_accepted", "success");
+            Some(summary)
+        }
+        Err(error) => {
+            handle_api_error_for(state, generation, error);
+            None
+        }
+    };
+    load_codes(state).await;
+    summary
+}
+
+/// Why "redeem all listed codes" cannot start, most fundamental first (the server refuses
+/// the same cases); None when it can. `codes` is what the UIDs would queue in total.
+pub(super) fn bulk_blocked(
+    stopped: bool,
+    credentials: bool,
+    action: bool,
+    codes: u64,
+) -> Option<&'static str> {
+    if stopped {
+        Some("codes.manual_blocked_admin")
+    } else if !credentials {
+        Some("codes.manual_blocked_cookie")
+    } else if action {
+        Some("codes.manual_blocked_action")
+    } else if codes == 0 {
+        Some("codes.bulk_nothing")
+    } else {
+        None
+    }
+}
+
+/// The UIDs the dialog starts with: every UID outside `auto` that has something to queue.
+pub(super) fn bulk_preselected(candidates: &[BulkCandidate]) -> BTreeSet<Uuid> {
+    candidates
+        .iter()
+        .filter(|candidate| candidate.codes > 0)
+        .map(|candidate| candidate.game_account_id)
+        .collect()
+}
+
+/// The chosen UIDs that have something to queue (sent to the server), and their codes.
+pub(super) fn bulk_choice(
+    candidates: &[BulkCandidate],
+    chosen: &BTreeSet<Uuid>,
+) -> (Vec<Uuid>, u64) {
+    let picked: Vec<&BulkCandidate> = candidates
+        .iter()
+        .filter(|candidate| candidate.codes > 0 && chosen.contains(&candidate.game_account_id))
+        .collect();
+    (
+        picked
+            .iter()
+            .map(|candidate| candidate.game_account_id)
+            .collect(),
+        picked.iter().map(|candidate| candidate.codes).sum(),
+    )
 }
 
 pub(super) async fn load_admin_codes(mut state: Signal<AppState>) {
@@ -705,6 +787,7 @@ mod tests {
             cookie_verified_at: None,
             action_after_cookie_update: false,
             pending: 0,
+            bulk: Vec::new(),
         };
         let history = vec![
             entry(1, "genshin", "A", "redeemed", Some(60)),
@@ -723,6 +806,68 @@ mod tests {
         assert_eq!(code_hint(None, &history, &age), Some(CodeHint::Redeemed(2)));
         assert_eq!(code_hint(Some(&state(None)), &history[2..], &age), None);
         assert_eq!(code_hint(None, &[], &age), None);
+    }
+
+    fn candidate(n: u128, codes: u64) -> BulkCandidate {
+        BulkCandidate {
+            game_account_id: uuid(n),
+            game_kind: "genshin".to_owned(),
+            game_uid: format!("80000000{n}"),
+            region: "os_asia".to_owned(),
+            mode: "notify".to_owned(),
+            codes,
+        }
+    }
+
+    #[test]
+    fn listed_codes_wait_for_the_switch_the_cookie_the_action_and_something_to_send() {
+        assert_eq!(
+            bulk_blocked(true, false, true, 0),
+            Some("codes.manual_blocked_admin")
+        );
+        assert_eq!(
+            bulk_blocked(false, false, true, 3),
+            Some("codes.manual_blocked_cookie")
+        );
+        assert_eq!(
+            bulk_blocked(false, true, true, 3),
+            Some("codes.manual_blocked_action")
+        );
+        assert_eq!(
+            bulk_blocked(false, true, false, 0),
+            Some("codes.bulk_nothing")
+        );
+        assert_eq!(bulk_blocked(false, true, false, 1), None);
+    }
+
+    #[test]
+    fn the_dialog_preselects_uids_with_codes_and_sends_only_chosen_ones_with_codes() {
+        let candidates = [candidate(1, 3), candidate(2, 0), candidate(3, 2)];
+        let preselected = bulk_preselected(&candidates);
+        assert_eq!(preselected, BTreeSet::from([uuid(1), uuid(3)]));
+        assert_eq!(
+            bulk_choice(&candidates, &preselected),
+            (vec![uuid(1), uuid(3)], 5)
+        );
+        // A UID with nothing to send is never sent, even if chosen; deselecting drops one.
+        let chosen = BTreeSet::from([uuid(2), uuid(3)]);
+        assert_eq!(bulk_choice(&candidates, &chosen), (vec![uuid(3)], 2));
+        assert_eq!(bulk_choice(&candidates, &BTreeSet::new()), (Vec::new(), 0));
+    }
+
+    #[test]
+    fn servers_without_the_listed_counts_still_parse() {
+        let state: CodeRedemption = serde_json::from_value(serde_json::json!({
+            "available": true, "redemption_credentials": true, "action_required": null,
+            "action_at": null, "pending": 0
+        }))
+        .unwrap();
+        assert!(state.bulk.is_empty());
+        let summary: BulkSummary = serde_json::from_value(serde_json::json!({
+            "accounts": [], "queued": 2, "already_recorded": 1, "rejected": 0
+        }))
+        .unwrap();
+        assert_eq!((summary.queued, summary.already_recorded), (2, 1));
     }
 
     #[test]

@@ -5,6 +5,7 @@ use crate::dashboard::{
     auth::sessions::Identity,
     codes::{
         admin::{self, AdminInput},
+        bulk,
         manual::{self, Operation},
         redeem::RedemptionRuns,
         settings::CodeSettings,
@@ -31,6 +32,7 @@ pub(super) fn protected_routes() -> Router<App> {
         .route("/api/v1/code-redemption", get(redemption))
         .route("/api/v1/code-redemption/run", post(redeem_now))
         .route("/api/v1/code-redemption/codes", post(enter_code))
+        .route("/api/v1/code-redemption/listed", post(redeem_listed))
         .route("/api/v1/admin/codes", get(admin_view).put(admin_update))
 }
 
@@ -149,6 +151,32 @@ async fn enter_code(
     Ok((
         StatusCode::ACCEPTED,
         Json(json!({"entries": serde_json::to_value(entered).unwrap_or(Value::Null)})),
+    ))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ListedInput {
+    /// Detected UIDs outside `auto`; absent means every one of them.
+    #[serde(default)]
+    game_account_ids: Option<Vec<Uuid>>,
+}
+
+/// Queues every listed code once for the user's UIDs outside `auto` (or the chosen ones),
+/// without changing their mode, and starts a run. Session only.
+async fn redeem_listed(
+    State(app): State<App>,
+    Extension(actor): Extension<Arc<Identity>>,
+    Json(input): Json<ListedInput>,
+) -> Result<(StatusCode, Json<Value>)> {
+    let runs = runs(&app)?;
+    app.code_throttle
+        .admit(actor.user.id, Operation::RedeemListed, Instant::now())?;
+    let summary = bulk::enqueue(&app.accounts.db, &actor, input.game_account_ids).await?;
+    runs.trigger(actor.user.id);
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(serde_json::to_value(summary).unwrap_or(Value::Null)),
     ))
 }
 

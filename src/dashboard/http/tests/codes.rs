@@ -334,7 +334,8 @@ async fn redemption_requests_need_a_session_redemption_credentials_and_respect_b
         body(response).await,
         json!({"available": true, "redemption_credentials": false, "action_required": null,
                "action_at": null, "action_retcode": null, "cookie_verified_at": null,
-               "action_after_cookie_update": false, "running": false, "pending": 0})
+               "action_after_cookie_update": false, "running": false, "pending": 0,
+               "bulk": []})
     );
     // A link whose Cookie lacks cookie_token_v2 can neither enter codes nor take `auto`.
     let plain = link(&app.accounts.db, admin.user.id, "100000001", "verified").await;
@@ -601,4 +602,192 @@ async fn redemption_requests_need_a_session_redemption_credentials_and_respect_b
             "{state}"
         );
     }
+}
+
+#[tokio::test]
+async fn listed_codes_are_queued_for_uids_outside_auto_only_over_the_session_and_budget() {
+    use crate::dashboard::db::entities::redemption_code;
+    use sea_orm::{ActiveModelTrait, Set};
+    let db = TestDatabase::new().await;
+    let (accounts, _) = db.ready_admin().await;
+    let app = app(accounts);
+    let user = ready_user(&app.accounts.db, "listed-user").await;
+    let session = cookie(&app, user.user.id).await;
+    let owner_link = redeem_link(&app.accounts.db, user.user.id, "100000001").await;
+    let notify = game(&app.accounts.db, owner_link, "genshin", "800000001").await;
+    let auto = game(&app.accounts.db, owner_link, "genshin", "800000002").await;
+    for (id, mode) in [(notify, "notify"), (auto, "auto")] {
+        let response = call(
+            &app,
+            request(
+                "PATCH",
+                &format!("/api/v1/code-settings/{id}"),
+                Some(&session),
+                Some(json!({"mode": mode})),
+            ),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+    for code in ["LISTEDONE", "LISTEDTWO"] {
+        redemption_code::ActiveModel {
+            id: Set(uuid::Uuid::new_v4()),
+            game_kind: Set("genshin".to_owned()),
+            code: Set(code.to_owned()),
+            rewards: Set("Primogem*60".to_owned()),
+            first_seen_at: Set(chrono::Utc::now()),
+            last_seen_at: Set(chrono::Utc::now()),
+            listed: Set(true),
+            seeded: Set(false),
+        }
+        .insert(&app.accounts.db)
+        .await
+        .unwrap();
+    }
+    // The state names each UID outside `auto` with what it would queue.
+    let view = body(
+        call(
+            &app,
+            request("GET", "/api/v1/code-redemption", Some(&session), None),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(
+        view["bulk"],
+        json!([{"game_account_id": notify, "game_kind": "genshin", "game_uid": "800000001",
+                "region": "os_asia", "mode": "notify", "codes": 2}])
+    );
+
+    // Tokens of either scope read the counts but never queue anything.
+    for scope in ["read", "run"] {
+        let token = token(&app, &session, scope).await;
+        let response = call(&app, bearer("GET", "/api/v1/code-redemption", &token, None)).await;
+        assert_eq!(body(response).await["bulk"][0]["codes"], 2);
+        error(
+            call(
+                &app,
+                bearer(
+                    "POST",
+                    "/api/v1/code-redemption/listed",
+                    &token,
+                    Some(json!({})),
+                ),
+            )
+            .await,
+            StatusCode::FORBIDDEN,
+            "forbidden",
+        )
+        .await;
+    }
+    // Unsafe methods need the Origin; unknown fields and `auto` UIDs are refused.
+    let mut missing_origin = request(
+        "POST",
+        "/api/v1/code-redemption/listed",
+        Some(&session),
+        Some(json!({})),
+    );
+    missing_origin.headers_mut().remove(header::ORIGIN);
+    error(
+        call(&app, missing_origin).await,
+        StatusCode::FORBIDDEN,
+        "forbidden",
+    )
+    .await;
+    let response = call(
+        &app,
+        request(
+            "POST",
+            "/api/v1/code-redemption/listed",
+            Some(&session),
+            Some(json!({"uids": []})),
+        ),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    error(
+        call(
+            &app,
+            request(
+                "POST",
+                "/api/v1/code-redemption/listed",
+                Some(&session),
+                Some(json!({"game_account_ids": [auto]})),
+            ),
+        )
+        .await,
+        StatusCode::BAD_REQUEST,
+        "invalid_input",
+    )
+    .await;
+    // Two per ten minutes (the refused one above counted): one more is accepted.
+    let response = call(
+        &app,
+        request(
+            "POST",
+            "/api/v1/code-redemption/listed",
+            Some(&session),
+            Some(json!({"game_account_ids": [notify]})),
+        ),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    assert_eq!(
+        body(response).await,
+        json!({"accounts": [{"game_account_id": notify, "game_kind": "genshin",
+                             "game_uid": "800000001", "queued": 2, "already_recorded": 0,
+                             "rejected": 0}],
+               "queued": 2, "already_recorded": 0, "rejected": 0})
+    );
+    error(
+        call(
+            &app,
+            request(
+                "POST",
+                "/api/v1/code-redemption/listed",
+                Some(&session),
+                Some(json!({})),
+            ),
+        )
+        .await,
+        StatusCode::TOO_MANY_REQUESTS,
+        "rate_limited",
+    )
+    .await;
+    // The mode stays; the history shows the queued codes as waiting.
+    let settings = body(
+        call(
+            &app,
+            request("GET", "/api/v1/code-settings", Some(&session), None),
+        )
+        .await,
+    )
+    .await;
+    assert!(
+        settings
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["game_account_id"] == json!(notify) && row["mode"] == "notify")
+    );
+    let history = body(
+        call(
+            &app,
+            request("GET", "/api/v1/code-history", Some(&session), None),
+        )
+        .await,
+    )
+    .await;
+    let waiting: Vec<&Value> = history
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["game_account_id"] == json!(notify))
+        .collect();
+    assert_eq!(waiting.len(), 2);
+    assert!(
+        waiting
+            .iter()
+            .all(|row| row["state"] == "pending" || row["state"] == "redeemed")
+    );
 }

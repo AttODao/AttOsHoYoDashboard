@@ -3,16 +3,18 @@
 //!
 //! A code is announced to a UID when it is listed, was not `seeded`, was first seen after
 //! the UID's mode left `off` (`enabled_at`) and at most `ANNOUNCE_WITHIN_DAYS` ago, and the
-//! UID has no result for it yet. Codes already known when the mode was switched on are
+//! UID has no result for it yet and the owner did not queue it for that UID (`bulk`: its
+//! redemption result is the news). Codes already known when the mode was switched on are
 //! never announced; the history shows them as `available`. Only UIDs that are detected, on
 //! a verified link of an active user, take part. A summary that reached at least one route
 //! records `announced` for each of its codes and UIDs; one that reached none is retried by
 //! the next run.
 use crate::dashboard::{
+    codes::ledger::BULK,
     codes::settings::redeem_url,
     db::entities::{
         game_account, hoyolab_account, redemption_code, redemption_code_result,
-        redemption_code_setting, user,
+        redemption_code_setting, redemption_ledger, user,
     },
     error::Result,
     notifications::{channel::Notifications, code_notices::NewCode},
@@ -103,11 +105,20 @@ pub(super) async fn announce(
         .map(|row| row.id)
         .collect();
     let done: BTreeSet<(Uuid, Uuid)> = redemption_code_result::Entity::find()
-        .filter(redemption_code_result::Column::GameAccountId.is_in(ids))
+        .filter(redemption_code_result::Column::GameAccountId.is_in(ids.clone()))
         .all(db)
         .await?
         .into_iter()
         .map(|row| (row.game_account_id, row.code_id))
+        .collect();
+    // Codes the owner queued once for a UID (sent, answered or still waiting).
+    let queued: BTreeSet<(Uuid, String)> = redemption_ledger::Entity::find()
+        .filter(redemption_ledger::Column::GameAccountId.is_in(ids))
+        .filter(redemption_ledger::Column::Source.eq(BULK))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|row| (row.game_account_id, row.code))
         .collect();
 
     let mut summaries: BTreeMap<Uuid, Summary> = BTreeMap::new();
@@ -128,6 +139,7 @@ pub(super) async fn announce(
             code.game_kind == account.game_kind
                 && code.first_seen_at >= since
                 && !done.contains(&(account.id, code.id))
+                && !queued.contains(&(account.id, code.code.clone()))
         }) {
             let summary = summaries.entry(link.owner_user_id).or_default();
             summary.pairs.push((account.id, code.id));

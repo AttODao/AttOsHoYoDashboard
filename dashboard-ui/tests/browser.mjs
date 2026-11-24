@@ -48,12 +48,12 @@ const rewardSettings=['genshin','starrail'].map((game_kind,i)=>({id:uid(20+i),ga
 const hoursAgo=h=>new Date(Date.now()-h*3600e3).toISOString();
 // Redemption codes: stored state only (never HoYoLAB); the checks below change these.
 const codeGift=code=>`https://genshin.hoyoverse.com/en/gift?code=${code}`;
-let codeRedemption={available:true,redemption_credentials:true,action_required:null,action_at:null,running:false,pending:1};
+let codeRedemption={available:true,redemption_credentials:true,action_required:null,action_at:null,running:false,pending:1,bulk:[{game_account_id:uid(6),game_kind:'genshin',game_uid:'600000006',region:'os_usa',mode:'notify',codes:2},{game_account_id:uid(8),game_kind:'starrail',game_uid:'700000008',region:'prod_official_usa',mode:'off',codes:1}]};
 const codeCatalogue={enabled:true,last_success_at:hoursAgo(1),consecutive_failures:0,next_fetch_at:hoursAgo(-2),codes:[{id:uid(90),game_kind:'genshin',code:'GENSHINGIFT',rewards:'Primogem*60;Mora*10000',first_seen_at:hoursAgo(5)},{id:uid(91),game_kind:'starrail',code:'STARRAILGIFT',rewards:'',first_seen_at:hoursAgo(30)}]};
 const codeSettings=[{game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',region:'os_usa',mode:'auto'},{game_account_id:uid(6),game_kind:'genshin',game_uid:'600000006',region:'os_usa',mode:'notify'},{game_account_id:uid(8),game_kind:'starrail',game_uid:'700000008',region:'prod_official_usa',mode:'off'}];
 const codeHistory=[{game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',code_id:uid(90),code:'GENSHINGIFT',source:'catalogue',state:'redeemed',retcode:0,updated_at:hoursAgo(2),next_attempt_at:null,redeem_url:codeGift('GENSHINGIFT')},{game_account_id:uid(6),game_kind:'genshin',game_uid:'600000006',code_id:uid(90),code:'GENSHINGIFT',source:'catalogue',state:'available',updated_at:null,next_attempt_at:null,redeem_url:codeGift('GENSHINGIFT')},{game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',code_id:null,code:'TYPEDCODE1',source:'manual',state:'invalid',retcode:-2003,updated_at:hoursAgo(3),next_attempt_at:null,redeem_url:null},{game_account_id:uid(5),game_kind:'genshin',game_uid:'600000005',code_id:null,code:'RANKCODE22',source:'manual',state:'rank_too_low',updated_at:hoursAgo(4),next_attempt_at:hoursAgo(-20),redeem_url:null}];
 let adminCodes={enabled:true,interval_minutes:180,source_host:'hoyo-codes.seria.moe',last_attempt_at:hoursAgo(1),last_success_at:null,consecutive_failures:2,last_error:'timeout',next_fetch_at:hoursAgo(-2),catalogue:{genshin:{listed:1},starrail:{listed:1}},redemption:{auto_users:1,auto_uids:1,action_required_users:0,unknown:0}};
-const codePatches=[],codeEntries=[],adminCodeSaves=[];let codeRuns=0;
+const codePatches=[],codeEntries=[],codeListed=[],adminCodeSaves=[];let codeRuns=0;
 // Backend error codes (gateway::error_code) must never be rendered raw in settings.
 let sessions=[{id:uid(50),created_at:hoursAgo(2),last_seen_at:hoursAgo(0.1),expires_at:hoursAgo(-100),user_agent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36',current:true},{id:uid(51),created_at:hoursAgo(30),last_seen_at:null,expires_at:hoursAgo(-70),user_agent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1',current:false},{id:uid(52),created_at:hoursAgo(50),last_seen_at:null,expires_at:hoursAgo(-50),user_agent:null,current:false}];
 let apiTokens=[],passkeyOptionsBody;
@@ -255,6 +255,7 @@ const server=http.createServer(async(req,res)=>{
    const codeSetting=codeSettings.find(s=>p===`/api/v1/code-settings/${s.game_account_id}`);
    if(codeSetting){assert.equal(req.method,'PATCH');assert.deepEqual(Object.keys(body),['mode']);assert.ok(['off','notify','auto'].includes(body.mode));codePatches.push({id:codeSetting.game_account_id,...body});if(body.mode==='auto'&&!codeRedemption.redemption_credentials)return json(res,{error:'invalid_input'},400);codeSetting.mode=body.mode;res.writeHead(204);return res.end();}
    if(p==='/api/v1/code-redemption/codes'){assert.equal(req.method,'POST');assert.match(body.code,/^[A-Z0-9]{6,24}$/);assert.ok(['genshin','starrail'].includes(body.game_kind));codeEntries.push(body);const rows=codeSettings.filter(s=>s.game_kind===body.game_kind&&(!body.game_account_id||s.game_account_id===body.game_account_id));for(const row of rows)codeHistory.unshift({game_account_id:row.game_account_id,game_kind:row.game_kind,game_uid:row.game_uid,code_id:null,code:body.code,source:'manual',state:'pending',updated_at:hoursAgo(0),next_attempt_at:null,redeem_url:null});return json(res,{entries:rows.map(row=>({game_account_id:row.game_account_id,game_uid:row.game_uid,code:body.code,state:'pending'}))},202);}
+   if(p==='/api/v1/code-redemption/listed'){assert.equal(req.method,'POST');assert.deepEqual(Object.keys(body),['game_account_ids']);assert.ok(body.game_account_ids.length>0);codeListed.push(body);const accounts=body.game_account_ids.map(id=>{const c=codeRedemption.bulk.find(c=>c.game_account_id===id);assert.ok(c&&c.codes>0,'only UIDs outside auto with codes are sent');for(let i=0;i<c.codes;i++)codeHistory.unshift({game_account_id:id,game_kind:c.game_kind,game_uid:c.game_uid,code_id:null,code:`LISTED${codeListed.length}${i}`,source:'catalogue',state:'pending',updated_at:hoursAgo(0),next_attempt_at:null,redeem_url:null});return {game_account_id:id,game_kind:c.game_kind,game_uid:c.game_uid,queued:c.codes,already_recorded:1,rejected:0};});const queued=accounts.reduce((n,a)=>n+a.queued,0);codeRedemption={...codeRedemption,pending:codeRedemption.pending+queued,bulk:codeRedemption.bulk.map(c=>body.game_account_ids.includes(c.game_account_id)?{...c,codes:0}:c)};return json(res,{accounts,queued,already_recorded:accounts.length,rejected:0},202);}
    if(p==='/api/v1/code-redemption/run'){assert.equal(req.method,'POST');assert.deepEqual(body,{});codeRuns++;codeRedemption={...codeRedemption,action_required:null,action_at:null};return json(res,{started:true},202);}
    if(p==='/api/v1/admin/codes'&&req.method==='GET')return json(res,adminCodes);
    if(p==='/api/v1/admin/codes'){assert.equal(req.method,'PUT');assert.deepEqual(Object.keys(body).sort(),['enabled','interval_minutes']);assert.ok(body.interval_minutes>=60&&body.interval_minutes<=1440);adminCodeSaves.push(body);adminCodes={...adminCodes,...body};codeCatalogue.enabled=body.enabled;res.writeHead(204);return res.end();}
@@ -1160,6 +1161,78 @@ try{
  await page.locator('#codes-history-game').selectOption('');assert.equal(await historyRows.count(),20,'changing the filter starts again at 20');
  codeHistory.splice(codeHistory.length-extra.length,extra.length);
  await page.locator('#codes-refresh').click();await idle();
+ // Redeem all listed codes (UIDs outside auto): the dialog names each UID with its count,
+ // all with codes preselected; deselecting one changes the total; confirming queues only the
+ // chosen ones, leaves the modes alone and shows the summary; the history shows them pending.
+ const bulkOpen=page.locator('#codes-bulk-open');
+ assert.ok(await bulkOpen.isEnabled());
+ assert.equal(await bulkOpen.innerText(),enText['codes.bulk_open']);
+ assert.ok((await bulkOpen.boundingBox()).height>=44,'the button is a full-size target');
+ const bulkShot=async name=>{for(const width of [1280,360]){await page.setViewportSize({width,height:width===360?800:900});await page.waitForTimeout(50);await page.screenshot({path:path.join(root,`target/ui-codes-bulk-${name}-${width}.png`),fullPage:name.includes('button')});}await page.setViewportSize({width:1280,height:900});};
+ await bulkShot('button-en');
+ await bulkOpen.click();await page.locator('#codes-bulk-dialog[open]').waitFor();
+ const bulkDialog=page.locator('#codes-bulk-dialog');
+ assert.equal(await bulkDialog.getAttribute('aria-labelledby'),'codes-bulk-dialog-title');
+ assert.deepEqual(await bulkDialog.locator('input[type=checkbox]').evaluateAll(boxes=>boxes.map(box=>[box.id.slice(-2),box.checked,box.disabled])),[['06',true,false],['08',true,false]],'every UID outside auto with codes starts chosen');
+ assert.ok((await bulkDialog.locator('.checkbox-row').evaluateAll(rows=>rows.map(row=>row.getBoundingClientRect().height))).every(height=>height>=48),'each UID row is a 48px target');
+ const bulkText=(await bulkDialog.innerText()).replace(/\s+/g,' ');
+ for(const key of ['codes.bulk_body','codes.bulk_pacing']) assert.ok(bulkText.includes(enText[key]),key);
+ assert.ok(bulkText.includes('UID 600000006 · os_usa')&&bulkText.includes('2 codes · Notify only')&&bulkText.includes('1 code · Off'),bulkText);
+ assert.equal(await page.locator('#codes-bulk-total').innerText(),'3 codes will be sent in total.');
+ // Focus moves through the dialog (the native modal keeps the page behind it inert).
+ for(let i=0;i<3;i++){await page.keyboard.press('Tab');assert.ok(await bulkDialog.evaluate(dialog=>dialog.contains(document.activeElement)),'focus stays in the dialog');}
+ await page.setViewportSize({width:360,height:800});await page.waitForTimeout(50);
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth),360,'no page overflow with the dialog at 360px');
+ await page.screenshot({path:path.join(root,'target/ui-codes-bulk-dialog-en-360.png')});
+ for(const width of [412,768]){await page.setViewportSize({width,height:900});await page.waitForTimeout(50);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth),width,'no page overflow with the dialog at '+width+'px');}
+ await page.setViewportSize({width:1280,height:900});
+ const enTheme=await page.evaluate(()=>{const before=document.documentElement.dataset.theme;document.documentElement.dataset.theme='light';return before;});
+ await page.waitForTimeout(50);await page.screenshot({path:path.join(root,'target/ui-codes-bulk-dialog-en-1280-light.png')});
+ await page.evaluate(theme=>{if(theme===undefined)delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=theme;},enTheme);
+ // Escape closes it and focus goes back to the button; nothing is sent.
+ await page.keyboard.press('Escape');await page.locator('#codes-bulk-dialog').waitFor({state:'detached'});
+ assert.ok(await bulkOpen.evaluate(e=>e===document.activeElement),'focus returns to the button');
+ assert.equal(codeListed.length,0);
+ await bulkOpen.click();await page.locator('#codes-bulk-dialog[open]').waitFor();
+ await page.locator('label[for=codes-bulk-'+uid(8)+']').click();
+ assert.equal(await page.locator('#codes-bulk-'+uid(8)).isChecked(),false);
+ assert.equal(await page.locator('#codes-bulk-total').innerText(),'2 codes will be sent in total.');
+ await page.locator('label[for=codes-bulk-'+uid(6)+']').click();
+ assert.equal(await page.locator('#codes-bulk-total').innerText(),enText['codes.bulk_choose']);
+ assert.ok(await page.locator('#codes-bulk-confirm').isDisabled(),'nothing chosen, nothing to confirm');
+ await page.locator('label[for=codes-bulk-'+uid(6)+']').click();
+ const historyBefore=codeHistory.length,patchesBefore=codePatches.length;
+ await page.locator('#codes-bulk-confirm').click();
+ await page.locator('.status.success').getByText(enText['codes.bulk_accepted'],{exact:true}).waitFor();await idle();
+ assert.deepEqual(codeListed.at(-1),{game_account_ids:[uid(6)]},'only the chosen UID is sent');
+ assert.equal(codePatches.length,patchesBefore,'no mode changes');
+ assert.equal(await page.locator('#codes-bulk-summary').innerText(),'2 codes are now pending. Left out: 1 with a result already.');
+ assert.equal(await page.locator('#codes-bulk-summary').getAttribute('role'),'status');
+ const queuedRows=historyRows.filter({has:page.locator('.code-text',{hasText:/^LISTED1\d$/})});
+  assert.equal(await queuedRows.count(),2,'queued codes appear in the history');
+ assert.deepEqual(await queuedRows.locator('.run-state > .status-mark').evaluateAll(marks=>marks.map(mark=>mark.dataset.status)),['waiting','waiting'],'queued codes read as pending');
+ assert.ok((await page.locator('#codes-redeem-now').innerText()).includes('(3)'),'redeem now counts the queued codes');
+ assert.deepEqual(errors,[],'the dialog raises no browser errors');
+ // Disabled with a linked reason: nothing left, the administrator stopped it, no Cookie.
+ codeRedemption={...codeRedemption,bulk:codeRedemption.bulk.map(c=>({...c,codes:0}))};
+ await page.locator('#codes-refresh').click();await page.locator('#codes-bulk-hint').waitFor();await idle();
+ const bulkReason=async key=>{assert.ok(await bulkOpen.isDisabled(),key);assert.equal(await bulkOpen.getAttribute('aria-describedby'),'codes-bulk-hint');assert.equal(await page.locator('#codes-bulk-hint').innerText(),enText[key]);};
+ await bulkReason('codes.bulk_nothing');
+ await bulkShot('button-disabled-en');
+ codeRedemption={...codeRedemption,bulk:codeRedemption.bulk.map(c=>({...c,codes:1}))};
+ Object.assign(codeCatalogue,{enabled:false});
+ await page.locator('#codes-refresh').click();await idle();await bulkReason('codes.manual_blocked_admin');
+ Object.assign(codeCatalogue,{enabled:true});
+ codeRedemption={...codeRedemption,redemption_credentials:false};
+ await page.locator('#codes-refresh').click();await page.locator('#codes-cookie-notice').waitFor();await idle();await bulkReason('codes.manual_blocked_cookie');
+ codeRedemption={...codeRedemption,redemption_credentials:true};
+ // Hidden when every UID is automatic.
+ const bulkCandidates=codeRedemption.bulk;
+ codeRedemption={...codeRedemption,bulk:[]};
+ await page.locator('#codes-refresh').click();await page.locator('#codes-bulk-open').waitFor({state:'detached'});await idle();
+ codeRedemption={...codeRedemption,bulk:bulkCandidates,pending:1};
+ codeHistory.splice(0,codeHistory.length-historyBefore);
+ await page.locator('#codes-refresh').click();await bulkOpen.waitFor();await idle();
  // Source status: before any successful fetch there is no "last success" to name and no
  // known code; afterwards one failure and several read differently in English.
  Object.assign(codeCatalogue,{last_success_at:null,consecutive_failures:1});
@@ -1209,6 +1282,8 @@ try{
  assert.equal(await page.locator('#codes-action').getAttribute('role'),'alert');
  assert.ok((await page.locator('#codes-action').innerText()).includes('Action required'));
  assert.ok(await page.locator('#codes-manual-code').isDisabled(),'entry waits while an action is required');
+ assert.ok(await page.locator('#codes-bulk-open').isDisabled(),'listed codes wait while an action is required');
+ assert.equal(await page.locator('#codes-bulk-hint').innerText(),enText['codes.manual_blocked_action']);
  assert.equal((await page.locator('#code-last-'+uid(5)).innerText()).includes('Paused'),true,'automatic UIDs read as paused');
  await page.locator('#codes-resume').click();await page.locator('#codes-action').waitFor({state:'detached'});await idle();
  assert.equal(codeRuns,2);
@@ -1260,6 +1335,24 @@ try{
  assert.equal(await page.locator('#codes-action-retcode').count(),0);
  assert.deepEqual(await numberFree(page.locator('#codes-action')),[],'the Japanese CAPTCHA notice names no number');
  await codesShot('captcha');
+ // Japanese (dark): the button held by the action, then enabled, and the dialog at 1280px
+ // and 360px.
+ const jaTheme=await page.evaluate(()=>{const before=document.documentElement.dataset.theme;document.documentElement.dataset.theme='dark';return before;});
+ assert.equal(await page.locator('#codes-bulk-hint').innerText(),jaText['codes.manual_blocked_action']);
+ await bulkShot('button-disabled-ja');
+ const jaAction=codeRedemption;
+ codeRedemption={...codeRedemption,action_required:null,action_at:null,action_retcode:null};
+ await page.locator('#codes-refresh').click();await page.locator('#codes-action').waitFor({state:'detached'});await idle();
+ assert.equal(await page.locator('#codes-bulk-open').innerText(),jaText['codes.bulk_open']);
+ await bulkShot('button-ja');
+ await page.locator('#codes-bulk-open').click();await page.locator('#codes-bulk-dialog[open]').waitFor();
+ assert.ok((await page.locator('#codes-bulk-dialog').innerText()).includes(jaText['codes.bulk_pacing']));
+ for(const width of [1280,360]){await page.setViewportSize({width,height:width===360?800:900});await page.waitForTimeout(50);await page.screenshot({path:path.join(root,`target/ui-codes-bulk-dialog-ja-${width}.png`)});}
+ await page.setViewportSize({width:1280,height:900});
+ await page.keyboard.press('Escape');await page.locator('#codes-bulk-dialog').waitFor({state:'detached'});
+ await page.evaluate(theme=>{if(theme===undefined)delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=theme;},jaTheme);
+ codeRedemption=jaAction;
+ await page.locator('#codes-refresh').click();await page.locator('#codes-action').waitFor();await idle();
  codeRedemption={...codeRedemption,action_required:'cookie_invalid',action_retcode:-1071};
  await openMenu();await page.locator('#ahd-menu').getByRole('combobox',{name:'言語',exact:true}).selectOption('en');
  await page.waitForFunction(()=>document.documentElement.lang==='en');
