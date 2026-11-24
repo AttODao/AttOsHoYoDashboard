@@ -6,7 +6,7 @@ use crate::app::actions::spawn_action;
 use crate::app::codes::{
     DEFAULT_INTERVAL_HOURS, INTERVAL_HOURS, interval_choice, save_admin_codes,
 };
-use crate::app::display::datetime_text;
+use crate::app::display::{counted, datetime_text};
 use crate::app::preferences::{Preferences, use_preferences};
 use crate::app::state::AppState;
 use crate::components::{Button, ButtonVariant};
@@ -53,7 +53,43 @@ fn hours_label(hours: i32, ui: Preferences) -> String {
     if hours == DEFAULT_INTERVAL_HOURS {
         ui.text("admin.codes_hours_default").to_owned()
     } else {
-        ui.format("admin.codes_hours", &[("n", &hours.to_string())])
+        counted(
+            ui,
+            i64::from(hours),
+            "admin.codes_hours_one",
+            "admin.codes_hours",
+            &[("n", &hours.to_string())],
+        )
+    }
+}
+
+/// The source warning: none while fetching works; without any successful fetch it says
+/// that users get listed codes only after the first one; one failure and several read
+/// differently in English.
+fn source_warning_key(failures: i32, fetched_before: bool) -> Option<&'static str> {
+    Some(match (failures, fetched_before) {
+        (..=0, _) => return None,
+        (1, true) => "admin.codes_source_down_one",
+        (_, true) => "admin.codes_source_down",
+        (1, false) => "admin.codes_source_never_one",
+        (_, false) => "admin.codes_source_never",
+    })
+}
+
+/// The "last success" row: the moment, or "none yet" before the first successful fetch
+/// (marked as a warning while fetches fail, never as done).
+fn last_success_mark(value: Option<&str>, failing: bool, ui: Preferences) -> (Status, String) {
+    match value {
+        Some(_) if failing => (Status::Warn, datetime_text(value, ui)),
+        Some(_) => (Status::Done, datetime_text(value, ui)),
+        None if failing => (
+            Status::Warn,
+            ui.text("admin.codes_never_succeeded").to_owned(),
+        ),
+        None => (
+            Status::Unknown,
+            ui.text("admin.codes_never_succeeded").to_owned(),
+        ),
     }
 }
 
@@ -63,7 +99,9 @@ fn AdminCodesEditor(state: Signal<AppState>, view: AdminCodes) -> Element {
     let mut hours = use_signal(|| interval_choice(view.interval_minutes));
     let enabled = view.enabled;
     let failing = view.consecutive_failures > 0;
-    let last_success = datetime_text(view.last_success_at.as_deref(), ui);
+    let (success_status, last_success) =
+        last_success_mark(view.last_success_at.as_deref(), failing, ui);
+    let warning = source_warning_key(view.consecutive_failures, view.last_success_at.is_some());
     let last_attempt = datetime_text(view.last_attempt_at.as_deref(), ui);
     let attempt_failed = failing && view.last_error.is_some();
     let attempt_text = match view.last_error.as_deref().filter(|_| attempt_failed) {
@@ -127,13 +165,13 @@ fn AdminCodesEditor(state: Signal<AppState>, view: AdminCodes) -> Element {
             }, {ui.text("admin.codes_save")} }
         }
         h3 { {ui.text("admin.codes_source_title")} }
-        if failing {
-            WarningLine { status: Status::Warn, text: ui.format("admin.codes_source_down", &[("count", &view.consecutive_failures.to_string())]) }
+        if let Some(key) = warning {
+            WarningLine { status: Status::Warn, text: ui.format(key, &[("count", &view.consecutive_failures.to_string())]) }
         }
         dl { class: "metric-list",
             div { class: "metric", dt { {ui.text("admin.codes_source")} } dd { "{view.source_host}" } }
             div { class: "metric", dt { {ui.text("admin.codes_last_success")} }
-                dd { StatusMark { status: if failing { Status::Warn } else { Status::Done }, text: last_success } }
+                dd { StatusMark { status: success_status, text: last_success } }
             }
             div { class: "metric", dt { {ui.text("admin.codes_last_attempt")} }
                 dd { StatusMark { status: if attempt_failed { Status::Failed } else { Status::Done }, text: attempt_text } }
@@ -201,6 +239,63 @@ mod tests {
         assert_eq!(
             hours_label(6, ui),
             ui.format("admin.codes_hours", &[("n", "6")])
+        );
+        let english = Preferences {
+            language: crate::i18n::Language::English,
+            ..ui
+        };
+        assert_eq!(hours_label(1, english), "1 hour");
+        assert_eq!(hours_label(12, english), "12 hours");
+    }
+
+    #[test]
+    fn the_source_status_tells_never_fetched_apart_and_counts_in_english() {
+        assert_eq!(source_warning_key(0, true), None);
+        assert_eq!(source_warning_key(0, false), None);
+        assert_eq!(
+            source_warning_key(1, true),
+            Some("admin.codes_source_down_one")
+        );
+        assert_eq!(source_warning_key(5, true), Some("admin.codes_source_down"));
+        assert_eq!(
+            source_warning_key(1, false),
+            Some("admin.codes_source_never_one")
+        );
+        assert_eq!(
+            source_warning_key(2, false),
+            Some("admin.codes_source_never")
+        );
+        let english = Preferences {
+            language: crate::i18n::Language::English,
+            ..Preferences::default()
+        };
+        let text = |failures: i32, fetched_before: bool| {
+            let key = source_warning_key(failures, fetched_before).unwrap();
+            english.format(key, &[("count", &failures.to_string())])
+        };
+        assert!(text(1, true).starts_with("The latest fetch from the source failed."));
+        assert!(text(5, true).contains("failed 5 times in a row"));
+        assert!(text(1, false).contains("(1 failed attempt)"));
+        assert!(text(2, false).contains("(2 failed attempts)"));
+        assert!(!text(1, false).contains("Known codes"));
+        assert!(!text(2, false).contains("Known codes"));
+
+        let never = english.text("admin.codes_never_succeeded").to_owned();
+        assert_eq!(
+            last_success_mark(None, true, english),
+            (Status::Warn, never.clone())
+        );
+        assert_eq!(
+            last_success_mark(None, false, english),
+            (Status::Unknown, never)
+        );
+        assert_eq!(
+            last_success_mark(Some("2026-11-24T00:00:00Z"), false, english).0,
+            Status::Done
+        );
+        assert_eq!(
+            last_success_mark(Some("2026-11-24T00:00:00Z"), true, english).0,
+            Status::Warn
         );
     }
 }
