@@ -98,6 +98,10 @@ fn CodesBody(
         .filter(|game| settings.iter().any(|setting| setting.game_kind == *game))
         .collect();
     let action_at = short_at(redemption.action_at.as_deref(), ui).unwrap_or_default();
+    let action_code = redemption
+        .action_retcode
+        .map(|code| ui.format("codes.action_retcode", &[("code", &code.to_string())]));
+    let cookie_body = cookie_notice_body(&redemption, ui);
     rsx! {
         if stopped {
             div { class: "notice with-icon", role: "status",
@@ -128,7 +132,8 @@ fn CodesBody(
                     Glyph { icon: Icon::Failed }
                     div { class: "notice-body",
                         strong { {ui.text("codes.action_cookie_title")} }
-                        p { {ui.format("codes.action_cookie_body", &[("at", &action_at)])} }
+                        p { id: "codes-action-body", "{cookie_body}" }
+                        if let Some(code) = action_code.clone() { p { id: "codes-action-retcode", "{code}" } }
                     }
                     div { class: "button-row",
                         Button { r#type: "button", onclick: move |_| set_page(state, Page::Link),
@@ -144,6 +149,7 @@ fn CodesBody(
                     div { class: "notice-body",
                         strong { {ui.text("codes.action_captcha_title")} }
                         p { {ui.format("codes.action_captcha_body", &[("at", &action_at)])} }
+                        if let Some(code) = action_code.clone() { p { id: "codes-action-retcode", "{code}" } }
                     }
                     div { class: "button-row",
                         Button { id: "codes-resume", r#type: "button", disabled: stopped, onclick: move |_| {
@@ -534,6 +540,7 @@ fn HistoryRow(row: CodeRow) -> Element {
     let ui = use_preferences();
     let game = game_name(&row.game_kind, ui);
     let reason = result_reason(&row, ui);
+    let retcode = retcode_tag(&row, ui);
     let rewards = reward_text(&row.rewards);
     let mark_class = if row.game_kind == "genshin" {
         "genshin-mark"
@@ -557,6 +564,7 @@ fn HistoryRow(row: CodeRow) -> Element {
                         "UID {row.game_uid}"
                     }
                     if row.manual { " · " {ui.text("codes.manual_tag")} }
+                    if let Some(code) = retcode { " · " span { class: "retcode", "{code}" } }
                 }
                 p { class: "code-line",
                     span { class: "code-text", "{row.code}" }
@@ -603,7 +611,7 @@ pub(super) fn result_status(result: CodeResult) -> Status {
         CodeResult::AlreadyUsed | CodeResult::Expired => Status::Off,
         CodeResult::Invalid | CodeResult::CookieInvalid => Status::Failed,
         CodeResult::RankTooLow | CodeResult::Pending => Status::Waiting,
-        CodeResult::Captcha | CodeResult::Unknown => Status::Warn,
+        CodeResult::Captcha | CodeResult::NotFound | CodeResult::Unknown => Status::Warn,
         CodeResult::Announced => Status::Open,
     }
 }
@@ -617,9 +625,43 @@ pub(super) fn result_key(result: CodeResult) -> &'static str {
         CodeResult::RankTooLow => "codes.result_rank_too_low",
         CodeResult::CookieInvalid => "codes.result_cookie_invalid",
         CodeResult::Captcha => "codes.result_captcha",
+        CodeResult::NotFound => "codes.result_no_game_account",
         CodeResult::Unknown => "codes.result_unknown",
         CodeResult::Pending => "codes.result_pending",
         CodeResult::Announced => "codes.result_announced",
+    }
+}
+
+/// The paused notice's text for a Cookie answer: when it came right after the Cookie was
+/// registered, it says registering the same Cookie again will not help.
+fn cookie_notice_body(redemption: &CodeRedemption, ui: Preferences) -> String {
+    let at = short_at(redemption.action_at.as_deref(), ui).unwrap_or_default();
+    match redemption
+        .cookie_verified_at
+        .as_deref()
+        .filter(|_| redemption.action_after_cookie_update)
+    {
+        Some(verified) => ui.format(
+            "codes.action_cookie_repeat_body",
+            &[
+                (
+                    "registered",
+                    &short_at(Some(verified), ui).unwrap_or_default(),
+                ),
+                ("at", &at),
+            ],
+        ),
+        None => ui.format("codes.action_cookie_body", &[("at", &at)]),
+    }
+}
+
+/// HoYoLAB's number for an answered row (never for success, waiting or notify-only rows).
+fn retcode_tag(row: &CodeRow, ui: Preferences) -> Option<String> {
+    match row.result {
+        CodeResult::Redeemed | CodeResult::Pending | CodeResult::Announced => None,
+        _ => row
+            .retcode
+            .map(|code| ui.format("codes.retcode_tag", &[("code", &code.to_string())])),
     }
 }
 
@@ -634,6 +676,7 @@ fn result_reason(row: &CodeRow, ui: Preferences) -> Option<String> {
         CodeResult::Unknown => ui.text("codes.reason_unknown").to_owned(),
         CodeResult::CookieInvalid => ui.text("codes.reason_cookie_invalid").to_owned(),
         CodeResult::Captcha => ui.text("codes.reason_captcha").to_owned(),
+        CodeResult::NotFound => ui.text("codes.reason_no_game_account").to_owned(),
         CodeResult::Invalid if row.manual => ui.text("codes.reason_invalid_manual").to_owned(),
         _ => return None,
     })
@@ -653,6 +696,7 @@ mod tests {
             CodeResult::RankTooLow,
             CodeResult::CookieInvalid,
             CodeResult::Captcha,
+            CodeResult::NotFound,
             CodeResult::Unknown,
             CodeResult::Pending,
             CodeResult::Announced,
@@ -748,6 +792,7 @@ mod tests {
             rewards: String::new(),
             manual,
             result,
+            retcode: None,
             stored: true,
             at: None,
             age: None,
@@ -769,5 +814,82 @@ mod tests {
                 .unwrap()
                 .contains(ui.text("common.not_fetched"))
         );
+    }
+
+    #[test]
+    fn the_cookie_notice_says_a_fresh_cookie_was_refused_and_names_the_number() {
+        let ui = Preferences::default();
+        let redemption = |after: bool, registered: Option<&str>| CodeRedemption {
+            available: true,
+            redemption_credentials: true,
+            action_required: Some("cookie_invalid".to_owned()),
+            action_at: Some("2026-11-24T06:42:50Z".to_owned()),
+            action_retcode: Some(-1071),
+            cookie_verified_at: registered.map(str::to_owned),
+            action_after_cookie_update: after,
+            pending: 1,
+        };
+        let repeat = ui.format(
+            "codes.action_cookie_repeat_body",
+            &[("registered", "R"), ("at", "A")],
+        );
+        let usual = ui.format("codes.action_cookie_body", &[("at", "A")]);
+        let fresh = cookie_notice_body(&redemption(true, Some("2026-11-24T06:41:00Z")), ui);
+        assert!(fresh.contains("cookie_token_v2"), "{fresh}");
+        assert_ne!(fresh, usual);
+        assert!(repeat.contains("cookie_token_v2"));
+        // Without the server's judgement or the time, the usual text stays.
+        let old = cookie_notice_body(&redemption(false, Some("2026-11-24T06:41:00Z")), ui);
+        assert!(!old.contains("cookie_token_v2"), "{old}");
+        assert!(!cookie_notice_body(&redemption(true, None), ui).contains("cookie_token_v2"));
+        let english = Preferences {
+            language: crate::i18n::Language::English,
+            ..Preferences::default()
+        };
+        assert_eq!(
+            english.format("codes.action_retcode", &[("code", "-1071")]),
+            "HoYoLAB answered error -1071."
+        );
+    }
+
+    #[test]
+    fn answered_rows_show_hoyolab_numbers_and_missing_uids_wait_with_a_reason() {
+        let ui = Preferences::default();
+        let row = |result, retcode| CodeRow {
+            game_account_id: Uuid::from_u128(1),
+            game_kind: "starrail".to_owned(),
+            game_uid: "800000002".to_owned(),
+            code: "STARRAILGIFT".to_owned(),
+            rewards: String::new(),
+            manual: true,
+            result,
+            retcode,
+            stored: true,
+            at: None,
+            age: None,
+            next_attempt_at: None,
+            redeem_url: None,
+        };
+        let tag = |code: &str| ui.format("codes.retcode_tag", &[("code", code)]);
+        assert_eq!(
+            retcode_tag(&row(CodeResult::CookieInvalid, Some(-1071)), ui),
+            Some(tag("-1071"))
+        );
+        assert_eq!(
+            retcode_tag(&row(CodeResult::NotFound, Some(-1073)), ui),
+            Some(tag("-1073"))
+        );
+        assert_eq!(retcode_tag(&row(CodeResult::Redeemed, Some(0)), ui), None);
+        // A reopened row keeps its last number but is waiting now.
+        assert_eq!(
+            retcode_tag(&row(CodeResult::Pending, Some(-1071)), ui),
+            None
+        );
+        assert_eq!(retcode_tag(&row(CodeResult::Unknown, None), ui), None);
+        assert_eq!(
+            result_reason(&row(CodeResult::NotFound, Some(-1073)), ui).as_deref(),
+            Some(ui.text("codes.reason_no_game_account"))
+        );
+        assert_eq!(result_status(CodeResult::NotFound), Status::Warn);
     }
 }

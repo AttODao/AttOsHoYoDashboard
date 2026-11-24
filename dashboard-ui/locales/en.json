@@ -761,6 +761,8 @@
   "codes.open_link_tab": "Open HoYoLAB link",
   "codes.action_cookie_title": "Action required: your HoYoLAB Cookie is no longer valid",
   "codes.action_cookie_body": "HoYoLAB rejected the Cookie at {at}, so automatic redemption is paused. It resumes when you register the Cookie again. Codes found meanwhile stay pending.",
+  "codes.action_retcode": "HoYoLAB answered error {code}.",
+  "codes.action_cookie_repeat_body": "The Cookie registered or verified at {registered} was also rejected at {at}. Registering the same Cookie again will not help: log out of HoYoLAB, log in again, copy the Cookie right away and register it with cookie_token_v2 and account_id_v2 (see the Cookie steps in HoYoLAB link). Codes found meanwhile stay pending.",
   "codes.action_captcha_title": "Action required: HoYoLAB asks for a check (CAPTCHA)",
   "codes.action_captcha_body": "HoYoLAB asked for a check at {at}, so automatic redemption is paused. AHD cannot solve it for you. Sign in on the official site, redeem one code there, then select Resume.",
   "codes.resume": "Resume",
@@ -810,13 +812,16 @@
   "codes.result_rank_too_low": "Rank too low",
   "codes.result_cookie_invalid": "Cookie invalid",
   "codes.result_captcha": "Check required (CAPTCHA)",
+  "codes.result_no_game_account": "UID not found",
   "codes.result_unknown": "Result unknown",
   "codes.result_pending": "Pending",
   "codes.result_announced": "Notify only",
+  "codes.retcode_tag": "error {code}",
   "codes.reason_rank_too_low": "Adventure Rank / Trailblaze Level too low. Retried once a day while the code is listed (next {at}).",
   "codes.reason_unknown": "HoYoLAB's reply could not be confirmed. To avoid sending twice, this code is not sent again. Check your in-game mail.",
   "codes.reason_cookie_invalid": "Retried after you register the Cookie again.",
   "codes.reason_captcha": "Retried after the check, when you select Resume.",
+  "codes.reason_no_game_account": "HoYoLAB did not find this UID on the Cookie's account. Redemption for this UID waits until you register the Cookie again or select “Redeem pending codes now”.",
   "codes.reason_invalid_manual": "HoYoLAB says this code is invalid. Check what you entered.",
   "codes.summary_label": "Code states for this game",
   "codes.chip_redeemed": "{n} redeemed in the last 7 days",
@@ -868,5 +873,6 @@
   "admin.codes_error_invalid_payload": "Unreadable response",
   "admin.codes_error_storage": "Could not be stored",
   "transfer.change_code_mode": "{game} UID {uid} · code mode",
-  "hoyolab.cookie_step_redemption": "To redeem codes automatically, also include cookie_token_v2 and account_id_v2 (account_id_v2 has the same value as ltuid_v2)."
+  "hoyolab.cookie_step_redemption": "To redeem codes automatically, also include cookie_token_v2 and account_id_v2 (account_id_v2 has the same value as ltuid_v2; include account_mid_v2 too if present). cookie_token_v2 can stop working sooner than the other items: if redemption reports an invalid Cookie, log out of HoYoLAB, log in again and copy the Cookie right away.",
+  "hoyolab.cookie_redemption_dropped": "This Cookie has no cookie_token_v2. Saving it stops code redemption, and “Auto” becomes “Notify only”."
 }

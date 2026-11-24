@@ -69,6 +69,7 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
     let mut checked = use_signal(|| false);
     let missing = missing_cookies(&cookie());
     let invalid = checked() && !cookie().trim().is_empty() && !missing.is_empty();
+    let dropping = stored && checked() && drops_redemption(&cookie(), redemption_ready);
     let mut confirming = use_signal(|| false);
     let removable = stored && raw_status.as_deref() != Some("removed");
     let mut submit = move |_: ()| {
@@ -125,7 +126,7 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
                     }
                     textarea { id: "hoyolab-cookie", autocomplete: "off", spellcheck: "false", disabled,
                         placeholder: "ltoken_v2=…; ltuid_v2=…; ltmid_v2=…",
-                        "aria-describedby": if invalid { "hoyolab-cookie-help hoyolab-cookie-error" } else { "hoyolab-cookie-help" },
+                        "aria-describedby": if invalid { "hoyolab-cookie-help hoyolab-cookie-error" } else if dropping { "hoyolab-cookie-help hoyolab-cookie-redemption-warning" } else { "hoyolab-cookie-help" },
                         "aria-invalid": invalid.then_some("true"),
                         value: "{cookie}", oninput: move |event| cookie.set(event.value()),
                         onblur: move |_| if !cookie().trim().is_empty() { checked.set(true) },
@@ -133,6 +134,10 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
                     if invalid {
                         p { id: "hoyolab-cookie-error", class: "field-error",
                             {preferences.format("hoyolab.cookie_missing", &[("names", &missing.join(", "))])}
+                        }
+                    } else if dropping {
+                        p { id: "hoyolab-cookie-redemption-warning", class: "warning", role: "status",
+                            {preferences.text("hoyolab.cookie_redemption_dropped")}
                         }
                     }
                 }
@@ -183,22 +188,37 @@ pub(super) fn CookieCard(state: Signal<AppState>) -> Element {
 }
 
 /// Required Cookie names absent from pasted text; a `Cookie:` header line is accepted.
-fn missing_cookies(raw: &str) -> Vec<&'static str> {
+/// Cookie names with a non-empty value in a pasted Cookie (or Cookie header line).
+fn present_cookies(raw: &str) -> Vec<&str> {
     let raw = raw.trim();
     let raw = raw
         .strip_prefix("Cookie:")
         .or_else(|| raw.strip_prefix("cookie:"))
         .unwrap_or(raw);
-    let present: Vec<&str> = raw
-        .split(';')
+    raw.split(';')
         .filter_map(|part| part.split_once('='))
         .filter(|(_, value)| !value.trim().is_empty())
         .map(|(name, _)| name.trim())
-        .collect();
-    REQUIRED_COOKIES
+        .collect()
+}
+
+/// The required names a pasted Cookie lacks; `account_id_v2` too when it carries
+/// `cookie_token_v2` (the server refuses the token without its account).
+fn missing_cookies(raw: &str) -> Vec<&'static str> {
+    let present = present_cookies(raw);
+    let mut missing: Vec<&'static str> = REQUIRED_COOKIES
         .into_iter()
         .filter(|name| !present.contains(name))
-        .collect()
+        .collect();
+    if present.contains(&"cookie_token_v2") && !present.contains(&"account_id_v2") {
+        missing.push("account_id_v2");
+    }
+    missing
+}
+
+/// Saving this pasted Cookie would drop the redemption credentials the stored one has.
+fn drops_redemption(raw: &str, redemption_ready: bool) -> bool {
+    redemption_ready && !raw.trim().is_empty() && !present_cookies(raw).contains(&"cookie_token_v2")
 }
 
 /// Where the linkage stands, from the user's point of view.
@@ -349,6 +369,31 @@ mod tests {
         assert!(missing_cookies("ltoken_v2=a; ltuid_v2=1; ltmid_v2=m").is_empty());
         assert!(missing_cookies("Cookie: other=x; ltoken_v2=a;ltuid_v2=1; ltmid_v2=m").is_empty());
         assert_eq!(missing_cookies("ltoken_v2=a; ltuid_v2=1"), vec!["ltmid_v2"]);
+        // A redemption token without its account is named too (the server refuses it).
+        assert_eq!(
+            missing_cookies("ltoken_v2=a; ltuid_v2=1; ltmid_v2=m; cookie_token_v2=v2_x"),
+            vec!["account_id_v2"]
+        );
+        assert!(
+            missing_cookies(
+                "Cookie: ltoken_v2=a; ltuid_v2=1; ltmid_v2=m; cookie_token_v2=v2_x; account_id_v2=1"
+            )
+            .is_empty()
+        );
+        // Dropping cookie_token_v2 from a link that redeems is warned about, not refused.
+        assert!(drops_redemption(
+            "ltoken_v2=a; ltuid_v2=1; ltmid_v2=m",
+            true
+        ));
+        assert!(!drops_redemption(
+            "ltoken_v2=a; ltuid_v2=1; ltmid_v2=m",
+            false
+        ));
+        assert!(!drops_redemption(
+            "ltoken_v2=a; ltuid_v2=1; ltmid_v2=m; cookie_token_v2=v2_x; account_id_v2=1",
+            true
+        ));
+        assert!(!drops_redemption("  ", true));
         // Old names and empty values do not count.
         assert_eq!(
             missing_cookies("ltoken=a; ltuid=1; ltmid_v2=; ltuid_v2=1"),

@@ -533,6 +533,9 @@ pub struct CodeHistoryEntry {
     #[serde(default)]
     pub source: String,
     pub state: String,
+    /// HoYoLAB's numeric retcode of this UID's last answer (older servers omit it).
+    #[serde(default)]
+    pub retcode: Option<i64>,
     pub updated_at: Option<String>,
     #[serde(default)]
     pub next_attempt_at: Option<String>,
@@ -549,6 +552,15 @@ pub struct CodeRedemption {
     /// `cookie_invalid` or `captcha_required` while redemption is paused.
     pub action_required: Option<String>,
     pub action_at: Option<String>,
+    /// HoYoLAB's numeric retcode for the answer that paused redemption.
+    #[serde(default)]
+    pub action_retcode: Option<i64>,
+    /// When the current Cookie was last verified (registering one verifies it).
+    #[serde(default)]
+    pub cookie_verified_at: Option<String>,
+    /// The pause came right after the current Cookie was registered.
+    #[serde(default)]
+    pub action_after_cookie_update: bool,
     pub pending: u64,
 }
 
